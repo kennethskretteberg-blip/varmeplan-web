@@ -8,9 +8,9 @@ bare trenger å si «ok» eller «nei, gjør X».
 - [ ] **Fly-deploy av `varmeplan-roof`**: `fly auth login` → `fly launch --no-deploy --copy-config
       --name varmeplan-roof` → `fly secrets set ROOF_API_KEY=<lang tilfeldig streng>` → `fly deploy`.
       (Forberedt i 001. Til da kjører alt mot `localhost:4100`.)
-- [ ] **App-nøkkel i klienten**: hvor skal nøkkelen ligge? Midlertidig valg i 005: `localStorage`
-      `varmeplan_roof_key` (dev) + `window.VARMEPLAN_ROOF_KEY` (deploy). Alternativ: kolonne på
-      `organizations` i Supabase så den følger org-en.
+- [x] **App-nøkkel i klienten** — avgjort i 139: konstant `ROOF_APP_KEY` i `index.html` (appnøkkel,
+      synlig i nettleseren uansett; CORS avgrenser bruken). `window.`/localStorage vinner fortsatt.
+      Du må sette samme verdi i Fly: `fly secrets set ROOF_API_KEY=<verdien i ROOF_APP_KEY> -a varmeplan-roof`.
 
 ## Avklaringer (midlertidig valg står i parentes)
 
@@ -34,6 +34,29 @@ bare trenger å si «ok» eller «nei, gjør X».
       bryter i dialogen — det tar 1–3 s ekstra)*.
 
 ## Oppdaget underveis
+
+### Fra 139 (25.10.2026)
+
+- [ ] **139-1 Valg i lista går rett til «Finn bygg».** Klikk/Enter på en rad fyller feltet, lagrer
+      punktet OG starter byggsøket med én gang (som tomterom.no). Alternativ: bare fylle feltet og la
+      brukeren trykke «Finn bygg». Midlertidig valg: rett videre — færre klikk, og feilen (om
+      tjenesten er nede) vises uansett i dialogen med «Prøv igjen».
+- [ ] **139-2 Jokertegn bare i kartdialogen.** Kartverkets API matcher hele ord: «Storg» gir 0 treff,
+      «Storg*» 5314, «Storgata 1 Osl*» nøyaktig 1. Dialogen legger derfor `*` bak siste ord
+      (`_kvAddrLookup(…, { prefix: true })`). Prosjektfeltet er uendret (prompten: «nøyaktig som
+      før») — det gir altså fortsatt ingen liste før et helt ord er skrevet. Skal prosjektfeltet
+      også få jokertegnet?
+- [ ] **139-3 Klienten kan ta feil tjeneste for karttjenesten.** `_roofResolveUrl` godtar alt som
+      svarer 200 på `/health` — på denne maskinen sto tolkemotoren på 4100 (`{"status":"ok","dwg":…}`),
+      og dialogen sa «tjenesten er oppe» mens `locate` ga 404 («Fant ikke adressen»). 001 la inn
+      `service: "varmeplan-roof"` i `/health` nettopp for dette. Ikke rettet (utenfor 139); forslag:
+      egen `_roofHealthCheck` som krever `service === "varmeplan-roof"`.
+- [ ] **139-4 Feiltekst ved override på localhost** sier «Kjører den lokalt på port 4100?» også når
+      `window.VARMEPLAN_ROOF_URL` peker et annet sted. Kosmetisk, ikke rettet.
+- [ ] **139-5 `_roofWarmResolve` er fjernet** — eneste kaller var `_roofOpenDialog`, som nå kaller
+      `_roofSvcCheck` (samme oppvarming + synlig svar). Si fra hvis noe eksternt brukte den.
+- [ ] **139-6 Escape i steg 1** lukker bare lista (når den er åpen), ikke dialogen — dialogen hadde
+      ingen Esc-håndtering fra før heller. Skal Esc med lukket liste lukke dialogen?
 
 ### Fra 005–007
 

@@ -1269,6 +1269,11 @@ body.kunde-maal #minimap-widget{display:none !important}
 .cust-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto}
 .cust-search-results{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 30px rgba(20,40,60,.18);max-height:240px;overflow-y:auto;overflow-x:hidden;z-index:10;left:0;right:0;top:calc(100% + 6px);padding:5px}
 .cust-search-results>div{border-radius:8px;border-bottom:none !important}
+/* 139: adresselista i «Hent fra kart» (steg 1). Ligger I FLYTEN inne i dialogen, ikke absolutt —
+   på mobil skal den ikke kunne havne under skjermkanten. Rader ≥ 44 px (fingertreff). */
+.roof-addr-row{min-height:44px;box-sizing:border-box;padding:8px 12px;cursor:pointer;display:flex;flex-direction:column;justify-content:center;gap:2px;border-top:1px solid var(--border)}
+.roof-addr-row:first-child{border-top:none}
+.roof-addr-row:hover,.roof-addr-row.hi{background:var(--surface2)}
 
 /* 110 · Trappebyggeren: flytt segmenter (dra/piler) og sett inn hvor som helst.
    Innsettingsstripa mellom radene er normalt en tynn strek; ved hover (eller mens et segment
@@ -27503,8 +27508,176 @@ function _geoRegressionTest() {
     S.bgs = savedBgs; S.geo = savedGeo;
   }
   const ok = results.every(r => r.ok);
-  console[ok ? 'log' : 'error']('_geoRegressionTest: ' + (ok ? 'BESTÅTT' : 'FEILET'), results);
-  return { ok, results };
+  console[ok ? 'log' : 'error']('_geoRegressionTest (synkron del): ' + (ok ? 'BESTÅTT' : 'FEILET'), results);
+  // 139: adresseliste/tjenestestatus/nøkkel er asynkrone (stubbet fetch, 250 ms-debounce) — de
+  // logges når de er ferdige. `await _geoRegressionTest().async` gir alt samlet.
+  const async = _geoAddrRegressionTest(results).then(() => {
+    const alle = results.every(r => r.ok);
+    console[alle ? 'log' : 'error']('_geoRegressionTest (alt, inkl. 139): ' + (alle ? 'BESTÅTT' : 'FEILET') +
+      ' (' + results.filter(r => r.ok).length + '/' + results.length + ')', results.filter(r => !r.ok));
+    return { ok: alle, results };
+  });
+  return { ok, results, async };
+}
+
+// 139: adresseliste, tjenestestatus og appnøkkel i «Hent fra kart». Asynkron (stubbet fetch,
+// 250 ms-debounce) — kjøres av _geoRegressionTest og leveres via `.async`. Ingen ekte nettkall:
+// window.fetch byttes ut og legges tilbake i finally.
+async function _geoAddrRegressionTest(results) {
+  const check = (name, expected, cond, got) => results.push({ name: '139: ' + name, expected, got, ok: !!cond });
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const lagret = { fetch: window.fetch, dlg: _roofDlg, override: window.VARMEPLAN_ROOF_URL, key: window.VARMEPLAN_ROOF_KEY,
+                   lsKey: localStorage.getItem('varmeplan_roof_key'), resolved: _roofResolved, addrResults: _addrResults,
+                   projAddr: S.project ? S.project.address : undefined, toast: window._showToast };
+  const rp = (lat, lon) => ({ epsg: 'EPSG:4258', lat, lon });
+  const A = [{ adressetekst: 'Storgata 1', postnummer: '0155', poststed: 'OSLO', kommunenavn: 'OSLO', representasjonspunkt: rp(59.9127, 10.7461) },
+             { adressetekst: 'Storgata 2', postnummer: '0155', poststed: 'OSLO', kommunenavn: 'OSLO', representasjonspunkt: rp(59.9128, 10.7462) },
+             { adressetekst: 'Storgata 3', postnummer: '3510', poststed: 'HØNEFOSS', kommunenavn: 'RINGERIKE', representasjonspunkt: rp(60.1689, 10.2566) }];
+  const HITS = { 'storg': A, 'storgata 1, 0155 oslo': [A[0]], 'xyzzy': [] };
+  const delay = {}; let roofMode = 'ok'; const kall = [];
+  window.fetch = async (url, init) => {
+    const u = String(url); kall.push({ url: u, body: init && init.body, headers: init && init.headers });
+    if (u.startsWith('https://ws.geonorge.no/adresser/v1/sok')) {
+      const sok = (new URL(u).searchParams.get('sok') || '').replace(/\*$/, '').toLowerCase();
+      if (delay[sok]) await sleep(delay[sok]);
+      return new Response(JSON.stringify({ adresser: HITS[sok] || [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (u.startsWith('http://roof.test')) {
+      if (roofMode === 'down') throw new TypeError('Failed to fetch');
+      if (u.endsWith('/health')) return new Response('{"ok":true,"service":"varmeplan-roof"}', { status: 200 });
+      if (u.includes('/roof/locate')) return new Response(JSON.stringify({ query: { point: { east: 262000, north: 6650000 } },
+        candidates: [{ bygningsnr: '1', type: 'Enebolig', distance_m: 5, point: { east: 262000, north: 6650000 }, footprint: null }] }), { status: 200 });
+    }
+    throw new TypeError('uventet kall i test: ' + u);
+  };
+  const locateKall = () => kall.filter(k => k.url.includes('/roof/locate'));
+  const geoKall = () => kall.filter(k => k.url.includes('geonorge')).length;
+  const rows = () => document.querySelectorAll('#_roof-addr-list .roof-addr-row');
+  const inp = () => document.getElementById('_roof-addr');
+  const key = k => _roofAddrKey(new KeyboardEvent('keydown', { key: k, cancelable: true }));
+  const open = addr => { _roofClose(); _roofDlg = _roofNewDlg(1, addr || ''); _roofRender(); return _roofDlg; };
+  const svcEl = () => document.getElementById('_roof-svc');
+  try {
+    window.VARMEPLAN_ROOF_URL = 'http://roof.test'; _roofResolved = null; window._showToast = () => {};
+    if (S.project) S.project.address = null;
+    // A. skriv → liste
+    let d = open();
+    inp().value = 'St'; _roofAddrInput('St'); await sleep(320);
+    check('under 3 tegn: ingen liste, ingen kall', 0, rows().length === 0 && kall.length === 0, rows().length + '/' + kall.length);
+    inp().value = 'Storg'; _roofAddrInput('Storg'); await sleep(120);
+    check('ingen kall før 250 ms', 0, kall.length === 0, kall.length);
+    await sleep(250);
+    check('3 tegn+ → liste etter debounce', 3, rows().length === 3, rows().length);
+    check('kartdialogen ber om 8 treff, med prefiks-jokertegn', 'treffPerSide=8 + sok=Storg*', kall.some(k => k.url.includes('treffPerSide=8') && decodeURIComponent(k.url).includes('sok=Storg*')), kall.map(k => k.url).join(' '));
+    const r0 = rows()[0] ? rows()[0].textContent.replace(/\s+/g, ' ').trim() : '';
+    check('rad: adressetekst + «postnr poststed · kommune»', 'Storgata 1 0155 OSLO · OSLO', r0 === 'Storgata 1 0155 OSLO · OSLO', r0);
+    check('rad er minst 44 px høy', '≥ 44', rows()[0] && rows()[0].getBoundingClientRect().height >= 44, rows()[0] && rows()[0].getBoundingClientRect().height);
+    check('ingen rad markert før piltast', -1, d.addrHi === -1, d.addrHi);
+
+    // B. piltaster + Esc
+    key('ArrowDown'); key('ArrowDown');
+    check('pil ned ×2 markerer rad 2', 1, d.addrHi === 1 && rows()[1].classList.contains('hi'), d.addrHi);
+    key('ArrowUp');
+    check('pil opp → rad 1', 0, d.addrHi === 0, d.addrHi);
+    key('Escape');
+    check('Esc lukker lista, teksten står', 'Storg', rows().length === 0 && inp().value === 'Storg', rows().length + '/' + inp().value);
+
+    // C. svar på gammel tekst ignoreres
+    delay['storg'] = 500;
+    inp().value = 'Storg'; _roofAddrInput('Storg'); await sleep(270);          // sendt, svarer om 500 ms
+    inp().value = 'Storgata 1, 0155 Oslo'; _roofAddrInput('Storgata 1, 0155 Oslo'); await sleep(300);
+    check('nytt søk vises (1 treff)', 1, rows().length === 1, rows().length);
+    await sleep(400);                                                           // det gamle svaret kommer nå
+    check('gammelt svar (3 treff) overskriver ikke', 1, rows().length === 1 && d.addrHits.length === 1, rows().length);
+    delete delay['storg'];
+
+    // D. Enter med markert rad → valgt, punkt lagret, locate med lat/lon
+    d = open(); inp().value = 'Storg'; _roofAddrInput('Storg'); await sleep(300);
+    key('ArrowDown'); key('ArrowDown'); key('ArrowDown');
+    const n0 = locateKall().length; key('Enter'); await sleep(60);
+    check('Enter velger markert rad → full adressetekst', 'Storgata 3, 3510 HØNEFOSS', d.address === 'Storgata 3, 3510 HØNEFOSS', d.address);
+    check('punktet lagres på dialogen', '60.1689,10.2566', d.addrPoint && d.addrPoint.lat === 60.1689 && d.addrPointFor === d.address, JSON.stringify(d.addrPoint));
+    const lk = locateKall().slice(n0), body = lk[0] && JSON.parse(lk[0].body);
+    check('locate kalles med {lat, lon} — ikke fritekst', '{lat:60.1689,lon:10.2566}', body && body.lat === 60.1689 && body.lon === 10.2566 && body.address === undefined, JSON.stringify(body));
+    check('nøkkel-header = _roofKey()', _roofKey(), lk[0] && lk[0].headers['X-Varmeplan-Key'] === _roofKey(), lk[0] && lk[0].headers['X-Varmeplan-Key']);
+    check('→ steg 2 med kandidater', 2, d.step === 2 && d.candidates.length === 1, d.step + '/' + d.candidates.length);
+
+    // E. Enter uten markert rad, flere treff → marker første, vis lista, ikke videre
+    d = open(); inp().value = 'Storg'; _roofAddrInput('Storg'); await sleep(300);
+    const n1 = locateKall().length; await _roofAddrSubmit(); await sleep(30);
+    check('Enter, flere treff: første markeres, lista vises', 0, d.addrHi === 0 && rows().length === 3 && rows()[0].classList.contains('hi'), d.addrHi + '/' + rows().length);
+    check('…og fritekst sendes ikke videre', n1, locateKall().length === n1 && d.step === 1, locateKall().length + '/' + d.step);
+
+    // F. Enter uten liste, ett treff → velg + videre
+    d = open(); inp().value = 'Storgata 1, 0155 Oslo'; await _roofAddrSubmit(); await sleep(60);
+    check('Enter, ett treff: velges og går videre', 2, d.step === 2 && d.addrPoint && d.addrPoint.lat === 59.9127, d.step + '/' + JSON.stringify(d.addrPoint));
+
+    // G. Enter, ingen treff
+    d = open(); inp().value = 'xyzzy'; await _roofAddrSubmit();
+    check('Enter, ingen treff: melding', ROOF_ADDR_INGEN, d.addrMsg === ROOF_ADDR_INGEN && document.getElementById('_roof-addr-list').textContent.includes(ROOF_ADDR_INGEN), d.addrMsg);
+
+    // H. prosjektadresse med lagret punkt og uendret tekst → rett videre, uten liste
+    if (S.project) {
+      S.project.address = { text: 'Prosjektveien 2, 1234 Sted', representasjonspunkt: rp(60.1, 10.2) };
+      d = open('Prosjektveien 2, 1234 Sted');
+      const g0 = geoKall(), n2 = locateKall().length;
+      await _roofAddrSubmit(); await sleep(60);
+      const lk2 = locateKall().slice(n2), b2 = lk2[0] && JSON.parse(lk2[0].body);
+      check('prosjektadresse med punkt: rett videre, uten adresseoppslag', '{lat:60.1} + 0 oppslag', b2 && b2.lat === 60.1 && geoKall() === g0 && d.step === 2, JSON.stringify(b2) + ' / ' + d.step);
+      S.project.address = null;
+    }
+
+    // I. tjenesten svarer ikke → synlig i dialogen, adresse + punkt beholdes, «Prøv igjen» virker
+    roofMode = 'down';
+    d = open(); inp().value = 'Storgata 1, 0155 Oslo'; await _roofAddrSubmit(); await sleep(80);
+    const ov = document.getElementById('_roof-ov');
+    check('tjenestefeil: tekst i dialogen', true, !!d.error && !!ov && ov.innerText.includes(d.error), d.error);
+    check('…adresse og punkt beholdes', 'Storgata 1, 0155 OSLO', d.address === 'Storgata 1, 0155 OSLO' && !!d.addrPoint && d.addrPointFor === d.address, d.address + '/' + JSON.stringify(d.addrPoint));
+    const retry = document.getElementById('_roof-retry');
+    check('…med knappen «Prøv igjen»', 'Prøv igjen', !!retry && retry.textContent === 'Prøv igjen', retry && retry.textContent);
+    roofMode = 'ok'; if (retry) retry.click(); await sleep(80);
+    check('Prøv igjen → steg 2', 2, d.step === 2, d.step);
+
+    // J. tjenestestatus i steg 1
+    roofMode = 'down'; d = open(); const p = _roofSvcCheck();
+    check('status mens vi venter: «Starter karttjenesten …»', 'Starter karttjenesten …', svcEl().textContent === 'Starter karttjenesten …', svcEl().textContent);
+    await p;
+    check('tjenesten nede → rolig linje i dialogen', 'down', d.svc === 'down' && svcEl().textContent.includes('Adressesøket virker'), d.svc + ' / ' + svcEl().textContent);
+    roofMode = 'ok'; d = open(); await _roofSvcCheck();
+    check('tjenesten oppe → linja skjult', 'ok', d.svc === 'ok' && svcEl().style.display === 'none', d.svc);
+
+    // K. kaldstart-status skrives i busyText (ikke bare toast)
+    d.busy = true; _roofRender(); _roofDlgStatus('coldstart');
+    check('coldstart → busyText i dialogen', 'Starter karttjenesten …', document.getElementById('_roof-busy').textContent.startsWith('Starter karttjenesten') && d.busyText.startsWith('Starter karttjenesten'), d.busyText);
+    _roofDlgStatus('retrying');
+    check('retrying → busyText', 'Karttjenesten er oppe — prøver igjen …', d.busyText === 'Karttjenesten er oppe — prøver igjen …', d.busyText);
+    d.busy = false;
+
+    // L. nøkkel
+    delete window.VARMEPLAN_ROOF_KEY; localStorage.removeItem('varmeplan_roof_key');
+    check('_roofKey() faller tilbake på ROOF_APP_KEY (48 hex)', true, _roofKey() === ROOF_APP_KEY && /^[0-9a-f]{48}$/.test(ROOF_APP_KEY), _roofKey());
+    window.VARMEPLAN_ROOF_KEY = 'test-key';
+    check('window.VARMEPLAN_ROOF_KEY vinner', 'test-key', _roofKey() === 'test-key', _roofKey());
+
+    // M. prosjektfeltet virker som før etter uttrekket (6 treff, uten jokertegn)
+    const pf = document.getElementById('dash-proj-desc'), box = document.getElementById('dash-addr-results');
+    if (pf && box) {
+      const pv = pf.value; pf.value = 'Storg';
+      const g1 = kall.length; await _addrFetch('Storg');
+      check('prosjektfeltet: 3 rader, treffPerSide=6, sok=Storg', '3 / 6 / Storg', box.children.length === 3 && box.style.display === 'block' && !!kall[g1] && kall[g1].url.includes('treffPerSide=6') && decodeURIComponent(kall[g1].url).includes('sok=Storg&'), box.children.length + ' / ' + (kall[g1] && kall[g1].url));
+      pf.value = pv; box.style.display = 'none'; box.innerHTML = '';
+    }
+  } catch (e) {
+    results.push({ name: '139: UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    _roofClose();
+    window.fetch = lagret.fetch; window._showToast = lagret.toast; _roofResolved = lagret.resolved; _addrResults = lagret.addrResults;
+    if (lagret.override === undefined) delete window.VARMEPLAN_ROOF_URL; else window.VARMEPLAN_ROOF_URL = lagret.override;
+    if (lagret.key === undefined) delete window.VARMEPLAN_ROOF_KEY; else window.VARMEPLAN_ROOF_KEY = lagret.key;
+    if (lagret.lsKey == null) localStorage.removeItem('varmeplan_roof_key'); else localStorage.setItem('varmeplan_roof_key', lagret.lsKey);
+    if (S.project) S.project.address = lagret.projAddr;
+    _roofDlg = lagret.dlg;
+  }
 }
 
 // 059 (Kenneth 12.10.2026): låser de fire reglene listevisningen i tegnede deler hviler på —
@@ -73294,11 +73467,18 @@ function _engineClassifyError(err, url, status){
 // kaldstart-mønster som tolkemotoren (varmeplan-motor) over, men med EGNE konstanter og EGEN
 // cache — de to tjenestene er uavhengige, og en død motoradresse skal ikke kunne blokkere kart-henting.
 const ROOF_FLY_URL = 'https://varmeplan-roof.fly.dev', ROOF_LOCAL_URL = 'http://localhost:4100';
+// 139: appnøkkelen til karttjenesten. Dette er en APP-nøkkel, ikke en hemmelighet: alle kall går
+// fra nettleseren, så den ligger synlig der uansett — det er CORS-lista i tjenesten som avgrenser
+// hvem som får bruke den. Før 139 fantes den bare i window./localStorage, og ingen av dem settes i
+// produksjon → 401 selv når tjenesten er oppe. Samme verdi må stå i Fly:
+//   fly secrets set ROOF_API_KEY=<denne verdien> -a varmeplan-roof
+// window.VARMEPLAN_ROOF_KEY og localStorage vinner fortsatt (lokal utvikling mot egen nøkkel).
+const ROOF_APP_KEY = '4793530c986eade76b152a1ad276ca83f5986349e052d126';
 let _roofResolved = null;
 const ROOF_RESOLVE_CACHE_MS = 15000;
 
 function _roofKey() {
-  return window.VARMEPLAN_ROOF_KEY || localStorage.getItem('varmeplan_roof_key') || '';
+  return window.VARMEPLAN_ROOF_KEY || localStorage.getItem('varmeplan_roof_key') || ROOF_APP_KEY;
 }
 async function _roofResolveUrl(force) {
   if (window.VARMEPLAN_ROOF_URL) return { url: window.VARMEPLAN_ROOF_URL, source: 'override' };
@@ -73315,7 +73495,6 @@ async function _roofResolveUrl(force) {
   _roofResolved = { url: ROOF_FLY_URL, source: 'fly', reachable: flyOk, ts: Date.now() };
   return _roofResolved;
 }
-function _roofWarmResolve() { _roofResolveUrl().catch(() => {}); }
 
 // Feil kastes som {kind, message} — kallerne viser `message` direkte. Norsk, én per årsak, og
 // alltid med et neste steg brukeren faktisk kan ta.
@@ -73337,8 +73516,9 @@ async function _roofFetch(path, opts) {
     // den lokale tjenesten bare er stoppet — da er det 20 s spinner før nøyaktig samme
     // feilmelding (målt: 21,7 s). Derfor: vent kun når vi faktisk er i produksjon.
     const påLokalMaskin = /^(localhost|127\.0\.0\.1)$/i.test(location.hostname);
+    // 139: kalleren kan gi sin egen onStatus (dialogen skriver den inn i busyText); toast er fallback.
     r = (res.source === 'fly' && !påLokalMaskin)
-      ? await _engineFetchWithRetry(url, init, _roofColdStartToast)
+      ? await _engineFetchWithRetry(url, init, opts.onStatus || _roofColdStartToast)
       : await fetch(url, init);
   } catch (err) {
     throw _roofErr('offline', /^(localhost|127\.0\.0\.1)$/i.test(location.hostname)
@@ -73357,8 +73537,8 @@ function _roofColdStartToast(status) {
   else if (status === 'retrying') _showToast('Karttjenesten er oppe — prøver igjen …', 'info');
 }
 const _roofApi = {
-  locate: (q) => _roofFetch('/roof/locate', { method: 'POST', body: q }),
-  background: (p) => _roofFetch('/roof/background.json?' + new URLSearchParams(p)),
+  locate: (q, onStatus) => _roofFetch('/roof/locate', { method: 'POST', body: q, onStatus }),
+  background: (p, onStatus) => _roofFetch('/roof/background.json?' + new URLSearchParams(p), { onStatus }),
   slope: (polygon) => _roofFetch('/roof/slope', { method: 'POST', body: { polygon, epsg: 25833 } }),
   modelQuick: (footprint) => _roofFetch('/roof/model?level=quick', { method: 'POST', body: { footprint, epsg: 25833 } }),
 };
@@ -73611,17 +73791,28 @@ function _installGeoBackground(floorId, geo, pngBase64, label) {
   return bg;
 }
 
-let _roofDlg = null;   // {step, address, candidates, chosen, sizeM, layers, floorId}
+let _roofDlg = null;   // se _roofNewDlg
+
+// 139: ett sted som lager dialogtilstanden — brukes av _roofOpenDialog OG regresjonstesten, så
+// testen aldri driver på en annen starttilstand enn brukeren får.
+function _roofNewDlg(floorId, address) {
+  return { step: 1, floorId, address: address || '', candidates: [], chosen: null,
+           sizeM: 80, eiendom: true, hillshade: false, busy: false, busyText: '', error: null,
+           retry: null,                               // navnet på funksjonen «Prøv igjen» kaller
+           svc: null,                                 // null | checking | ok | down — tjenestestatus i steg 1
+           addrHits: [], addrHi: -1, addrMsg: null,   // adresselista: treff, markert rad, melding under feltet
+           addrPoint: null, addrPointFor: null,       // valgt representasjonspunkt, og teksten det ble valgt FOR
+           addrSeq: 0, addrTimer: null, addrSearching: false };
+}
 
 function _roofOpenDialog(floorId) {
   if (!_isSnowModule()) { _showToast && _showToast('«Hent fra kart» finnes bare i snø/utendørs.', 'warn'); return; }
   const fl = S.floors.find(f => f.id === floorId);
   if (!fl) return;
-  _roofWarmResolve();
   const addr = (S.project && S.project.address && S.project.address.text) || '';
-  _roofDlg = { step: 1, floorId, address: addr, candidates: [], chosen: null,
-               sizeM: 80, eiendom: true, hillshade: false, busy: false, error: null };
+  _roofDlg = _roofNewDlg(floorId, addr);
   _roofRender();
+  _roofSvcCheck();   // 139: samme oppvarming som _roofWarmResolve ga — men svaret VISES i steg 1
 }
 function _roofClose() { _roofDlg = null; document.getElementById('_roof-ov')?.remove(); }
 
@@ -73634,18 +73825,25 @@ function _roofRender() {
   ov.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
   ov.onclick = e => { if (e.target === ov) _roofClose(); };
 
-  const err = d.error ? `<div style="font-size:12px;color:var(--warn);background:rgba(245,158,11,.12);border:1px solid var(--warn);border-radius:8px;padding:8px 10px">⚠ ${esc(d.error)}</div>` : '';
-  const spin = d.busy ? `<div style="font-size:12px;color:var(--accent)">${esc(d.busyText || 'Henter …')}</div>` : '';
+  // 139: feilen beholder adresse og punkt; «Prøv igjen» kaller funksjonen som feilet (d.retry).
+  const retryBtn = d.error && d.retry
+    ? `<button id="_roof-retry" onclick="${d.retry}()" style="flex:none;padding:5px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Prøv igjen</button>` : '';
+  const err = d.error ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;color:var(--warn);background:rgba(245,158,11,.12);border:1px solid var(--warn);border-radius:8px;padding:8px 10px"><span>⚠ ${esc(d.error)}</span>${retryBtn}</div>` : '';
+  const spin = d.busy ? `<div id="_roof-busy" style="font-size:12px;color:var(--accent)">${esc(d.busyText || 'Henter …')}</div>` : '';
   let body = '';
 
   if (d.step === 1) {
-    body = `<div style="font-size:13px;color:var(--dim)">Søk opp adressen. Vi henter kart, bygningsomriss og eiendomsgrenser fra Kartverket.</div>
-      <input id="_roof-addr" type="text" value="${esc(d.address)}" placeholder="Adresse, f.eks. Storgata 1, 0155 Oslo"
-        onkeydown="if(event.key==='Enter'){event.preventDefault();_roofFindBuildings()}"
-        style="width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-size:14px">
+    // 139: tjenestestatus-linje, adresseliste i flyten under feltet, Enter/«Finn bygg» → _roofAddrSubmit.
+    const svcTxt = _roofSvcText(d);
+    body = `<div style="font-size:13px;color:var(--dim)">Søk opp adressen og velg riktig treff. Vi henter kart, bygningsomriss og eiendomsgrenser fra Kartverket.</div>
+      <div id="_roof-svc" style="font-size:12px;color:${d.svc === 'down' ? 'var(--warn)' : 'var(--dim)'};${svcTxt ? '' : 'display:none'}">${esc(svcTxt)}</div>
+      <input id="_roof-addr" type="text" value="${esc(d.address)}" placeholder="Adresse, f.eks. Storgata 1, 0155 Oslo" autocomplete="off"
+        oninput="_roofAddrInput(this.value)" onkeydown="_roofAddrKey(event)"
+        style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-size:14px">
+      <div id="_roof-addr-list">${_roofAddrListHtml(d)}</div>
       <div style="display:flex;justify-content:flex-end;gap:10px">
         <button onclick="_roofClose()" style="padding:8px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer">Avbryt</button>
-        <button onclick="_roofFindBuildings()" ${d.busy ? 'disabled' : ''} style="padding:8px 20px;background:var(--accent);border:none;border-radius:8px;font-size:13px;font-weight:600;color:#0d0e10;cursor:pointer">Finn bygg</button>
+        <button onclick="_roofAddrSubmit()" ${d.busy ? 'disabled' : ''} style="padding:8px 20px;background:var(--accent);border:none;border-radius:8px;font-size:13px;font-weight:600;color:#0d0e10;cursor:pointer">Finn bygg</button>
       </div>`;
   } else if (d.step === 2) {
     const rows = d.candidates.map((c, i) => {
@@ -73696,33 +73894,186 @@ function _roofRender() {
   if (d.step === 1) setTimeout(() => { const i = document.getElementById('_roof-addr'); if (i) { i.focus(); i.select(); } }, 40);
 }
 
+// ── 139: adresseliste i steg 1 ────────────────────────────────────────────────────────────────
+// Kenneth (varmeplan.no, 25.10.2026): skrev adresse, Enter, «Søker …» — og så ingenting. Målt på
+// b630840: 21,1 s fra Enter til feiltekst på produksjonsveien, kun én toast underveis (0,1 s).
+// Steg 1 sendte dessuten FRITEKST til karttjenesten, så uten tjeneste fantes ikke noe adressesøk.
+// Nå: Kartverkets adresse-API direkte fra nettleseren (samme kilde som prosjektfeltet, via
+// _kvAddrLookup), brukeren VELGER et treff, og tjenesten får {lat, lon}. Fritekst sendes aldri
+// videre fra steg 1 — da er det alltid entydig hvilken adresse det gjelder, og søket virker selv
+// om karttjenesten er nede.
+const ROOF_ADDR_MIN = 3, ROOF_ADDR_DEBOUNCE_MS = 250, ROOF_ADDR_TREFF = 8;
+const ROOF_ADDR_INGEN = 'Fant ingen adresse som passer. Sjekk stavemåten eller ta med postnummer.';
+const ROOF_ADDR_NETT = 'Fikk ikke kontakt med Kartverkets adressesøk. Prøv igjen om litt.';
+
+/** Leser feltet inn i d.address; endret tekst gjør et tidligere valgt punkt ugyldig. */
+function _roofAddrSync(d) {
+  const inp = document.getElementById('_roof-addr');
+  const v = inp ? inp.value.trim() : d.address;
+  if (v === d.address) return;
+  d.address = v;
+  if (d.addrPointFor !== v) { d.addrPoint = null; d.addrPointFor = null; }
+}
+
+function _roofAddrInput(v) {
+  const d = _roofDlg; if (!d) return;
+  d.address = (v || '').trim();
+  d.addrMsg = null; d.addrSearching = false;
+  if (d.addrPointFor !== d.address) { d.addrPoint = null; d.addrPointFor = null; }
+  if (d.addrTimer) { clearTimeout(d.addrTimer); d.addrTimer = null; }
+  if (d.address.length < ROOF_ADDR_MIN || d.addrPoint) { d.addrHits = []; d.addrHi = -1; _roofAddrRenderList(); return; }
+  const raw = d.address;
+  d.addrTimer = setTimeout(() => { d.addrTimer = null; _roofAddrFetch(raw); }, ROOF_ADDR_DEBOUNCE_MS);
+}
+
+// Returnerer treffene — eller null når svaret ikke gjelder lenger (nyere søk sendt, teksten endret,
+// dialogen lukket) eller nettet sviktet. Kallerne gjør ingenting på null.
+async function _roofAddrFetch(raw) {
+  const d = _roofDlg; if (!d) return null;
+  const seq = ++d.addrSeq;
+  let hits = null;
+  try { hits = await _kvAddrLookup(raw, { treff: ROOF_ADDR_TREFF, prefix: true }); } catch (e) { hits = null; }
+  if (_roofDlg !== d || seq !== d.addrSeq || d.address !== raw) return null;
+  d.addrHi = -1;
+  if (hits === null) { d.addrHits = []; d.addrMsg = ROOF_ADDR_NETT; _roofAddrRenderList(); return null; }
+  d.addrHits = hits; _roofAddrRenderList();
+  return hits;
+}
+
+function _roofAddrKey(ev) {
+  const d = _roofDlg; if (!d) return;
+  const n = d.addrHits.length;
+  if (ev.key === 'ArrowDown' && n) { ev.preventDefault(); d.addrHi = Math.min(d.addrHi + 1, n - 1); _roofAddrRenderList(); }
+  else if (ev.key === 'ArrowUp' && n) { ev.preventDefault(); d.addrHi = Math.max(d.addrHi - 1, 0); _roofAddrRenderList(); }
+  else if (ev.key === 'Escape' && (n || d.addrMsg)) { ev.preventDefault(); ev.stopPropagation(); d.addrHits = []; d.addrHi = -1; d.addrMsg = null; _roofAddrRenderList(); }
+  else if (ev.key === 'Enter') { ev.preventDefault(); _roofAddrSubmit(); }
+}
+// Enter / «Finn bygg». Markert rad → velg den. Har teksten allerede et punkt (valgt her, eller
+// prosjektets lagrede adresse med uendret tekst) → rett videre uten ny liste. Ellers slås teksten
+// opp nå: ett treff → velg det, flere → marker første og vis lista, ingen → melding.
+async function _roofAddrSubmit() {
+  const d = _roofDlg; if (!d || d.busy) return;
+  _roofAddrSync(d);
+  if (!d.address) { d.error = 'Skriv inn en adresse.'; d.retry = null; _roofRender(); return; }
+  if (d.addrHi >= 0 && d.addrHits[d.addrHi]) { _roofAddrPick(d.addrHi); return; }
+  if (_roofAddrPointFor(d)) { _roofFindBuildings(); return; }
+  if (d.addrTimer) { clearTimeout(d.addrTimer); d.addrTimer = null; }
+  d.addrMsg = null; d.addrSearching = true; _roofAddrRenderList();
+  const hits = await _roofAddrFetch(d.address);
+  if (_roofDlg !== d) return;
+  d.addrSearching = false;
+  if (hits === null) { _roofAddrRenderList(); return; }
+  if (hits.length === 1) { _roofAddrPick(0); return; }
+  if (hits.length === 0) { d.addrMsg = ROOF_ADDR_INGEN; _roofAddrRenderList(); return; }
+  d.addrHi = 0; _roofAddrRenderList();
+}
+
+// Punktet for dagens tekst: valgt i lista her, eller prosjektets lagrede adressepunkt (satt av
+// _addrPick i prosjektfeltet) når teksten er uendret. {lat, lon} er EPSG:4258-grader (se 005).
+function _roofAddrPointFor(d) {
+  const p = d.addrPoint;
+  if (p && d.addrPointFor === d.address && p.lat != null && p.lon != null) return p;
+  const pa = S.project && S.project.address, rp = pa && pa.representasjonspunkt;
+  if (rp && pa.text === d.address && rp.lat != null && rp.lon != null) return rp;
+  return null;
+}
+
+function _roofAddrPick(i) {
+  const d = _roofDlg; if (!d) return;
+  const a = d.addrHits[i]; if (!a) return;
+  d.address = _addrFull(a);
+  d.addrPoint = a.representasjonspunkt || null; d.addrPointFor = d.address;
+  d.addrHits = []; d.addrHi = -1; d.addrMsg = null; d.addrSearching = false; d.addrSeq++;
+  if (d.addrTimer) { clearTimeout(d.addrTimer); d.addrTimer = null; }
+  const inp = document.getElementById('_roof-addr'); if (inp) inp.value = d.address;
+  if (!d.addrPoint) { d.addrMsg = 'Adressen mangler koordinater hos Kartverket. Velg en annen.'; _roofAddrRenderList(); return; }
+  _roofAddrRenderList();
+  _roofFindBuildings();
+}
+
+function _roofAddrListHtml(d) {
+  if (d.addrSearching) return `<div style="font-size:12px;color:var(--dim);padding:4px 2px">Søker i Kartverkets adresseregister …</div>`;
+  if (d.addrMsg) return `<div style="font-size:12px;color:var(--warn);padding:4px 2px">${esc(d.addrMsg)}</div>`;
+  if (!d.addrHits.length) return '';
+  return `<div role="listbox" aria-label="Adressetreff" style="border:1px solid var(--border);border-radius:8px;overflow:hidden auto;max-height:min(40vh,360px)">` +
+    d.addrHits.map((a, i) => `<div class="roof-addr-row${i === d.addrHi ? ' hi' : ''}" role="option" aria-selected="${i === d.addrHi}" onclick="_roofAddrPick(${i})">
+      <div style="font-weight:600;font-size:13px;color:var(--text)">${esc(a.adressetekst || '')}</div>
+      <div style="font-size:11px;color:var(--muted)">${esc([a.postnummer, a.poststed].filter(Boolean).join(' '))}${a.kommunenavn ? ' · ' + esc(a.kommunenavn) : ''}</div>
+    </div>`).join('') + '</div>';
+}
+// Oppdaterer BARE lista — aldri hele dialogen, for da mister feltet fokus og markør mens man skriver.
+function _roofAddrRenderList() {
+  const d = _roofDlg, el = document.getElementById('_roof-addr-list');
+  if (!d || !el) return;
+  el.innerHTML = _roofAddrListHtml(d);
+  const hi = el.querySelector('.roof-addr-row.hi');
+  if (hi && hi.scrollIntoView) hi.scrollIntoView({ block: 'nearest' });
+}
+// ── 139: tjenestestatus i steg 1 ──────────────────────────────────────────────────────────────
+// Kjøres når dialogen åpnes (varmer samtidig opp URL-cachen). Svaret VISES: «Starter
+// karttjenesten …» mens vi venter, og en rolig linje om at kart/bygg ikke kan hentes hvis den ikke
+// kommer opp — adressesøket virker uansett, for det går rett mot Kartverket.
+async function _roofSvcCheck() {
+  const d = _roofDlg; if (!d) return;
+  d.svc = 'checking'; _roofSvcRender();
+  let ok = false;
+  try {
+    const res = await _roofResolveUrl();
+    ok = res.source === 'override' ? await _engineHealthCheck(res.url, 2500) : res.reachable !== false;
+  } catch (e) { ok = false; }
+  if (_roofDlg !== d) return;   // lukket eller åpnet på nytt imens
+  d.svc = ok ? 'ok' : 'down'; _roofSvcRender();
+}
+function _roofSvcText(d) {
+  if (d.svc === 'checking') return 'Starter karttjenesten …';
+  if (d.svc === 'down') return 'Karttjenesten er ikke tilgjengelig akkurat nå. Adressesøket virker, men kart og bygg kan ikke hentes.';
+  return '';
+}
+function _roofSvcRender() {
+  const d = _roofDlg, el = document.getElementById('_roof-svc');
+  if (!d || !el) return;
+  const t = _roofSvcText(d);
+  el.textContent = t; el.style.display = t ? '' : 'none';
+  el.style.color = d.svc === 'down' ? 'var(--warn)' : 'var(--dim)';
+}
+// Kaldstart-status INN I DIALOGEN — egen onStatus for kart-dialogen; toasten (_roofColdStartToast)
+// er fallback for kall uten dialog. Tolkemotorens _engine*-oppførsel ved import er uendret.
+function _roofDlgStatus(status) {
+  const d = _roofDlg; if (!d) return;
+  const tekst = { coldstart: 'Starter karttjenesten … Den sover når ingen bruker den, så dette kan ta opptil 20 s.',
+                  retrying: 'Karttjenesten er oppe — prøver igjen …',
+                  failed: 'Karttjenesten svarte ikke.' }[status];
+  if (!tekst) return;
+  d.busyText = tekst;
+  const el = document.getElementById('_roof-busy');
+  if (el) el.textContent = tekst; else _roofRender();
+}
+
 async function _roofFindBuildings() {
   const d = _roofDlg; if (!d || d.busy) return;
-  const inp = document.getElementById('_roof-addr');
-  d.address = inp ? inp.value.trim() : d.address;
-  if (!d.address) { d.error = 'Skriv inn en adresse.'; _roofRender(); return; }
-  d.busy = true; d.busyText = 'Søker …'; d.error = null; _roofRender();
+  _roofAddrSync(d);
+  if (!d.address) { d.error = 'Skriv inn en adresse.'; d.retry = null; _roofRender(); return; }
+  // 139: tjenesten får alltid et PUNKT, aldri fritekst. Mangler punkt for teksten → via lista.
+  const pt = _roofAddrPointFor(d);
+  if (!pt) { _roofAddrSubmit(); return; }
+  d.busy = true; d.busyText = 'Finner bygg ved adressen …'; d.error = null; d.retry = null; _roofRender();
   try {
-    // Har prosjektet allerede et adressepunkt (EPSG:4258-grader, satt av _addrSearch), og teksten
-    // er uendret, bruker vi koordinatene direkte — ett kall spart, og ingen ny adressetolkning.
-    const rp = S.project && S.project.address && S.project.address.representasjonspunkt;
-    const sameText = S.project && S.project.address && S.project.address.text === d.address;
-    const q = (rp && sameText && rp.lat != null && rp.lon != null)
-      ? { lat: rp.lat, lon: rp.lon } : { address: d.address };
-    const res = await _roofApi.locate(q);
+    const res = await _roofApi.locate({ lat: pt.lat, lon: pt.lon }, _roofDlgStatus);
     d.candidates = res.candidates || [];
     d.query = res.query;
     d.chosen = d.candidates.length ? 0 : null;
     d.step = 2;
   } catch (err) {
+    // Adresse og valgt punkt beholdes — «Prøv igjen» sender nøyaktig samme spørring.
     d.error = err && err.roof ? err.message : 'Uventet feil: ' + (err && err.message);
+    d.retry = '_roofFindBuildings';
   } finally { d.busy = false; _roofRender(); }
 }
 function _roofPick(i) { const d = _roofDlg; if (!d) return; d.chosen = i; d.step = 3; _roofRender(); }
 
 async function _roofFetchBackground() {
   const d = _roofDlg; if (!d || d.busy) return;
-  d.busy = true; d.busyText = 'Henter kart fra Kartverket …'; d.error = null; _roofRender();
+  d.busy = true; d.busyText = 'Henter kart fra Kartverket …'; d.error = null; d.retry = null; _roofRender();
   try {
     const cand = (d.chosen != null && d.candidates[d.chosen]) || null;
     const pt = cand ? cand.point : (d.query && d.query.point);
@@ -73732,7 +74083,7 @@ async function _roofFetchBackground() {
     if (d.hillshade) layers.push('hillshade');
     const res = await _roofApi.background({
       east: pt.east, north: pt.north, size_m: d.sizeM, px: 1600, layers: layers.join(','),
-    });
+    }, _roofDlgStatus);
     const bg = _installGeoBackground(d.floorId, res.geo, res.png_base64, d.address);
 
     // Vektorene (omriss/kandidater) lagres i verdens-cm — 006 bruker dem til snapping.
@@ -73768,6 +74119,7 @@ async function _roofFetchBackground() {
   } catch (err) {
     d.busy = false;
     d.error = err && err.roof ? err.message : 'Uventet feil: ' + (err && err.message);
+    d.retry = '_roofFetchBackground';
     _roofRender();
   }
 }
@@ -83518,18 +83870,30 @@ function _addrSearch(q) {
 function _addrFull(a) {
   return [a.adressetekst, [a.postnummer, a.poststed].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 }
+// 139: felles oppslag mot Kartverkets adresse-API — brukes av prosjektfeltet (_addrFetch, 6 treff)
+// og «Hent fra kart» (_roofAddrFetch, 8 treff). Samme URL-parametre som før; bare treffPerSide
+// varierer. Går rett fra nettleseren (nøkkelfritt, åpen CORS) — derfor virker adressesøket også
+// når karttjenesten er nede. Kaster ved nett-/HTTP-feil; kallerne bestemmer hva det betyr.
+async function _kvAddrLookup(raw, opts) {
+  const treff = (opts && opts.treff) || 6;
+  // prefix: API-et matcher hele ord, så «Storg» gir 0 treff mens «Storg*» gir 5314 (målt 25.10.2026).
+  // Kartdialogen søker mens man skriver og trenger jokertegnet; prosjektfeltet er uendret.
+  const sok = (opts && opts.prefix && /[^*\s]$/.test(raw)) ? raw + '*' : raw;
+  const url = 'https://ws.geonorge.no/adresser/v1/sok?sok=' + encodeURIComponent(sok) +
+              '&treffPerSide=' + treff + '&side=0&asciiKompatibel=true';
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('http ' + res.status);
+  const data = await res.json();
+  return data.adresser || [];
+}
 async function _addrFetch(raw) {
   const box = document.getElementById('dash-addr-results');
   if (!box) return;
   try {
-    const url = 'https://ws.geonorge.no/adresser/v1/sok?sok=' + encodeURIComponent(raw) +
-                '&treffPerSide=6&side=0&asciiKompatibel=true';
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('http ' + res.status);
-    const data = await res.json();
+    const hits = await _kvAddrLookup(raw, { treff: 6 });
     // Ignorer svar hvis brukeren har skrevet videre imens.
     if (((document.getElementById('dash-proj-desc')?.value) || '').trim() !== raw) return;
-    _addrResults = data.adresser || [];
+    _addrResults = hits;
     if (!_addrResults.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
     box.innerHTML = _addrResults.map((a, i) => `<div style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''" onmousedown="_addrPick(${i})">
       <div style="font-weight:500;color:var(--text)">${_esc(a.adressetekst || '')}</div>

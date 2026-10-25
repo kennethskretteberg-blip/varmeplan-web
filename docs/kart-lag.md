@@ -60,8 +60,17 @@ motoradresse skal aldri kunne blokkere kart-henting.
 
 ```
 window.VARMEPLAN_ROOF_URL  →  localStorage varmeplan_roof_url  →  localhost:4100  →  Fly
-nøkkel: window.VARMEPLAN_ROOF_KEY  eller  localStorage varmeplan_roof_key
+nøkkel: window.VARMEPLAN_ROOF_KEY  →  localStorage varmeplan_roof_key  →  ROOF_APP_KEY (konstant, 139)
 ```
+
+`ROOF_APP_KEY` er en appnøkkel (ligger i nettleseren uansett; CORS i tjenesten avgrenser bruken) og
+må ha samme verdi som `ROOF_API_KEY` i Fly.
+
+**Steg 1 i «Hent fra kart» (139):** adressesøket går **direkte mot Kartverkets adresse-API** via
+`_kvAddrLookup` (delt med prosjektfeltet), ikke via karttjenesten. Brukeren velger et treff, og
+`/roof/locate` får alltid `{lat, lon}` — aldri fritekst. Tjenestestatus vises i dialogen
+(`_roofSvcCheck` ved åpning, `_roofDlgStatus` for kaldstart), så søket virker og brukeren ser hva
+som skjer også når tjenesten er nede.
 
 Kaldstart-ventingen (20 s) skjer **kun i produksjon**. På localhost feiler kallet umiddelbart —
 der betyr «svarer ikke» nesten alltid «jeg har ikke startet tjenesten», og 20 s spinner før samme

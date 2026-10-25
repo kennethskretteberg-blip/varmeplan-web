@@ -9,6 +9,7 @@
 | 005 | **ferdig** | `d40d3e5` | arqely-mvp | «Hent fra kart», bg.geo, ny `_geoRegressionTest` (14 sjekker) |
 | 006 | **ferdig** | `e93e612` | arqely-mvp | vektorlag, snapping, helning + avstand |
 | 007 | **ferdig** | `65b4241` | arqely-mvp | PDF-kreditering, hurtigtaster, dokumentasjon |
+| 139 | **ferdig** | se git | varmeplan-web | «Hent fra kart» steg 1: adresseliste (Kartverket direkte), synlig tjenestestatus i dialogen, `ROOF_APP_KEY` · `_geoRegressionTest` 24 → 58 sjekker |
 
 ---
 
@@ -24,9 +25,8 @@ sortert etter hvor mye det blokkerer.
       `fly secrets set ROOF_API_KEY=<lang tilfeldig streng>` → `fly deploy`.
       **Dockerfile er aldri bygget lokalt** (Docker mangler på maskinen) — Fly bygger remote, men
       første deploy er også første gang den kjøres.
-- [ ] **Nøkkelen inn i klienten.** Midlertidig: `localStorage varmeplan_roof_key` /
-      `window.VARMEPLAN_ROOF_KEY`. Alternativ: kolonne på `organizations` i Supabase, så den
-      følger org-en. Ditt valg.
+- [x] **Nøkkelen inn i klienten** — gjort i 139: `ROOF_APP_KEY` (konstant ved `ROOF_FLY_URL` i
+      `index.html`). Samme verdi må settes i Fly, se «139 · Til Kenneth» under.
 
 ## 2. Påvirker hvor godt produktet faktisk virker
 
@@ -68,6 +68,75 @@ sortert etter hvor mye det blokkerer.
 | Alle målinger mot Kartverket | `~/Code/varmeplan-roof/docs/datakilder.md` |
 | Tjenestens README (endepunkt, cache, deploy) | `~/Code/varmeplan-roof/docs/README.md` |
 | Åpne spørsmål med mine midlertidige valg | `docs/tak-modul/SPØRSMÅL.md` |
+
+---
+
+## 139 — «Hent fra kart» steg 1: adresseliste og synlig status · 25.10.2026
+
+**Forutsetning som ikke stemte:** prompten sier «etter at 138 er kjørt». HEAD var `b630840` (137) —
+138 finnes ikke i loggen. Bygget derfor rett på `b630840`, som også er commiten Cowork målte på.
+
+### STEG 0 — målt på `b630840`
+
+Alle fem bakgrunnspunkter bekreftet (linjenummer i `b630840`):
+- Steg 1 var et fritekstfelt (`_roof-addr`, l. 73643); Enter → `_roofFindBuildings` (l. 73699) →
+  `_roofApi.locate({ address })` (l. 73711–73712). Ingen adresseliste.
+- `_roofFetch` (l. 73324): helsesjekk 2,5 s (l. 73314) → fetch → `_engineFetchWithRetry` venter
+  opptil 20 s (l. 73259) → feil. Kaldstart-status bare som toast (`_roofColdStartToast`, l. 73354).
+- `_roofKey()` (l. 73300) leste kun `window.VARMEPLAN_ROOF_KEY` / localStorage → tom i produksjon.
+- Prosjektfeltet: `_addrSearch`/`_addrFetch`/`_addrPick` (l. 83510/83521/83544), bundet til
+  `dash-addr-results`/`dash-proj-desc`, direkte mot `ws.geonorge.no` med `representasjonspunkt`.
+- `varmeplan-roof` er ikke på Fly: `varmeplan-roof.fly.dev` gir **ENOTFOUND** (DNS finnes ikke).
+
+| Måling (headless Chrome, «Finn bygg» med adresse) | Tid til feiltekst i dialogen |
+|---|---|
+| `window.VARMEPLAN_ROOF_URL = https://example.invalid` (localhost, ingen kaldstart-venting) | **56 ms** |
+| Produksjonsveien (hostname ≠ localhost, Fly utilgjengelig) | **21,1 s** — én toast etter 0,1 s, ellers bare «Søker …» |
+
+**Funn utenom scope:** på denne maskinen svarte `localhost:4100` med `{"status":"ok","dwg":"libredwg"}`
+— det er **tolkemotoren**, ikke karttjenesten. `_roofResolveUrl` sjekker bare `r.ok` på `/health`,
+så klienten velger motoren som karttjeneste og får «Fant ikke adressen» (404). 001 la inn
+`service`-feltet nettopp for å kunne skille dem; klienten bruker det ikke. Skrevet i SPØRSMÅL (139-3).
+
+### Bygget
+
+- **A. Adresseliste i steg 1.** Felles `_kvAddrLookup(raw, { treff, prefix })` brukes av prosjektfeltet
+  (6 treff, uendret) og dialogen (8 treff). Fra 3 tegn, 250 ms forsinkelse, svar på gammel tekst
+  ignoreres (sekvensnummer + tekstsammenligning). Rad: adressetekst fet, «postnr poststed · kommune»,
+  min. 44 px, lista ligger i flyten inne i dialogen. Pil opp/ned, Enter, Esc, klikk. Enter uten
+  markering: ett treff → velg, flere → marker første + vis lista, ingen → «Fant ingen adresse som
+  passer …». Valgt adresse lagres som `d.addrPoint`; `locate` får alltid `{lat, lon}` — fritekst
+  sendes ikke lenger. Prosjektadresse med lagret punkt og uendret tekst går rett videre.
+  **Målt mot Kartverket:** «Storg» gir 0 treff, «Storg*» 5314, «Storgata 1 Osl*» nøyaktig 1 —
+  derfor legger dialogen (bare den) på `*` bak siste ord.
+- **B. Synlig status.** `_roofSvcCheck` ved åpning: «Starter karttjenesten …» → skjult (oppe) eller
+  «Karttjenesten er ikke tilgjengelig akkurat nå. Adressesøket virker, men kart og bygg kan ikke
+  hentes.» Kaldstart-status (`coldstart`/`retrying`/`failed`) skrives i `busyText` via egen
+  `_roofDlgStatus` (sendes som `onStatus` til `_roofApi.locate/background`; toasten er fallback for
+  kall uten dialog, `_engine*` urørt). Feil beholder adresse + punkt og har «Prøv igjen» (`d.retry`).
+- **C. Nøkkel.** `ROOF_APP_KEY` ved `ROOF_FLY_URL`; `_roofKey()` faller tilbake på den etter
+  `window.` og localStorage. `_roofWarmResolve` fjernet (eneste kaller erstattet av `_roofSvcCheck`).
+
+### Tester
+
+`_geoRegressionTest`: 24 → **58 sjekker, alle grønne** (34 nye, asynkrone med stubbet fetch — ingen
+ekte nettkall; `await _geoRegressionTest().async` gir alt). Hele regresjonssuiten (37 tester) kjørt
+headless mot både ny kode og `b630840`: **identisk resultat** — de som er røde (katalog-/innloggings-
+avhengige: `_kundeforslag`, `_listevisning`, `_cableZone` F, `_reserveCable` A, `_cableGeometry(rask)`,
+`_prosjektlaas` E, de tre matte-testene med 0 sjekker) er like røde før 139.
+
+### Til Kenneth
+
+1. **Sett nøkkelen i Fly (samme verdi som `ROOF_APP_KEY`):**
+   `fly secrets set ROOF_API_KEY=4793530c986eade76b152a1ad276ca83f5986349e052d126 -a varmeplan-roof`
+   (og deploy tjenesten — den finnes ikke på Fly ennå, se punkt 1 øverst).
+2. **Test på varmeplan.no etter push:** snø-del → etasje → «Hent fra kart». Skriv «Storgata 1 Osl» —
+   lista skal komme etter ~¼ s; velg raden → «Finner bygg …». Uten Fly-tjeneste skal du se
+   «Starter karttjenesten …» i dialogen, deretter den rolige linja om at kart/bygg ikke kan hentes,
+   og ved «Finn bygg» feiltekst med «Prøv igjen». Adressesøket virker uansett.
+3. Ikke pushet, ikke deployet (som bedt om).
+
+**Tid:** ~2 t.
 
 ---
 
