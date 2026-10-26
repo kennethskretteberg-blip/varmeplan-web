@@ -72,6 +72,15 @@ må ha samme verdi som `ROOF_API_KEY` i Fly.
 (`_roofSvcCheck` ved åpning, `_roofDlgStatus` for kaldstart), så søket virker og brukeren ser hva
 som skjer også når tjenesten er nede.
 
+**Ett steg (142):** dialogen er bare steg 1. «Hent kart» / valg i adresselista kjører `_roofGo` =
+`locate` → `background` (200 m som standard, `ROOF_DEFAULT_SIZE_M`; `px` 1600) → dialogen lukkes. Kartet
+sentreres på **adressepunktet** (`query.point`), `S.geo[floor].chosen` er `null`, og alle kandidater får
+omriss i `S.geo[floor].candidates` (snapping går mot alle, `_geoSnapPolys`). Kandidatlista (steg 2) og
+utsnittsvalget (steg 3) ligger igjen i `_roofRender` men nås ikke i vanlig flyt — 143 gjenbruker
+`_roofPick`/`_roofCandCenter`. `locate` leter bare innen 40 m fra adressen, så bygg lenger ut i
+utsnittet har ikke vektoromriss. Utsnitt/eiendom/terrengskygge: `_roofPrefs()` (localStorage
+`varmeplan_roof_prefs`), redigeres i «Kartinnstillinger …» i ⋯-menyen på kartbakgrunnen.
+
 Kaldstart-ventingen (20 s) skjer **kun i produksjon**. På localhost feiler kallet umiddelbart —
 der betyr «svarer ikke» nesten alltid «jeg har ikke startet tjenesten», og 20 s spinner før samme
 melding hjelper ingen.
