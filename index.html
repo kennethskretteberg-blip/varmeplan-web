@@ -723,12 +723,18 @@ body.kunde-maal #minimap-widget{display:none !important}
 #_present-panel .pp-h{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);margin-bottom:7px;display:flex;align-items:center;gap:8px}
 #_present-panel .pp-h a{margin-left:auto;font-size:10.5px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--accent);text-decoration:none;cursor:pointer}
 #_present-panel .pp-rom{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;border-left:3px solid transparent;min-height:40px}
+@media (max-width:759px){#_present-panel .pp-rom{min-height:44px}#_present-panel .pp-pil,#_present-panel .pp-tilbake{min-height:44px}#_present-panel .pp-pil{width:44px;height:44px}}
 #_present-panel .pp-rom:hover{background:var(--surface2)}
 #_present-panel .pp-rom.valgt{background:var(--surface2);border-left-color:var(--accent)}
 #_present-panel .pp-rom .n{font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #_present-panel .pp-rom .s{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #_present-panel .pp-merke{flex:0 0 auto;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#0d0e10}
 #_present-panel .pp-etasje{font-size:11px;font-weight:700;color:var(--muted);padding:6px 8px 2px}
+#_present-panel .pp-rom.sist{background:rgba(79,162,184,.22);transition:background .3s}
+#_present-panel .pp-nav{flex:0 0 auto;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--surface)}
+#_present-panel .pp-tilbake{min-height:40px;padding:0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+#_present-panel .pp-pil{flex:0 0 auto;width:40px;height:40px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:20px;line-height:1;cursor:pointer}
+#_present-panel .pp-pil:disabled{opacity:.35;cursor:default}
 #_present-panel .pp-send{min-height:40px;padding:0 18px;border-radius:9px;font-size:13px;font-weight:700;border:none;cursor:pointer}
 #_present-panel .pp-send.aktiv{background:var(--info);color:#fff}
 #_present-panel .pp-send.dempet{background:var(--surface2);color:var(--dim);cursor:default}
@@ -2907,6 +2913,7 @@ const _SHORTCUTS = [
   { group: 'Frihånds-matte',        keys: ['H'],                   what: 'Hopp: neste bredde starter der du klikker (forbindelsen tegnes stiplet, teller ikke)' }, // 129
   { group: 'Frihånds-matte',        keys: ['Shift', 'klikk'],      what: 'Hopp: sett nytt startpunkt direkte' },                // 129
   { group: 'Presentasjonsmodus',    keys: ['dra'],                 what: 'Panorer' },                                           // :38293
+  { group: 'Presentasjonsmodus',    keys: ['←', '→'],              what: 'Forrige / neste rom (når ett rom er åpnet i venstrepanelet)' }, // 138
   { group: 'Presentasjonsmodus',    keys: ['Esc'],                 what: 'Avslutt presentasjon' },                              // :41064
 ];
 
@@ -8209,7 +8216,11 @@ function _presentArealTekst(room) {
   const par = (f, n) => a.endret && Math.abs(f - n) >= 0.005 ? _presentM2(f) + ' → ' + _presentM2(n) : _presentM2(n);
   return { netto: par(a.nettoFoerM2, a.nettoM2), brutto: par(a.bruttoFoerM2, a.bruttoM2), endret: a.endret };
 }
-function _presentRoomDetailHtml(room) {
+// 138: `utenNavn` = panelet (nivå 2) har navnet i sitt faste hode; det gamle kortet (#present-detail)
+// beholder navnet her. Rekkefølgen er valgene først: «Hva synes du?», så tre nøkkeltall (Areal,
+// Produkt, Flateeffekt), så resten under «Detaljer». Ren presentasjon har ingenting å prioritere
+// og viser alle radene åpne i den gamle rekkefølgen.
+function _presentRoomDetailHtml(room, utenNavn) {
   const stats = _computeRoomStats(room);
   const installedW = Math.round(_roomRatedEffectW(room) || 0);
   const flateeffekt = stats.cableLenM > 0 ? stats.cableWm2 : stats.wm2Heated;   // samme regel som romdetaljer
@@ -8217,48 +8228,67 @@ function _presentRoomDetailHtml(room) {
   const volt = (prod && prod.voltage) ? prod.voltage : 230;
   const R = installedW > 0 ? (volt * volt / installedW) : 0;   // nominell motstand R = U²/P
   const row = (l, v) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--dim)">${l}</span><span style="font-weight:600;text-align:right">${v}</span></div>`;
-  const rows = [];
+  const rows = [];   // { n: nøkkeltall?, h: html }
+  const rad = (nokkel, l, v) => rows.push({ n: nokkel, h: row(l, v) });
   // 122: arealet står alltid — netto først (det varmen regnes mot), brutto i parentes, og
   // «før → etter» når kunden har rettet målene.
   const _ar = _presentArealTekst(room);
-  rows.push(row('Areal', `netto ${_ar.netto}<br><span style="color:var(--dim);font-weight:400;font-size:11.5px">brutto ${_ar.brutto}</span>`));
+  rad(true, 'Areal', `netto ${_ar.netto} <span style="color:var(--dim);font-weight:400;font-size:11.5px">(brutto ${_ar.brutto})</span>`);
   if (prod) {
     // 122: alle produktene i rommet, ikke bare det dominerende («2 × EcoMat 60T 0.5×10m»).
     const navn = _presentRoomProduktNavn(room);
-    rows.push(row('Produkt', navn.length ? navn.map(esc).join('<br>') : esc(prod.name || '—')));
+    rad(true, 'Produkt', navn.length ? navn.map(esc).join('<br>') : esc(prod.name || '—'));
     // ⚠ 043 (MÅLT): artikkelnummeret sto her UBETINGET, altså også for alle med en
     // presentasjons- eller kundelenke. Spec-kundeforslag regel 2: kunden ser produktnavn,
     // effekt, flateeffekt, W/m² og CC — aldri priser eller artikkelnummer. Innlogget
     // presentasjon i appen beholder det.
-    if (prod.article_no && !(S.ui && S.ui.presentPublic)) rows.push(row('Artikkelnr', esc(String(prod.article_no))));
+    if (prod.article_no && !(S.ui && S.ui.presentPublic)) rad(false, 'Artikkelnr', esc(String(prod.article_no)));
   } else {
-    rows.push(row('Produkt', '<span style="color:var(--dim)">ikke plassert</span>'));
+    rad(true, 'Produkt', '<span style="color:var(--dim)">ikke plassert</span>');
   }
   // 118: rom kunden har rettet målene på — tallene gjelder utlegget FØR endringen.
   const _maalEndret = (typeof _forslagMaalRomEndret === 'function') && _forslagMaalRomEndret(room.id);
   const _foer = _maalEndret ? ' <span style="color:var(--dim);font-weight:400;font-size:11px">(før endring)</span>' : '';
-  rows.push(row('Installert effekt' + _foer, installedW + ' W'));
-  if (flateeffekt > 0) rows.push(row('Flateeffekt' + _foer, Math.round(flateeffekt) + ' W/m²'));
+  rad(false, 'Installert effekt' + _foer, installedW + ' W');
+  if (flateeffekt > 0) rad(true, 'Flateeffekt' + _foer, Math.round(flateeffekt) + ' W/m²');
   if (stats.cableCcCm > 0) {   // 016: ⚠ når over produsentens anbefalte maks
     const _ccw = _roomCcOverWarn(room);
-    rows.push(row('c/c-avstand', stats.cableCcCm.toFixed(1) + ' cm' +
-      (_ccw ? ` <span style="color:#f59e0b">⚠ ${esc(_ccWarnText(_ccw.prod, _ccw.cc, false, _ccw.roomId))}</span>` : '')));
+    rad(false, 'c/c-avstand', stats.cableCcCm.toFixed(1) + ' cm' +
+      (_ccw ? ` <span style="color:#f59e0b">⚠ ${esc(_ccWarnText(_ccw.prod, _ccw.cc, false, _ccw.roomId))}</span>` : ''));
   }
-  if (stats.cableLenM > 0) rows.push(row('Kabellengde', stats.cableLenM.toFixed(1) + ' m'));
-  rows.push(row('Spenning', volt + ' V'));
-  if (R > 0) rows.push(row('Nominell motstand', R.toFixed(1) + ' Ω'));
+  if (stats.cableLenM > 0) rad(false, 'Kabellengde', stats.cableLenM.toFixed(1) + ' m');
+  rad(false, 'Spenning', volt + ' V');
+  if (R > 0) rad(false, 'Nominell motstand', R.toFixed(1) + ' Ω');
   const ftDef = _floorTypeDef(room.floorType);
-  rows.push(row('Toppgulv', ftDef ? esc(ftDef.label) : '<span style="color:var(--dim)">ikke angitt</span>'));
+  const toppgulv = row('Toppgulv', ftDef ? esc(ftDef.label) : '<span style="color:var(--dim)">ikke angitt</span>');
   const rt = room.roomType ? ROOM_TYPES.find(t => t.id === room.roomType) : null;
   const compat = _floorCompatBannerHtml(room.floorType, flateeffekt > 0 ? flateeffekt : (room.targetWm2 || 0));
-  return `<div style="font-size:15px;font-weight:700;margin-bottom:6px;border-left:4px solid ${room.color || '#4fa2b8'};padding-left:10px">${esc(room.name || 'Rom')}</div>
-    ${rt ? `<div style="font-size:12px;color:var(--dim);margin-bottom:10px">${esc(rt.label)}</div>` : '<div style="margin-bottom:4px"></div>'}
-    ${_presentAutoValgt ? '<div style="font-size:11.5px;color:var(--dim);margin:-4px 0 10px;line-height:1.4">Trykk på et annet rom i tegningen for å se det.</div>' : ''}
-    ${_maalEndret ? '<div style="font-size:11.5px;color:#f0b232;margin:-4px 0 10px;padding:6px 8px;border:1px solid rgba(240,178,50,.5);border-radius:7px;line-height:1.4">Utlegget oppdateres etter at målene er bekreftet.</div>' : ''}
-    <div style="font-size:13px">${rows.join('')}</div>
-    ${compat}
-    ${_forslagKortHtml(room)}`;
+  const maalBanner = _maalEndret ? '<div style="font-size:11.5px;color:#f0b232;margin:8px 0 4px;padding:6px 8px;border:1px solid rgba(240,178,50,.5);border-radius:7px;line-height:1.4">Utlegget oppdateres etter at målene er bekreftet.</div>' : '';
+  const hode = utenNavn ? '' : `<div style="font-size:15px;font-weight:700;margin-bottom:6px;border-left:4px solid ${room.color || '#4fa2b8'};padding-left:10px">${esc(room.name || 'Rom')}</div>
+    ${rt ? `<div style="font-size:12px;color:var(--dim);margin-bottom:10px">${esc(rt.label)}</div>` : '<div style="margin-bottom:4px"></div>'}`;
+  if (!_forslagAktiv()) {
+    // Ren presentasjon: alle radene åpne, gammel rekkefølge (Toppgulv sist).
+    return `${hode}${maalBanner}
+    <div style="font-size:13px">${rows.map(r => r.h).join('')}${toppgulv}</div>
+    ${compat}`;
+  }
+  const kort = _forslagKortHtml(room);
+  if (_forslagKanForeslaaVarme(room)) {
+    // Rom uten varme: kortet først, så bare areal og toppgulv (resten finnes ikke).
+    return `${hode}${kort}
+    <div style="font-size:13px;margin-top:12px">${rows.filter(r => r.n && /Areal/.test(r.h)).map(r => r.h).join('')}${toppgulv}</div>
+    ${compat}`;
+  }
+  return `${hode}${kort}
+    <div style="font-size:13px;margin-top:12px">${rows.filter(r => r.n).map(r => r.h).join('')}</div>
+    ${maalBanner}
+    <details id="_pp-detaljer" ${_ppDetaljerApen ? 'open' : ''} ontoggle="_ppDetaljerApen=this.open" style="margin-top:10px">
+      <summary style="cursor:pointer;font-size:12.5px;font-weight:600;color:var(--accent);min-height:${_kundeErSmal() ? 44 : 32}px;display:flex;align-items:center">Detaljer</summary>
+      <div style="font-size:13px">${rows.filter(r => !r.n).map(r => r.h).join('')}${toppgulv}</div>
+      ${compat}
+    </details>`;
 }
+let _ppDetaljerApen = false;   // 138: «Detaljer» åpen/lukket huskes for økta
 // ═══ 043 · KUNDEFORSLAG ═══════════════════════════════════════════════════════════════════
 // Kunden ser presentasjonen som før og kan, per rom, si «OK som det er» eller foreslå et annet
 // produkt / en ønsket flateeffekt / en annen retning. Ingenting tegnes om hos kunden
@@ -8940,7 +8970,7 @@ function _forslagKortHtml(room) {
   return `
     <div style="margin-top:14px;padding-top:12px;border-top:2px solid var(--accent)">
       <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:2px">Hva synes du?</div>
-      <div style="font-size:11.5px;color:var(--dim);line-height:1.45">Si fra om rommet er greit som det er, eller foreslå noe annet. Ingenting endres før ${esc(_forslagState.orgName)} godkjenner.</div>
+      ${_ppIntroRomId == null || _ppIntroRomId === rid ? `<div style="font-size:11.5px;color:var(--dim);line-height:1.45">Si fra om rommet er greit som det er, eller foreslå noe annet. Ingenting endres før ${esc(_forslagState.orgName)} godkjenner.</div>` : ''}
       ${pilHtml}
       ${onsketHtml}
       <div style="margin-top:11px">
@@ -9262,9 +9292,42 @@ function _presentPanelVelgRom(id) {
   fitRoom(id);   // «akkurat som klikk i tegningen» — og zoomer til det (prompt 117)
   _presentRenderDetail();
   render();
-  const sek = document.getElementById('_pp-valgt');
-  if (sek && sek.scrollIntoView) sek.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
+// 138: nivå 2 → nivå 1. Zoomen beholdes (ingen fitAll); lista scrolles så sist valgte rom synes,
+// og raden markeres svakt i 1,5 s.
+function _presentPanelTilbake() {
+  const sist = S.ui.presentRoomId;
+  if (sist == null) return;
+  S.ui.presentRoomId = null;
+  _presentRenderDetail();
+  render();
+  const rad = document.getElementById('_pp-rom-' + sist);
+  if (rad) {
+    if (rad.scrollIntoView) rad.scrollIntoView({ block: 'nearest' });
+    rad.classList.add('sist');
+    setTimeout(() => { const r2 = document.getElementById('_pp-rom-' + sist); if (r2) r2.classList.remove('sist'); }, 1500);
+  }
+}
+// 138: ‹ › — forrige/neste rom i etasjerekkefølge. Ingenting i endene.
+function _presentPanelNabo(d) {
+  const liste = _presentRomIEtasjerekkefolge();
+  const i = liste.findIndex(r => r.id === S.ui.presentRoomId);
+  if (i < 0) return;
+  const n = liste[i + d];
+  if (n) _presentPanelVelgRom(n.id);
+}
+// ← → bytter rom på nivå 2 når fokus ikke er i et felt. Ikke i målmodus (der flytter piltastene hjørner).
+document.addEventListener('keydown', e => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+  if (!_presentPanelAktiv() || S.ui.presentRoomId == null) return;
+  if (_forslagMaalModus() || (typeof _kundeMaalAktiv === 'function' && _kundeMaalAktiv())) return;
+  const ae = document.activeElement;
+  if (ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable)) return;
+  if (document.getElementById('_fors-ov')) return;
+  e.preventDefault();
+  _presentPanelNabo(e.key === 'ArrowRight' ? 1 : -1);
+});
 function _presentPanelVisAlt() { fitAll(); render(); }
 function _presentPanelToggle(apen) {
   _ppApen = (apen == null) ? !_ppApen : !!apen;
@@ -9323,10 +9386,7 @@ function _presentPanelRomlisteHtml() {
   const valgtId = S.ui.presentRoomId;
   const rad = r => {
     const prod = _presentRoomProduct(r);
-    const v = _forslagAktiv() ? _forslagValg(r.id) : null;
-    const harForslag = v && !v.ok && (v.productId || v.targetWm2 || v.direction || (v.comment || '').trim());
-    const merke = v && v.ok ? '<span class="pp-merke" style="background:#22c55e">✓</span>'
-                : harForslag ? '<span class="pp-merke" style="background:#f0b232">!</span>' : '';
+    const merke = _presentPanelMerkeHtml(r);
     return `<div id="_pp-rom-${r.id}" class="pp-rom${r.id === valgtId ? ' valgt' : ''}" onclick="_presentPanelVelgRom(${r.id})"
         style="${r.id === valgtId && r.color ? 'border-left-color:' + r.color : ''}">
       <div style="flex:1;min-width:0">
@@ -9338,19 +9398,65 @@ function _presentPanelRomlisteHtml() {
   if (!grupper.length || !grupper[0].rom.length) return '<div style="font-size:12px;color:var(--dim)">Ingen rom er tegnet.</div>';
   return grupper.map(g => (g.etasje ? `<div class="pp-etasje">${esc(g.etasje.name || 'Etasje')}</div>` : '') + g.rom.map(rad).join('')).join('');
 }
+// 138: venstrepanelet har to nivåer, styrt av S.ui.presentRoomId. null = nivå 1 (romlista),
+// satt = nivå 2 (ett rom). Nivå 2 har et FAST hode (`_presentPanelNavHtml`, utenfor den
+// scrollende kroppen) og kroppen starter alltid på toppen ved rombytte.
+let _ppIntroRomId = null;     // første rom kunden åpner i økta — bare det viser innledningssetningen
+function _presentPanelRomValgt() {
+  return S.ui.presentRoomId != null ? S.rooms.find(r => r.id === S.ui.presentRoomId) || null : null;
+}
+function _presentPanelMerkeHtml(r) {
+  const v = _forslagAktiv() ? _forslagValg(r.id) : null;
+  const harForslag = v && !v.ok && (v.productId || v.targetWm2 || v.direction || (v.comment || '').trim());
+  return v && v.ok ? '<span class="pp-merke" style="background:#22c55e">✓</span>'
+       : harForslag ? '<span class="pp-merke" style="background:#f0b232">!</span>' : '';
+}
+// Fast hode på nivå 2. På mobil ligger «← Alle rom» og romnavnet i skuffhodet (over), så her
+// står bare ‹ n av m ›.
+function _presentPanelNavHtml(smal) {
+  const room = _presentPanelRomValgt();
+  if (!room) return '';
+  const liste = _presentRomIEtasjerekkefolge();
+  const i = liste.findIndex(r => r.id === room.id);
+  const gruppe = _presentPanelRom();
+  const flere = gruppe.length > 1;
+  const et = flere ? (gruppe.find(g => g.rom.some(r => r.id === room.id)) || {}).etasje : null;
+  const rt = room.roomType ? ROOM_TYPES.find(t => t.id === room.roomType) : null;
+  const under = [et ? et.name || 'Etasje' : '', rt ? rt.label : ''].filter(Boolean).map(esc).join(' · ');
+  const pil = (tegn, d, tit) => {
+    const av = !liste[i + d];
+    return `<button class="pp-pil" ${av ? 'disabled' : ''} onclick="_presentPanelNabo(${d})" title="${tit}" aria-label="${tit}">${tegn}</button>`;
+  };
+  const merke = _presentPanelMerkeHtml(room);
+  return `<div id="_pp-nav" class="pp-nav">
+    ${smal ? '' : '<button class="pp-tilbake" onclick="_presentPanelTilbake()">← Alle rom</button>'}
+    <div style="display:flex;align-items:center;gap:6px;${smal ? '' : 'margin-top:8px'}">
+      <div style="flex:1;min-width:0;${smal ? 'font-size:11.5px;color:var(--dim)' : 'border-left:4px solid ' + (room.color || '#4fa2b8') + ';padding-left:9px'}">
+        ${smal ? `${i + 1} av ${liste.length}${under ? ' · ' + under : ''}` : `<div style="font-size:15px;font-weight:700;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(room.name || 'Rom')}</div>
+        ${under ? `<div style="font-size:11.5px;color:var(--dim)">${under}</div>` : ''}`}
+      </div>
+      ${merke}${pil('‹', -1, 'Forrige rom')}${pil('›', 1, 'Neste rom')}
+    </div>
+  </div>`;
+}
 function _presentPanelKroppHtml() {
-  const room = S.ui.presentRoomId != null ? S.rooms.find(r => r.id === S.ui.presentRoomId) : null;
-  return `
+  const room = _presentPanelRomValgt();
+  const maalKan = _forslagAktiv() && _forslagMaalKan();
+  const maal = maalKan ? `<div class="pp-sec" id="_pp-maal">${_forslagMaalHtml(false)}</div>` : '<div class="pp-sec" id="_pp-maal" style="display:none"></div>';
+  // Målmodus er det kunden holder på med: øverst på begge nivåer.
+  const maalOverst = _forslagMaalModus();
+  if (room) {
+    if (_forslagAktiv() && _ppIntroRomId == null) _ppIntroRomId = room.id;
+    return `${maalOverst ? maal : ''}
+    <div class="pp-sec" id="_pp-valgt">${_presentRoomDetailHtml(room, true)}</div>`;
+  }
+  return `${maalOverst ? maal : ''}
     <div class="pp-sec" id="_pp-prosjekt">${_presentPanelProsjektHtml()}</div>
     <div class="pp-sec" id="_pp-romliste">
       <div class="pp-h">Rom <a onclick="_presentPanelVisAlt()">Vis hele planen</a></div>
       ${_presentPanelRomlisteHtml()}
     </div>
-    <div class="pp-sec" id="_pp-valgt">
-      ${room ? _presentRoomDetailHtml(room)
-             : '<div style="font-size:12px;color:var(--dim)">Velg et rom i lista eller i tegningen.</div>'}
-    </div>
-    ${(_forslagAktiv() && _forslagMaalKan()) ? `<div class="pp-sec" id="_pp-maal">${_forslagMaalHtml(false)}</div>` : '<div class="pp-sec" id="_pp-maal" style="display:none"></div>'}`;
+    ${maalOverst ? '' : maal}`;
 }
 
 // ═══ 118 · ENDRE MÅL / LÅS MÅL I FORSLAGSLENKA ══════════════════════════════════════════
@@ -9521,19 +9627,23 @@ function _presentPanelRender() {
   const smal = _presentPanelSmal();
   const gammel = document.getElementById('_present-panel');
   const kropp = gammel && gammel.querySelector('#_pp-kropp');
-  const scroll = kropp ? kropp.scrollTop : 0;
+  // 138: kroppen starter på toppen ved rombytte og ved bytte av nivå; ellers beholdes plasseringen
+  // (kortet tegnes om for hvert valg kunden tar).
+  const scroll = (kropp && gammel.dataset.rom === String(S.ui.presentRoomId)) ? kropp.scrollTop : 0;
   gammel?.remove();
   const el = document.createElement('div');
   el.id = '_present-panel';
   el.dataset.smal = smal ? '1' : '0';
+  el.dataset.rom = String(S.ui.presentRoomId);
   const fot = _presentPanelFotHtml();
+  const nav = _presentPanelNavHtml(smal);
   if (!smal) {
     el.style.cssText = 'flex:0 0 320px;width:320px;height:100%;display:flex;flex-direction:column;z-index:90;'
       + 'background:var(--surface);border-right:1px solid var(--border)';
-    el.innerHTML = `<div id="_pp-kropp" style="flex:1;min-height:0;overflow:auto">${_presentPanelKroppHtml()}</div>
+    el.innerHTML = `${nav}<div id="_pp-kropp" style="flex:1;min-height:0;overflow:auto">${_presentPanelKroppHtml()}</div>
       ${fot ? `<div id="_pp-fot" style="flex:0 0 auto;padding:10px 14px;border-top:1px solid var(--border);background:var(--surface)">${fot}</div>` : ''}`;
   } else {
-    const room = S.ui.presentRoomId != null ? S.rooms.find(r => r.id === S.ui.presentRoomId) : null;
+    const room = _presentPanelRomValgt();
     const t = _forslagAktiv() ? _forslagTelling() : null;
     const noe = t && (t.ok + t.forslag) > 0;
     el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:82;display:flex;flex-direction:column;'
@@ -9547,6 +9657,7 @@ function _presentPanelRender() {
         <div style="width:40px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 8px"></div>
         ${maalHode ? `<div onclick="event.stopPropagation()" style="cursor:default">${maalHode}</div>` : ''}
         <div style="display:flex;align-items:center;gap:10px;${maalHode ? 'display:none' : ''}">
+          ${(_ppApen && room) ? '<button class="pp-tilbake" onclick="event.stopPropagation();_presentPanelTilbake()">← Alle rom</button>' : ''}
           <div style="flex:1;min-width:0">
             <div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${room ? esc(room.name || 'Rom') : esc((S.project || {}).name || 'Prosjekt')}</div>
             <div style="font-size:11px;color:var(--dim)">${_ppApen ? 'Dra ned for å se tegningen' : (room ? (room.area / 10000).toFixed(1).replace('.', ',') + ' m² · trykk for detaljer' : 'Trykk for rom og detaljer')}</div>
@@ -9555,10 +9666,13 @@ function _presentPanelRender() {
           <span style="font-size:16px;color:var(--dim)">${_ppApen ? '▼' : '▲'}</span>
         </div>
       </div>
-      ${_ppApen ? `<div id="_pp-kropp" style="flex:1;min-height:0;overflow:auto;border-top:1px solid var(--border)">${_presentPanelKroppHtml()}</div>
+      ${_ppApen ? `${nav}<div id="_pp-kropp" style="flex:1;min-height:0;overflow:auto;border-top:1px solid var(--border)">${_presentPanelKroppHtml()}</div>
         ${fot ? `<div id="_pp-fot" style="flex:0 0 auto;padding:10px 14px;border-top:1px solid var(--border)">${fot}</div>` : ''}` : ''}`;
   }
-  _kundeMonterBar(el, smal, scroll);
+  _kundeMonterBar(el, smal, 0);
+  // (_kundeMonterBar setter scrollTop på panelet selv, som ikke scroller — kroppen er det som scroller.)
+  const nyKropp = el.querySelector('#_pp-kropp');
+  if (nyKropp && scroll) nyKropp.scrollTop = scroll;
   if (smal) _presentPanelKobleSkuff(el.querySelector('#_pp-hode'));
 }
 // Skuffen: trykk veksler, sveip opp åpner, sveip ned lukker.
@@ -26401,8 +26515,8 @@ function _kundeforslagRegressionTest() {
           /_presentRenderDetail\(\)/.test(uK(_forslagStart)), 'kortet mangler «Hva synes du?» ved åpning');
         checkIkke('K: hover utenfor rom nuller ikke lenger valget',
           /if \(id !== S\.ui\.presentRoomId\)/.test(uK(_presentHover)), 'nulles ved første musebevegelse');
-        check('K: hjelpelinja står i kortet første gang', true,
-          /Trykk på et annet rom i tegningen/.test(uK(_presentRoomDetailHtml)), 'ingen hjelpelinje');
+        checkIkke('K: hjelpelinja «Trykk på et annet rom» er borte (138: «← Alle rom» står i hodet)',
+          /Trykk på et annet rom i tegningen/.test(uK(_presentRoomDetailHtml)), 'hintet står igjen');
         // Mål: rommene har dimSnap=false, men i presentasjonen vises veggmålene likevel.
         S.rooms[0].dimSnap = false; S.rooms[1].dimSnap = false;
         S.view.zoom = 1;
@@ -26444,7 +26558,13 @@ function _kundeforslagRegressionTest() {
         S.ui.kundeMode = 'forslag';
         _forslagState = { token: 't', status: 'open', note: '', orgName: 'Testfirma', valg: new Map(), navn: '', kommentar: '', sendt: false };
         check('L: panelet er aktivt i forslagslenka', true, _presentPanelAktiv() === true, _presentPanelAktiv());
+        S.ui.presentRoomId = null; _ppIntroRomId = null;   // 138: lista er nivå 1
         _presentRenderDetail();
+        // 138: nivå 1 har lista og ikke rommet
+        check('L/138: nivå 1 (ingen valgt rom) har romlista og IKKE #_pp-valgt', true,
+          !!$('_pp-romliste') && !$('_pp-valgt') && !$('_pp-nav'), 'feil nivå');
+        check('L: plassen for «Endre mål» (118) finnes (nivå 1)', true, !!$('_pp-maal'), 'mangler');
+        S.ui.presentRoomId = 1; _presentRenderDetail();
         // 119 (MÅLT): seksjon C (`_forslagPil` uten presentasjon) etterlater en fast #_fors-bunn i
         // DOM-en, og `_presentRenderDetail` rører den ikke — sjekken under gjaldt derfor hvor
         // testen ble kjørt (grønn i en levende forslagslenke, rød i editoren). Det som skal
@@ -26456,24 +26576,57 @@ function _kundeforslagRegressionTest() {
           pan ? (pan.parentElement && pan.parentElement.id) : 'mangler');
         check('L: detaljkortet til høyre er skjult', 'none', $('present-detail').style.display === 'none', $('present-detail').style.display);
         checkIkke('L: bunnlinja (#_fors-bunn) finnes ikke lenger i panelmodus', !!$('_fors-bunn'), 'to steder å se');
+        check('L/138: nivå 2 (rom 1) har #_pp-valgt og IKKE romlista', true, !!$('_pp-valgt') && !$('_pp-romliste') && !$('_pp-rom-1'), 'feil nivå');
+        S.ui.presentRoomId = null; _presentRenderDetail();   // 138: radtestene leser lista (nivå 1)
         check('L: romlista har én rad per rom', 2, !!$('_pp-rom-1') && !!$('_pp-rom-2'), [$('_pp-rom-1'), $('_pp-rom-2')].filter(Boolean).length);
-        check('L: det valgte rommet er uthevet', true, $('_pp-rom-1').classList.contains('valgt') && !$('_pp-rom-2').classList.contains('valgt'), 'feil rad');
         check('L: raden viser areal og produkt', true, /16,0 m²/.test($('_pp-rom-1').textContent) && /InFloor/.test($('_pp-rom-1').textContent), $('_pp-rom-1').textContent.trim());
         check('L: rom uten varme sier det', true, /ingen varme/.test($('_pp-rom-2').textContent), $('_pp-rom-2').textContent.trim());
-        check('L: valgt rom-seksjonen har detaljer OG «Hva synes du?»', true,
-          /Installert effekt/.test($('_pp-valgt').innerHTML) && /Hva synes du/.test($('_pp-valgt').innerHTML), 'mangler');
+        S.ui.presentRoomId = 1; _presentRenderDetail();
+        {
+          const h = $('_pp-valgt').innerHTML;
+          check('L: valgt rom-seksjonen har detaljer OG «Hva synes du?»', true, /Installert effekt/.test(h) && /Hva synes du/.test(h), 'mangler');
+          check('L/138: «Hva synes du?» står FØR «Installert effekt» (valgene først)', true, h.indexOf('Hva synes du') >= 0 && h.indexOf('Hva synes du') < h.indexOf('Installert effekt'), h.indexOf('Hva synes du') + ' / ' + h.indexOf('Installert effekt'));
+          check('L/138: kroppen har scrollTop 0', 0, $('_pp-kropp').scrollTop === 0, $('_pp-kropp').scrollTop);
+          check('L/138: nøkkeltallene (Areal, Produkt) står utenfor «Detaljer», resten inni', true,
+            h.indexOf('Areal') < h.indexOf('<details') && h.indexOf('Produkt') < h.indexOf('<details') && h.lastIndexOf('Installert effekt') > h.indexOf('<details'), 'feil gruppering');   // kortets live-resultat har også «Installert effekt»
+          check('L/138: «Detaljer» er lukket som standard og innholdet ligger i DOM', true,
+            !!$('_pp-detaljer') && !$('_pp-detaljer').open && /Nominell motstand/.test($('_pp-detaljer').innerHTML), 'feil');
+          check('L/138: det faste hodet har ← Alle rom, romnavn og ‹ ›', true,
+            /← Alle rom/.test($('_pp-nav').textContent) && /Stue/.test($('_pp-nav').textContent) && $('_pp-nav').querySelectorAll('.pp-pil').length === 2, $('_pp-nav').textContent.trim());
+          check('L/138: det faste hodet ligger UTENFOR den scrollende kroppen', true, !$('_pp-kropp').contains($('_pp-nav')), 'inni kroppen');
+          check('L/138: innledningen står for første rom (rom 1)', true, /Si fra om rommet er greit/.test(h), 'mangler');
+        }
+        check('L/138: ‹ er dempet på første rom', true, $('_pp-nav').querySelectorAll('.pp-pil')[0].disabled && !$('_pp-nav').querySelectorAll('.pp-pil')[1].disabled, 'feil');
         check('L: foten sier 0 av 2 rom vurdert og Send er dempet', true,
           /0<\/b> <span[^>]*>av 2 rom vurdert/.test($('_pp-fot').innerHTML) && $('_pp-send').disabled && $('_pp-send').classList.contains('dempet'),
           $('_pp-fot').textContent.trim());
-        check('L: plassen for «Endre mål» (118) finnes', true, !!$('_pp-maal'), 'mangler');
         // Klikk i lista velger rommet, zoomer til det og tegner om
         _presentPanelVelgRom(2);
         check('L: klikk i lista velger rommet', 2, S.ui.presentRoomId === 2, S.ui.presentRoomId);
         check('L: ...og zoomer til det (fitRoom: pan = rommets midtpunkt)', '710, 120',
           Math.round(S.view.panX) === 710 && Math.round(S.view.panY) === 120, Math.round(S.view.panX) + ', ' + Math.round(S.view.panY));
-        check('L: lista er oppdatert etter valget', true, $('_pp-rom-2').classList.contains('valgt'), 'gammel uthevning');
+        check('L/138: rom 2 er åpnet på nivå 2 (lista er borte, hodet viser Bad)', true, !$('_pp-romliste') && /Bad/.test($('_pp-nav').textContent), 'feil');
+        check('L/138: innledningen er borte for rom 2 (bare tittelen)', true,
+          /Hva synes du/.test($('_pp-valgt').innerHTML) && !/Si fra om rommet er greit/.test($('_pp-valgt').innerHTML), 'står igjen');
+        check('L/138: › på siste rom gjør ingenting', 2, (_presentPanelNabo(1), S.ui.presentRoomId === 2), S.ui.presentRoomId);
+        check('L/138: ‹ gir rom 1 og › gir rom 2', '1,2', (_presentPanelNabo(-1), String(S.ui.presentRoomId)) + ',' + (_presentPanelNabo(1), S.ui.presentRoomId) === '1,2',
+          S.ui.presentRoomId);
+        {
+          const key = k => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+          key('ArrowLeft');
+          check('L/138: piltast ← bytter til forrige rom', 1, S.ui.presentRoomId === 1, S.ui.presentRoomId);
+          const ta = $('_fors-komm'); ta.focus(); ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+          check('L/138: piltast i et felt bytter IKKE rom', 1, S.ui.presentRoomId === 1, S.ui.presentRoomId);
+          ta.blur(); _presentPanelNabo(1);
+        }
+        _presentPanelTilbake();
+        check('L/138: ← Alle rom gir nivå 1, lista tilbake, zoom beholdt', true,
+          S.ui.presentRoomId == null && !!$('_pp-romliste') && !$('_pp-valgt'), String(S.ui.presentRoomId));
+        check('L/138: sist valgte rad markeres svakt', true, $('_pp-rom-2').classList.contains('sist'), 'ikke markert');
+        _presentPanelVelgRom(2);
         // Et valg → foten oppdateres uten full ombygging (fokus-regelen), Send blir blå
         _forslagState.valg.set(2, { ok: true, productId: null, targetWm2: null, direction: null, comment: '' });
+        check('L/138: ... og rom 2 har fortsatt sitt faste hode med status-merke etter ombygging', true, (_presentRenderDetail(), !!$('_pp-nav')), 'mangler');
         const kroppFoer = $('_pp-kropp');
         _forslagRenderBunn();
         check('L: _forslagRenderBunn tegner bare foten (kroppen er samme element)', true, $('_pp-kropp') === kroppFoer, 'full ombygging');
@@ -26481,19 +26634,28 @@ function _kundeforslagRegressionTest() {
           /1<\/b> <span[^>]*>av 2 rom vurdert/.test($('_pp-fot').innerHTML) && !$('_pp-send').disabled && $('_pp-send').classList.contains('aktiv'),
           $('_pp-fot').textContent.trim());
         _presentRenderDetail();
+        check('L/138: ✓-merket står i rommets faste hode', true, /✓/.test($('_pp-nav').textContent), 'ingen merke');
+        S.ui.presentRoomId = null; _presentRenderDetail();
         check('L: ✓-merket står ved rommet i lista', true, /✓/.test($('_pp-rom-2').textContent), 'ingen merke');
+        S.ui.presentRoomId = 2;
         // Mobil: skuff
         _ppTvingSmal = true; _ppApen = false; _presentRenderDetail();
         const sk = $('_present-panel');
         check('L: mobil lukket skuff er fast nederst med valgt rom + Send', true,
           sk && sk.style.position === 'fixed' && /Bad/.test($('_pp-hode').textContent) && !!$('_pp-send') && !$('_pp-kropp'), sk ? $('_pp-hode').textContent.trim() : 'mangler');
         _presentPanelToggle(true);
-        check('L: åpen skuff viser hele panelet', true, !!$('_pp-kropp') && !!$('_pp-rom-1') && !!$('_pp-fot'), 'mangler');
+        check('L/138: åpen skuff på nivå 2 har ← Alle rom i skuffhodet og ‹ › under', true,
+          /← Alle rom/.test($('_pp-hode').textContent) && !!$('_pp-nav') && !!$('_pp-valgt') && !!$('_pp-fot'), 'mangler');
+        $('_pp-hode').querySelector('.pp-tilbake').click();
+        check('L: åpen skuff viser hele panelet', true, !!$('_pp-kropp') && !!$('_pp-rom-1') && !!$('_pp-fot') && S.ui.presentRoomId == null, 'mangler');
+        S.ui.presentRoomId = 1;
         // Ren presentasjon: 1–3, ingen Send
         _ppTvingSmal = false; S.ui.kundeMode = null; _forslagState = null;
         _presentRenderDetail();
-        check('L: ren presentasjon har romliste og detaljer', true, !!$('_pp-rom-1') && /Installert effekt/.test($('_pp-valgt').innerHTML), 'mangler');
+        check('L: ren presentasjon har rommet med alle detaljer (nivå 2)', true, /Installert effekt/.test($('_pp-valgt').innerHTML) && !$('_pp-detaljer'), 'mangler');
         checkIkke('L: ...men ingen Send og ingen «Hva synes du?»', !!$('_pp-send') || /Hva synes du/.test($('_pp-valgt').innerHTML), 'forslagsting i ren presentasjon');
+        S.ui.presentRoomId = null; _presentRenderDetail();
+        check('L: ren presentasjon har romlista (nivå 1)', true, !!$('_pp-rom-1'), 'mangler');
         check('L: KPI-ene fra topplinja ligger i Prosjekt-seksjonen', true, /Installert effekt/.test($('_pp-prosjekt').textContent) && /Oppvarmet/.test($('_pp-prosjekt').textContent), 'borte');
         check('L: topplinja er skjult i panelmodus', true, (_presentRenderBar(), $('present-bar').style.display === 'none'), $('present-bar').style.display);
         // Mållenka er ikke rørt
@@ -26519,7 +26681,7 @@ function _kundeforslagRegressionTest() {
       const lenM = (r, i) => Math.round(Math.hypot(r.points[(i + 1) % r.points.length].x - r.points[i].x, r.points[(i + 1) % r.points.length].y - r.points[i].y));
       try {
         _scheduleAutoSave = () => {}; _performAutoSave = async () => {};   // aldri en lagring fra testen
-        S.ui.present = true; S.ui.presentPublic = true; S.ui.kundeMode = 'forslag'; S.ui.presentRoomId = 1;
+        S.ui.present = true; S.ui.presentPublic = true; S.ui.kundeMode = 'forslag'; S.ui.presentRoomId = null;   // 138: «Endre mål» bor på nivå 1
         _ppTvingSmal = false; _ppApen = false;
         S.cables = [{ id: 9, roomId: 1, productId: kab.id, runs: [], direction: 'v' }];
         _kundeState = null;
@@ -26529,11 +26691,20 @@ function _kundeforslagRegressionTest() {
         check('M: «Mål»-seksjonen finnes med Endre mål når lenka tillater det', true,
           $('_pp-maal') && $('_pp-maal').style.display !== 'none' && /Endre mål/.test($('_pp-maal').innerHTML) && /Stemmer målene/.test($('_pp-maal').innerHTML), 'mangler');
         checkIkke('M: målmaskineriet er AV før «Endre mål»', _kundeMaalAktiv(), 'veggene var valgbare fra start');
+        S.ui.presentRoomId = 1; _presentRenderDetail();
+        checkIkke('M/138: på nivå 2 er «Endre mål» skjult (den bor på nivå 1)', $('_pp-maal') && $('_pp-maal').style.display !== 'none' && /Endre mål/.test($('_pp-maal').innerHTML), 'vises på nivå 2');
+        S.ui.presentRoomId = null; _presentRenderDetail();
         _forslagMaalStart();
         check('M: «Endre mål» slår på målmaskineriet (delt gate) og CSS-stengslene', true,
           _kundeMaalAktiv() && document.body.classList.contains('kunde-maal') && !!_kundeState && _kundeState.original.size === 2, 'ikke på');
         check('M: hintet «Dra veggen inn eller ut, eller skriv inn riktig mål» står i panelet', true,
           /skriv inn riktig mål/.test($('_pp-maal').innerHTML) && /Lås mål/.test($('_pp-maal').innerHTML), 'mangler');
+        S.ui.presentRoomId = 1; _presentRenderDetail();
+        check('M/138: målmodus på nivå 2: Mål-seksjonen med Lås mål står ØVERST i kroppen, før rommet', true,
+          !!$('_pp-maal') && /Lås mål/.test($('_pp-maal').innerHTML) && $('_pp-kropp').firstElementChild.id === '_pp-maal' && !!$('_pp-valgt'),
+          $('_pp-kropp').firstElementChild && $('_pp-kropp').firstElementChild.id);
+        S.ui.presentRoomId = null; _presentRenderDetail();
+        check('M/138: målmodus på nivå 1: Mål-seksjonen øverst', true, $('_pp-kropp').firstElementChild.id === '_pp-maal', $('_pp-kropp').firstElementChild.id);
         check('M: Send i målmodus gir melding, ikke dialog', true, (_forslagSendModal(), !$('_fors-ov')), 'dialogen åpnet');
         checkIkke('M: uten endringer følger ingen `maal` med i svaret', 'maal' in _forslagPayload(), 'tomt maal-felt');
         // Vegg: velg og tast — samme funksjoner som mållenka
@@ -69442,7 +69613,6 @@ function _canvasMouseUp(e){
         // 117: lista i panelet følger med — og på mobil åpnes skuffen så detaljene synes.
         if (r && _presentPanelAktiv()) {
           if (_presentPanelSmal() && !_ppApen) _presentPanelToggle(true);
-          document.getElementById('_pp-rom-' + r.id)?.scrollIntoView({ block: 'nearest' });
         }
       }
       _presentPressPt = null;
