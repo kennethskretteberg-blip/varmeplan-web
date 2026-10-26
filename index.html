@@ -79586,8 +79586,9 @@ async function exportPDF(opts) {
     const _accRenderGroup = (title, list) => {
       if (!list.length) return;
       _matHeadRow(title);
-      // Samme Cenika Visma-rekkefølge som inntastings-modalen: stigende art.nr.
-      const _sorted = [...list].sort((a, b) => (a.art_no || '').localeCompare(b.art_no || ''));
+      // 144: folietilbehøret i FOIL_ACC_ORDER (som dialogen); kabel/annet fortsatt stigende art.nr.
+      const _sorted = title === 'Tilbehør varmefolie' ? _sortFoilAccessories(list)
+        : [...list].sort((a, b) => (a.art_no || '').localeCompare(b.art_no || ''));
       for (const it of _sorted) {
         _matRow(it.name, it.qty, it.unit || 'stk', it.el_no, it.art_no);
         if (it.rooms && it.rooms.length) {
@@ -80968,6 +80969,20 @@ const RKK_PRODUCTS = [
   { id: 'rkk_25_sort', name: 'FlexFoil RKK 2,5mm² sort', art_no: 'CVA54123', el_no: '5418927', dim: '2.5', color: 'sort', unit: 'rull 50m' },
 ];
 
+// Kenneths rekkefølge 26.10.2026 (144). Nytt tilbehør: legg id-en inn her.
+// Gjelder folietilbehøret overalt: PDF-materiallista, tilbehørsdialogen, Excel (Bestilling og
+// Materialliste), Visma-lim og GBAO10. Ukjente id-er havner etter de kjente, sortert på art.nr.
+const FOIL_ACC_ORDER = [
+  'underlagsplater', 'plast_over', 'plast_under', 'tilkoblingsklemmer', 'kapton_disc', 'lerretstape',
+  'vulk_tape', 'dobbeltsidig_tape', 'rkk_15_bla', 'rkk_15_sort', 'rkk_25_bla', 'rkk_25_sort', 'flexfoil_tang',
+];
+function _foilAccOrderIdx(id) { const i = FOIL_ACC_ORDER.indexOf(id); return i < 0 ? FOIL_ACC_ORDER.length : i; }
+// Ny, sortert kopi av en liste med {id, art_no}. Stabil for like plasser (ukjente → art.nr).
+function _sortFoilAccessories(list) {
+  return [...list].sort((a, b) => (_foilAccOrderIdx(a.id) - _foilAccOrderIdx(b.id))
+    || (a.art_no || '').localeCompare(b.art_no || ''));
+}
+
 // ─── CABLE ACCESSORIES (varmekabel-tilbehør, samme deklarative mønster) ──────
 // Auto-reglene ligger som data/funksjoner på oppføringen (4/m, 1/rom, 0,92 m²+10 %).
 // En ny tilbehørsartikkel = en ny oppføring, ikke ny spesial-logikk.
@@ -81279,11 +81294,15 @@ function showAccessoriesModal() {
 
     let foilHtml = '';
     if (foilUsed) {
-      // Cenika Visma-rekkefølge (art.nr stigende): RKK-kabel (CVA54120–54123) øverst, deretter
-      // øvrig folie-tilbehør sortert på art.nr (54124 → 55200). Kun VISNINGSrekkefølge endres —
+      // 144: rekkefølgen er FOIL_ACC_ORDER; RKK-blokka (egen UI) står på sin plass i lista, så
+      // «Øvrig tilbehør» deles i to rundt den. Kun VISNINGSrekkefølge endres —
       // renderRow avleder auto-tall (group='auto') vs. blankt felt (group='manual') fra oppføringen,
       // og innlesningen i acc-confirm går fortsatt via foilAuto/foilManual (rekkefølge-uavhengig).
-      const foilSorted = [...FOIL_ACCESSORIES].sort((a, b) => (a.art_no || '').localeCompare(b.art_no || ''));
+      const foilSorted = _sortFoilAccessories(FOIL_ACCESSORIES);
+      const _rkkAt = _foilAccOrderIdx(RKK_PRODUCTS[0].id);
+      const foilBefore = foilSorted.filter(a => _foilAccOrderIdx(a.id) < _rkkAt);
+      const foilAfter  = foilSorted.filter(a => _foilAccOrderIdx(a.id) >= _rkkAt);
+      const foilRows = (arr) => arr.length ? `<div>${arr.map(a => renderRow(a, a.group === 'auto' ? foilAutoQtys[a.id] : 0)).join('')}</div>` : '';
       // RKK har sin egen UI (radio + to tallfelt, ikke data-acc-id/renderRow) — samme
       // hasSaved-forrang som resten, men utledet direkte fra RKK_PRODUCTS sine id-er siden
       // savedById er nøkkeldrevet uansett rad-type. Ingen lagret RKK-rad → dim faller tilbake til
@@ -81316,9 +81335,9 @@ function showAccessoriesModal() {
         </div>`;
       foilHtml = sectionHdr('Varmefolie')
         + `<div style="font-size:11px;color:var(--dim);margin-bottom:4px">${foilCtx.stripCount} strips · ${foilCtx.totalFoilArea_m2.toFixed(1)} m² folie · ${foilCtx.roomGrossArea_m2.toFixed(1)} m² brutto</div>`
+        + (foilBefore.length ? subHdr('Øvrig tilbehør') + foilRows(foilBefore) : '')
         + rkkBlock
-        + subHdr('Øvrig tilbehør')
-        + `<div>${foilSorted.map(a => renderRow(a, a.group === 'auto' ? foilAutoQtys[a.id] : 0)).join('')}</div>`;
+        + (foilAfter.length ? subHdr(foilBefore.length ? 'Øvrig tilbehør (forts.)' : 'Øvrig tilbehør') + foilRows(foilAfter) : '');
     }
 
     // ── CABLE ──
@@ -86988,11 +87007,13 @@ function _aggregateMaterialItems(items) {
 function _aggregateAccessoryItems(list) {
   const agg = new Map();
   for (const it of _accessoryOnly(list)) {   // 125: folieradene (type 'foilProduct') er ikke tilbehør
-    const e = agg.get(it.id) || { name: it.name, art_no: it.art_no || '', unit: it.unit || '', qty: 0 };
+    const e = agg.get(it.id) || { id: it.id, name: it.name, art_no: it.art_no || '', unit: it.unit || '', qty: 0, type: it.type || 'foil' };
     e.qty += it.qty;
     agg.set(it.id, e);
   }
-  return [...agg.values()];
+  // 144: folietilbehøret først, i FOIL_ACC_ORDER; resten (kabel, matte) etter, i innsettingsrekkefølge.
+  const all = [...agg.values()];
+  return [..._sortFoilAccessories(all.filter(e => e.type === 'foil')), ...all.filter(e => e.type !== 'foil')];
 }
 
 // ═══ 125 (Kenneth 23.10.2026): foliemengde i meter per produkt — ÉN kilde ═══════════════════════
@@ -87148,6 +87169,18 @@ function _accessoryFoilQtyRegressionTest() {
     check('_accessoryOnly fjerner folieradene', 1, _accessoryOnly(blandet).length === 1 && _accessoryOnly(blandet)[0].id === 'tape_test', _accessoryOnly(blandet).map(i => i.id));
     check('_aggregateAccessoryItems hopper over folieradene', 1, _aggregateAccessoryItems(blandet).length === 1, _aggregateAccessoryItems(blandet).map(i => i.name));
 
+    // ── 144: folietilbehøret i FOIL_ACC_ORDER (Kenneths rekkefølge), ukjent sist ────────────
+    const _alle = [...FOIL_ACCESSORIES, ...RKK_PRODUCTS].map(x => ({ id: x.id, name: x.name, art_no: x.art_no, unit: 'stk', qty: 1, type: 'foil' }));
+    const _kabel = { id: 'kabel_strips', name: 'Strips', art_no: 'CV087193', unit: 'stk', qty: 1, type: 'cable' };
+    const _ukjent = { id: 'framtidig_x', name: 'Framtidig', art_no: 'CVA00001', unit: 'stk', qty: 1, type: 'foil' };
+    const _fasit = 'underlagsplater,plast_over,plast_under,tilkoblingsklemmer,kapton_disc,lerretstape,vulk_tape,dobbeltsidig_tape,rkk_15_bla,rkk_15_sort,rkk_25_bla,rkk_25_sort,flexfoil_tang';
+    const _rev = [..._alle].reverse();
+    check('144 _sortFoilAccessories: alle 12 (13 id-er) i fasitrekkefølge', _fasit, _sortFoilAccessories(_rev).map(i => i.id).join(',') === _fasit, _sortFoilAccessories(_rev).map(i => i.id).join(','));
+    check('144 ukjent tilbehør havner sist', 'framtidig_x', _sortFoilAccessories([_ukjent, ..._rev]).pop().id === 'framtidig_x', _sortFoilAccessories([_ukjent, ..._rev]).map(i => i.id));
+    const _agg = _aggregateAccessoryItems([_kabel, _ukjent, ..._rev]).map(i => i.id);
+    check('144 _aggregateAccessoryItems: folie i fasit, så ukjent, kabel sist', _fasit + ',framtidig_x,kabel_strips', _agg.join(',') === _fasit + ',framtidig_x,kabel_strips', _agg.join(','));
+    check('144 uten RKK og tang: riktig innbyrdes rekkefølge', 'underlagsplater,kapton_disc,lerretstape', _aggregateAccessoryItems(_rev.filter(i => ['lerretstape', 'kapton_disc', 'underlagsplater'].includes(i.id))).map(i => i.id).join(',') === 'underlagsplater,kapton_disc,lerretstape', '');
+
     // ── Én kilde i eksportene ───────────────────────────────────────────────────────────────
     const vismaLinje = (items, art) => {
       _vismaPasteAccessoryItems = items;
@@ -87223,6 +87256,33 @@ function _accessoryFoilQtyRegressionTest() {
         check('PDF materialliste: uten lagret → «48 m» (før 125: «47.3 m»)', '48 m', etter(t, 'TESTFOLIE 50') === '48 m', etter(t, 'TESTFOLIE 50'));
       } else {
         check('PDF: jsPDF lastet', true, false, 'jsPDF mangler — PDF-delen ikke kjørt');
+      }
+
+      // ── 144: alle fire eksportene gir folietilbehøret i FOIL_ACC_ORDER (innsatt baklengs) ──
+      {
+        const navnAv = (x) => x.name;
+        const innsatt = [..._alle].reverse().map(x => ({ ...x, qty: 2, el_no: '1', source: 'auto' }));
+        const fasitNavn = _fasit.split(',').map(id => (_alle.find(x => x.id === id) || {}).name);
+        const fasitArt = _fasit.split(',').map(id => (_alle.find(x => x.id === id) || {}).art_no);
+        // Excel Bestilling
+        const bRows = await xlsxBestilling(innsatt);
+        const bNavn = bRows.slice(bRows.findIndex(r => String(r[2]).startsWith('— Tilbehør — Varmefolie')) + 1).map(r => r[2]);
+        check('144 XLSX Bestilling: folietilbehør i fasitrekkefølge', fasitNavn.join('|'), bNavn.join('|') === fasitNavn.join('|'), bNavn);
+        // Visma + GBAO10: art.nr i fasitrekkefølge (plast_over og plast_under har samme art.nr → to linjer)
+        _vismaPasteAccessoryItems = innsatt;
+        const vArt = _vismaPasteBuild().accLines.map(l => l.artikkelnr);
+        _vismaPasteAccessoryItems = [];
+        check('144 Visma-lim: tilbehør i fasitrekkefølge', fasitArt.join(','), vArt.join(',') === fasitArt.join(','), vArt);
+        _gbao10AccessoryItems = innsatt;
+        const gArt = _gbao10Build().lines.map(l => l.artikkelnr).filter(a => fasitArt.includes(a));
+        _gbao10AccessoryItems = [];
+        check('144 GBAO10: tilbehør i fasitrekkefølge', fasitArt.join(','), gArt.join(',') === fasitArt.join(','), gArt);
+        // PDF (kun navn-tekstene)
+        if (window.jspdf && saved.jsPDF) {
+          const t = await pdfTekster(innsatt);
+          const pArt = t.filter(x => fasitArt.includes(x));
+          check('144 PDF materialliste: folietilbehør i fasitrekkefølge', fasitArt.join(','), pArt.join(',') === fasitArt.join(','), pArt);
+        }
       }
 
       // ── VAKSINE: en innført feil i kilden MÅ gjøre testen rød ────────────────────────────
@@ -88167,7 +88227,7 @@ async function _exportMaterialListXLSX() {
       if (!list.length) return;
       matRows.push(['', '', '', '', '', '', '', '', '', '', '', '']);
       matRows.push([`— Tilbehør · ${label} —`, '', '', '', '', '', '', '', '', '', '', '']);
-      for (const it of list) {
+      for (const it of (label === 'Varmefolie' ? _sortFoilAccessories(list) : list)) {   // 144
         matRows.push([
           it.el_no || '',
           it.art_no || '',
