@@ -15033,10 +15033,8 @@ function _matRunPanelHtml(t) {
   const issue = t.kind === 'mat' ? (hasAdj ? _matRunPlacementIssue(t.obj, t.r) : null) : _matPathRunIssue(t.obj, t.r);
   // Regel 29 pkt. 2: et tverrstykke er lovlig fra to kabelstrenger (2 × CC) — minstelengden for en
   // bredde (mat_min_length_mm) gjelder ikke det.
-  const short = t.kind === 'mat' ? _matRunTooShortNote(t.obj, t.r) : crossMv ? null : (() => {
-    const prod = _matFreeProdOf(t.obj); const minLenCm = ((prod && prod.mat_min_length_mm) || 0) / 10;
-    return (minLenCm > 0 && a.lenCm > 0 && a.lenCm < minLenCm - 0.05) ? `Bredde ${t.r + 1} er ${Math.round(a.lenCm)} cm — under minste lengde ${Math.round(minLenCm)} cm` : null;
-  })();
+  // 150: frihånd har ingen minstelengde per bredde (korteste bredde = ett kuttraster) — minstelengden gjelder hele matta.
+  const short = t.kind === 'mat' ? _matRunTooShortNote(t.obj, t.r) : null;
   return `<span class="tc-sep"></span>
     <span style="font-size:12px;padding:0 4px;color:var(--text)" title="Valgt bredde — dra sidelengs (5 cm, Shift = glidende), dra S-håndtaket for forskjøvet start, piler = 5 cm, Shift + pil = 1 cm, Esc = velg bort">${parts.join(' · ')}</span>
     <label style="font-size:11px;color:var(--dim);display:inline-flex;align-items:center;gap:3px;padding:0 4px">Start +
@@ -19938,6 +19936,10 @@ function _matFreeClampLen(mp, axis, dir, from, len, noRaster) {
   return Math.max(0, Math.floor(Math.min(len, maxLen) / RASTER) * RASTER);
 }
 
+// 150: terskel for «tilgivende avslutning» — rått drag fra endepunktet under et halvt kuttraster
+// (12 cm for 100T/60T, 8 cm for 150T) legger ingen bredde, men avslutter banen.
+function _matFreeForgiveCm(mp) { return _matFreeConsts(_matFreeProdOf(mp)).RASTER / 2; }
+
 // Kandidat-move fra fri ende mot verdenspunkt P (snap len til raster; utled kobling).
 function _matFreeCandidate(mp, P) {
   const runs = _matFreeDeriveRuns(mp), prev = runs.length ? runs[runs.length - 1] : null;
@@ -19965,9 +19967,6 @@ function _matFreeCandidate(mp, P) {
   // #1: klamp mesh til rom-polygon + hindringer (banen kan gå til vegg, men ikke utenfor / oppå hindring).
   const tentative = _matFreeDeriveRuns({ ...mp, moves: [...(mp.moves || []), move] });
   const bane = tentative[tentative.length - 1];
-  // Regel 24 (spec-matte-utlegg.md, Kenneth 28.08.2026): var brukerens ØNSKEDE lengde FØR klamping
-  // — trengs under for å skille «rommet klippet banen kortere» fra «brukeren dro en kort avstand».
-  const wantedLen = len;
   if (bane) {
     move.len = _matFreeClampLen(mp, axis, dir, bane.a, len);
     move.rawLen = move.len;   // lengden FØR evt. avvisning under — brukt til å tegne en ugyldig ghost i riktig størrelse i stedet for at den bare forsvinner
@@ -20000,25 +19999,13 @@ function _matFreeCandidate(mp, P) {
   if (move.len > 0 && _matFreeLanesOverlap({ ...mp, moves: [...(mp.moves || []), move] })) {
     move.len = 0; move.overlaps = true;
   }
-  // FEIL 2 (Kenneth 19.08.2026, «frihånd kan ikke avsluttes med Enter»): en bane kortere enn
-  // produktets minstelengde er ikke en gyldig bane — len=0 her, INGEN egen flagg/toast (bevisst,
-  // motsatt av tooNarrow/overlaps over). Da treffer klikk-handlerens «tilgivende avslutning»
-  // (moves.length≥1 && len≤0 → avslutt) i stedet for å legge ut en utilsiktet kort bane når
-  // brukeren bommer på stopp-punktet — symptomet forsvinner ved roten, ikke bare ved presist klikk.
-  //
-  // Regel 24 (spec-matte-utlegg.md, Kenneth 28.08.2026): denne minLenCm-terskelen (produktets
-  // SALGBARE minstelengde, typisk 100 cm) skal KUN avvise en bane brukeren selv dro kort — ikke en
-  // siste bredde rommet klippet kortere. Skillet er om _matFreeClampLen faktisk reduserte lengden
-  // (wantedLen > move.len): gjorde den det, er dette en ekte gjenstående-plass-bredde, og eneste
-  // gulv skal være ETT KUTTINTERVALL (RASTER — allerede håndhevet inni _matFreeClampLen sin egen
-  // floor-til-RASTER). Var lengden ALLEREDE kort før klamping (ingen reduksjon skjedde), er det
-  // FEIL 2 sitt opprinnelige tilfelle (utilsiktet kort dra nær stopp-punktet) — minLenCm gjelder
-  // uendret der.
-  const wasClamped = bane && wantedLen > move.len + 0.01;
-  if (move.len > 0 && !wasClamped) {
-    const minLenCm = (_matFreeProdOf(mp)?.mat_min_length_mm || 1000) / 10;
-    if (move.len < minLenCm) move.len = 0;
-  }
+  // 150 (Kenneth 27.10.2026): korteste BREDDE er ett kuttraster (2 × CC) — produktets minstelengde
+  // (mat_min_length_mm) gjelder hele matta (katalogvalget/tooShort), ikke hver bredde. Erstatter
+  // FEIL 2 / Regel 24-sjekken mot minLenCm. «Tilgivende avslutning» (FEIL 2, 19.08.2026) består:
+  // et rått drag fra endepunktet under et halvt raster gir len=0 (INGEN flagg/toast), så
+  // klikk-handlerens moves.length≥1 && len≤0 avslutter banen i stedet for å legge en utilsiktet
+  // bredde. Fra et halvt raster og opp er len alt rundet til nærmeste raster (minst ett).
+  if (move.len > 0 && raw < _matFreeForgiveCm(mp)) move.len = 0;
   return move;
 }
 
@@ -21027,6 +21014,45 @@ function _matFreeRegressionTest() {
         const vacc = _matPathMoveValid(mk9(13, 700, 60, 100));
         check('149 vaksine: med hele tegnet bane som opptatt blir matta i udekket felt avvist (testen biter)', 'avvist', vacc.ok === false, JSON.stringify(vacc));
       } finally { _matPathCoveredLaneRects = origCov9; }
+    }
+
+    // 150 (Kenneth 27.10.2026): korteste bredde er ett kuttraster (2 × CC), ikke produktets
+    // minstelengde (100 cm). Tilgivende avslutning: rått drag under et halvt raster → len 0.
+    {
+      HEATING_PRODUCTS.length = 0;
+      const mkP = (id, fam, cc, areaM2, totalMm) => ({ id, category_id: 9800, active: true, product_family: fam, name: `${fam} ${totalMm / 1000}m`,
+        watt_per_m2: 100, mat_area_m2: areaM2, mat_width_mm: 500, mat_total_length_mm: totalMm, mat_min_length_mm: 1000, mat_cc_mm: cc,
+        mat_cut_interval_mm: cc * 2, min_wall_margin_mm: 50, min_gap_mm: 50 });
+      HEATING_PRODUCTS.push(mkP(915001, 'EcoMat 100T', 120, 3, 6000), mkP(915004, 'EcoMat 100T', 120, 2.5, 5000), mkP(915002, 'EcoMat 100T', 120, 9, 18000), mkP(915003, 'EcoMat 150T', 80, 3, 6000));
+      const RID0 = 915000;
+      const pts0 = [{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 400 }, { x: 0, y: 400 }];
+      const room0 = { id: RID0, floorId: null, points: pts0, walls: [], dims: [], area: 240000 };
+      S.rooms = [room0]; S.matPaths = []; S.hindrings = []; S.ui.selectedRoomId = RID0;
+      const candLen = (pid, d) => {
+        const pr = HEATING_PRODUCTS.find(x => x.id === pid);
+        const mp0 = { roomId: RID0, productId: pid, start: _matFreeStartFor(room0, pr, 'h'), moves: [{ axis: 'h', dir: 1, len: 240, conn: 'first', side: 1 }], gapCm: 0 };
+        const E0 = _matFreeEnd(mp0);
+        return _matFreeCandidate(mp0, { x: E0.x, y: E0.y - d }).len;
+      };
+      const got100 = [5, 11, 12, 15, 40, 70, 99].map(d => candLen(915002, d));
+      check('150: 100T ny bredde — drag 5/11 cm → 0 (avslutter), 12/15 → 24, 40 → 48, 70 → 72, 99 → 96', '0,0,24,24,48,72,96',
+        got100.join() === '0,0,24,24,48,72,96', got100.join());
+      const got150 = [7, 8, 24, 40].map(d => candLen(915003, d));
+      check('150: 150T (raster 16) — drag 7 → 0, 8 → 16, 24 → 32, 40 → 48', '0,16,32,48', got150.join() === '0,16,32,48', got150.join());
+      // Hele matta urørt: 240 + 24 + 240 på 100T (6 m og 18 m ruller) → katalogvalg for summen, ikke tooShort.
+      const mkPath = (lens) => ({ id: 1, roomId: RID0, productId: 915002, start: { x: 30, y: 370 },
+        moves: lens.map((l, i) => ({ axis: i % 2 ? 'v' : 'h', dir: i % 2 ? -1 : 1, len: l, conn: i === 0 ? 'first' : 'corner', side: 1 })), gapCm: 0, centered: false, offX: 0, offY: 0 });
+      const c3 = _matFreeCatalog(mkPath([240, 24, 240]));
+      check('150: bane 240 + 24 + 240 — ikke tooShort, tegnet 504 cm, katalogen velger 5 m rull (dekker 500)', 'ok', !c3.tooShort && Math.abs(c3.totalCm - 504) < 0.5 && Math.abs(c3.coverCm - 500) < 0.5, `${c3.tooShort} / ${c3.totalCm} / ${c3.coverCm}`);
+      const c1 = _matFreeCatalog(mkPath([48]));
+      check('150: bane med bare én bredde på 48 cm (under minste rull) — tooShort som før', 'tooShort', c1.tooShort === true, String(c1.tooShort));
+      // Vaksine: legg minstelengde-terskelen per bredde tilbake (halv-raster-terskelen = 100 cm) → 40/70 cm avvises igjen.
+      const origForgive = _matFreeForgiveCm;
+      try {
+        _matFreeForgiveCm = () => 100;
+        const vac = [40, 70].map(d => candLen(915002, d));
+        check('150 vaksine: med minstelengde per bredde tilbake blir 40/70 cm avvist (testen biter)', '0,0', vac.join() === '0,0', vac.join());
+      } finally { _matFreeForgiveCm = origForgive; }
     }
   } finally {
     HEATING_PRODUCTS.length = 0;
