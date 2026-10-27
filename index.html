@@ -5075,6 +5075,7 @@ function render() {
   drawFoilFree();   // F4a: roterbar folie — samme lag som vanlig folie (heating elements)
   drawCables();
   drawCableLabelHandles();   // v2: håndtak for låst kabel-label
+  _drawMatPathUncovered();   // 149: udekket «ghost» UNDER alle matter
   drawMats();
   drawMatPaths();
   drawPlates();
@@ -16876,9 +16877,26 @@ function _matChapterPieces(path, plan, cands) {
   return pieces;
 }
 // Lane-rektangler for en bane (verden) — til vaktene mot S.mats og mot hverandre.
-function _matPathLaneRects(mp) {
+function _matPathLaneRects(mp) { return _matPathCoveredLaneRects(mp); }   // 149: bare dekket del er opptatt gulv
+// 149: hvor mye av bredden (lengde rl, som starter etter `acc` cm av banen) katalogrullen dekker.
+// ÉN akkumulering for tegning (plan/PDF, kabel) og opptatt-tester, så de aldri kan være uenige.
+function _matFreeCovLen(coverCm, acc, rl) { return coverCm >= acc + rl ? rl : (coverCm <= acc ? 0 : coverCm - acc); }
+// 149 (Kenneth 27.10.2026): den udekkede delen av en bane («ghost», tegnet lengre enn nærmeste
+// katalogrull) er bare en påminnelse om hva som ble tegnet — den er IKKE opptatt gulv. Gir
+// bredderektanglene (verden) for KUN den dekkede delen, kuttet ved _matFreeCatalog(mp).coverCm.
+// Dekker katalogen hele banen, er rektanglene identiske med de fulle (_matFreeLaneRectWorld).
+function _matPathCoveredLaneRects(mp) {
   const { NET } = _matFreeConsts(_matFreeProdOf(mp));
-  return _matFreeDeriveRuns(mp).filter(r => _matFreeRunLen(r) > 0.5).map(r => _matFreeLaneRectWorld(r, NET));
+  const coverCm = _matFreeCatalog(mp).coverCm;
+  const out = [];
+  let acc = 0;
+  for (const r of _matFreeDeriveRuns(mp)) {
+    const rl = _matFreeRunLen(r), cl = _matFreeCovLen(coverCm, acc, rl);
+    acc += rl;
+    if (rl <= 0.5 || cl <= 0.5) continue;
+    out.push(cl >= rl ? _matFreeLaneRectWorld(r, NET) : _matFreeCoveredSplit(r, NET, cl).covR);
+  }
+  return out;
 }
 // Commit: vakt per bit (rom-grense/margin/hindring/forbudt sone/areal via _matPathMoveValid, pluss
 // mot matter som alt ligger i rommet), så ETT undo-steg (med mindre kalleren alt tok det), id-er,
@@ -20938,6 +20956,78 @@ function _matFreeRegressionTest() {
     check('Commit med hopp: matPaths +1, drawMode null, move 3 er jump', '1 / null / jump',
       S.matPaths.length === 1 && S.ui.drawMode === null && S.matPaths[0].moves[2].conn === 'jump' && S.matPaths[0].moves[2].from.dx === 50,
       `${S.matPaths.length} / ${S.ui.drawMode} / ${S.matPaths[0] && S.matPaths[0].moves[2] && S.matPaths[0].moves[2].conn}`);
+
+    // 149 (Kenneth 27.10.2026): bare den DEKKEDE delen av en bane er opptatt gulv. Rull 6 m, bane A
+    // tegnet 8 m (x 60–860): dekket 60–660, udekket «ghost» 660–860.
+    {
+      const RID9 = 914900, PID9 = 914901;
+      HEATING_PRODUCTS.push({ id: PID9, category_id: 9800, active: true, product_family: 'EcoMat 149T', name: 'EcoMat 149T 0,5x6m',
+        watt_per_m2: 150, mat_area_m2: 3, mat_width_mm: 500, mat_total_length_mm: 6000, mat_min_length_mm: 1000, mat_cc_mm: 80,
+        mat_cut_interval_mm: 160, min_wall_margin_mm: 50, min_gap_mm: 50 });
+      const pts9 = [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 600 }, { x: 0, y: 600 }];
+      const room9 = { id: RID9, floorId: null, points: pts9, walls: [], dims: [], area: 600000 };
+      S.rooms = [room9]; S.matPaths = []; S.hindrings = []; S.ui.selectedRoomId = RID9;
+      const mk9 = (id, sx, sy, len) => ({ id, roomId: RID9, productId: PID9, start: { x: sx, y: sy },
+        moves: [{ axis: 'h', dir: 1, len, conn: 'first', side: 1 }], gapCm: 0, centered: false, offX: 0, offY: 0 });
+      const A9 = mk9(1, 60, 60, 800); S.matPaths.push(A9);
+      const cat9 = _matFreeCatalog(A9);
+      const covR9 = _matPathCoveredLaneRects(A9);
+      check('149: A tegnet 8 m på 6 m rull: dekket 600, dekket rektangel x 60–660', '600 / 60–660',
+        Math.abs(cat9.coverCm - 600) < 0.05 && covR9.length === 1 && Math.abs(covR9[0].x0 - 60) < 0.05 && Math.abs(covR9[0].x1 - 660) < 0.05, `${cat9.coverCm} / ${covR9.map(r => r.x0 + '–' + r.x1)}`);
+      const vB = _matPathMoveValid(mk9(2, 700, 60, 100));
+      check('149 (Kenneths tilfelle): liten matte i A sitt udekkede felt (x 700–800) — ingen advarsel', 'ok', vB.ok === true, JSON.stringify(vB));
+      const vC = _matPathMoveValid(mk9(3, 500, 60, 100));
+      check('149: matte over A sin DEKKEDE del (x 500–600) — avvist som før', 'overlapper en annen matte', vC.ok === false && /overlapper en annen matte/.test(vC.reason || ''), JSON.stringify(vC));
+      const vD = _matPathMoveValid(mk9(4, 600, 60, 100));
+      check('149: matte som starter i dekket del og går ut i udekket (x 600–700) — avvist', 'avvist', vD.ok === false, JSON.stringify(vD));
+      // Den ANDRE veien: en bane med udekket del som ligger over en annen banes dekkede del.
+      const S9 = S.matPaths; S.matPaths = [mk9(5, 700, 60, 100)];
+      const vE = _matPathMoveValid(mk9(6, 300, 60, 600));   // x 300–900, dekket 300–900 (6 m rull = nøyaktig)
+      check('149: dekket mot dekket — ny bane 6 m (x 300–900) over en annen matte (x 700–800) avvist', 'avvist', vE.ok === false, JSON.stringify(vE));
+      S.matPaths = [mk9(7, 700, 60, 100)];   // en liten matte ligger i feltet x 700–800
+      const vF = _matPathMoveValid(mk9(8, 60, 60, 800));   // ny bane x 60–860: dekket 60–660, udekket 660–860 går OVER den lille
+      check('149: banens udekkede del over en annen matte (x 700–800) — lov (ghost er ikke opptatt)', 'ok', vF.ok === true, JSON.stringify(vF));
+      const vG = _matPathMoveValid(mk9(14, 150, 60, 800));   // dekket 150–750 treffer den lille (700–800)
+      check('149: samme bane flyttet slik at DEKKET del treffer den lille matta — avvist', 'avvist', vG.ok === false, JSON.stringify(vG));
+      S.matPaths = [mk9(9, 60, 60, 800)];
+      // Auto-/sone-planleggingen: nabomatten er bare den dekkede delen (_matPriorMatsFor).
+      const prior9 = _matPriorMatsFor(room9, []);
+      const maxX9 = Math.max(...prior9.flatMap(m => _matRunWorldRects(m).map(r => r.x1)));
+      check('149: _matPriorMatsFor ser bare dekket del (x1 = 660, ikke 860)', '660', prior9.length === 1 && Math.abs(maxX9 - 660) < 0.05, `${prior9.length} / ${maxX9}`);
+      check('149: _matPathLaneRects (mattebenk/sone) = dekket del', '660', Math.abs(Math.max(..._matPathLaneRects(S.matPaths[0]).map(r => r.x1)) - 660) < 0.05, JSON.stringify(_matPathLaneRects(S.matPaths[0])));
+      // Commit av en NY bane i det udekkede feltet (samme vei som Avslutt matte).
+      _matFree = { ...mk9(10, 700, 60, 100), moves: mk9(10, 700, 60, 100).moves.map(m => ({ ...m })) };
+      S.ui.drawMode = 'mat-freehand'; const nId9 = S.counters.nextMatPathId; S.counters.nextMatPathId = 20;
+      _matFreeExit(true);
+      check('149: commit av ny bane i A sitt udekkede felt lykkes (matPaths 1 → 2, ingen avvisning)', '2 / null', S.matPaths.length === 2 && S.ui.drawMode === null, `${S.matPaths.length} / ${S.ui.drawMode}`);
+      S.counters.nextMatPathId = nId9;
+      S.matPaths = [mk9(11, 60, 60, 800)];
+      // Bane uten udekket del: dekket = hele (rektanglene identiske med de fulle).
+      const X9 = mk9(12, 60, 200, 600), fullX9 = _matFreeDeriveRuns(X9).map(r => _matFreeLaneRectWorld(r, 50)), covX9 = _matPathCoveredLaneRects(X9);
+      check('149: bane uten udekket del — dekkede rektangler = de fulle (bit-identisk)', 'identiske', JSON.stringify(covX9) === JSON.stringify(fullX9), JSON.stringify(covX9));
+      // Tegning: udekket del tegnes IKKE av _drawMatPathObj, men av eget pass (under alle matter).
+      const drawn9 = []; const origRect9 = _drawMatLaneRect, origCable9 = _drawMatPathCable, origLabel9 = _drawStripLabel;
+      let drawErr9 = null;
+      try {
+        _drawMatLaneRect = (R, ghost, covered, invalid, color) => drawn9.push({ R, covered: !!covered, invalid: !!invalid, who: drawn9.who });
+        _drawMatPathCable = () => {}; _drawStripLabel = () => {};
+        S.ui.activeFloorId = null; S.view.zoom = 1;
+        drawn9.who = 'obj'; _drawMatPathObj(S.matPaths[0], false);
+        drawn9.who = 'unc'; _drawMatPathUncovered();
+      } catch (e) { drawErr9 = e.message; }
+      finally { _drawMatLaneRect = origRect9; _drawMatPathCable = origCable9; _drawStripLabel = origLabel9; }
+      const objUnc = drawn9.filter(d => d.who === 'obj' && !d.covered), passUnc = drawn9.filter(d => d.who === 'unc' && !d.covered);
+      check('149: _drawMatPathObj tegner ikke den udekkede delen; eget pass tegner den (x 660–860) én gang', '0 / 1 / 660–860',
+        drawErr9 === null && objUnc.length === 0 && passUnc.length === 1 && Math.abs(passUnc[0].R.x0 - 660) < 0.05 && Math.abs(passUnc[0].R.x1 - 860) < 0.05,
+        `${drawErr9} / ${objUnc.length} / ${passUnc.length}`);
+      // Vaksine: la opptatt-testen bruke hele den tegnede banen igjen → Kenneths matte blir avvist.
+      const origCov9 = _matPathCoveredLaneRects;
+      try {
+        _matPathCoveredLaneRects = m => { const { NET } = _matFreeConsts(_matFreeProdOf(m)); return _matFreeDeriveRuns(m).filter(r => _matFreeRunLen(r) > 0.5).map(r => _matFreeLaneRectWorld(r, NET)); };
+        const vacc = _matPathMoveValid(mk9(13, 700, 60, 100));
+        check('149 vaksine: med hele tegnet bane som opptatt blir matta i udekket felt avvist (testen biter)', 'avvist', vacc.ok === false, JSON.stringify(vacc));
+      } finally { _matPathCoveredLaneRects = origCov9; }
+    }
   } finally {
     HEATING_PRODUCTS.length = 0;
     HEATING_PRODUCTS.push(...savedProducts);
@@ -22959,14 +23049,12 @@ function _matFreeLanesOverlap(mp) {
 // brukes uendret av _matFreeRunsWithinRoom for sin egen, andre hensikt) — sjekker DENNE banen mot
 // ALLE ANDRE matPath i samme rom, samme rect-overlapp-prinsipp.
 function _matPathOverlapsOthers(mp) {
-  const { NET } = _matFreeConsts(_matFreeProdOf(mp));
   const TOL = 0.5;
-  const myRects = _matFreeDeriveRuns(mp).filter(r => _matFreeRunLen(r) > 0.5).map(r => _matFreeLaneRectWorld(r, NET));
+  const myRects = _matPathCoveredLaneRects(mp);   // 149: dekket mot dekket — udekket «ghost» er ikke opptatt
   if (!myRects.length) return false;
   for (const other of (S.matPaths || [])) {
     if (other.id === mp.id || other.roomId !== mp.roomId) continue;
-    const { NET: oNET } = _matFreeConsts(_matFreeProdOf(other));
-    const otherRects = _matFreeDeriveRuns(other).filter(r => _matFreeRunLen(r) > 0.5).map(r => _matFreeLaneRectWorld(r, oNET));
+    const otherRects = _matPathCoveredLaneRects(other);
     for (const a of myRects) for (const b of otherRects) {
       const ow = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
       const oh = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
@@ -23090,7 +23178,7 @@ function _drawMatPathCable(mp, coverCm, opts) {
   for (let ri = 0; ri < runs.length; ri++) {
     const r = runs[ri], rNext = runs[ri + 1] || null;
     const rl = _matFreeRunLen(r);
-    const covLen = coverCm >= acc + rl ? rl : (coverCm <= acc ? 0 : coverCm - acc);
+    const covLen = _matFreeCovLen(coverCm, acc, rl);
     acc += rl;
     if (covLen < 1) continue;                    // udekket lane → ingen kabel
     laneIdx++;
@@ -23212,7 +23300,7 @@ function _drawMatPathObj(mp, active) {
     runIdx++;
     const rl = _matFreeRunLen(r);
     const runStartAcc = acc;
-    const covLen = coverCm >= acc + rl ? rl : (coverCm <= acc ? 0 : coverCm - acc);
+    const covLen = _matFreeCovLen(coverCm, acc, rl);
     acc += rl;
     // 129 / Regel 28: hopp — tynn stiplet forbindelse fra forrige ende til denne banens start, plan
     // og PDF (samme tegner). Kun orientering: ingen lengde i katalog, lister eller «Dekker».
@@ -23241,7 +23329,7 @@ function _drawMatPathObj(mp, active) {
           _drawMatLaneRect(_matFreeSegSliceRect(r, NET, lo, hi), false, true, false, _matPathSegColor(mp, si));
         }
       }
-      if (covLen < rl - 0.5) _drawMatLaneRect(_matFreeCoveredSplit(r, NET, covLen).uncR, false, false);
+      // 149: den udekkede delen tegnes i eget pass UNDER alle matter (_drawMatPathUncovered).
     }
     // Ligger et skjøtpunkt inni DENNE banen (mellom runStartAcc og runStartAcc+rl, ikke ved en
     // bane-grense)? Regn ut world-posisjonen langs banen og legg til for markør-tegning under.
@@ -23501,6 +23589,25 @@ function resetMatLabel() {
   if (mp.labelRotation != null) { delete mp.labelRotation; changed = true; }
   if (mp.labelScale != null)    { delete mp.labelScale;    changed = true; }
   if (changed) { render(); _scheduleAutoSave && _scheduleAutoSave(); }
+}
+// 149: udekket del («ghost») av committede baner — stiplet grå som før, men i et eget pass FØR
+// alle dekkede matter (S.mats og baner), så en matte lagt i feltet ligger oppå, ikke under.
+// Rødmerkede bredder tegnes fortsatt hele i rødt av _drawMatPathObj.
+function _drawMatPathUncovered() {
+  for (const mp of (S.matPaths || [])) {
+    if (!_roomIdOnActiveFloor(mp.roomId) || !(mp.moves || []).length) continue;
+    const runs = _matFreeDeriveRuns(mp), { NET } = _matFreeConsts(_matFreeProdOf(mp));
+    const coverCm = _matFreeCatalog(mp).coverCm;
+    let acc = 0, i = -1;
+    for (const r of runs) {
+      i++;
+      const rl = _matFreeRunLen(r), covLen = _matFreeCovLen(coverCm, acc, rl);
+      acc += rl;
+      if (covLen >= rl - 0.5 || rl <= 0.5) continue;
+      if (_matPathRunIssue(mp, i)) continue;
+      _drawMatLaneRect(_matFreeCoveredSplit(r, NET, covLen).uncR, false, false);
+    }
+  }
 }
 function drawMatPaths() {
   _matLabelBounds = {}; _matLabelGeom = {};   // rebuild per render (v2)
