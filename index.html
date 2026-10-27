@@ -5898,6 +5898,9 @@ function drawRoomCard(room) {
   if (stats.wm2Total > 0) rows.push(['W/m² (rom)',      stats.wm2Total + ' W/m²']);
   const flateeffekt = stats.cableLenM > 0 ? stats.cableWm2 : stats.wm2Heated;
   if (flateeffekt > 0) rows.push(['Flateeffekt',    flateeffekt + ' W/m²']);
+  // 153: flere kabler i et rent rektangel som likevel dekker under 90 % — CC-en er tettere enn arealet tilsier.
+  if (stats.cableCount > 1 && stats.nettoM2 > 0 && stats.cableAreaM2 / stats.nettoM2 < 0.90 && _roomIsPlainRect(room))
+    rows.push(['⚠ Dekning', 'bare ' + Math.round(stats.cableAreaM2 / stats.nettoM2 * 100) + ' % · CC for tett']);
   // Cable colour legend (multi-cable groups): dot + K# + product · length · effect, so the
   // installer maps colour → cable/circuit. Same hues as the serpentine strokes/labels.
   const _legCables = S.cables.filter(c => c.roomId === room.id && c.multiCableGroup != null)
@@ -34763,6 +34766,14 @@ const _cableFixtures = {
   rekt2kab: { name: 'Rektangel med 2 like kabler (200+200m)', klasse: 'flerkabel',
     productId: 38, kabler: [38, 38],
     points: [{x:0,y:0},{x:1000,y:0},{x:1000,y:-500},{x:0,y:-500}] },
+  // 153 · Kenneths utendørsområde 27.10.2026: 3 × InSnow 30T 3210 W 106,9 m (id 151) i 300 × 1100 cm
+  // = 33 m², loddrett. Arealregelen gir CC 33 / 320,7 = 10,29. Før 153 ga forpasset 8,33 (78 %
+  // dekning, flateeffekt 360 W/m²). `laas` er Kenneths mål og feiler raden hvis de brytes. CC 10,29 (areal) er ikke nåbar i
+  // en 100 cm sone: 10 løp gir 10,00, og 9,7 løp finnes ikke — derfor 10,1 ± 0,35.
+  ute3kab: { name: 'Utendørs: 3 like kabler 3210W 106,9m i 300 x 1100 (Kenneths skjermbilde 153)', klasse: 'flerkabel',
+    productId: 151, kabler: [151, 151, 151],
+    laas: { cc: 10.1, ccTol: 0.35, dekMin: 95, forholdMax: 1.05 },
+    points: [{x:0,y:0},{x:300,y:0},{x:300,y:-1100},{x:0,y:-1100}] },
   rekt2kabUlike: { name: 'Rektangel med 2 ULIKE kabler (200+140m)', klasse: 'flerkabel',
     productId: 38, kabler: [38, 30],
     note: 'Ulike kabler gir soner proporsjonale med kabellengden, men fortsatt felles CC.',
@@ -36534,8 +36545,19 @@ function generateCableGeo(roomId, productId, opts) {
       const d = len - targetCm;
       stige.push({ cc, len, diff: d });
       if (opts.trace) opts.trace.push({ steg: 'stige', dir, cc: +cc.toFixed(3), len: +(len / 100).toFixed(2), diffCm: +d.toFixed(1) });
-      if (Math.abs(d) < bestDiff) { bestDiff = Math.abs(d); bestCc = cc; }
-      if (d >= 0 && d < overDiff) { overDiff = d; overCc = cc; }
+      // ─── 153 · ET TRINN SOM BARE ER MARGINALT NÆRMERE MÅLET FLYTTER IKKE VINNEREN ────────
+      // ⚠ MÅLT på Kenneths 100 cm brede sone med søm på begge sider (InSnow 30T 106,9 m, CC-
+      // vindu 6–50): N=10 gir CC 10,00 og 109,41 m (+251 cm, trimmes inn). Neste trinn ber om
+      // CC 8,57; rutenettet runder til 12 løp à 8,33, men der faller de to ytterste løpene ut
+      // (CC/2 = 4,17 fra sømmen er INNENFOR veggmarginen på 5), og sonden `fastLen` måler den
+      // beste av variantene — en 10-løpsvariant på 109,34 m (+244 cm). Syv centimeter nærmere
+      // enn N=10, så trinnet vant, og sonen endte på CC 8,33 med 12 løp trimmet 100 cm per løp.
+      // Forpasset (096) tok så dette minste tallet for ALLE tre soner → 78 % dekning.
+      // Så lenge vinneren trenger trimming (utenfor toleransen), er en forbedring på under 0,3 %
+      // av kabellengden støy: trimmingen tar den uansett, og det større CC-trinnet fyller bredden.
+      const _tie = bestDiff > tolCm && bestDiff - Math.abs(d) < targetCm * 0.003;
+      if (Math.abs(d) < bestDiff && !_tie) { bestDiff = Math.abs(d); bestCc = cc; }
+      if (d >= 0 && d < overDiff && !(overCc != null && overDiff > tolCm && overDiff - d < targetCm * 0.003)) { overDiff = d; overCc = cc; }
       return d;
     };
     if (bundetCc != null) {
@@ -38944,6 +38966,27 @@ function _buildNCableZones(room, products, dir, boundsOverride, ccOverride) {
 // Kjerne: bygg soner for en LISTE produkter (ett per kabel) i beste retning. Deles av
 // N×like (_autoFillNCables) og ulike kabler (_autoFillMixedCables). Retnings-heuristikken
 // (picker/forcedDir/coverage) er uendret fra for.
+// 153 · Est. kabeldekning: Σ(lengde × CC) / netto. Samme størrelse som «Dekket av kabel» i
+// romkortet i første ledd (flateeffekt/W-per-m² i rom er bare dens omvendte), uten å måtte
+// legge kablene i S. Brukes av dekningsvakten under og av romkortet (forenklet rektangel).
+function _cableCoverageEst(room, cables) {
+  const net = roomAreas(room).net;
+  if (!(net > 0)) return null;
+  let a = 0;
+  for (const c of cables) a += (c.totalLength_cm || 0) * (c.spacing_cm || 0);
+  return a / net;
+}
+// Et rent rektangel: fire hjørner, akseparallelle sider, ingen hindringer eller forbudte soner.
+function _roomIsPlainRect(room) {
+  const pts = room && room.points;
+  if (!pts || pts.length !== 4) return false;
+  for (let i = 0; i < 4; i++) {
+    const a = pts[i], b = pts[(i + 1) % 4];
+    if (Math.abs(a.x - b.x) > 0.5 && Math.abs(a.y - b.y) > 0.5) return false;
+  }
+  return !(S.hindrings || []).some(h => h.roomId === room.id) && !(S.zones || []).some(z => z.roomId === room.id);
+}
+
 function _autoFillCableZonesCore(room, products, forcedDir) {
   if (!room || !products || products.length < 2) return null;
   const explicitDir = (S.varmefolie?.dirExplicit && (S.varmefolie.direction === 'h' || S.varmefolie.direction === 'v')) ? S.varmefolie.direction : null;
@@ -38958,8 +39001,35 @@ function _autoFillCableZonesCore(room, products, forcedDir) {
     // Den minste av svarene er den felles CC-en: er den liten nok for den trangeste sonen,
     // holder den for alle. Dette er ett ekstra motorkall per sone, og det er det som gjør at
     // begge soner kan få sitt fulle antall løp ved SAMME CC.
-    const ccFelles = window._ccFellesAv ? null : _zoneSharedCcFromGeo(room, products, dir);
+    let ccFelles = window._ccFellesAv ? null : _zoneSharedCcFromGeo(room, products, dir);
+    // ─── 153 · AREALREGELEN ER GULVET ─────────────────────────────────────────────────────
+    // «Felles CC = netto areal ÷ samlet kabellengde» er regelen; forpasset er en finjustering
+    // NED fra den når en sone ikke får plass til lengden sin (096: Rom 8, 12,59 → 12,52).
+    // Kenneth 27.10.2026: tre like kabler i 300 × 1100 cm fikk 8,3 i stedet for 10,3 fordi én
+    // sone svarte tett, og den minste vant for alle. Forpasset får derfor ikke gå mer enn 10 %
+    // under ideell CC; svaret over det klemmes til gulvet (og vakten under tar resten).
+    const ccIdeal = Math.max(_ccLimits(products[0]).minSp, Math.min(_ccLimits(products[0]).maxHard,
+      roomAreas(room).net / 10000 / (products.reduce((t, p) => t + (p.cable_length_m || 0), 0) || 1) * 100));
+    if (ccFelles != null && ccFelles < ccIdeal * 0.9) {
+      console.warn(`[153] forpasset svarte CC ${ccFelles.toFixed(2)} (${dir}), under gulvet ${(ccIdeal * 0.9).toFixed(2)} (90 % av ideell ${ccIdeal.toFixed(2)}) — klemt`);
+      ccFelles = ccIdeal * 0.9;
+    }
     let res = _buildNCableZones(room, products, dir, null, ccFelles);
+    // ─── 153 · DEKNINGSVAKT ───────────────────────────────────────────────────────────────
+    // Rent rektangel uten hindringer skal dekkes (nesten) helt av N like kabler. Er estimert
+    // dekning under 90 % (= flateeffekt over 1,10 × W/m² i rommet), prøves arealregelen uten
+    // forpass, og den tas hvis den er gyldig og dekker bedre. Ellers sier romkortet fra.
+    if (res && ccFelles != null && _roomIsPlainRect(room)) {
+      const cov = _cableCoverageEst(room, res.cables);
+      if (cov != null && cov < 0.90) {
+        let alt = null;
+        try { alt = _buildNCableZones(room, products, dir, null, null); } catch (e) { alt = null; }
+        const altOk = alt && alt.cables.length >= 2 && !alt.invalid && alt.cables.every(c => c._geomOk === true)
+          && alt.maxLenDevPct <= 1 && (_cableCoverageEst(room, alt.cables) || 0) > cov;
+        console.warn(`[153] dekning ${(cov * 100).toFixed(0)} % (${dir}) < 90 % — ${altOk ? 'arealregelen uten forpass er gyldig og tas' : 'arealregelen er ikke gyldig, beholder forpass-resultatet'}`);
+        if (altOk) res = alt;
+      }
+    }
     // ─── 096 · SØMMEN FLYTTES HVIS LENGDEN IKKE GÅR OPP ───────────────────────────────────
     // Ved BUNDET CC (felles CC i alle soner) er sonens BREDDE den eneste frie variabelen:
     // CC kan ikke røres, og antall løp følger av bredden. ⚠ MÅLT på Kenneths Rom 8: med CC
@@ -39112,7 +39182,12 @@ function _cableGeoSuiteZoneRow(key, fx, dir) {
       if (a2 && b2 && a2[k] != null && b2[k] != null) busteBue = Math.max(busteBue, Math.abs(a2[k] - b2[k]));
       else if (cn.fromPos != null && cn.toPos != null) busteBue = Math.max(busteBue, Math.abs(cn.fromPos - cn.toPos));
     }
+    // 153: dekning og flateeffekt/W-per-m²-i-rommet, målt som romkortet gjør (Σ lengde × CC / netto).
+    const dekEst = _cableCoverageEst(room, cabs);
     return { status: 'ok',
+      dek: dekEst == null ? null : +(dekEst * 100).toFixed(1),
+      forhold: dekEst ? +(1 / dekEst).toFixed(3) : null,
+      laas: fx.laas || null,
       motorer: cabs.map(c => c._engine || '?'),
       cc: ccs, ccLik: +Math.abs(ccs[0] - ccs[1]).toFixed(2),
       dev, gyldig: cabs.every(c => c._geomOk === true),
@@ -39188,6 +39263,14 @@ function _cableGeoSuiteCompare(base, naa) {
     if (naa.cc && naa.cc[0] > 0 && naa.busteBueCm > naa.cc[0] * 1.5)
       feil.push(`stor bue ${naa.busteBueCm} cm (over 1 CC + toleranse)`);
     if ((naa.motorer || []).some(m => m === 'v6')) feil.push('V6 vant en sone');
+    // 153 · Kenneths låste mål for utendørsområdet (fixture.laas): CC følger arealregelen,
+    // kablene dekker flaten, og flateeffekten ligger nær W/m² i rommet.
+    if (naa.laas) {
+      const L = naa.laas;
+      if (L.cc != null && naa.cc && Math.abs(naa.cc[0] - L.cc) > (L.ccTol || 0.3)) feil.push(`CC ${naa.cc[0]} utenfor ${L.cc} ± ${L.ccTol || 0.3}`);
+      if (L.dekMin != null && naa.dek != null && naa.dek < L.dekMin) feil.push(`dekning ${naa.dek} % under ${L.dekMin} %`);
+      if (L.forholdMax != null && naa.forhold != null && naa.forhold > L.forholdMax) feil.push(`flateeffekt/W-m²(rom) ${naa.forhold} over ${L.forholdMax}`);
+    }
     if (base.cc && naa.cc && Math.abs((base.cc[0] || 0) - (naa.cc[0] || 0)) > 0.01)
       endret.push(`CC ${base.cc.join('/')} → ${naa.cc.join('/')} · ${base.dev ? base.dev.join('/') : '?'} → ${naa.dev.join('/')} %`);
     return { feil, bedre, endret };
