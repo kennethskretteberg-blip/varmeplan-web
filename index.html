@@ -5560,7 +5560,8 @@ function _foilPower(items) {
     r.lenM += s.length_cm / 100;
     r.W += w;
   }
-  return { P, rows: [...byProd.values()].sort((a, b) => a.wPerM - b.wPerM) };
+  // 148: samme bredde-rekkefølge som produktradene (_foilRowCmp); rader her har ett produkt hver.
+  return { P, rows: [...byProd.values()].sort(_foilRowCmp) };
 }
 // Motstandsgrensene fra Cenikas installasjonsveiledning («Beregning av motstand», P = U²/R,
 // elementene parallelt): øvre ved 240 V, nominell ved 230 V, nedre ved 220 V. U² er skrevet ut
@@ -14515,13 +14516,47 @@ function _roomProductRows(room) {
   for (const it of _aluboardRoomItems(room.id)) {
     add(it.product, it.kind, it.effectW, it.meters || null, 0, it.count, '|alu');
   }
-  return [...map.values()]
+  const rows = [...map.values()]
     .map(e => ({ product: e.product, kind: e.kind, count: e.count, kalkyle: e.kalkyle,
                  effectW: Math.round(e.effectWRaw), effectWRaw: e.effectWRaw,
                  lengthM: e.lengthM, areaM2: e.areaM2,
                  elNr: e.product ? (e.product.el_no || null) : null,
                  artNr: e.product ? (e.product.article_no || null) : null }))
     .sort((a, b) => b.effectWRaw - a.effectWRaw);
+  return _orderProductRowsForDisplay(rows);
+}
+
+// 148 · VISNINGSREKKEFØLGE — den ENE sorteringen, i _roomProductRows, så alle lesere (PDF
+// Spesifikasjon/Romoversikt, Excel, liste, presentasjon) ser samme rekkefølge.
+// Radene grupperes per type (reservekabel hører til kabel-gruppa); typene står med størst samlet
+// effekt først. Innad i en type er rekkefølgen uendret (størst effekt først) — unntatt folie:
+// smaleste bredde øverst (lik motstandsmålingen), lengste først ved lik bredde.
+// ⚠ rows[0] er IKKE lenger «størst». Bruk `_roomLargestRow` for det.
+function _foilRowCmp(a, b) {
+  const w = r => (r.product && (r.product.netto_width_mm || r.product.width_mm)) || 0;
+  return (w(a) - w(b)) || ((b.lengthM || 0) - (a.lengthM || 0));
+}
+function _orderProductRowsForDisplay(rows) {
+  const grp = new Map();   // gruppenøkkel -> { rows, sumW } i rekkefølgen typene først dukker opp
+  for (const r of rows) {
+    const k = r.kind === 'Reservekabel' ? 'Kabel' : r.kind;
+    let g = grp.get(k);
+    if (!g) { g = { k, rows: [], sumW: 0 }; grp.set(k, g); }
+    g.rows.push(r); g.sumW += r.effectWRaw || 0;
+  }
+  const groups = [...grp.values()].sort((a, b) => b.sumW - a.sumW);   // stabil: lik sum beholder rekkefølgen
+  const out = [];
+  for (const g of groups) {
+    if (g.k === 'Folie') g.rows.sort(_foilRowCmp);
+    out.push(...g.rows);
+  }
+  return out;
+}
+// Raden med størst ratet effekt (første ved likhet) — eksplisitt, uavhengig av visningsrekkefølgen.
+function _roomLargestRow(rows) {
+  let best = null;
+  for (const r of rows) if (!best || (r.effectWRaw || 0) > (best.effectWRaw || 0)) best = r;
+  return best;
 }
 
 // Rommets ratede effekt — summen av den ene kilden. Summerer URUNDET per rad og runder til slutt,
@@ -14537,8 +14572,8 @@ function _roomRatedEffectW(room) {
 // Brukes til kolonnene El.nr/art.nr/produkt/familie/Type i romoversikten når et rom har flere
 // produkter (vises da det dominerende, slik vedlegget gjør). Radene er sortert dominant først.
 function _roomDominantProduct(room) {
-  const rows = _roomProductRows(room);
-  return rows.length ? { product: rows[0].product, kind: rows[0].kind } : null;
+  const top = _roomLargestRow(_roomProductRows(room));   // 148: ikke rows[0] — det er visningsrekkefølge
+  return top ? { product: top.product, kind: top.kind } : null;
 }
 
 // Produkt-breakdown i et rom: én oppføring PER UNIK produkt-variant. Beholdt som navn fordi
@@ -73698,7 +73733,7 @@ function _listDrawnRowHtml(room, showEnv){
     const bdDrawn=bd.filter(v=>!v.kalkyle), bdKalk=bd.filter(v=>v.kalkyle);
     const line=v=>(v.count>1?v.count+'× ':'')+(v.product?v.product.name:'—');
     const txtDrawn=bdDrawn.length ? bdDrawn.map(line).join(' + ') : '—';
-    typeCell=`<span style="color:var(--dim,#9aa0aa)">${esc(bdDrawn[0]&&bdDrawn[0].kind?bdDrawn[0].kind:(bd[0]&&bd[0].kind?bd[0].kind:(modType==='mat'?'Matte':'Kabel')))}</span>`;
+    typeCell=`<span style="color:var(--dim,#9aa0aa)">${esc(_roomLargestRow(bdDrawn)?.kind?_roomLargestRow(bdDrawn).kind:(_roomLargestRow(bd)?.kind?_roomLargestRow(bd).kind:(modType==='mat'?'Matte':'Kabel')))}</span>`;
     if(bdKalk.length){
       prodCell=`<div style="display:flex;flex-direction:column;gap:3px;line-height:1.35">`
         + `<span title="Tegnet utlegg — endres på lerretet"><span style="color:var(--dim,#9aa0aa);font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;margin-right:5px">Tegnet</span>${esc(txtDrawn)}</span>`
@@ -78207,6 +78242,46 @@ async function _foilEffectRegressionTest() {
     check('Folie + kabel: kabelen uendret 500 W', 500, cab && cab.effectW === 500, cab && cab.effectW);
     check('Folie + kabel: folie 60 × 4,0 = 240 W', 240, fol && fol.effectW === 240, fol && fol.effectW);
     check('Folie + kabel: romtotal 740 W', 740, _roomRatedEffectW(room(RC)) === 740, _roomRatedEffectW(room(RC)));
+
+    // ── 4b. 148: visningsrekkefølge. Folie: smaleste bredde øverst (lik motstandsmålingen). Før 148
+    //        sto radene etter effekt (80, 140, 120, 100) — tidligere forventning «størst først» er
+    //        bevisst byttet ut; størst-effekt-raden hentes nå eksplisitt (_roomLargestRow).
+    const bredde = r => r.product.netto_width_mm || r.product.width_mm;
+    const kRows = foilRows(K);
+    check('148: Kenneths rom — folieradene 80, 100, 120, 140', '80,100,120,140',
+      kRows.map(bredde).join() === [F80, F100, F120, F140].map(p => p.netto_width_mm || p.width_mm).join(),
+      kRows.map(bredde).join());
+    check('148: samme rekkefølge som motstandsmålingen', 'lik',
+      _foilPower(_foilRoomItems(K)).rows.map(x => x.product.id).join() === kRows.map(x => x.product.id).join(),
+      _foilPower(_foilRoomItems(K)).rows.map(x => x.product.id).join());
+    check('148: dominerende produkt er fortsatt B=80 (størst effekt) selv om det er først', F80.id,
+      _roomDominantProduct(K) && _roomDominantProduct(K).product.id === F80.id, _roomDominantProduct(K) && _roomDominantProduct(K).product.id);
+    // Syntetisk: størst effekt står sist i visningen; dominerende må likevel finne den. (VAKSINE: med
+    // `rows[0]` ville denne gitt den smaleste, ikke den største → rød.)
+    const syn = [
+      { kind: 'Folie', product: { id: 1, netto_width_mm: 500 }, lengthM: 2, effectWRaw: 10 },
+      { kind: 'Folie', product: { id: 2, netto_width_mm: 1000 }, lengthM: 2, effectWRaw: 90 },
+      { kind: 'Folie', product: { id: 3, netto_width_mm: 1000 }, lengthM: 5, effectWRaw: 50 },
+      { kind: 'Kabel', product: { id: 4 }, lengthM: 20, effectWRaw: 200 },
+      { kind: 'Reservekabel', product: { id: 4 }, lengthM: 20, effectWRaw: 0 },
+      { kind: 'Kabel', product: { id: 5 }, lengthM: 10, effectWRaw: 100 },
+    ];
+    const ord = _orderProductRowsForDisplay(syn.slice().sort((a, b) => b.effectWRaw - a.effectWRaw));
+    check('148: typer — kabel (300 W) før folie (150 W); kabelradene uendret (størst først, reserve sist)', '4,5,4r,1,3,2 (kabel, kabel, reserve, så folie smal→bred)',
+      ord.map(r => r.product.id + (r.kind === 'Reservekabel' ? 'r' : '')).join() === '4,5,4r,1,3,2', ord.map(r => r.product.id + (r.kind === 'Reservekabel' ? 'r' : '')).join());
+    check('148: smalest først (id 1), så lik bredde → lengste først (3 før 2)', '1,3,2',
+      ord.filter(r => r.kind === 'Folie').map(r => r.product.id).join() === '1,3,2', ord.filter(r => r.kind === 'Folie').map(r => r.product.id).join());
+    check('148: _roomLargestRow finner 200 W selv når raden ikke står først', 200,
+      _roomLargestRow(ord).effectWRaw === 200 && _roomLargestRow(syn.slice().reverse()).effectWRaw === 200, _roomLargestRow(ord).effectWRaw);
+    // _roomDominantProduct leser _roomProductRows: la den få syntetiske rader der størst står SIST.
+    // (VAKSINE: sett rows[0] tilbake i _roomDominantProduct og denne blir rød.)
+    const _origRows = _roomProductRows;
+    let domSyn = null;
+    try { _roomProductRows = () => [syn[0], syn[2], syn[1]]; domSyn = _roomDominantProduct({ id: -1 }); } finally { _roomProductRows = _origRows; }
+    check('148: _roomDominantProduct gir største effekt (90 W, id 2) selv når den står sist', 2, domSyn && domSyn.product.id === 2, domSyn && domSyn.product.id);
+    const foilOnly = syn.slice(0, 3);
+    check('148: VAKSINE — rows[0] i folie-visningen er IKKE størst', 'rows[0] ≠ størst',
+      _orderProductRowsForDisplay(foilOnly)[0].effectWRaw !== 90 && _roomLargestRow(_orderProductRowsForDisplay(foilOnly)).effectWRaw === 90, 'ok');
 
     // ── 5. Grep-vakt: ingen egen folieformel (W/m² × lengde på strip/fri folie) utenfor _foilItemW ──
     // Plate/matte har egne lengder (pl./m.) og treffes ikke; mønsteret er bevisst smalt.
