@@ -41892,6 +41892,72 @@ function _prefsRegressionTest() {
   return { ok: allOk, results };
 }
 
+// 146 · profilnavnet lagres faktisk, og «Prosjektert av» følger nåværende navn via responsible_user_id.
+async function _profileNameRegressionTest() {
+  const saved = { db: _db, user: _currentUser, prof: _currentProfile, cache: _orgMemberNamesCache, proj: S.project };
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const mkEl = (id, v) => { let e = document.getElementById(id); const ny = !e;
+    if (ny) { e = document.createElement('input'); e.id = id; e.style.display = 'none'; document.body.appendChild(e); }
+    const gml = e.value; e.value = v; return () => { if (ny) e.remove(); else e.value = gml; }; };
+  // Stub: returnerer { error } slik supabase-js gjør (kaster aldri).
+  const mkDb = (profErr, rows) => ({
+    auth: { updateUser: async () => ({ error: null }) },
+    from: () => { const q = { _op: null,
+      update(f) { this._op = 'update'; this._f = f; return this; }, insert(f) { this._op = 'insert'; this._f = f; q.inserted = f; return Promise.resolve({ error: profErr }); },
+      eq() { return this; }, select() { return Promise.resolve({ data: profErr ? null : rows, error: profErr }); } };
+      return q; }
+  });
+  try {
+    _currentUser = { id: 'u-meg', email: 'k@x.no', user_metadata: { full_name: 'Kenneth S (test)' } };
+    _currentProfile = { id: 'u-meg', full_name: 'Kenneth S (test)', initials: '' };
+    _orgMemberNamesCache = new Map([['u-kollega', { full_name: 'Kari Nordmann', initials: 'KN' }]]);
+    // ── Punkt 2: profilskriving som feiler → ingen ✓, feilmelding, profil uendret ──
+    const undo = [mkEl('pf-name', 'Kenneth S'), mkEl('pf-company', ''), mkEl('pf-phone', ''), mkEl('pf-initials', 'KS')];
+    const btn = mkEl('pf-save-btn', ''), msg = document.createElement('div'); msg.id = 'pf-msg'; const gammelMsg = document.getElementById('pf-msg');
+    if (gammelMsg) gammelMsg.id = 'pf-msg-gammel'; document.body.appendChild(msg);
+    try {
+      _db = mkDb({ message: 'new row violates row-level security policy', code: '42501' }, null);
+      await _saveProfile();
+      check('146: feilet profilskriving gir ingen «✓ Profil oppdatert!»', true, !/✓/.test(msg.textContent) && /ikke lagret/.test(msg.textContent), msg.textContent);
+      check('146: feilet profilskriving rører ikke _currentProfile', 'Kenneth S (test)', _currentProfile.full_name === 'Kenneth S (test)', _currentProfile.full_name);
+      _db = mkDb(null, [{ id: 'u-meg' }]);
+      await _saveProfile();
+      check('146: vellykket skriving viser ✓ og oppdaterer profilen', true, /✓/.test(msg.textContent) && _currentProfile.full_name === 'Kenneth S', msg.textContent + ' / ' + _currentProfile.full_name);
+      const db0 = mkDb(null, []); let ins = null;
+      _db = { auth: db0.auth, from: () => { const q = db0.from(); const i = q.insert.bind(q); q.insert = f => { ins = f; return i(f); }; return q; } };
+      const err0 = await _writeProfileRow({ full_name: 'Ny' });
+      check('146: 0 rader fra update → insert med id', true, !err0 && ins && ins.id === 'u-meg', JSON.stringify(ins));
+    } finally { msg.remove(); if (gammelMsg) gammelMsg.id = 'pf-msg'; undo.forEach(f => f()); btn(); }
+    // ── Punkt 3–4: «Prosjektert av» ──
+    _currentProfile.full_name = 'Kenneth S';
+    check('146: koblet til meg → nåværende navn', 'Kenneth S', _responsibleDisplayName('Kenneth S (test)', 'u-meg') === 'Kenneth S', _responsibleDisplayName('Kenneth S (test)', 'u-meg'));
+    check('146: koblet til kollega → kollegaens navn', 'Kari Nordmann', _responsibleDisplayName('Gammelt', 'u-kollega') === 'Kari Nordmann', '');
+    check('146: ukjent id → teksten', 'Ola N', _responsibleDisplayName('Ola N', 'u-ukjent') === 'Ola N', '');
+    check('146: fritekst uten id → uendret', 'Ola Nordmann', _responsibleDisplayName('Ola Nordmann', null) === 'Ola Nordmann' && _responsibleDisplayName('Kenneth S (test)', '') === 'Kenneth S (test)', '');
+    S.project = { ...(S.project || {}), parts: [], responsible: 'Kenneth S (test)', responsible_user_id: 'u-meg', projectNo: 7 };
+    const rader = _pdfCoverMetaRows(1, '—');
+    const rad = rader.find(r => r[0] === 'Prosjektert av');
+    check('146: PDF-forsiden viser nytt navn', 'Kenneth S', rad && rad[1] === 'Kenneth S', rad && rad[1]);
+    check('146: filnavn-initialer følger nytt navn når profilen mangler initialer', 'KS', _plResponsibleInitials({ _responsible: 'Kenneth S (test)', _responsibleUserId: 'u-meg' }) === 'KS', _plResponsibleInitials({ _responsible: 'Kenneth S (test)', _responsibleUserId: 'u-meg' }));
+    check('146: lagring skriver nåværende navn inn i teksten når id er satt', 'Kenneth S', _buildSaveData().project.responsible === 'Kenneth S', _buildSaveData().project.responsible);
+    S.project.responsible = 'Ola Nordmann'; S.project.responsible_user_id = null;
+    check('146: lagring rører ikke fritekst uten id', 'Ola Nordmann', _buildSaveData().project.responsible === 'Ola Nordmann', _buildSaveData().project.responsible);
+    S.project.responsible = 'Gammelt'; S.project.responsible_user_id = 'u-kollega';
+    const r2 = _pdfCoverMetaRows(1, '—').find(r => r[0] === 'Prosjektert av');
+    check('146: kollegas id → kollegaens navn i PDF', 'Kari Nordmann', r2 && r2[1] === 'Kari Nordmann', r2 && r2[1]);
+    // ── Vaksine: den gamle stille upserten og de rå leserne er borte ──
+    const kilde = _saveProfile.toString() + _writeProfileRow.toString();
+    check('146 vaksine: ingen upsert/tom catch i profillagringen', true, !/upsert/.test(kilde) && !/catch\(e\) \{ \/\*/.test(kilde), '');
+    check('146 vaksine: PDF-forsiden leser ikke proj.responsible rått', true, !/\['Prosjektert av', proj\.responsible\]/.test(_pdfCoverMetaRows.toString()), '');
+  } finally {
+    _db = saved.db; _currentUser = saved.user; _currentProfile = saved.prof; _orgMemberNamesCache = saved.cache; S.project = saved.proj;
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_profileNameRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return { ok: allOk, results };
+}
+
 function _gapRegressionTest() {
   const saved = { rooms: S.rooms, strips: S.strips, zones: S.zones, hindrings: S.hindrings,
     prods: HEATING_PRODUCTS.slice(), sel: S.ui.selectedStripIds, room: S.ui.selectedRoomId,
@@ -75297,7 +75363,7 @@ function _wfKundeModal() {
       <div id="wf-resp-line" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--text)"></div>
       <div id="wf-resp-edit" style="display:none;margin-top:8px">
         <select id="wf-resp-sel" class="dash-create-input" onchange="_wfRespPick(this.value)"></select>
-        <input id="wf-k-resp" class="dash-create-input" value="${_esc(p.responsible||'')}"
+        <input id="wf-k-resp" class="dash-create-input" value="${_esc(_projResponsibleName(p))}"
           data-uid="${_esc(p.responsible_user_id||'')}" placeholder="Navn"
           style="margin-top:6px;display:none" oninput="_wfRespTyped()">
       </div>
@@ -75461,7 +75527,7 @@ function _renderSbProjInfo() {
   if (nameEl) { const nm = p.name || 'Prosjekt'; nameEl.textContent = nm; nameEl.title = nm; }
   const respEl = document.getElementById('spi-responsible');
   if (respEl) {
-    if (p.responsible) { const t = 'Prosjektert av ' + p.responsible; respEl.textContent = t; respEl.title = t; respEl.style.display = ''; }
+    if (p.responsible) { const t = 'Prosjektert av ' + _projResponsibleName(p); respEl.textContent = t; respEl.title = t; respEl.style.display = ''; }
     else respEl.style.display = 'none';
   }
   // 028: kundelenke. STEG 0-funn: `_kundeStatusHtml()` ble definert i 027 men ALDRI kalt —
@@ -76511,7 +76577,10 @@ function _buildSaveData() {
     _version : 2,
     // 137 / E: matPathMarginV 2 = frihånds-banene er vurdert mot 135-vakten (migrert eller nye) —
     // _restoreProject kjører engangsmigreringen bare når stempelet mangler.
-    project  : {...S.project, parts: S.project.parts.map(p=>({...p})), savedAt: Date.now(), _prog, matPathMarginV: S.project.matPathMarginV || 2},
+    project  : {...S.project, parts: S.project.parts.map(p=>({...p})), savedAt: Date.now(), _prog, matPathMarginV: S.project.matPathMarginV || 2,
+      // 146: koblet prosjekt (responsible_user_id) lagres med brukerens NÅVÆRENDE navn, så presentasjon/kundelenke
+      // (offentlige, uten oppslag) også får det nye navnet. Uten id røres teksten aldri.
+      ...(S.project.responsible_user_id ? { responsible: _projResponsibleName(S.project) } : {})},
     floors   : S.floors.map(f=>({...f})),
     // 036: `computed` stemples ferskt ved HVER lagring (feltappen leser det). Et gammelt stempel
     // fra innlastingen (ligger i r etter _restoreProject) kastes først, så det aldri overlever
@@ -77665,7 +77734,7 @@ function _pdfCoverMetaRows(nextRev, prevDateStr) {
   // når feltet rett og slett aldri er fylt ut (via Kunde-modalen, _wfKundeModal/_wfKundeSave, som
   // skriver riktig til S.project.responsible — lesingen her var aldri feil felt). Utelat raden helt
   // når den er tom, i stedet for å late som Kunde/Prosjektnr sine «—»-fallbacker gjelder likt her.
-  if (proj.responsible) rows.push(['', ''], ['Prosjektert av', proj.responsible]);
+  if (proj.responsible) rows.push(['', ''], ['Prosjektert av', _projResponsibleName(proj)]);   // 146
   // 059 §4 (Kenneth 12.10.2026): «PDF og romoversikt skal merke at prosjektet er kalkyle, ikke
   // detaljprosjektert». Raden utelates HELT når alt er tegnet — se _projectKalkyleStatus.
   { const _kal = (typeof _projectKalkyleStatus === 'function') ? _projectKalkyleStatus() : null;
@@ -78431,7 +78500,7 @@ function _profileInitialsForFile() {
   // gir samme initialer i filnavnet og i lista. 062 (besvart av Kenneth 12.10.2026: ja, dette
   // er ønsket) sender også `responsible_user_id` med, slik at en kollegas EGNE profil-initialer
   // brukes — ikke initialer regnet av fritekst-navnet.
-  const resp = (S.project && S.project.responsible || '').trim();
+  const resp = _projResponsibleName(S.project).trim();   // 146
   if (resp && typeof _plResponsibleInitials === 'function') {
     const ri = _plResponsibleInitials({
       _responsible: resp,
@@ -82389,6 +82458,21 @@ function _myDisplayName() {
   return e ? e.split('@')[0] : '';
 }
 
+// 146 (Kenneth 27.10.2026): «Prosjektert av» er bare en frosset tekstkopi når prosjektet er koblet til
+// en bruker (responsible_user_id). Da følger visningen brukerens NÅVÆRENDE navn: meg selv via
+// _myDisplayName(), en kollega via org_member_names-cachen (062). Faller oppslaget gjennom (ukjent id,
+// RPC mangler, cache ikke hentet), brukes teksten som før. Uten id brukes alltid teksten (fritekst).
+function _responsibleDisplayName(text, uid) {
+  const t = (text || '').trim();
+  if (!uid) return t;
+  if (_currentUser && uid === _currentUser.id) return _myDisplayName() || t;
+  const m = _orgMemberNamesCache && _orgMemberNamesCache.get(uid);
+  return (m && m.full_name) || t;
+}
+function _projResponsibleName(proj) {
+  return proj ? _responsibleDisplayName(proj.responsible, proj.responsible_user_id) : '';
+}
+
 // ── 062 · KOLLEGERS NAVN (org_member_names) ────────────────────────────────────
 // 062 (Kenneth 12.10.2026): «Prosjektert av» kan peke på en kollega. Da må vi kunne
 // slå opp HANS navn og profil-initialer. STEG 0.1 (målt): basis-RLS på `profiles` er
@@ -82719,6 +82803,29 @@ function _resetSidebarWidth() {
   _dockRwp();
 }
 
+// 146: skriver brukerens egen profilrad. UPDATE først (RLS har egen-rad-UPDATE, men ingen
+// INSERT-policy for vanlige brukere — en upsert avvises derfor selv når raden finnes). Kommer
+// ingen rad tilbake, finnes raden ikke, og da prøves INSERT. Mangler en kolonne (eldre database
+// uten initials/prefs), prøves det på nytt uten den. Returnerer null ved suksess, ellers feilen.
+async function _writeProfileRow(fields) {
+  const uid = _currentUser?.id;
+  if (!uid) return new Error('Ikke innlogget');
+  const kolonneFeil = e => !!e && (e.code === 'PGRST204' || e.code === '42703' || /column|schema cache/i.test(e.message || ''));
+  let f = { ...fields };
+  for (let forsok = 0; forsok < 3; forsok++) {
+    let { data, error } = await _db.from('profiles').update(f).eq('id', uid).select('id');
+    if (!error && (!data || !data.length)) {
+      ({ error } = await _db.from('profiles').insert({ id: uid, ...f }));
+    }
+    if (!error) return null;
+    if (!kolonneFeil(error)) return error;
+    const mangler = ['initials', 'prefs'].find(k => k in f && new RegExp(k).test(error.message || ''));
+    if (!mangler) return error;
+    delete f[mangler];
+  }
+  return new Error('Profilraden kunne ikke skrives');
+}
+
 async function _saveProfile() {
   const btn = document.getElementById('pf-save-btn');
   const msgEl = document.getElementById('pf-msg');
@@ -82744,28 +82851,22 @@ async function _saveProfile() {
     if (_prefs.foilGapCm != null) S.varmefolie.gapCm = _prefs.foilGapCm;
     S.varmefolie.wallMarginCm = _prefs.wallMarginCm;
     _savePrefs();
-    // Update Supabase auth metadata
-    await _db.auth.updateUser({ data: { full_name: name, company_name: company, initials } });
-    // Update profile table if it exists
-    try {
-      await _db.from('profiles').upsert({
-        id: _currentUser.id,
-        full_name: name,
-        company_name: company,
-        phone: phone,
-        initials: initials,
-        prefs: _prefs,                      // 023
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
-      if (_currentProfile) {
-        _currentProfile.full_name = name;
-        _currentProfile.company_name = company;
-        _currentProfile.phone = phone;
-        _currentProfile.initials = initials;
-        _currentProfile.prefs = _prefs;     // 023
-      }
-    } catch(e) { /* profiles table may not exist, or initials-kolonnen mangler ennå (additiv
-      migrasjon ikke kjørt) — user_metadata under bærer da initialene alene. */ }
+    // 146: skrivingene sjekkes. supabase-js KASTER IKKE ved feil, den returnerer { error } — før 146
+    // ble svaret aldri lest, og en avvist profilskriving ga likevel «✓ Profil oppdatert!».
+    const { error: authErr } = await _db.auth.updateUser({ data: { full_name: name, company_name: company, initials } });
+    if (authErr) throw new Error('Navnet ble ikke lagret: ' + (authErr.message || authErr));
+    const _profErr = await _writeProfileRow({
+      full_name: name, company_name: company, phone: phone, initials: initials, prefs: _prefs,   // 023
+      updated_at: new Date().toISOString()
+    });
+    if (_profErr) throw new Error('Navnet ble ikke lagret: ' + (_profErr.message || _profErr));
+    if (_currentProfile) {
+      _currentProfile.full_name = name;
+      _currentProfile.company_name = company;
+      _currentProfile.phone = phone;
+      _currentProfile.initials = initials;
+      _currentProfile.prefs = _prefs;     // 023
+    }
     // Update user_metadata locally
     _currentUser.user_metadata = { ..._currentUser.user_metadata, full_name: name, company_name: company, initials };
     _updateAuthUserBar();
@@ -91245,7 +91346,7 @@ function _plResponsibleInitials(p) {
   const myInitials = (_currentProfile?.initials || _currentUser?.user_metadata?.initials || '').trim();
   const uid = p._responsibleUserId || null;
   if (uid) {
-    if (uid === _currentUser?.id && myInitials) return myInitials;
+    if (uid === _currentUser?.id) return myInitials || _initialsOf(_myDisplayName() || resp);   // 146: nåværende navn
     if (_orgMemberNamesCache) {
       const m = _orgMemberNamesCache.get(uid);
       if (m) return m.initials || _initialsOf(m.full_name || resp);
@@ -91271,7 +91372,7 @@ function _filterProjectsList(projects, f = {}) {
   if (tokens.length) out = out.filter(p => {
     const c = (Array.isArray(_cachedCustomers) && p._customerId)
       ? (_cachedCustomers.find(cc => cc.id === p._customerId) || {}) : {};
-    const hay = [p.name, p.description, p._responsible, p._customer, p._contact,
+    const hay = [p.name, p.description, _responsibleDisplayName(p._responsible, p._responsibleUserId), p._customer, p._contact,
                  p._projectNo, c.name, c.phone, c.email].filter(Boolean).join(' ').toLowerCase();
     return tokens.every(t => hay.includes(t));
   });
@@ -91483,7 +91584,7 @@ async function _renderProjectList() {
       <td class="pl-td pl-td-check" onclick="event.stopPropagation()"><input type="checkbox" class="pl-check pl-row-check" data-pid="${p.id}"${checked} onchange="_toggleProjectSelect('${p.id}',this.checked)"></td>
       <td class="pl-td pl-td-firma" title="${esc(custName)}">${firmaCell}</td>
       <td class="pl-td pl-td-proj" title="${esc(p.name)}"><div class="pl-proj-line"><span class="pl-proj-name pl-proj-name-project">${esc(p.name)}</span>${_plKundeBadge(p.id)}${_plLaasBadge(p)}</div>${subLine ? '<span class="pl-td-sub">'+subLine+'</span>' : ''}</td>
-      <td class="pl-td pl-td-resp" title="${esc(p._responsible || '')}">${responsible}</td>
+      <td class="pl-td pl-td-resp" title="${esc(_responsibleDisplayName(p._responsible, p._responsibleUserId))}">${responsible}</td>
       <td class="pl-td pl-td-type" title="${esc(typeObj.label)}"><span class="pl-type-ico">${IC(_PL_TYPE_ICON[type]||_MOD_ICON[type]||'home',18)}</span></td>
       <td class="pl-td" onclick="event.stopPropagation()"><select class="pl-status-sel" style="background:${statusObj.color}22;color:${statusObj.color};border:1px solid ${statusObj.color}44;border-radius:12px;padding:2px 8px;font-size:11px;font-weight:600;cursor:pointer;appearance:none;-webkit-appearance:none;outline:none" onchange="_quickSetStatus('${p.id}',this.value,this)">${SALES_STATUSES.map(s=>`<option value="${s.id}"${s.id===status?' selected':''}>${s.label}</option>`).join('')}</select>${_prosjekteringBridgeHtml(p) || _deliveryCellHtml(p)}</td>
       <td class="pl-td pl-td-date">${date}</td>
