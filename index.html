@@ -5532,6 +5532,15 @@ function _foilRoomItems(room) {
     ? _foilCountItemsForRoom(room._parentRoomId).filter(x => x.zoneId === room._zoneId)
     : _foilCountItemsForRoom(room.id);
 }
+// 147 · ÉN formel for effekten til ett folie-element (strip, fri folie eller `_foilCountItemsForRoom`-
+// element): W per løpemeter fra databladet × lengde. Uten `watt_per_lm`: W/m² (produktets, ellers 60)
+// × nettobredde × lengde. Ingen annen kode skal regne folieeffekt (grep-vakt i _foilEffectRegressionTest).
+function _foilItemW(s) {
+  const p = HEATING_PRODUCTS.find(pr => pr.id === s.productId);
+  if (!p) return 0;
+  if (p.watt_per_lm) return p.watt_per_lm * s.length_cm / 100;
+  return (p.netto_width_mm || p.width_mm || 0) / 10 * s.length_cm / 10000 * (p.watt_per_m2 || 60);
+}
 // → { P, rows: [{ product, lenM, wPerM, W }] } — P summeres element for element i samme
 // rekkefølge som før 145 (bit-identisk), radene grupperes per produkt.
 function _foilPower(items) {
@@ -5539,8 +5548,7 @@ function _foilPower(items) {
   const byProd = new Map();
   for (const s of items) {
     const p = HEATING_PRODUCTS.find(pr => pr.id === s.productId);
-    const w = p?.watt_per_lm ? p.watt_per_lm * s.length_cm / 100
-      : _stripNettoCm(s) * s.length_cm / 10000 * 60;   // fallback 60 W/m²
+    const w = _foilItemW(s);
     P += w;
     if (!p) continue;
     let r = byProd.get(p.id);
@@ -14497,7 +14505,7 @@ function _roomProductRows(room) {
     const p = HEATING_PRODUCTS.find(pr => pr.id === s.productId);
     const nc = p ? (p.netto_width_mm || p.width_mm || 500) / 10 : 0;
     const lenKey = Math.round(s.length_cm / 10) / 10;
-    add(p, 'Folie', p ? (p.watt_per_m2 || 0) * (nc * s.length_cm) / 10000 : 0, lenKey, (nc * s.length_cm) / 10000);
+    add(p, 'Folie', _foilItemW(s), lenKey, (nc * s.length_cm) / 10000);
   }
   for (const pl of _platesForRoom(room.id)) {
     const p = HEATING_PRODUCTS.find(pr => pr.id === pl.productId);
@@ -25512,7 +25520,7 @@ function _layoutRulePenalty(defs, room) {
     if (d.length_cm < 30) penalty += (30 - d.length_cm) * nc * 2;   // oppstykking: svært korte strimler
     // STEG 3: samme skala/mønster som lengde-straffen over, men i EFFEKT — fanger en smal OG kort
     // bane som til sammen gir for lite watt, selv om lengden alene ville sluppet gjennom 30cm-testen.
-    const watt = pp ? (pp.watt_per_m2 || 60) * nc * d.length_cm / 10000 : 0;
+    const watt = _foilItemW(d);   // 147
     if (watt > 0 && watt < FOIL_MIN_USEFUL_WATT) penalty += (FOIL_MIN_USEFUL_WATT - watt) * nc * 2;
   }
   return penalty;
@@ -25558,7 +25566,7 @@ function _foilLayoutStats(defs, room, scoreProfile) {
     if (!p) continue;
     const nc = (p.netto_width_mm || p.width_mm) / 10;
     coveredArea += nc * d.length_cm / 10000;
-    totalW += (p.watt_per_m2 || 60) * nc * d.length_cm / 10000;
+    totalW += _foilItemW(d);   // 147
     widthSet.add(nc);
   }
   return {
@@ -43235,8 +43243,7 @@ function drawStrips() {
         let fontSize = _labelFontCm() * _sc;
         if (!S.ui?._pdfMode) fontSize = Math.max(LABEL_MIN_PX, fontSize);    // skjerm-gulv for lesbarhet ved utzoom (sak 3, 17.09.2026 — hevet fra 6px)
         const lengthM = (strip.length_cm / 100).toFixed(1) + ' m';
-        const wattPerM2 = prod.watt_per_m2 || prod.watt_per_m || 0;
-        const stripWatt = Math.round(wattPerM2 * (nettoCm / 100) * (strip.length_cm / 100));
+        const stripWatt = Math.round(_foilItemW(strip));   // 147: samme formel som Spesifikasjon/romtotal
         const infoLine = lengthM + (stripWatt > 0 ? ' · ' + stripWatt + ' W' : '');
         stripLabelJobs.push({ strip, name: prod.name, infoLine, fontSize,
           nx, ny, nw, nh, dir: strip.direction, roomId: strip.roomId });
@@ -43349,8 +43356,7 @@ function _drawFoilFreeLabel(ff) {
   if (!S.ui?._pdfMode) fontSize = Math.max(LABEL_MIN_PX, fontSize);
   const lengthM = (ff.length_cm / 100).toFixed(1) + ' m';
   const nc = _foilFreeNettoCm(ff);
-  const wattPerM2 = p.watt_per_m2 || p.watt_per_m || 0;
-  const watt = Math.round(wattPerM2 * (nc / 100) * (ff.length_cm / 100));
+  const watt = Math.round(_foilItemW(ff));   // 147
   const infoLine = lengthM + (watt > 0 ? ' · ' + watt + ' W' : '');
   let ang = ((ff.angle_deg % 360) + 360) % 360;
   if (ang > 90 && ang < 270) ang -= 180;   // aldri opp-ned
@@ -48986,7 +48992,7 @@ function _soneStats(zone){
   let cov=0, watt=0; const strips=_stripsForZone(zone.id);
   for(const s of strips){ const p=HEATING_PRODUCTS.find(pp=>pp.id===s.productId); if(!p)continue;
     const nc=(p.netto_width_mm||p.width_mm)/10, aM2=nc*s.length_cm/10000;
-    cov+=aM2; watt+=(p.watt_per_m2||60)*aM2; }
+    cov+=aM2; watt+=_foilItemW(s); }
   // DEL B: kabel bidrar ogsa til sonens tall (bane x CC som en grov dekket-areal-tilnaerming,
   // samme prinsipp _cableCoverageFrac allerede bruker andre steder).
   const cables=_cablesForZone(zone.id);
@@ -64872,7 +64878,7 @@ function updateObjInfo() {
   // Multi-select info
   if (S.ui.selectedStripIds.size > 1) {
     const strips = [...S.ui.selectedStripIds].map(id=>S.strips.find(s=>s.id===id)).filter(Boolean);
-    const totalWatt = strips.reduce((sum,s)=>{const p=_stripProduct(s);return sum+(p?.watt_per_lm?Math.round(p.watt_per_lm*s.length_cm/100):0);},0);
+    const totalWatt = strips.reduce((sum,s)=>sum+Math.round(_foilItemW(s)),0);
     const totalLen = strips.reduce((sum,s)=>sum+s.length_cm,0);
     // F1 (Kenneth 17.09.2026, plan-folie-skra-vegger.md): batch-lengde vises kun som et
     // redigerbart felt når ALLE markerte har lik lengde — ellers er det tvetydig hva et tastet
@@ -64896,7 +64902,7 @@ function updateObjInfo() {
       const p=_stripProduct(strip);
       const nc=_stripNettoCm(strip);
       const bc=_stripBorderCm(strip);
-      const watt=p?.watt_per_lm ? Math.round(p.watt_per_lm*strip.length_cm/100) : null;
+      const watt=Math.round(_foilItemW(strip)) || null;
       const _viol = _getViolation(strip.id);
       let _violHtml = '';
       if (_viol.wallMargin) _violHtml += `<div class="soi-row soi-warn"><span class="soi-k">⚠ Veggavstand</span><span class="soi-v">${Math.round(_viol.wallMargin.minDist*10)} mm (min 25 mm)</span></div>`;
@@ -64917,7 +64923,7 @@ function updateObjInfo() {
     if (ff) {
       const p = _foilFreeProduct(ff);
       const nc = _foilFreeNettoCm(ff);
-      const watt = p?.watt_per_lm ? Math.round(p.watt_per_lm * ff.length_cm / 100) : null;
+      const watt = Math.round(_foilItemW(ff)) || null;
       const _fw = _foilFreeWarnings(ff);  // F4d
       panel.innerHTML = `<div class="soi-title"><svg class="ic ic-flame" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M12 2c.7 3 3.8 4.4 3.8 8a3.8 3.8 0 0 1-7.6 0c0-1.3.4-2.2.9-2.8.2.9.8 1.5 1.4 1.8C10.9 6.8 11.4 4.7 12 2z"/></svg> ${esc(p?.name || 'Folie')} <span style="font-size:9px;color:var(--accent);border:1px solid var(--accent);border-radius:4px;padding:1px 5px;font-weight:600">rotert ${Math.round(ff.angle_deg)}°</span></div>
         <div class="soi-row"><span class="soi-k">Netto bredde</span><span class="soi-v">${Math.round(nc * 10)} mm</span></div>
@@ -78113,6 +78119,132 @@ async function _foilResistanceRegressionTest() {
   return { ok: allOk, results };
 }
 
+// 147 — folieeffekt: ÉN formel (`_foilItemW`, W per løpemeter fra databladet). Låser at Spesifikasjon/
+// Romoversikt (`_roomProductRows`), romtotal (`_roomRatedEffectW`), romkort (`_computeRoomStats`) og
+// motstandsmålingen (`_roomFoilResistance`) gir samme tall, og at ingen ny egen folieformel
+// (W/m² × nettobredde × lengde) snikes inn utenfor `_foilItemW`. Kjøres fra konsollen:
+// await _foilEffectRegressionTest(). Fasit er regnet for HÅND (Kenneth 27.10.2026: 1411,2 W, ikke 1394 W).
+async function _foilEffectRegressionTest() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-9 : tol);
+  const saved = {
+    rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats,
+    matPaths: S.matPaths, plates: S.plates, aluboard: S.aluboard, zones: S.zones, hindrings: S.hindrings,
+    stairs: S.stairs, floors: S.floors, project: S.project, counters: { ...S.counters },
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedStairId: S.ui.selectedStairId,
+    prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
+  };
+  try {
+    // Databladet (FlexFoil rev. 06/2024): B=80 48 W/m · 100 60 · 120 72 · 140 84. W/m² er 60 på alle —
+    // 60 × nettobredde (0,79 m) = 47,4 W/m er nettopp feilen vi retter.
+    const mkF = (id, bMm, nettoMm, wlm) => ({ id, category_id: 1, active: true, name: 'FlexFoil B=' + bMm / 10 + 'cm',
+      width_mm: nettoMm, netto_width_mm: nettoMm, watt_per_lm: wlm, watt_per_m2: 60, voltage: 230, min_gap_mm: 10, min_wall_margin_mm: 25 });
+    const F80 = mkF(997001, 800, 790, 48), F100 = mkF(997002, 1000, 990, 60),
+          F120 = mkF(997003, 1200, 1190, 72), F140 = mkF(997004, 1400, 1390, 84);
+    const FX = { ...mkF(997005, 500, 490, null), name: 'FOLIE UTEN W/LM B=50' };
+    const CAB = { id: 997006, category_id: 2, active: true, name: 'Testkabel', watt_per_m: 20, cable_length_m: 25,
+      total_effect_w: 500, voltage: 230 };
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(F80, F100, F120, F140, FX, CAB);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push({ id: 1, name: 'Folie' }, { id: 2, name: 'Kabel' });
+    const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+    const mkRoom = (id, navn, pts) => ({ id, floorId: null, partId: null, name: navn,
+      points: pts.map(p => ({ ...p })), walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [] });
+    const strip = (id, roomId, productId, pos, len) => ({ id, roomId, productId, direction: 'v', pos_cm: pos, start_cm: 20, length_cm: len });
+    const RK = 993101, RM = 993102, RC = 993103;
+    S.rooms = [mkRoom(RK, 'Kenneth', rect(0, 0, 800, 550)), mkRoom(RM, 'Blandet', rect(900, 0, 800, 550)),
+               mkRoom(RC, 'Folie og kabel', rect(0, 700, 800, 550))];
+    S.cables = []; S.mats = []; S.matPaths = []; S.plates = []; S.aluboard = []; S.zones = []; S.hindrings = [];
+    S.stairs = []; S.floors = [];
+    S.project = { name: 'FOLIEEFFEKTTEST', parts: [], revision: 0, lastExportedAt: null, createdAt: Date.now() };
+    S.strips = [];
+    for (let i = 0; i < 6; i++) S.strips.push(strip(993201 + i, RK, F80.id, 30 + i * 81, 490));   // 29,4 m B=80
+    S.strips.push(strip(993210, RK, F100.id, 530, 490), strip(993211, RK, F120.id, 610, 490), strip(993212, RK, F140.id, 690, 490));
+    S.strips.push(strip(993220, RM, F80.id, 930, 300), strip(993221, RM, FX.id, 1030, 200));
+    S.strips.push(strip(993230, RC, F100.id, 30, 400));
+    S.foilFree = [
+      { id: 993301, roomId: RM, productId: F100.id, cx_cm: 1300, cy_cm: 300, angle_deg: 0, length_cm: 150 },
+      { id: 993302, roomId: RM, productId: FX.id, cx_cm: 1300, cy_cm: 400, angle_deg: 0, length_cm: 100 },
+    ];
+    S.cables = [{ id: 993401, roomId: RC, productId: CAB.id, totalLength_cm: 2500 }];
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache();
+    const room = id => S.rooms.find(r => r.id === id);
+    const foilRows = r => _roomProductRows(r).filter(x => x.kind === 'Folie');
+
+    // ── 1. Kenneths rom, håndregnet: 48 × 29,4 = 1411,2 · 60 × 4,9 = 294 · 72 × 4,9 = 352,8 · 84 × 4,9 = 411,6
+    const rowFor = (r, prod) => foilRows(r).find(x => x.product.id === prod.id);
+    const K = room(RK);
+    check('Kenneth B=80: 1411 W (ikke 1394)', 1411, rowFor(K, F80) && rowFor(K, F80).effectW === 1411, rowFor(K, F80) && rowFor(K, F80).effectW);
+    check('Kenneth B=80: urundet 1411,2', 1411.2, rowFor(K, F80) && near(rowFor(K, F80).effectWRaw, 1411.2, 1e-6), rowFor(K, F80) && rowFor(K, F80).effectWRaw);
+    check('Kenneth B=100: 294 W', 294, rowFor(K, F100).effectW === 294, rowFor(K, F100).effectW);
+    check('Kenneth B=120: 353 W', 353, rowFor(K, F120).effectW === 353, rowFor(K, F120).effectW);
+    check('Kenneth B=140: 412 W', 412, rowFor(K, F140).effectW === 412, rowFor(K, F140).effectW);
+    check('Kenneth: «Total effekt» = 2470 W', 2470, _roomRatedEffectW(K) === 2470, _roomRatedEffectW(K));
+    check('Kenneth: romkortets totalW = 2470 W', 2470, _computeRoomStats(K).totalW === 2470, _computeRoomStats(K).totalW);
+    const resK = _roomFoilResistance(K);
+    check('Kenneth: motstandsmålingens P = 2469,6 W', 2469.6, resK && near(resK.P, 2469.6, 1e-6), resK && resK.P);
+    const stK = _computeRoomStats(K);
+    check('Kenneth: Romoversiktens W/m² = 2470 ÷ netto', Math.round(2470 / stK.nettoM2), _roomOversiktWm2(K, stK) === Math.round(2470 / stK.nettoM2), _roomOversiktWm2(K, stK));
+
+    // ── 2. Σ spesifikasjonens folierader = foliens P, for alle tre rom (fri folie, fallback og kabel) ──
+    for (const r of S.rooms) {
+      const sum = foilRows(r).reduce((a, x) => a + x.effectWRaw, 0);
+      const P = _foilPower(_foilRoomItems(r)).P;
+      check(r.name + ': Σ folierader (spesifikasjon) = P (motstand)', P, near(sum, P, 1e-9), sum);
+      check(r.name + ': romkortets foliedel = round(P)', Math.round(P), r.id === RC || _computeRoomStats(r).totalW === Math.round(P), _computeRoomStats(r).totalW);
+    }
+    // Håndregnet blandet rom: 48 × 3,0 + (uten W/lm: 60 W/m² × 0,49 m = 29,4 W/m) × 2,0 + 60 × 1,5 + 29,4 × 1,0
+    const hMix = 48 * 3 + 29.4 * 2 + 60 * 1.5 + 29.4 * 1;
+    check('Blandet rom: P håndregnet', hMix, near(_foilPower(_foilRoomItems(room(RM))).P, hMix, 1e-6), _foilPower(_foilRoomItems(room(RM))).P);
+
+    // ── 3. Fallback uten watt_per_lm: 60 W/m² × nettobredde, som før ──────────────────────────────
+    check('Fallback: 100 cm FX = 29,4 W', 29.4, near(_foilItemW({ productId: FX.id, length_cm: 100 }), 29.4, 1e-9), _foilItemW({ productId: FX.id, length_cm: 100 }));
+    check('Ukjent produkt = 0 W', 0, _foilItemW({ productId: -1, length_cm: 100 }) === 0, _foilItemW({ productId: -1, length_cm: 100 }));
+
+    // ── 4. Rom med folie og kabel: kabeldelen uendret (500 W), bare foliedelen er W/lm ─────────────
+    const rowsC = _roomProductRows(room(RC));
+    const cab = rowsC.find(x => x.kind === 'Kabel'), fol = rowsC.find(x => x.kind === 'Folie');
+    check('Folie + kabel: kabelen uendret 500 W', 500, cab && cab.effectW === 500, cab && cab.effectW);
+    check('Folie + kabel: folie 60 × 4,0 = 240 W', 240, fol && fol.effectW === 240, fol && fol.effectW);
+    check('Folie + kabel: romtotal 740 W', 740, _roomRatedEffectW(room(RC)) === 740, _roomRatedEffectW(room(RC)));
+
+    // ── 5. Grep-vakt: ingen egen folieformel (W/m² × lengde på strip/fri folie) utenfor _foilItemW ──
+    // Plate/matte har egne lengder (pl./m.) og treffes ikke; mønsteret er bevisst smalt.
+    const GUARD = new RegExp('watt_per_m2[^\\n]*\\b(?:s|d|ff|strip|st|f)\\.length_cm|\\b(?:s|d|ff|strip|st|f)\\.length_cm[^\\n]*watt_per_m2');
+    const src = await (await fetch(location.pathname + '?src=' + Date.now())).text();
+    const a = src.indexOf('function _foilItemW(s) {'), b = src.indexOf('\n}\n', a);
+    const utenFormel = src.slice(0, a) + src.slice(b);
+    // Testens egen tekst (regexen over) skal ikke telle: fjern denne funksjonen fra det som skannes.
+    const ta = utenFormel.indexOf('async function _foilEffectRegressionTest()');
+    const tb = utenFormel.indexOf('\n}\n', ta);
+    const skann = utenFormel.slice(0, ta) + utenFormel.slice(tb);
+    const treff = skann.split('\n').filter(l => GUARD.test(l));
+    check('Grep-vakt: ingen folieformel med watt_per_m2 utenfor _foilItemW', 0, treff.length === 0, treff.slice(0, 3).join(' ⏎ '));
+    // VAKSINE: den gamle linja fra _roomProductRows satt tilbake skal gjøre vakten rød.
+    const gammel = `add(p, 'Folie', p ? (p.watt_per_m2 || 0) * (nc * s.length_cm) / 10000 : 0, lenKey,`;
+    check('VAKSINE: gammel linje gir treff i vakten', true, GUARD.test(gammel), GUARD.test(gammel));
+    check('VAKSINE: plate-linja gir IKKE treff (ingen falsk alarm)', false,
+      !GUARD.test(`const watt = (p.watt_per_m2||0) * (pl.width_cm * pl.length_cm) / 10000;`), 'ok');
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree,
+      cables: saved.cables, mats: saved.mats, matPaths: saved.matPaths, plates: saved.plates,
+      aluboard: saved.aluboard, zones: saved.zones, hindrings: saved.hindrings, stairs: saved.stairs,
+      floors: saved.floors, project: saved.project });
+    Object.assign(S.counters, saved.counters);
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId;
+    S.ui.selectedStairId = saved.selectedStairId;
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push(...saved.cats);
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_foilEffectRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return { ok: allOk, results };
+}
+
 // 113 — regresjonstest som FAKTISK lager PDF-en. Kjøres fra konsollen: _pdfExportSmokeTest().
 // Kjører hele exportPDF med doc.save stubbet (ingen nedlasting) og tilbehørsvinduet automatisk
 // besvart, på én fixture per prosjekttype fra STEG 0.2. Krav: ingen unntak, minst én side per
@@ -80028,7 +80160,7 @@ async function exportPDF(opts) {
     matList[k].totalLen += s.length_cm;
     matList[k].areaM2 += nc * s.length_cm / 10000;
     const p = HEATING_PRODUCTS.find(pr => pr.id === k);
-    if (p?.watt_per_lm) matList[k].watt += p.watt_per_lm * s.length_cm / 100;
+    matList[k].watt += _foilItemW(s);   // 147
   }
   for (const c of S.cables) {
     const k = c.productId;
@@ -86104,7 +86236,7 @@ function _docPrefillProducts(data, roomId) {
     const lenM = arr.reduce((a,s) => a + (s.length_cm||0), 0) / 100;
     const widthCm = p ? (p.netto_width_mm || p.width_mm || 0)/10 : 0;
     let w = 0;
-    for (const s of arr) { w += p?.watt_per_lm ? p.watt_per_lm * (s.length_cm/100) : 0; }
+    for (const s of arr) { w += _foilItemW(s); }   // 147
     w = Math.round(w);
     out.push({ tempId:'f'+pid, kind:'foil', product_id:p?.id||null, product_name:p?.name||'Varmefolie',
       width_m: Math.round(widthCm)/100, length_m: Math.round(lenM*10)/10, meters:null,
@@ -87505,7 +87637,7 @@ function _collectMaterialItems() {
       if(!p) return;
       const ncMm = p.netto_width_mm || p.width_mm || 500;
       const areaM2 = (s.length_cm * (ncMm/10)) / 10000;
-      const watt = (p.watt_per_m2||0) * areaM2;
+      const watt = _foilItemW(s);   // 147
       items.push({ product: p, kind: 'Folie', roomName, floorName, roomId: room.id, qtyStr: '1 stk', count: 1, areaM2, lenM: s.length_cm/100, watt });
     });
     (S.cables||[]).filter(c => c.roomId === room.id).forEach(c => {
