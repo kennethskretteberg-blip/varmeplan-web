@@ -2908,6 +2908,9 @@ const _SHORTCUTS = [
   { group: 'Matte: bredde valgt',   keys: ['dra S'],               what: 'Forskyv starten langs bredden (bredden blir kortere, slutten står)' },  // 124
   { group: 'Matte: bredde valgt',   keys: ['Piler'],               what: 'På tvers = sidelengs 5 cm, langs = start 5 cm · Shift = 1 cm' },         // 124
   { group: 'Matte',                 keys: ['Alt', 'dra'],          what: 'Flytt alle matter i rommet sammen (eller slå på «Flytt alle» i panelet)' }, // 127
+  { group: 'Frihånds-matte valgt',  keys: ['dra ⊕ / piler'],       what: 'Flytt hele matta (fri / langs akse)' },                // 152 / C
+  { group: 'Frihånds-matte valgt',  keys: ['Piler'],               what: 'Flytt hele matta 10 cm · Shift = 1 cm (ingen bredde valgt)' },        // 152 / C
+  { group: 'Frihånds-matte valgt',  keys: ['dra E'],               what: 'Dra endepunktet: siste bredde lengre/kortere, de andre likt kortere/lengre (Esc avbryter)' }, // 152 / B
   { group: 'Frihånds-matte',        keys: ['Enter'],               what: 'Avslutt banen' },                                     // :41250
   { group: 'Frihånds-matte',        keys: ['Backspace'],           what: 'Angre siste segment' },                               // :41255
   { group: 'Frihånds-matte',        keys: ['H'],                   what: 'Hopp: neste bredde starter der du klikker (forbindelsen tegnes stiplet, teller ikke)' }, // 129
@@ -5105,6 +5108,9 @@ function render() {
     drawFolieGizmo();
   } else if (S.ui.selectedMatId) {
     drawMatMoveGizmo();
+  } else if (S.ui.selectedMatPathId != null) {
+    drawMatPathMoveGizmo();   // 152 / C
+    drawMatPathEndHandleSel();   // 152 / B
   } else if (S.ui.selectedPlateId) {
     drawPlateMoveGizmo();
   } else if (S.ui.selectedStairId) {
@@ -19366,6 +19372,219 @@ function _matPathSetRunAdj(mp, i, patch) {
   mp.moves = moves;
 }
 function _matPathHasRunAdjust(mp) { return (mp.moves || []).some(m => (m.shiftCm || 0) !== 0 || (m.startCm || 0) > 0); }
+// ═══ 152 · FRIHÅND: «LIKE LENGDER», ENDEDRAG OG FLYTTE-GIZMO (Regel 30) ═══════════════════════════
+// Gjelder baner med rette bredder fram og tilbake: moves[0] 'first', resten 'uturn', én akse, vekslende
+// retning, ingen tverrstykke/hopp/hjørne, og ÉN rull. Rullen (_matFreeCatalog.coverCm) byttes aldri:
+// bredde 1 … N−1 får lik lengde L (et helt antall kuttraster = 2 × CC), den siste tar resten
+// (Regel 24). Startpunktet (mp.start) og rekkefølge/retning/produkt rører vi ikke.
+const _MAT_EQUAL_BAD = 'Like lengder virker på matter med rette bredder fram og tilbake';
+function _matPathEqualEligible(mp) {
+  const mv = mp && mp.moves;
+  if (!mv || !mv.length) return { ok: false, reason: _MAT_EQUAL_BAD };
+  if (mv.length < 2) return { ok: false, reason: 'Like lengder trenger minst to bredder' };
+  if (mp.jumpFrom) return { ok: false, reason: _MAT_EQUAL_BAD };
+  for (let i = 0; i < mv.length; i++) {
+    const m = mv[i];
+    if (m.cross || !(m.len > 0) || m.axis !== mv[0].axis) return { ok: false, reason: _MAT_EQUAL_BAD };
+    if (i === 0 ? m.conn !== 'first' : (m.conn !== 'uturn' || m.dir !== -mv[i - 1].dir)) return { ok: false, reason: _MAT_EQUAL_BAD };
+  }
+  const c = _matFreeCatalog(mp);
+  if (c.tooShort || c.segments.length !== 1) return { ok: false, reason: 'Like lengder virker på matter med én rull' };
+  return { ok: true, N: mv.length, roll: c.coverCm, raster: _matFreeConsts(_matFreeProdOf(mp)).RASTER, axis: mv[0].axis, dir0: mv[0].dir };
+}
+// «Sentrer»-forskyvningen (offX/offY) foldes inn i start, så posisjonen er uendret men ikke lenger avledet
+// (samme som en manuell flytting, jf. _matArrBegin) — ellers ville Sentrer jevne ut lengdene på nytt.
+function _matPathFoldOffset(mp) {
+  if (mp.offX || mp.offY || mp.centered) mp.start = { x: mp.start.x + (mp.offX || 0), y: mp.start.y + (mp.offY || 0) };
+  mp.offX = 0; mp.offY = 0; mp.centered = false; mp._lenBeforeCenter = null;
+}
+function _matPathEqualMoves(mp, el, L) {
+  return mp.moves.map((m, i) => { const o = { ...m, len: i === el.N - 1 ? el.roll - (el.N - 1) * L : L }; delete o.startCm; return o; });
+}
+// Alle L (helt antall raster) som gir en lovlig bane, best først: minst |siste − L|, ved lik forskjell
+// den med KORTEST siste (størst L). Lovlig = _matPathMoveValid (rom, margin, hindring, andre matter,
+// areal) på en prøvekopi — samme vakt som flytting og commit. `first` stopper ved første lovlige.
+function _matPathEqualRank(N, roll, raster) {
+  const cands = [];
+  for (let k = 1; k * raster <= roll + 1e-6; k++) {
+    const L = k * raster, last = roll - (N - 1) * L;
+    if (last < raster - 1e-6) break;
+    cands.push({ L, last, diff: Math.abs(last - L) });
+  }
+  return cands.sort((a, b) => (Math.abs(a.diff - b.diff) < 1e-6 ? b.L - a.L : a.diff - b.diff));
+}
+function _matPathEqualFeasible(mp, el, first) {
+  const cands = _matPathEqualRank(el.N, el.roll, el.raster);
+  const out = []; let firstReason = null;
+  for (const cd of cands) {
+    const moves = _matPathEqualMoves(mp, el, cd.L);
+    const trial = { ...mp, moves }; _matPathFoldOffset(trial);
+    const v = _matPathMoveValid(trial);
+    if (!v.ok) { if (!firstReason) firstReason = v.reason; continue; }
+    const runs = _matFreeDeriveRuns(trial);
+    out.push({ ...cd, moves, end: { ...runs[runs.length - 1].b } });
+    if (first) break;
+  }
+  return { list: out, reason: firstReason };
+}
+function _matPathEqualize(mp) {
+  if (typeof mp === 'number') mp = (S.matPaths || []).find(m => m.id === mp);   // onclick gir id
+  if (!mp || S.ui.readOnly || S.ui.kundeMode) return false;
+  const el = _matPathEqualEligible(mp);
+  if (!el.ok) { if (typeof _showToast === 'function') _showToast(el.reason, 'info'); return false; }
+  const f = _matPathEqualFeasible(mp, el, true);
+  if (!f.list.length) {
+    if (typeof _showToast === 'function') _showToast(`Like lengder: rullen (${(el.roll / 100).toFixed(1).replace('.', ',')} m) får ikke plass som ${el.N} bredder her` + (f.reason ? ` — ${f.reason}` : ''), 'error');
+    return false;
+  }
+  pushUndo();
+  _matPathFoldOffset(mp);
+  mp.moves = f.list[0].moves;
+  _invalidateMatCache && _invalidateMatCache();
+  if (typeof _matPathPanel === 'function') _matPathPanel();
+  updateCtxBar(); render();
+  return true;
+}
+// ── 152 / B: endehåndtak. Dra i enden av siste bredde: den siste bredden tar mer/mindre, bredde 1 … N−1
+// beholder lik lengde L (hele raster) slik at Σ alltid er rullen. Håndtaket følger musa til nærmeste
+// LOVLIGE L (Regel 4: aldri lenger enn rommet gir plass); startpunktet ligger fast. Esc avbryter.
+let _matEndDrag = null;
+function _matPathEndHandleWorld(mp) {
+  const cov = _matFreeCatalog(mp).coverCm; let acc = 0, pt = null;
+  for (const r of _matFreeDeriveRuns(mp)) {
+    const rl = _matFreeRunLen(r), cl = _matFreeCovLen(cov, acc, rl); acc += rl;
+    if (rl > 0.5 && cl > 0.5) pt = { x: r.a.x + (r.b.x - r.a.x) * (cl / rl), y: r.a.y + (r.b.y - r.a.y) * (cl / rl) };   // enden av dekket del = der den røde endemarkøren står
+  }
+  return pt;
+}
+function _matPathEndHandleShown(mp) {
+  return !!mp && !S.ui.readOnly && !S.ui.kundeMode && !S.ui._pdfMode && !S.ui.present && _matPathEqualEligible(mp).ok;
+}
+function hitMatPathEndHandle(mp, sx, sy) {
+  if (!_matPathEndHandleShown(mp)) return false;
+  const w = _matPathEndHandleWorld(mp); if (!w) return false;
+  const p = w2s(w.x, w.y);
+  return Math.hypot(sx - p.x, sy - p.y) <= 12;
+}
+function _matEndDragBegin(mp, e, sx, sy) {
+  const el = _matPathEqualEligible(mp); if (!el.ok) return false;
+  const f = _matPathEqualFeasible(mp, el, false);
+  if (!f.list.length) { if (typeof _showToast === 'function') _showToast('Endedrag: rullen får ikke plass som ' + el.N + ' bredder her' + (f.reason ? ' — ' + f.reason : ''), 'error'); return false; }
+  const h = _matPathEndHandleWorld(mp), w = s2w(sx, sy), ak = el.axis === 'h' ? 'x' : 'y';
+  _matEndDrag = { id: mp.id, el, ak, list: f.list, grab: h[ak] - w[ak], sx, sy, moved: false, pushed: false, cur: null, undoLen: 0,
+    orig: { moves: mp.moves.map(m => ({ ...m })), start: { ...mp.start }, offX: mp.offX, offY: mp.offY, centered: mp.centered, lbc: mp._lenBeforeCenter } };
+  _matDragging = true; _matDragKind = 'mpend'; _matDragId = mp.id; _matDragAxis = 'free'; _matDragInvalid = false;
+  canvas.style.cursor = 'grabbing';
+  return true;
+}
+function _matEndDragMove(e) {
+  const d = _matEndDrag, mp = d && (S.matPaths || []).find(m => m.id === d.id); if (!mp) return;
+  const { x, y } = _evToCanvas(e);
+  if (!d.moved) { if (Math.hypot(x - d.sx, y - d.sy) < 3) return; d.moved = true; }   // et rent klikk på håndtaket endrer ingenting
+  const target = s2w(x, y)[d.ak] + d.grab;
+  let best = d.list[0];
+  for (const c of d.list) if (Math.abs(c.end[d.ak] - target) < Math.abs(best.end[d.ak] - target)) best = c;
+  if (d.cur === best) return;
+  if (!d.pushed) { d.undoLen = _undoStack.length; pushUndo(); d.pushed = true; _matPathFoldOffset(mp); }   // ETT angresteg, tatt før første endring
+  mp.moves = best.moves.map(m => ({ ...m })); d.cur = best;
+  _invalidateMatCache && _invalidateMatCache();
+}
+function _matEndDragFinish(cancel) {
+  const d = _matEndDrag, mp = d && (S.matPaths || []).find(m => m.id === d.id);
+  if (d && mp && cancel && d.pushed) {
+    mp.moves = d.orig.moves; mp.start = d.orig.start; mp.offX = d.orig.offX; mp.offY = d.orig.offY; mp.centered = d.orig.centered; mp._lenBeforeCenter = d.orig.lbc;
+    if (_undoStack.length === d.undoLen + 1) _undoStack.pop();   // avbrutt drag skal ikke etterlate et angresteg
+    _invalidateMatCache && _invalidateMatCache();
+  }
+  _matEndDrag = null;
+  _matDragging = false; _matDragId = -1; _matDragAxis = 'free'; _matDragKind = 'mat'; _matDragInvalid = false;
+  canvas.style.cursor = 'default';
+  if (typeof _matPathPanel === 'function') _matPathPanel();
+  updateCtxBar(); render();
+}
+function _drawMatPathEndHandle(mp) {
+  if (!_matPathEndHandleShown(mp)) return;
+  const w = _matPathEndHandleWorld(mp); if (!w) return;
+  const p = w2s(w.x, w.y), col = _lc('#1a55cc', '#22d3ee');
+  ctx.save();
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = col; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = col; ctx.font = "bold 9px 'Space Grotesk',sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('E', p.x, p.y + 0.5);
+  const d = _matEndDrag;
+  if (d && d.id === mp.id && d.cur) {   // live-tall under draget
+    const fmt = v => (v / 100).toFixed(2).replace('.', ',');
+    const lbl = `Bredde 1–${d.el.N - 1}: ${fmt(d.cur.L)} m · siste: ${fmt(d.cur.last)} m`;
+    ctx.font = '11px sans-serif'; const tw = ctx.measureText(lbl).width;
+    ctx.fillStyle = '#111'; ctx.fillRect(p.x - tw / 2 - 6, p.y - 34, tw + 12, 18);
+    ctx.fillStyle = '#fff'; ctx.fillText(lbl, p.x, p.y - 25);
+  }
+  ctx.restore();
+}
+
+// ── 152 / C: flytte-gizmo for den valgte frihånds-matta (samme glyf og plassering som S.mats: nede til
+// venstre for hele matta). Dra flytter HELE matta — start, labelPos og alt i _ROOM_TRANSLATE_SPEC.matPaths
+// — «original + delta» via samme oversetter som 108/127/137. Dagens dra-i-matta bruker samme vei.
+let _matPathMoveOrig = null, _matPathMoveBase = null;
+function _matPathGizmoPos(mp) {
+  let x0 = Infinity, y1 = -Infinity;
+  for (const R of _matPathCoveredLaneRects(mp)) { x0 = Math.min(x0, R.x0); y1 = Math.max(y1, R.y1); }
+  if (x0 === Infinity) { const bb = _matPathBoundsWorld(mp); if (!bb) return null; x0 = bb.minX; y1 = bb.maxY; }
+  return w2s(x0 - 2, y1 + 2);
+}
+function _matPathGizmoShown(mp) { return !!mp && !S.ui.readOnly && !S.ui.kundeMode && !S.ui._pdfMode && !S.ui.present; }
+function hitMatPathGizmo(mp, sx, sy) {
+  if (!_matPathGizmoShown(mp)) return false;
+  const gp = _matPathGizmoPos(mp); if (!gp) return false;
+  if (Math.hypot(sx - gp.x, sy - gp.y) < 15) return 'free';
+  if (distSegPx(sx, sy, gp.x + 18, gp.y, gp.x + 72, gp.y) < 12) return 'x';
+  if (distSegPx(sx, sy, gp.x, gp.y - 18, gp.x, gp.y - 72) < 12) return 'y';
+  return false;
+}
+function drawMatPathEndHandleSel() { _drawMatPathEndHandle((S.matPaths || []).find(m => m.id === S.ui.selectedMatPathId)); }
+function drawMatPathMoveGizmo() {
+  const mp = (S.matPaths || []).find(m => m.id === S.ui.selectedMatPathId);
+  if (!_matPathGizmoShown(mp) || !_roomIdOnActiveFloor(mp.roomId)) return;
+  const gp = _matPathGizmoPos(mp); if (gp) _drawMatGizmoGlyph(gp, false);
+}
+function _matPathMoveBegin(mp, e, axis) {
+  pushUndo();
+  _matPathMoveOrig = { start: { ...mp.start }, labelPos: mp.labelPos ? { ...mp.labelPos } : null, offX: mp.offX || 0, offY: mp.offY || 0, centered: !!mp.centered };
+  _matPathFoldOffset(mp);   // posisjonen står, men er ikke lenger avledet av «Sentrer»
+  _matPathMoveBase = { start: { ...mp.start }, labelPos: mp.labelPos ? { ...mp.labelPos } : undefined };
+  _matDragging = true; _matDragKind = 'matpath'; _matDragId = mp.id; _matDragAxis = axis || 'free'; _matDragInvalid = false;
+  _matDragOrigStart = { x: e.clientX, y: e.clientY };
+  _matDragOrigPos = { x: mp.start.x, y: mp.start.y };
+  canvas.style.cursor = axis && axis !== 'free' ? 'crosshair' : 'move';
+}
+function _matPathMoveApply(mp, dx, dy) {
+  const spec = _ROOM_TRANSLATE_SPEC.find(sp => sp.key === 'matPaths');
+  Object.assign(mp, _translatedFieldsFor(_matPathMoveBase, spec, dx, dy));
+}
+function _matPathNudge(mp, dx, dy) {
+  if (S.ui.readOnly || S.ui.kundeMode || (!dx && !dy)) return false;
+  _matPathMoveOrig = { start: { ...mp.start }, labelPos: mp.labelPos ? { ...mp.labelPos } : null, offX: mp.offX || 0, offY: mp.offY || 0, centered: !!mp.centered };
+  const lbc = mp._lenBeforeCenter, n = _undoStack.length;
+  pushUndo();
+  _matPathFoldOffset(mp);
+  _matPathMoveBase = { start: { ...mp.start }, labelPos: mp.labelPos ? { ...mp.labelPos } : undefined };
+  _matPathMoveApply(mp, dx, dy);
+  const v = _matPathMoveValid(mp);
+  if (!v.ok) {   // som ved slipp av et drag: ulovlig plassering spretter tilbake, med årsak
+    _matPathMoveRestore(mp); mp._lenBeforeCenter = lbc;
+    if (_undoStack.length === n + 1) _undoStack.pop();
+    if (typeof _showToast === 'function') _showToast('Flytting avbrutt: ' + (v.reason || 'ugyldig plassering'), 'error');
+  }
+  _invalidateMatCache && _invalidateMatCache();
+  if (typeof _matPathPanel === 'function') _matPathPanel();
+  updateCtxBar(); render();
+  return v.ok;
+}
+function _matPathMoveRestore(mp) {
+  const o = _matPathMoveOrig; if (!o) return;
+  mp.start = { ...o.start }; mp.offX = o.offX; mp.offY = o.offY; mp.centered = o.centered;
+  if (o.labelPos) mp.labelPos = { ...o.labelPos }; else delete mp.labelPos;
+}
 // 137 / E: tallene bak rødmerkingen for ÉN bredde — utenfor rommet (cm), inne i veggmarginen i
 // startenden (aShort) og sluttenden (bShort) langs banen, på tvers (crossShort + side) og hindring.
 // ÉN måler for rødmerkingen (_matPathRunIssue) OG engangsmigreringen (_matPathMigrateMarginV2),
@@ -21329,6 +21548,254 @@ function _matRunAdjustRegressionTest() {
   return { ok: allOk, results };
 }
 
+// 152 · «Like lengder», endedrag og flytte-gizmo for frihånds-matte (Regel 30). Samme fikstur-/
+// opprydningsdisiplin som _matRunAdjustRegressionTest. Kjør i konsollen: _matPathEqualizeRegressionTest()
+function _matPathEqualizeRegressionTest() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  if (!canvas || !canvas.width || !canvas.height || !canvas.getBoundingClientRect().width) {
+    console.error('_matPathEqualizeRegressionTest: HOPPET OVER — lerretet er 0×0 (åpne et prosjekt i tegnemodulen først)');
+    return { ok: false, skipped: true, results };
+  }
+  const savedProducts = HEATING_PRODUCTS.slice();
+  const saved = { rooms: S.rooms, mats: S.mats, matPaths: S.matPaths, hindrings: S.hindrings, zones: S.zones, strips: S.strips, cables: S.cables,
+    floors: S.floors, activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedRoomId: S.ui.selectedRoomId,
+    selectedMatId: S.ui.selectedMatId, selectedMatPathId: S.ui.selectedMatPathId, selectedMatRunIdx: S.ui.selectedMatRunIdx,
+    drawMode: S.ui.drawMode, view: { ...S.view }, varmefolie: { ...S.varmefolie }, varmematte: { ...S.varmematte }, snapGrid: S.snap.grid,
+    nextMatId: S.counters.nextMatId, nextMatPathId: S.counters.nextMatPathId, matFree: _matFree, cycle: S.ui.cycle,
+    autoSave: window._performAutoSave, toast: window._showToast, undoLen: _undoStack.length };
+  const toasts = [];
+  window._performAutoSave = () => Promise.resolve();
+  window._showToast = (m, k) => { toasts.push((k || 'info') + ': ' + m); };
+  const cr = () => canvas.getBoundingClientRect();
+  const ev = (type, sx, sy, extra) => canvas.dispatchEvent(new MouseEvent(type, Object.assign({ bubbles: true, cancelable: true, clientX: cr().left + sx, clientY: cr().top + sy, button: 0, buttons: type === 'mouseup' ? 0 : 1 }, extra || {})));
+  const key = (k, extra) => document.dispatchEvent(new KeyboardEvent('keydown', Object.assign({ bubbles: true, cancelable: true, key: k }, extra || {})));
+  const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 0.05 : tol);
+  const lens = mp => mp.moves.map(m => Math.round(m.len * 100) / 100);
+  const sum = mp => mp.moves.reduce((a, m) => a + m.len, 0);
+  try {
+    HEATING_PRODUCTS.length = 0;
+    HEATING_PRODUCTS.push(..._matBenchCatalog([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], { idBase: 915200, prefix: 'EQ' }));
+    const prod = HEATING_PRODUCTS.find(p => p.mat_area_m2 === 9);   // 150T 0,5 × 18 m → raster 16
+    const RID = 915201, W = 700, H = 700;
+    const mkRoom = (h) => { const pts = [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: h }, { x: 0, y: h }]; return { id: RID, floorId: null, points: pts, walls: compWalls(pts), dims: [], area: Math.abs(compArea(pts)) }; };
+    const fixture = (h, startY, lensIn, extra) => {
+      S.rooms = [mkRoom(h)]; S.mats = []; S.matPaths = []; S.hindrings = []; S.zones = []; S.strips = []; S.cables = [];
+      S.floors = []; S.ui.activeFloorId = null; S.ui.activePartId = null; _rebuildActiveFloorRoomIds();
+      S.ui.selectedRoomId = RID; S.ui.selectedMatId = null; S.ui.selectedMatPathId = null; S.ui.selectedMatRunIdx = null;
+      S.ui.drawMode = null; S.ui.cycle = null; _matFree = null; S.snap.grid = false;
+      S.varmematte = { gapCm: null }; S.varmefolie = Object.assign(S.varmefolie || {}, { direction: 'v', startCorner: 'bl', dirExplicit: true });
+      S.view = { ...S.view, zoom: 0.8, panX: 40, panY: 40 }; S.counters.nextMatPathId = 1;
+      const mv = lensIn.map((len, i) => ({ axis: 'v', dir: i % 2 ? 1 : -1, len, conn: i ? 'uturn' : 'first', side: 1 }));
+      const mp = Object.assign({ id: S.counters.nextMatPathId++, roomId: RID, productId: prod.id, start: { x: 28, y: startY }, moves: mv, gapCm: 0, centered: false, offX: 0, offY: 0 }, extra || {});
+      S.matPaths.push(mp); _invalidateMatCache(); S.ui.selectedMatPathId = mp.id; render();
+      return mp;
+    };
+    const sc = () => S.view.zoom * BASE_SCALE;
+
+    // ── 1: Kenneths matte — start nederst ved veggen, 3 × 5,44 + 3,04 m, rull 18 m, 1,36 m udekket ──
+    let mp = fixture(H, 697, [544, 544, 544, 304]);
+    const cat0 = _matFreeCatalog(mp);
+    check('1 fikstur: rull 18 m, én rull, 1,36 m udekket', '1800 / 1 / 136', cat0.coverCm === 1800 && cat0.segments.length === 1 && near(cat0.uncoveredCm, 136), { cover: cat0.coverCm, unc: cat0.uncoveredCm });
+    const u0 = _undoStack.length, start0 = { ...mp.start };
+    check('1 Like lengder gir true', 'true', _matPathEqualize(mp) === true, toasts.slice());
+    // Starten ligger mot veggen: siste kan ikke bli lengre enn L (ville gått gjennom veggen) → L = 464, siste 408
+    check('1 lengder 464 / 464 / 464 / 408', '[464,464,464,408]', JSON.stringify(lens(mp)) === '[464,464,464,408]', lens(mp));
+    check('1 Σ = rullen, ingen udekket rest', '1800 / 0', near(sum(mp), 1800) && _matFreeCatalog(mp).uncoveredCm < 0.5 && _matFreeCatalog(mp).coverCm === 1800, { sum: sum(mp), unc: _matFreeCatalog(mp).uncoveredCm });
+    check('1 startpunktet står fast', JSON.stringify(start0), JSON.stringify(mp.start) === JSON.stringify(start0), mp.start);
+    check('1 ett angresteg', String(u0 + 1), _undoStack.length === u0 + 1, _undoStack.length - u0);
+    check('1 lovlig plassering etterpå', 'ok', _matPathMoveValid(mp).ok, _matPathMoveValid(mp));
+    check('1 dekket areal = hele rullen (9 m²)', '9', near(_matPathCoveredLaneRects(mp).reduce((a, R) => a + (R.x1 - R.x0) * (R.y1 - R.y0), 0) / 10000, 9, 0.01), _matPathCoveredLaneRects(mp).length);
+    undo();
+    check('1 Angre gir tilbake de tegnede lengdene', '[544,544,544,304]', JSON.stringify(lens(S.matPaths[0])) === '[544,544,544,304]', lens(S.matPaths[0]));
+    mp = S.matPaths[0];
+
+    // ── 2: start midt i rommet — regel 3: minst forskjell vinner (448 / 456, ikke 464 / 408) ──
+    mp = fixture(H, 500, [544, 544, 544, 304]);
+    const rank = _matPathEqualRank(4, 1800, 16);
+    check('2 rangering: 448 / 456 (forskjell 8) før 464 / 408 (forskjell 56)', 'L=448 først', rank[0].L === 448 && near(rank[0].last, 456) && near(rank.find(c => c.L === 464).diff, 56), rank.slice(0, 3));
+    _matPathEqualize(mp);
+    check('2 Like lengder: 448 / 448 / 448 / 456', '[448,448,448,456]', JSON.stringify(lens(mp)) === '[448,448,448,456]', lens(mp));
+    const tie = _matPathEqualRank(4, 1824, 16);
+    check('2 lik forskjell: den med KORTEST siste (L=464 / 432) vinner over 448 / 480', 'L=464', tie[0].L === 464 && near(tie[0].last, 432) && near(tie[1].last, 480), tie.slice(0, 2));
+
+    // ── 2b: shiftCm beholdes, startCm (124) nullstilles ──
+    mp = fixture(H, 500, [544, 544, 544, 304]);
+    mp.moves[3].shiftCm = 5; mp.moves[2].startCm = 50;   // siste bane flyttet 5 cm ut (fri side), bane 3 med forskjøvet start
+    _matPathEqualize(mp);
+    check('2b shiftCm beholdt, startCm borte', 'shift 5 på siste / ingen startCm', JSON.stringify(lens(mp)) === '[448,448,448,456]' && mp.moves[3].shiftCm === 5 && mp.moves.every(m => !m.startCm), { lens: lens(mp), adj: mp.moves.map(m => [m.shiftCm, m.startCm]) });
+
+    // ── 3: rommet begrenser ──
+    // a) hindring i bane 1 — L settes ned (400 / 600)
+    mp = fixture(900, 600, [544, 544, 544, 304]);
+    S.hindrings.push({ id: 1, roomId: RID, type: 'sluk', label: 'sluk', clearance: 'wall', points: [{ x: 10, y: 130 }, { x: 40, y: 130 }, { x: 40, y: 180 }, { x: 10, y: 180 }] });
+    _invalidateMatCache();
+    const cap3a = _matFreeClampLen(mp, 'v', -1, { x: 28, y: 600 }, 1000, true), L3a = Math.floor(cap3a / 16) * 16;
+    _matPathEqualize(mp);
+    check('3a hindring i bane 1: L settes ned til det bane 1 får plass til (hele raster), siste tar resten', `[${L3a}×3, ${1800 - 3 * L3a}]`, L3a < 448 && lens(mp)[0] === L3a && lens(mp)[2] === L3a && near(lens(mp)[3], 1800 - 3 * L3a) && _matPathMoveValid(mp).ok, { cap3a, lens: lens(mp), v: _matPathMoveValid(mp) });
+    // b) hindring i siste bane — L økes slik at siste blir kortere (480 / 360)
+    mp = fixture(H, 500, [544, 544, 544, 304]);
+    S.hindrings.push({ id: 1, roomId: RID, type: 'sluk', label: 'sluk', clearance: 'wall', points: [{ x: 160, y: 400 }, { x: 190, y: 400 }, { x: 190, y: 450 }, { x: 160, y: 450 }] });
+    _invalidateMatCache(); _matPathEqualize(mp);
+    check('3b hindring i siste bane: siste kortes (480 / 360)', '[480,480,480,360]', JSON.stringify(lens(mp)) === '[480,480,480,360]' && _matPathMoveValid(mp).ok, { lens: lens(mp), v: _matPathMoveValid(mp) });
+    // c) ingenting får plass — avvises med melding, ingenting endres
+    mp = fixture(H, 500, [544, 544, 544, 304]);
+    S.hindrings.push({ id: 1, roomId: RID, type: 'sluk', label: 'sluk', clearance: 'wall', points: [{ x: 10, y: 40 }, { x: 40, y: 40 }, { x: 40, y: 90 }, { x: 10, y: 90 }] });
+    _invalidateMatCache(); toasts.length = 0; const u3 = _undoStack.length;
+    const r3 = _matPathEqualize(mp);
+    check('3c rullen får ikke plass: avvist, melding, ingenting endret, ingen angresteg', 'false / error / [544,544,544,304]', r3 === false && toasts.some(t => /^error: Like lengder/.test(t)) && JSON.stringify(lens(mp)) === '[544,544,544,304]' && _undoStack.length === u3, { r3, toasts, lens: lens(mp) });
+
+    // ── 4: endedrag ──
+    mp = fixture(H, 500, [448, 448, 448, 456]);   // allerede lik: 448 / 456
+    S.hindrings = []; _invalidateMatCache(); render();
+    const start4 = { ...mp.start }, u4 = _undoStack.length;
+    check('4 endehåndtak vises (valgt, rette bredder)', 'true', _matPathEndHandleShown(mp), null);
+    const h0 = _matPathEndHandleWorld(mp), hs0 = w2s(h0.x, h0.y);
+    check('4 håndtaket står i enden av siste bredde (x = bane 4, y = 500 − 448 + 456 = 508)', 'x≈178 y≈508', near(h0.x, 178, 0.2) && near(h0.y, 508, 0.2), h0);
+    ev('mousedown', hs0.x, hs0.y);
+    check('4 mousedown på håndtaket starter endedrag', 'mpend', _matDragging && _matDragKind === 'mpend', { _matDragging, _matDragKind });
+    // siste +3 raster (48 cm = 3 × 16) → L − 16 = 432, siste 504: Σ = 1800
+    ev('mousemove', hs0.x, hs0.y + 64 * sc());
+    check('4 dra siste +48 cm: 432 / 432 / 432 / 504, Σ = rull', '[432,432,432,504]', JSON.stringify(lens(mp)) === '[432,432,432,504]' && near(sum(mp), 1800), lens(mp));
+    ev('mousemove', hs0.x, hs0.y + 64 * sc() + 2 * sc());
+    check('4 under et trinn: samme lengder (snapper i hele raster)', '[432,432,432,504]', JSON.stringify(lens(mp)) === '[432,432,432,504]', lens(mp));
+    ev('mousemove', hs0.x, hs0.y + 400 * sc());   // langt forbi det rommet gir plass
+    const maxLast = lens(mp)[3];
+    check('4 dra forbi veggen: stopper der siste når veggmarginen, fortsatt lovlig, Σ = rull', 'lovlig, siste ≤ rommet', _matPathMoveValid(mp).ok && near(sum(mp), 1800) && maxLast > 504 && maxLast <= 700, { lens: lens(mp), v: _matPathMoveValid(mp) });
+    ev('mousemove', hs0.x, hs0.y - 40 * sc());    // tilbake forbi utgangspunktet (siste kortere)
+    check('4 dra tilbake: siste kortere enn 456, første tre lengre, Σ = rull', 'siste < 456', lens(mp)[3] < 456 && lens(mp)[0] > 448 && near(sum(mp), 1800), lens(mp));
+    ev('mouseup', hs0.x, hs0.y - 40 * sc());
+    check('4 ETT angresteg for hele draget', String(u4 + 1), _undoStack.length === u4 + 1, _undoStack.length - u4);
+    check('4 startpunktet står fast under draget', JSON.stringify(start4), JSON.stringify(mp.start) === JSON.stringify(start4), mp.start);
+    check('4 ingen drag henger igjen', 'ingen', !_canvasDragActive(), { _matDragging, _matDragKind });
+    undo();
+    check('4 Angre gir lengdene før draget', '[448,448,448,456]', JSON.stringify(lens(S.matPaths[0])) === '[448,448,448,456]', lens(S.matPaths[0]));
+    mp = S.matPaths[0]; render();
+    // Esc avbryter
+    const u4b = _undoStack.length, hs1 = (() => { const h = _matPathEndHandleWorld(mp); return w2s(h.x, h.y); })();
+    ev('mousedown', hs1.x, hs1.y); ev('mousemove', hs1.x, hs1.y + 64 * sc());
+    const midLens = lens(mp);
+    key('Escape');
+    check('4 Esc avbryter: lengder tilbake, ingen angresteg, ingen drag', 'før draget', midLens[3] === 504 && JSON.stringify(lens(mp)) === '[448,448,448,456]' && _undoStack.length === u4b && !_canvasDragActive(), { midLens, lens: lens(mp), undo: _undoStack.length - u4b });
+    // rent klikk på håndtaket endrer ingenting og legger ikke noe på angrestabelen
+    ev('mousedown', hs1.x, hs1.y); ev('mouseup', hs1.x, hs1.y);
+    check('4 klikk på håndtaket uten å dra endrer ingenting', 'uendret', JSON.stringify(lens(mp)) === '[448,448,448,456]' && _undoStack.length === u4b, { lens: lens(mp) });
+    // 130 / ulik retning: oddetalls antall bredder (3) — siste starter ved start-siden
+    mp = fixture(H, 650, [544, 544, 544]);   // 3 × 5,44 m = 16,32 m → rull 16 m
+    _matPathEqualize(mp);
+    check('4 tre bredder (rull 16 m): 528 / 528 / 544, Σ = rull', '[528,528,544]', JSON.stringify(lens(mp)) === '[528,528,544]' && near(sum(mp), 1600), lens(mp));
+
+    // ── 5: flytte-gizmo ──
+    mp = fixture(H, 500, [448, 448, 448, 456]);
+    mp.labelPos = { x: 300, y: 300 };
+    render();
+    const gp = _matPathGizmoPos(mp);
+    check('5 gizmoen står nede til venstre for matta (som S.mats)', 'x < start, y > matta', gp && gp.x < w2s(28, 0).x && gp.y > w2s(0, 500).y, gp);
+    check('5 treffet: sentrum = free, pilene = x / y', 'free / x / y', hitMatPathGizmo(mp, gp.x, gp.y) === 'free' && hitMatPathGizmo(mp, gp.x + 40, gp.y) === 'x' && hitMatPathGizmo(mp, gp.x, gp.y - 40) === 'y', null);
+    const lens5 = lens(mp), u5 = _undoStack.length;
+    ev('mousedown', gp.x, gp.y);
+    check('5 mousedown på gizmoen starter flytting av hele matta', 'matpath', _matDragging && _matDragKind === 'matpath' && S.ui.selectedMatRunIdx == null, { _matDragKind });
+    ev('mousemove', gp.x + 50 * sc(), gp.y);
+    ev('mouseup', gp.x + 50 * sc(), gp.y);
+    check('5 flytt 50 cm: start, labelPos følger med, bredder uendret', 'start.x 78 / label.x 350', near(mp.start.x, 78, 0.5) && near(mp.labelPos.x, 350, 0.5) && near(mp.labelPos.y, 300, 0.5) && JSON.stringify(lens(mp)) === JSON.stringify(lens5) && near(mp.start.y, 500, 0.5), { start: mp.start, label: mp.labelPos, lens: lens(mp) });
+    check('5 ett angresteg', String(u5 + 1), _undoStack.length === u5 + 1, _undoStack.length - u5);
+    undo();
+    check('5 Angre: start og labelPos tilbake', '28 / 300', near(S.matPaths[0].start.x, 28, 0.01) && near(S.matPaths[0].labelPos.x, 300, 0.01), { s: S.matPaths[0].start, l: S.matPaths[0].labelPos });
+    mp = S.matPaths[0]; S.ui.selectedMatPathId = mp.id; render();
+    // akselåst pil (x): y rører seg ikke
+    const gp2 = _matPathGizmoPos(mp);
+    ev('mousedown', gp2.x + 40, gp2.y); ev('mousemove', gp2.x + 40 + 30 * sc(), gp2.y - 90 * sc()); ev('mouseup', gp2.x + 40 + 30 * sc(), gp2.y - 90 * sc());
+    check('5 x-pilen låser y', 'y uendret', near(mp.start.y, 500, 0.01) && near(mp.start.x, 58, 0.5), mp.start);
+    // piltast (ingen bredde valgt): 10 cm, Shift 1 cm
+    S.ui.selectedMatRunIdx = null; key('ArrowRight'); key('ArrowDown', { shiftKey: true });
+    check('5 piltaster flytter hele matta (10 cm / Shift 1 cm)', 'x +10, y +1', near(mp.start.x, 68, 0.5) && near(mp.start.y, 501, 0.01), mp.start);
+    // inn i veggen → avvist med årsak, ingen angresteg
+    mp.start = { x: 38, y: 500 }; _invalidateMatCache(); render();
+    key('ArrowLeft'); const uN = _undoStack.length; toasts.length = 0;   // 38 → 28 = lovlig (kant 3 cm fra veggen = margin)
+    check('5 pil: 38 → 28 (lovlig, inntil margin)', '28', near(mp.start.x, 28, 0.01), mp.start);
+    key('ArrowLeft');   // 28 → 18: kanten ville vært utenfor veggmarginen
+    check('5 pil mot veggen: ulovlig flytting spretter tilbake med melding, uten angresteg', 'x = 28 / melding / uendret stabel', near(mp.start.x, 28, 0.01) && toasts.some(t => /Flytting avbrutt/.test(t)) && _undoStack.length === uN, { start: mp.start, toasts, undo: _undoStack.length - uN });
+
+    // gizmo-flytting inn i en annen mattes DEKKEDE del → rød og spretter tilbake; inn i UDEKKET del → lov (149)
+    mp = fixture(H, 500, [448, 448, 448, 456]);
+    const B = { id: S.counters.nextMatPathId++, roomId: RID, productId: prod.id, start: { x: 400, y: 600 }, gapCm: 0, centered: false, offX: 0, offY: 0,
+      moves: [544, 544, 544, 304].map((len, i) => ({ axis: 'v', dir: i % 2 ? 1 : -1, len, conn: i ? 'uturn' : 'first', side: 1 })) };
+    S.matPaths.push(B); S.ui.selectedMatPathId = mp.id; _invalidateMatCache(); render();
+    const bRects = _matPathCoveredLaneRects(B), unc = (() => { const r = _matFreeDeriveRuns(B).pop(); return _matFreeCoveredSplit(r, 50, _matFreeCovLen(1800, 1632, 304)).uncR; })();
+    check('5 fikstur: matte B har en udekket rest (136 cm)', 'udekket rest', _matFreeCatalog(B).uncoveredCm > 100 && unc.y1 - unc.y0 > 100, { unc });
+    const gp3 = _matPathGizmoPos(mp), dx = 400 - mp.start.x - 20;
+    ev('mousedown', gp3.x, gp3.y); ev('mousemove', gp3.x + dx * sc(), gp3.y);
+    check('5 inn i en annen mattes dekkede del: ugyldig (rød)', '_matDragInvalid', _matDragInvalid === true, _matDragInvalid);
+    const sx5 = { ...mp.start }; ev('mouseup', gp3.x + dx * sc(), gp3.y);
+    check('5 slipp: spretter tilbake med melding', 'opprinnelig start', near(mp.start.x, 28, 0.01) && toasts.some(t => /Flytting avbrutt/.test(t)), { start: mp.start, was: sx5 });
+    // liten matte inn i B sin udekkede rest
+    const Cm = { id: S.counters.nextMatPathId++, roomId: RID, productId: prod.id, start: { x: 600, y: 300 }, gapCm: 0, centered: false, offX: 0, offY: 0, moves: [{ axis: 'v', dir: 1, len: 160, conn: 'first', side: 1 }] };
+    S.matPaths = [B, Cm]; S.ui.selectedMatPathId = Cm.id; _invalidateMatCache(); render();
+    const uncW = unc, gp4 = _matPathGizmoPos(Cm);
+    const tx = (uncW.x0 + uncW.x1) / 2 - Cm.start.x, ty = uncW.y0 + 10 - Cm.start.y;
+    ev('mousedown', gp4.x, gp4.y); ev('mousemove', gp4.x + tx * sc(), gp4.y + ty * sc());
+    check('5 inn i en annen mattes UDEKKEDE felt: lov (149)', 'ikke ugyldig', _matDragInvalid === false && _matPathMoveValid(Cm).ok, { invalid: _matDragInvalid, v: _matPathMoveValid(Cm) });
+    ev('mouseup', gp4.x + tx * sc(), gp4.y + ty * sc());
+    check('5 ingen drag henger igjen', 'ingen', !_canvasDragActive(), { _matDragging, _matDragKind });
+
+    // ── 6: bane med hjørne eller hopp ──
+    mp = fixture(H, 500, [300, 300, 200]);
+    mp.moves[2] = { axis: 'h', dir: 1, len: 200, conn: 'corner', side: 1 };
+    S.ui.selectedMatPathId = mp.id; _matPathPanel(); updateCtxBar(); render();
+    const el6 = _matPathEqualEligible(mp);
+    check('6 hjørne: ikke aktuell, med forklaring', 'false + tekst', el6.ok === false && /rette bredder/.test(el6.reason), el6);
+    check('6 endehåndtaket vises ikke, og treffer ikke', 'skjult', !_matPathEndHandleShown(mp) && !hitMatPathEndHandle(mp, 0, 0), null);
+    const panel6 = document.getElementById('rwp-product-actions');
+    check('6 knappen i panelet er dempet med forklaring', 'opacity .45 + tittel', !!panel6 && /Like lengder/.test(panel6.innerHTML) && /opacity:\.45/.test(panel6.innerHTML) && /rette bredder/.test(panel6.innerHTML), null);
+    toasts.length = 0; const u6 = _undoStack.length, before6 = JSON.stringify(mp.moves);
+    check('6 _matPathEqualize avviser uten å endre', 'false', _matPathEqualize(mp) === false && JSON.stringify(mp.moves) === before6 && _undoStack.length === u6, toasts);
+    mp = fixture(H, 500, [300, 300, 200]); mp.moves[2] = { axis: 'v', dir: -1, len: 200, conn: 'jump', side: 1, from: { dx: 50, dy: 0 } };
+    check('6 hopp: ikke aktuell', 'false', _matPathEqualEligible(mp).ok === false, _matPathEqualEligible(mp));
+    mp = fixture(H, 500, [300, 300, 200]); mp.moves[1].cross = true;
+    check('6 tverrstykke: ikke aktuell', 'false', _matPathEqualEligible(mp).ok === false, null);
+    mp = fixture(H, 697, [544]);
+    check('6 én bredde: ikke aktuell', 'false', _matPathEqualEligible(mp).ok === false, _matPathEqualEligible(mp));
+
+    // ── 7: klikk på en bredde velger bredden (124) som før ──
+    mp = fixture(H, 500, [448, 448, 448, 456]); S.ui.selectedMatRunIdx = null; render();
+    const lane = _matFreeLaneRectWorld(_matFreeDeriveRuns(mp)[1], 50), pw = w2s((lane.x0 + lane.x1) / 2, lane.y0 + 200);
+    _resetCycle(); _labelPress = null;
+    ev('mousedown', pw.x, pw.y);
+    check('7 klikk på en bredde i valgt matte velger bredden og drar den (124)', 'runIdx=1, mprun', S.ui.selectedMatRunIdx === 1 && _matDragging && _matDragKind === 'mprun', { idx: S.ui.selectedMatRunIdx, _matDragKind });
+    ev('mouseup', pw.x, pw.y);
+    S.ui.selectedMatRunIdx = null;
+
+    // ── 8: vaksine — ranking og Σ biter ──
+    const sab = (() => { const r = _matPathEqualRank(4, 1800, 16); return r.every(c => near(c.last + 3 * c.L, 1800)); })();
+    check('8 Σ(N−1) × L + siste = rull for alle kandidater', 'alle', sab, null);
+    check('8 siste aldri under ett raster', '≥ 16', _matPathEqualRank(4, 1800, 16).every(c => c.last >= 16 - 1e-6), null);
+    // Vakten: skrivebeskyttet fane endrer ingenting
+    mp = fixture(H, 500, [544, 544, 544, 304]); S.ui.readOnly = true;
+    const ro1 = _matPathEqualize(mp), roHandle = _matPathEndHandleShown(mp), roGizmo = _matPathGizmoShown(mp);
+    S.ui.readOnly = false;
+    check('8 skrivebeskyttet (060): Like lengder gjør ingenting, håndtak og gizmo skjult', 'false/false/false', ro1 === false && roHandle === false && roGizmo === false && JSON.stringify(lens(mp)) === '[544,544,544,304]', { ro1, roHandle, roGizmo });
+  } catch (e) {
+    check('Uventet feil', 'ingen', false, e.message + ' @ ' + (e.stack || '').split('\n')[1]);
+  } finally {
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...savedProducts);
+    _matEndDrag = null; _matDragging = false; _matDragId = -1; _matDragKind = 'mat'; _matDragInvalid = false; _matRunDragOrig = null;
+    S.ui.readOnly = false;
+    S.rooms = saved.rooms; S.mats = saved.mats; S.matPaths = saved.matPaths; S.hindrings = saved.hindrings; S.zones = saved.zones; S.strips = saved.strips; S.cables = saved.cables;
+    S.floors = saved.floors; S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId; _rebuildActiveFloorRoomIds();
+    S.ui.selectedRoomId = saved.selectedRoomId; S.ui.selectedMatId = saved.selectedMatId; S.ui.selectedMatPathId = saved.selectedMatPathId; S.ui.selectedMatRunIdx = saved.selectedMatRunIdx;
+    S.ui.drawMode = saved.drawMode; S.view = saved.view; S.varmefolie = saved.varmefolie; S.varmematte = saved.varmematte; S.snap.grid = saved.snapGrid;
+    S.counters.nextMatId = saved.nextMatId; S.counters.nextMatPathId = saved.nextMatPathId; _matFree = saved.matFree; S.ui.cycle = saved.cycle;
+    window._performAutoSave = saved.autoSave; window._showToast = saved.toast;
+    _undoStack.length = Math.min(_undoStack.length, saved.undoLen);
+    canvas.style.cursor = 'default'; _invalidateMatCache && _invalidateMatCache();
+    if (typeof _matPathPanel === 'function') _matPathPanel();
+    updateCtxBar(); render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_matPathEqualizeRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
+  return { ok: allOk, results };
+}
+
 // 127: «Flytt alle matter i rommet» + «Mellomrom i denne matta». Samme fikstur-/opprydnings-
 // disiplin som _matRunAdjustRegressionTest over. Kjør i konsollen: _matArrangementRegressionTest()
 function _matArrangementRegressionTest() {
@@ -23048,6 +23515,7 @@ function _matPathPanel() {
       <span>Mellomrom i denne matta</span>
       <input type="number" value="${mp.gapCm || 0}" min="0" step="0.5" style="width:56px;padding:2px 4px;border:1px solid var(--brd);border-radius:4px;font-size:11px;background:var(--bg)" onchange="_matPathSetGap(${mp.id},this.value)"><span>cm</span>
     </div>
+    ${(() => { const el = _matPathEqualEligible(mp); return `<div style="display:flex;gap:4px;margin-top:8px"><div class="ctx-item vfp-btn" style="flex:1;text-align:center${el.ok ? '' : ';opacity:.45;cursor:default'}" title="${esc(el.ok ? 'Alle bredder like lange innenfor valgt rull; siste tar resten' : el.reason)}" onclick="${el.ok ? `_matPathEqualize(${mp.id})` : ''}">Like lengder</div></div>`; })()}
     <div style="display:flex;gap:4px;margin-top:8px">
       <div class="ctx-item vfp-btn${mp.centered ? ' on' : ''}" style="flex:1;text-align:center" onclick="_matPathToggleCenter(${mp.id})">Sentrer</div>
       <div class="ctx-item vfp-btn" style="flex:1;text-align:center;color:#e5484d" onclick="_matPathDelete(${mp.id})">Slett</div>
@@ -45192,7 +45660,10 @@ function drawMatMoveGizmo() {
   const mat = S.mats.find(m => m.id === S.ui.selectedMatId);
   if (!mat) return;
   // Gizmo at bottom-left of mat (unrotated, offset outward) — 133: samme punkt som treffet (_getMatGizmoPos)
-  const gp = _getMatGizmoPos(mat);
+  _drawMatGizmoGlyph(_getMatGizmoPos(mat), true);
+}
+// 152: glyfen deles med frihånds-matta (drawMatPathMoveGizmo) — uten rotasjonshåndtak der (withRot=false).
+function _drawMatGizmoGlyph(gp, withRot) {
   ctx.save();
   // X arrow (red)
   drawGizmoArrow(gp.x + 18, gp.y, gp.x + 72, gp.y, 'rgba(255,75,75,0.9)');
@@ -45207,13 +45678,15 @@ function drawMatMoveGizmo() {
   ctx.moveTo(gp.x, gp.y - 9); ctx.lineTo(gp.x, gp.y + 9);
   ctx.stroke();
   // Rotation handle
-  const rx = gp.x + 52, ry = gp.y - 52;
-  ctx.beginPath(); ctx.arc(rx, ry, 10, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(34,211,238,0.1)'; ctx.strokeStyle = 'rgba(34,211,238,0.85)';
-  ctx.fill(); ctx.stroke();
-  ctx.fillStyle = 'rgba(34,211,238,0.85)';
-  ctx.font = "bold 13px sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('\u21bb', rx, ry);
+  if (withRot) {
+    const rx = gp.x + 52, ry = gp.y - 52;
+    ctx.beginPath(); ctx.arc(rx, ry, 10, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(34,211,238,0.1)'; ctx.strokeStyle = 'rgba(34,211,238,0.85)';
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(34,211,238,0.85)';
+    ctx.font = "bold 13px sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('\u21bb', rx, ry);
+  }
   ctx.restore();
 }
 
@@ -68083,6 +68556,16 @@ canvas.addEventListener('mousedown', e=>{
       }
     }
 
+    // ── 152: valgt frihånds-matte — endehåndtak (B) og flytte-gizmo (C) går FØR klikk-syklingen ──
+    if (S.ui.selectedMatPathId != null) {
+      const mpG = (S.matPaths || []).find(m => m.id === S.ui.selectedMatPathId);
+      if (mpG && _roomIdOnActiveFloor(mpG.roomId)) {
+        if (hitMatPathEndHandle(mpG, sx0, sy0) && _matEndDragBegin(mpG, e, sx0, sy0)) return;
+        const gh = hitMatPathGizmo(mpG, sx0, sy0);
+        if (gh) { _matPathMoveBegin(mpG, e, gh); return; }
+      }
+    }
+
     // ── Click-cycling: resolve which stacked object this click targets ──
     // Build the full candidate stack under the point. On a repeated clean
     // click at (~)the same spot, advance through the stack; otherwise start
@@ -68146,19 +68629,7 @@ canvas.addEventListener('mousedown', e=>{
           if (_chosen.type === 'matpath') S.ui.selectedMatRunIdx = null;
           if (_chosen.type === 'matpath' && _idx === 0 && !_noDrag) {
             const mpDrag = (S.matPaths || []).find(m => m.id === _chosen.id);
-            if (mpDrag) {
-              pushUndo();
-              _matDragging = true;
-              _matDragKind = 'matpath';
-              _matDragId = mpDrag.id;
-              _matDragAxis = 'free';
-              _matDragInvalid = false;
-              _matDragOrigStart = { x: e.clientX, y: e.clientY };
-              _matDragOrigPos = { x: mpDrag.start.x, y: mpDrag.start.y };
-              _matDragOrigCentered = !!mpDrag.centered;
-              mpDrag.centered = false;   // en manuell flytting slår av «Sentrer» — posisjonen er ikke lenger avledet
-              canvas.style.cursor = 'crosshair';
-            }
+            if (mpDrag) _matPathMoveBegin(mpDrag, e, 'free');   // 152: samme vei som gizmoen (foldet Sentrer-forskyvning, labelPos følger med)
           }
           return;
         }
@@ -69187,6 +69658,7 @@ canvas.addEventListener('mousemove', e=>{
   // ── Mat dragging ──
   if (_matDragging) {
     if (_matDragKind === 'matarr') { _matArrMove(e); render(); return; }   // 127: hele arrangementet
+    if (_matDragKind === 'mpend') { _matEndDragMove(e); render(); return; }   // 152 / B: endedrag
     // 124 / Regel 26: flytting av ÉN bredde/bane (sidelengs) eller dens start — delta fra der man
     // grep, snappet 5 cm (Shift glidende). Ingen klamping, ingen sprett: rødmerking er svaret.
     if (_matDragKind === 'matrun' || _matDragKind === 'matrunstart' || _matDragKind === 'mprun' || _matDragKind === 'mprunstart') {
@@ -69211,16 +69683,17 @@ canvas.addEventListener('mousemove', e=>{
         const sc = S.view.zoom * BASE_SCALE;
         let totalDx = (e.clientX - _matDragOrigStart.x) / sc;
         let totalDy = (e.clientY - _matDragOrigStart.y) / sc;
-        if (S.snap.grid && !S.shiftHeld) {
+        if (_matDragAxis === 'x') totalDy = 0;   // 152: gizmoens akselåste piler
+        if (_matDragAxis === 'y') totalDx = 0;
+        if (S.snap.grid && !S.shiftHeld && _matDragAxis === 'free') {
           const nx = Math.round((_matDragOrigPos.x + totalDx) / GRID) * GRID;
           const ny = Math.round((_matDragOrigPos.y + totalDy) / GRID) * GRID;
           totalDx = nx - _matDragOrigPos.x;
           totalDy = ny - _matDragOrigPos.y;
         }
-        // Nytt objekt, ikke mutasjon av mp.start i plass — pushUndo sitt snapshot av start er nå
-        // klonet (se over), men å ALDRI dele referansen i utgangspunktet er billig ekstra vern.
-        mp.start = { x: _matDragOrigPos.x + totalDx, y: _matDragOrigPos.y + totalDy };
-        mp.offX = 0; mp.offY = 0;
+        // 152: «original + delta» for ALLE felt i _ROOM_TRANSLATE_SPEC.matPaths (start OG labelPos —
+        // 137-2), nye objekter hver gang (angre-snapshotet deler aldri referanse).
+        _matPathMoveApply(mp, totalDx, totalDy);
         _matDragInvalid = !_matPathMoveValid(mp).ok;
         _invalidateMatCache && _invalidateMatCache();
       }
@@ -70070,6 +70543,7 @@ function _canvasMouseUp(e){
   if (_foilFreeLenDragging) { _foilFreeLenDragging=false; _foilFreeLenId=null; canvas.style.cursor='default'; render(); return; }
   if (_matDragging) {
     if (_matDragKind === 'matarr') { _matArrEnd(); return; }   // 127: validering ved slipp, ingen sprett
+    if (_matDragKind === 'mpend') { _matEndDragFinish(false); return; }   // 152 / B
     // 124 / Regel 26: bredde-/bane-drag avsluttes uten avvisning (Kenneth avgjør selv).
     if (_matDragKind === 'matrun' || _matDragKind === 'matrunstart' || _matDragKind === 'mprun' || _matDragKind === 'mprunstart') {
       const isPath = _matDragKind.startsWith('mp');
@@ -70084,9 +70558,7 @@ function _canvasMouseUp(e){
       const mp = (S.matPaths || []).find(m => m.id === _matDragId);
       if (mp && _matDragInvalid) {
         const v = _matPathMoveValid(mp);   // årsak FØR posisjonen tilbakestilles
-        mp.start = { ..._matDragOrigPos };
-        mp.offX = 0; mp.offY = 0;
-        mp.centered = _matDragOrigCentered;
+        _matPathMoveRestore(mp);   // 152: start, labelPos, Sentrer-forskyvning og -flagg som før draget
         if (typeof _showToast === 'function') _showToast('Flytting avbrutt: ' + (v.reason || 'ugyldig plassering'), 'error');
         _invalidateMatCache && _invalidateMatCache();
       }
@@ -70552,6 +71024,7 @@ document.addEventListener('keydown', e=>{
     // museslippet landet utenfor lerretet) avsluttes FØRST — samme vei som et ekte slipp, altså
     // med tilbakestilling av en ugyldig posisjon. Først når ingen drag er i gang går Escape
     // videre i den vanlige kjeden under.
+    if (_matDragging && _matDragKind === 'mpend') { _matEndDragFinish(true); e.preventDefault(); return; }   // 152 / B: Esc avbryter endedraget
     if (_endCanvasDrag()) { e.preventDefault(); return; }
     _resetCycle();
     // spec-hurtigtast-mal-escape.md (Kenneth 10.09.2026): Målemodus er et OVERLAY-verktøy — den
@@ -70742,6 +71215,16 @@ document.addEventListener('keydown', e=>{
         else { dAcross = dyk; dStart = dxk * m.dir; }
       }
       _matRunNudge(dAcross, dStart);
+      return;
+    }
+  }
+  // 152 / C: ingen bredde valgt → pilene flytter hele den valgte frihånds-matta (10 cm, Shift = 1 cm).
+  if (S.ui.selectedMatPathId != null && S.ui.selectedMatRunIdx == null && !S.ui.drawMode && !e.ctrlKey && !e.metaKey && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+    const mpK = (S.matPaths || []).find(m => m.id === S.ui.selectedMatPathId);
+    if (mpK) {
+      e.preventDefault();
+      const stepK = e.shiftKey ? 1 : SUBGRID;
+      _matPathNudge(mpK, e.key === 'ArrowRight' ? stepK : e.key === 'ArrowLeft' ? -stepK : 0, e.key === 'ArrowDown' ? stepK : e.key === 'ArrowUp' ? -stepK : 0);
       return;
     }
   }
@@ -71872,6 +72355,7 @@ function _ctxBarItems() {
         <span class="tc-sep"></span>
         <button class="snap-chip${_matArrangeMode ? ' on' : ''}" onclick="_matToggleArrangeMode()" title="Dra én matte og flytt alle matter og frihånds-matter i rommet sammen (Alt + dra gjør det samme uten å slå på)">Flytt alle matter i rommet</button>
         <span class="tc-sep"></span>
+        ${(() => { const el = _matPathEqualEligible(mp); return `<button class="snap-chip" onclick="_matPathEqualize(${mp.id})" title="${esc(el.ok ? 'Alle bredder like lange innenfor valgt rull; siste tar resten' : el.reason)}"${el.ok ? '' : ' disabled'}>Like lengder</button><span class="tc-sep"></span>`; })()}
         <button class="snap-chip${mp.centered ? ' on' : ''}" onclick="_matPathToggleCenter(${mp.id})" title="Sentrer hele arrangementet i rommet (slakk likt på begge ytterveggene)">Sentrer</button>
         <span class="tc-sep"></span>
         <button class="snap-chip" onclick="_matPathDelete(${mp.id})" title="Slett frihånds-matte">\u{1F5D1} Slett</button>`;
