@@ -24110,10 +24110,7 @@ function resetMatLabel() {
   const mp = (S.matPaths || []).find(x => x.id === id);
   if (!mp) return;
   pushUndo();
-  let changed = false;
-  if (mp.labelPos != null)      { delete mp.labelPos;      changed = true; }
-  if (mp.labelRotation != null) { delete mp.labelRotation; changed = true; }
-  if (mp.labelScale != null)    { delete mp.labelScale;    changed = true; }
+  const changed = _labelClearManual(mp);   // 155: delt definisjon
   if (changed) { render(); _scheduleAutoSave && _scheduleAutoSave(); }
 }
 // 151: den udekkede «ghosten» tegnes ikke lenger (plan, PDF, presentasjon). Den ligger fortsatt i dataene
@@ -45372,10 +45369,7 @@ function resetMatRectLabel() {
   const mat = (S.mats || []).find(x => x.id === id);
   if (!mat) return;
   pushUndo();
-  let changed = false;
-  if (mat.labelPos != null)      { delete mat.labelPos;      changed = true; }
-  if (mat.labelRotation != null) { delete mat.labelRotation; changed = true; }
-  if (mat.labelScale != null)    { delete mat.labelScale;    changed = true; }
+  const changed = _labelClearManual(mat);   // 155: delt definisjon
   if (changed) { render(); _scheduleAutoSave && _scheduleAutoSave(); }
 }
 // Høyreklikk på en rektangulær matte-label: eneste inngang til «Tilbakestill til auto» (rektangulær
@@ -54984,6 +54978,16 @@ function stripCtxMenu(e, id) {
   showCtxAt(e.clientX, e.clientY);
 }
 
+// 155: ÉN definisjon av «label til auto» — pos + rotasjon + skala. Brukt av de fire reset-
+// funksjonene (folie/kabel/matte/rektangulær matte) og av PDF-dialogens forhåndsvisning
+// (dobbeltklikk på en label, «Labels til auto»). Returnerer om noe ble fjernet.
+function _labelClearManual(o) {
+  let changed = false;
+  if (o.labelPos != null)      { delete o.labelPos;      changed = true; }
+  if (o.labelRotation != null) { delete o.labelRotation; changed = true; }
+  if (o.labelScale != null)    { delete o.labelScale;    changed = true; }
+  return changed;
+}
 // Clear any manual (dragged) label position on the selected strips → back to
 // automatic placement (Del 1+2). Undoable + autosaved.
 function resetStripLabel() {
@@ -54995,9 +54999,7 @@ function resetStripLabel() {
   for (const sid of selIds) {
     const s = S.strips.find(st => st.id === sid);
     if (!s) continue;
-    if (s.labelPos != null)      { delete s.labelPos;      changed = true; }
-    if (s.labelRotation != null) { delete s.labelRotation; changed = true; }
-    if (s.labelScale != null)    { delete s.labelScale;    changed = true; }
+    if (_labelClearManual(s)) changed = true;   // 155: delt definisjon
   }
   if (changed) { render(); _scheduleAutoSave && _scheduleAutoSave(); }
 }
@@ -55009,10 +55011,7 @@ function resetCableLabel() {
   const c = S.cables.find(x => x.id === id);
   if (!c) return;
   pushUndo();
-  let changed = false;
-  if (c.labelPos != null)      { delete c.labelPos;      changed = true; }
-  if (c.labelRotation != null) { delete c.labelRotation; changed = true; }
-  if (c.labelScale != null)    { delete c.labelScale;    changed = true; }
+  const changed = _labelClearManual(c);   // 155: delt definisjon
   if (changed) { render(); _scheduleAutoSave && _scheduleAutoSave(); }
 }
 
@@ -78412,24 +78411,243 @@ function _showExportDialog() {
   overlay.style.display = 'flex';
 }
 
+// ═══ 155 · LEVENDE FORHÅNDSVISNING AV ROM I PDF-DIALOGEN (Kenneth 28.10.2026) ═══════════════
+// «Kunne zoome inn/ut og flytte … i tillegg flytte på labels.» Rommet tegnes på et eget lerret i
+// dialogen med SAMME mekanisme som PDF-en (`_renderRoomToImage`: midlertidig view på hovedlerretet,
+// `_pdfMode`, gjenoppretting) — bare i lerretets egen oppløsning (`opts.outW`), kopiert rett inn
+// (`opts.toCanvas`). Ingen kopi av tegnelogikken.
+//   • Hjul = zoom rundt pekeren, dra på tomt område = flytt → `room.pdfView` (lagres i prosjektet,
+//     neste PDF og kollegaer får det samme). Ett angresteg per bevegelse, autolagring etterpå.
+//   • Dra på en label = flytt labelen — samme `labelPos` (verdens-cm) som hovedlerretet skriver,
+//     truffet med de samme boksene (`_cableLabelBounds` m.fl., tatt rett etter PDF-tegningen).
+//     Dobbeltklikk = den labelen til auto (`_labelClearManual`, delt med reset-funksjonene).
+//   • Rommet som vises velges IKKE på hovedlerretet (`_renderRoomToImage` gjenoppretter alt).
+//   • Skrivebeskyttet vindu (060): alt vises, ingenting kan endres — samme gate som lerretet.
+// Bare labels som hører til rommet kan dras herfra; naborom som stikker inn i utsnittet røres ikke.
+let _pdfPrev = null;   // { roomId, cv, cur:{cx,cy,scale}, autoW, autoC, res, drag, undoTaken, wheelTimer, raf }
+
+function _expPreviewRooms() { return (S.rooms || []).filter(r => !r.listDraft); }
+
 function _expPreviewRoom(roomId) {
   const room = S.rooms.find(r => r.id === roomId);
   if (!room) return;
   const area = document.getElementById('exp-preview-area');
   if (!area) return;
-  const imgRes = _renderRoomToImage(room, { focusRoom: true });
-  const imgData = imgRes && imgRes.url ? imgRes.url : '';
   const stats = _computeRoomStats(room);
   const wm2 = stats.nettoM2 > 0 ? Math.round(stats.totalW / stats.nettoM2) : 0;
   const coverage = stats.nettoM2 > 0 ? Math.round(stats.heatedM2/stats.nettoM2*100) : 0;
-  area.innerHTML = `<div style="text-align:center;width:100%">
-    <img src="${imgData}" style="max-width:100%;max-height:50vh;border-radius:8px;border:1px solid var(--border)">
+  const rooms = _expPreviewRooms();
+  const idx = rooms.findIndex(r => r.id === roomId);
+  const prev = idx > 0 ? rooms[idx - 1] : null, next = (idx >= 0 && idx < rooms.length - 1) ? rooms[idx + 1] : null;
+  const ro = !!(S.ui && S.ui.readOnly);
+  const tegnbar = room.points && room.points.length >= 3;
+  const nav = rooms.length > 1 ? `<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px">
+      <button class="adm-btn ghost" style="padding:4px 10px" ${prev ? `onclick="_expPreviewRoom(${prev.id})"` : 'disabled'} title="${prev ? _esc(prev.name || 'Rom') : ''}">&lsaquo; Forrige</button>
+      <span style="font-size:12px;color:var(--muted)">Rom ${idx + 1} av ${rooms.length}</span>
+      <button class="adm-btn ghost" style="padding:4px 10px" ${next ? `onclick="_expPreviewRoom(${next.id})"` : 'disabled'} title="${next ? _esc(next.name || 'Rom') : ''}">Neste &rsaquo;</button>
+    </div>` : '';
+  area.innerHTML = `<div style="text-align:center;width:100%;align-self:stretch;padding:8px 0">
+    <div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:11px;color:var(--muted)">
+      <button class="adm-btn ghost" id="exp-pv-reset" style="padding:3px 10px;font-size:11px" onclick="_pdfPrevResetView()" title="Tilbake til automatisk utsnitt (rommet med luft rundt)">Tilbakestill utsnitt</button>
+      <button class="adm-btn ghost" id="exp-pv-labels" style="padding:3px 10px;font-size:11px" onclick="_pdfPrevResetLabels()" title="Alle labels i rommet tilbake til automatisk plassering">Labels til auto</button>
+      <span>${ro ? 'Skrivebeskyttet — utsnitt og labels kan ikke endres' : 'Rull for zoom · dra for å flytte · dra labels · dobbeltklikk label = auto'}</span>
+      <span id="exp-pv-zoom" style="font-weight:600;color:var(--text)"></span>
+    </div>
+    ${tegnbar ? `<canvas id="exp-pv-canvas" style="max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:${ro ? 'default' : 'grab'};touch-action:none;display:block;margin:0 auto;background:#fff"></canvas>`
+              : `<div style="color:var(--dim);font-size:13px;padding:40px 0">Rommet har ingen tegning (kalkyle uten polygon).</div>`}
     <div style="margin-top:12px;text-align:left;font-size:12px;color:var(--text);max-width:500px;margin-left:auto;margin-right:auto">
       <div style="font-weight:600;font-size:14px;margin-bottom:6px">${_esc(room.name||'Rom')}</div>
       <div>Brutto: ${stats.bruttoM2.toFixed(1)} m² · Netto: ${stats.nettoM2.toFixed(1)} m² · Dekning: ${coverage}%</div>
       <div>Effekt: ${Math.round(stats.totalW)} W · ${wm2} W/m²</div>
-    </div>
+    </div>${nav}
   </div>`;
+  const cv = document.getElementById('exp-pv-canvas');
+  _pdfPrev = cv ? { roomId, cv, cur: null, autoW: 0, autoC: null, res: null, drag: null, undoTaken: false, wheelTimer: null, raf: 0 } : null;
+  if (!cv) return;
+  cv.addEventListener('wheel', _pdfPrevWheel, { passive: false });
+  cv.addEventListener('pointerdown', _pdfPrevDown);
+  cv.addEventListener('pointermove', _pdfPrevMove);
+  cv.addEventListener('pointerup', _pdfPrevUp);
+  cv.addEventListener('pointercancel', _pdfPrevUp);
+  cv.addEventListener('dblclick', _pdfPrevDblClick);
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  _pdfPrevDraw();
+}
+
+// Tegn forhåndsvisningen nå (synkront). Lerretet får bredden dialogen har plass til (maks 50 vh
+// høyt, som <img>-en før 155), i enhetens pikseltetthet; aspektet er `_pdfRoomAspect` — det
+// samme sideoppsettet som PDF-en. Målt 3 ms for det største rommet (STEG 0.3).
+function _pdfPrevDraw() {
+  const p = _pdfPrev;
+  if (!p) return;
+  p.raf = 0;
+  const room = S.rooms.find(r => r.id === p.roomId);
+  if (!room || !p.cv.isConnected) { _pdfPrev = null; return; }
+  const area = document.getElementById('exp-preview-area');
+  const availW = Math.max(240, (area ? area.clientWidth : 600) - 24);
+  const maxH = Math.max(200, Math.floor(window.innerHeight * 0.5));
+  const aspect = _pdfRoomAspect(room);
+  const cssW = Math.max(200, Math.min(availW, Math.floor(maxH / aspect)));
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  p.res = _renderRoomToImage(room, { focusRoom: true, outW: Math.round(cssW * dpr), toCanvas: p.cv, noUrl: true, captureLabels: true });
+  const v = p.res.view;
+  p.cv.style.width = cssW + 'px';
+  p.cv.style.height = Math.round(v.outH / dpr) + 'px';
+  p.cur = { cx: v.panX, cy: v.panY, scale: v.scale };
+  p.autoW = v.worldW * v.scale;                       // auto-utsnittets bredde i cm (konstant)
+  const z = document.getElementById('exp-pv-zoom');
+  if (z) z.textContent = _labelScaleNum(v.scale) + '×';
+  const rb = document.getElementById('exp-pv-reset');
+  if (rb) rb.disabled = !room.pdfView;
+}
+function _pdfPrevSchedule() {
+  const p = _pdfPrev;
+  if (!p || p.raf) return;
+  p.raf = requestAnimationFrame(_pdfPrevDraw);
+}
+// Pekerposisjon i lerretets egne piksler (samme regning som _evToCanvas for hovedlerretet).
+function _pdfPrevPt(e) {
+  const cv = _pdfPrev.cv, r = cv.getBoundingClientRect();
+  if (!r.width || !r.height) return { x: 0, y: 0 };
+  return { x: (e.clientX - r.left) * (cv.width / r.width), y: (e.clientY - r.top) * (cv.height / r.height) };
+}
+// px per cm i gjeldende (ev. ennå ikke tegnede) utsnitt.
+function _pdfPrevSc() { const p = _pdfPrev; return p.res.view.outW * p.cur.scale / p.autoW; }
+function _pdfPrevS2W(x, y) {
+  const p = _pdfPrev, sc = _pdfPrevSc(), v = p.res.view;
+  return { x: (x - v.outW / 2) / sc + p.cur.cx, y: (y - v.outH / 2) / sc + p.cur.cy };
+}
+// Treff på en label i bildet — samme bokser og samme rekkefølge som hovedlerretets mousedown
+// (kabel → rektangulær matte → frihånds-matte → folie), begrenset til rommets egne objekter.
+function _pdfPrevHitLabel(x, y) {
+  const p = _pdfPrev, L = p.res && p.res.labels;
+  if (!L) return null;
+  const tries = [['cable', S.cables || [], L.cable], ['matRect', S.mats || [], L.matRect],
+                 ['mat', S.matPaths || [], L.mat], ['strip', S.strips || [], L.strip]];
+  for (const [kind, arr, bounds] of tries) {
+    for (const [id, b] of Object.entries(bounds || {})) {
+      if (x >= b.sx && x <= b.sx + b.w && y >= b.sy && y <= b.sy + b.h) {
+        const obj = arr.find(o => o.id === parseInt(id));
+        if (obj && obj.roomId === p.roomId) return { kind, obj, b };
+      }
+    }
+  }
+  return null;
+}
+function _pdfPrevRoom() { const p = _pdfPrev; return p ? S.rooms.find(r => r.id === p.roomId) : null; }
+function _pdfPrevLocked() { return !_pdfPrev || !!(S.ui && S.ui.readOnly); }
+// Ett angresteg per bevegelse (hjul-serie, ett drag) — ikke ett per hendelse.
+function _pdfPrevUndoOnce() { const p = _pdfPrev; if (!p.undoTaken) { pushUndo(); p.undoTaken = true; } }
+function _pdfPrevSetView(cx, cy, scale) {
+  const room = _pdfPrevRoom();
+  if (!room) return;
+  const s = Math.min(PDF_VIEW_SCALE_MAX, Math.max(PDF_VIEW_SCALE_MIN, scale));
+  room.pdfView = { cx: Math.round(cx * 10) / 10, cy: Math.round(cy * 10) / 10, scale: Math.round(s * 1000) / 1000 };   // nytt objekt (pushUndo kopierer grunt)
+  _pdfPrev.cur = { cx: room.pdfView.cx, cy: room.pdfView.cy, scale: room.pdfView.scale };
+  _pdfPrevSchedule();
+}
+function _pdfPrevWheel(e) {
+  e.preventDefault();
+  if (_pdfPrevLocked() || !_pdfPrev.res) return;
+  const p = _pdfPrev, pt = _pdfPrevPt(e), v = p.res.view;
+  const f = e.deltaY > 0 ? 1 / 1.1 : 1.1;
+  const ns = Math.min(PDF_VIEW_SCALE_MAX, Math.max(PDF_VIEW_SCALE_MIN, p.cur.scale * f));
+  if (Math.abs(ns - p.cur.scale) < 1e-9) return;
+  const w = _pdfPrevS2W(pt.x, pt.y);                 // verdenspunktet under pekeren står stille
+  const sc2 = v.outW * ns / p.autoW;
+  _pdfPrevUndoOnce();
+  _pdfPrevSetView(w.x - (pt.x - v.outW / 2) / sc2, w.y - (pt.y - v.outH / 2) / sc2, ns);
+  clearTimeout(p.wheelTimer);
+  p.wheelTimer = setTimeout(() => { p.undoTaken = false; _scheduleAutoSave && _scheduleAutoSave(); }, 500);
+}
+function _pdfPrevDown(e) {
+  if (_pdfPrevLocked() || !_pdfPrev.res || e.button !== 0) return;
+  e.preventDefault();
+  const p = _pdfPrev, pt = _pdfPrevPt(e);
+  try { p.cv.setPointerCapture(e.pointerId); } catch (_) {}
+  p.undoTaken = false;   // nytt grep = nytt angresteg (en hjul-serie rett før beholder sitt)
+  const hit = _pdfPrevHitLabel(pt.x, pt.y);
+  if (hit) {
+    // Som hovedlerretet: labelPos seedes fra den FAKTISK tegnede boksens senter, så labelen ikke
+    // hopper ved første drag. Offset = peker − labelsenter, i verdens-cm.
+    const c = _pdfPrevS2W(hit.b.sx + hit.b.w / 2, hit.b.sy + hit.b.h / 2);
+    const w = _pdfPrevS2W(pt.x, pt.y);
+    const base = hit.obj.labelPos || c;
+    p.drag = { kind: 'label', hit, seed: c, start: pt, moved: false, off: { x: w.x - base.x, y: w.y - base.y } };
+  } else {
+    p.drag = { kind: 'pan', start: pt, cx0: p.cur.cx, cy0: p.cur.cy, moved: false };
+  }
+  p.cv.style.cursor = 'grabbing';
+}
+function _pdfPrevMove(e) {
+  const p = _pdfPrev;
+  if (!p || !p.res) return;
+  const pt = _pdfPrevPt(e);
+  if (!p.drag) {
+    if (!_pdfPrevLocked()) p.cv.style.cursor = _pdfPrevHitLabel(pt.x, pt.y) ? 'move' : 'grab';
+    return;
+  }
+  const d = p.drag;
+  if (!d.moved) {
+    if (Math.hypot(pt.x - d.start.x, pt.y - d.start.y) < 3) return;   // klikk-støy blir aldri en endring
+    d.moved = true;
+    _pdfPrevUndoOnce();
+    if (d.kind === 'label' && !d.hit.obj.labelPos) d.hit.obj.labelPos = { x: d.seed.x, y: d.seed.y };
+  }
+  if (d.kind === 'pan') {
+    const sc = _pdfPrevSc();
+    _pdfPrevSetView(d.cx0 - (pt.x - d.start.x) / sc, d.cy0 - (pt.y - d.start.y) / sc, p.cur.scale);
+  } else {
+    const w = _pdfPrevS2W(pt.x, pt.y);
+    d.hit.obj.labelPos = { x: w.x - d.off.x, y: w.y - d.off.y };
+    _pdfPrevSchedule();
+  }
+}
+function _pdfPrevUp(e) {
+  const p = _pdfPrev;
+  if (!p || !p.drag) return;
+  const moved = p.drag.moved;
+  p.drag = null;
+  p.undoTaken = false;
+  p.cv.style.cursor = 'grab';
+  if (moved) _scheduleAutoSave && _scheduleAutoSave();
+}
+function _pdfPrevDblClick(e) {
+  if (_pdfPrevLocked() || !_pdfPrev.res) return;
+  e.preventDefault();
+  const pt = _pdfPrevPt(e);
+  const hit = _pdfPrevHitLabel(pt.x, pt.y);
+  if (!hit) return;
+  const o = hit.obj;
+  if (o.labelPos == null && o.labelRotation == null && o.labelScale == null) return;
+  pushUndo();
+  _labelClearManual(o);
+  _scheduleAutoSave && _scheduleAutoSave();
+  _pdfPrevDraw();
+}
+function _pdfPrevResetView() {
+  const room = _pdfPrevRoom();
+  if (_pdfPrevLocked() || !room || !room.pdfView) return;
+  pushUndo();
+  delete room.pdfView;
+  _scheduleAutoSave && _scheduleAutoSave();
+  _pdfPrevDraw();
+}
+// Alle labels i rommet som er flyttet/rotert/skalert for hånd.
+function _pdfPrevManualLabels(roomId) {
+  const alle = [...(S.cables || []), ...(S.mats || []), ...(S.matPaths || []), ...(S.strips || [])];
+  return alle.filter(o => o.roomId === roomId && (o.labelPos != null || o.labelRotation != null || o.labelScale != null));
+}
+function _pdfPrevResetLabels() {
+  const room = _pdfPrevRoom();
+  if (_pdfPrevLocked() || !room) return;
+  const objs = _pdfPrevManualLabels(room.id);
+  if (!objs.length) { if (typeof _showToast === 'function') _showToast('Alle labels i rommet er allerede automatiske'); return; }
+  if (!confirm(`Tilbakestill ${objs.length} label${objs.length === 1 ? '' : 's'} i «${room.name || 'Rom'}» til automatisk plassering?`)) return;
+  pushUndo();
+  for (const o of objs) _labelClearManual(o);
+  _scheduleAutoSave && _scheduleAutoSave();
+  _pdfPrevDraw();
 }
 function _expPreviewStair(stairId) {
   const stair = (S.stairs||[]).find(s => s.id === stairId);
@@ -79093,6 +79311,7 @@ function _pdfExportSmokeTest() {
   let sistSideantall = null, sisteToast = null;
   const smokeTekst = [];   // 145: all tekst som tegnes i siste eksport (søkes i foliefixturen)
   const smokeSide = [];    // 154: [sidenr, tekst] for samme kall — rekkefølgen av seksjoner
+  const smokeImg = [];     // 155: [sidenr, x, y, w, h, url-lengde] per addImage — sideoppsett vs. bilde
   try {
     window._performAutoSave = () => Promise.resolve();
     window._showToast = (m) => { sisteToast = m; };
@@ -79109,6 +79328,12 @@ function _pdfExportSmokeTest() {
         smokeTekst.push(t);
         smokeSide.push([d.internal.getCurrentPageInfo().pageNumber, t]);   // 154: side per tekst
         return t0(txt, ...r);
+      };
+      const ai0 = d.addImage.bind(d);   // 155
+      d.addImage = function (url, fmt, x, y, w, h, ...r) {
+        smokeImg.push([d.internal.getCurrentPageInfo().pageNumber, Math.round(x * 10) / 10, Math.round(y * 10) / 10,
+          Math.round(w * 10) / 10, Math.round(h * 10) / 10, typeof url === "string" ? url.length : -1]);
+        return ai0(url, fmt, x, y, w, h, ...r);
       };
       return d;
     };
@@ -79167,7 +79392,7 @@ function _pdfExportSmokeTest() {
         stairs: (S.stairs || []).map(s => s.id), roomTable: true, stairTable: true,
         materialList: true, resistance: true, pricing: false, discount: 0, showDGDB: false, docs: false,
         signature: false, freeText: '' }, ekstra || {});
-      smokeTekst.length = 0; smokeSide.length = 0;
+      smokeTekst.length = 0; smokeSide.length = 0; smokeImg.length = 0;
       // Minst én side per valgt seksjon: forside + sammendrag + plantegning (154: én per etasje
       // med tegnede rom) + én side per rom og per trapp.
       const planSider = opts.floorplan ? _pdfFloorplanGroups(new Set(opts.rooms)).length : 0;
@@ -79293,6 +79518,32 @@ function _pdfExportSmokeTest() {
         if (navn.indexOf('innendørs rom med kabel') === 0) {
           // 154: ett rom uten etasjer → tittelen er bare «Plantegning» (uten etasjenavn).
           check('«' + navn + '»: uten etasjer heter siden «Plantegning»', 'Plantegning', smokeTekst.includes('Plantegning') && !smokeTekst.some(t => t.startsWith('Plantegning \u2013')), smokeTekst.filter(t => t.startsWith('Plantegning')).join(','));
+          // 155: et lagret utsnitt (room.pdfView) endrer BILDET på romsiden, ikke sideoppsettet:
+          // samme sideantall, samme addImage-plassering (side, x, y, w, h) på alle sider, samme
+          // tekst — men romsidens bilde er et annet (JPEG-lengden endres).
+          const utenRev = a => a.map(t => /^\d+(\s+\(forrige.*)?$/.test(t) ? 'REV' : t.replace(/rev\. \d+/i, 'rev. N'));   // revisjonen telles opp per eksport
+          const imgAuto = smokeImg.map(a => a.slice()), tekstAuto = utenRev(smokeTekst);
+          const romside = smokeSide.find(x => x[1] === 'Spesifikasjon'); const romSide = romside ? romside[0] : null;
+          S.rooms[0].pdfView = { cx: 300, cy: 150, scale: 1.6 };
+          const med = await kjør();
+          const plassering = a => a.map(x => x.slice(0, 5));
+          check('«' + navn + '» 155: pdfView → samme sideantall', r.sider, med.ok && med.sider === r.sider, med.sider);
+          check('«' + navn + '» 155: pdfView → samme bildeplassering på alle sider', 'lik',
+            JSON.stringify(plassering(imgAuto)) === JSON.stringify(plassering(smokeImg)), JSON.stringify(plassering(smokeImg)));
+          check('«' + navn + '» 155: pdfView → samme tekst', 'lik',
+            JSON.stringify(tekstAuto) === JSON.stringify(utenRev(smokeTekst)), utenRev(smokeTekst).filter((t, i) => t !== tekstAuto[i]).slice(0, 3));
+          const auto7 = imgAuto.find(a => a[0] === romSide), ny7 = smokeImg.find(a => a[0] === romSide);
+          check('«' + navn + '» 155: pdfView → romsidens bilde er et ANNET', 'ulik JPEG',
+            !!auto7 && !!ny7 && auto7[5] !== ny7[5], auto7 && ny7 ? auto7[5] + ' vs ' + ny7[5] : 'fant ikke romsiden');
+          // VAKSINE: leses ikke pdfView, blir bildet identisk med auto — sjekken over skal bli rød.
+          const ekteViewOf = window._pdfViewOf;
+          window._pdfViewOf = () => null;
+          await kjør();
+          window._pdfViewOf = ekteViewOf;
+          const syk7 = smokeImg.find(a => a[0] === romSide);
+          check('«' + navn + '» 155: VAKSINE — uten _pdfViewOf er bildet auto igjen', 'lik JPEG',
+            !!auto7 && !!syk7 && auto7[5] === syk7[5], auto7 && syk7 ? auto7[5] + ' vs ' + syk7[5] : '-');
+          delete S.rooms[0].pdfView;
         }
         if (navn.indexOf('(145)') >= 0) {
           // 145: 6,0 m × 36 W/m = 216,0 W → øvre 266,7 · nominell 244,9 · nedre 224,1 (håndregnet).
@@ -79405,6 +79656,245 @@ function _pdfExportSmokeTest() {
     console.error('_pdfExportSmokeTest: FEILET', results);
     return Promise.resolve({ ok: false, results });
   }
+}
+
+// 155 — regresjonstest for utsnitt per rom + levende forhåndsvisning. Kjøres fra konsollen:
+// _pdfPreviewRegressionTest(). A: `_renderRoomToImage` leser `room.pdfView` (senter, bredde ÷ skala,
+// uendret aspekt og pikselstørrelse, ugyldig/klemt verdi); `_pdfRoomAspect` er uavhengig av utsnittet.
+// B: dialogens lerret — hjul (zoom rundt pekeren), dra (flytt), label-drag (samme `labelPos` som
+// hovedlerretet), dobbeltklikk (auto), knappene, skrivebeskyttet, ett angresteg per bevegelse,
+// ‹ › blar rom uten å røre avkryssingen. Til slutt en VAKSINE. Synkron, rydder alltid opp.
+function _pdfPreviewRegressionTest() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 0.5 : tol);
+  const saved = {
+    rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats,
+    matPaths: S.matPaths, plates: S.plates, aluboard: S.aluboard, zones: S.zones, hindrings: S.hindrings,
+    stairs: S.stairs, floors: S.floors, project: S.project, counters: { ...S.counters },
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedRoomId: S.ui.selectedRoomId,
+    readOnly: S.ui.readOnly, prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
+    autoSave: window._performAutoSave, sched: window._scheduleAutoSave, toast: window._showToast,
+    confirm: window.confirm, lockToast: window._lockToast, viewOf: window._pdfViewOf,
+    undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
+    dialogDisplay: (document.getElementById('export-dialog') || {}).style ? document.getElementById('export-dialog').style.display : null,
+  };
+  let autosaves = 0, toasts = [];
+  try {
+    window._performAutoSave = () => Promise.resolve();
+    window._scheduleAutoSave = () => { autosaves++; };
+    window._showToast = (m) => { toasts.push(m); };
+    window._lockToast = () => {};
+    const CAT_CABLE = { id: 9700, module_type: 'cable', name: 'TESTKABEL' };
+    const CAT_MAT   = { id: 9800, module_type: 'mat',   name: 'TESTMATTE' };
+    const CAB = { id: 996001, category_id: 9700, active: true, product_family: 'InSnow 30T',
+      name: 'InSnow 30T 1000W 33m', voltage: 230, cable_length_m: 33, watt_per_m: 30, total_effect_w: 1000, min_wall_margin_mm: 50 };
+    const MAT = { id: 996002, category_id: 9800, active: true, product_family: 'EcoMat 60T',
+      name: 'EcoMat 60T 0,5x10m', voltage: 230, watt_per_m2: 60, mat_area_m2: 5, mat_width_mm: 500,
+      mat_total_length_mm: 10000, mat_cc_mm: 120, mat_cut_interval_mm: 240, min_wall_margin_mm: 50, min_gap_mm: 0, total_effect_w: 300 };
+    const FOLIE = { id: 996005, category_id: 1, active: true, name: 'FlexFoil B=60cm', width_mm: 590,
+      netto_width_mm: 590, watt_per_lm: 36, watt_per_m2: 60, voltage: 230, min_gap_mm: 10, min_wall_margin_mm: 25 };
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push(CAT_CABLE, CAT_MAT);
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(CAB, MAT, FOLIE);
+    const RID = 992301, RID2 = 992302;
+    const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+    const mkRoom = (id, navn, pts) => ({ id, floorId: null, partId: null, name: navn, points: pts.map(p => ({ ...p })),
+      walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [] });
+    S.rooms = [mkRoom(RID, 'Stue', rect(0, 0, 500, 400)), mkRoom(RID2, 'Bad', rect(700, 0, 300, 250))];
+    S.cables = [{ id: 992501, roomId: RID, productId: CAB.id, direction: 'v', spacing_cm: 20, startCorner: 'bl',
+      totalLength_cm: 3300, runs: [{ pos_cm: 60, segments: [{ start_cm: 20, end_cm: 380 }] }, { pos_cm: 120, segments: [{ start_cm: 20, end_cm: 380 }] }], connections: [] }];
+    S.strips = [{ id: 992601, roomId: RID, productId: FOLIE.id, direction: 'v', pos_cm: 250, start_cm: 20, length_cm: 300 }];
+    S.mats = [{ id: 992701, roomId: RID, productId: MAT.id, x_cm: 330, y_cm: 20, width_cm: 50, length_cm: 200, num_runs: 2, gap_cm: 5, rotation_deg: 0 }];
+    S.matPaths = []; S.plates = []; S.aluboard = []; S.foilFree = []; S.zones = []; S.hindrings = []; S.stairs = []; S.floors = [];
+    S.ui.activeFloorId = null; S.ui.activePartId = null; S.ui.readOnly = false;
+    S.project = { name: 'PDF-FORHÅNDSVISNING-TEST', parts: [], revision: 0 };
+    if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    const room = S.rooms[0], cable = S.cables[0], strip = S.strips[0], mat = S.mats[0];
+
+    // ─── A · _renderRoomToImage leser pdfView ───
+    const auto = _renderRoomToImage(room, { focusRoom: true, outW: 400, noUrl: true, captureLabels: true });
+    check('A1: auto — verdensbredde = bbox + 2 × pad', 800, auto.view.worldW === 800, auto.view.worldW);
+    check('A1: auto — senter = rommets bbox-senter', '250,200', auto.view.panX === 250 && auto.view.panY === 200, [auto.view.panX, auto.view.panY]);
+    check('A1: outW følger opts.outW, url er null med noUrl', '400 / null', auto.w === 400 && auto.url === null, [auto.w, auto.url]);
+    check('A1: aspekt = _pdfRoomAspect', _pdfRoomAspect(room), Math.abs(auto.aspect - _pdfRoomAspect(room)) < 1e-12, auto.aspect);
+    check('A1: label-bokser fanget i PDF-modus (kabel, folie, matte)', 'alle tre',
+      !!auto.labels && !!auto.labels.cable[cable.id] && !!auto.labels.strip[strip.id] && !!auto.labels.matRect[mat.id],
+      auto.labels && Object.keys(auto.labels).map(k => k + ':' + Object.keys(auto.labels[k]).length).join(' '));
+    const bc = auto.labels.cable[cable.id];
+    check('A1: kabel-boksen ligger innenfor bildet', 'innenfor', bc && bc.sx >= 0 && bc.sy >= 0 && bc.sx + bc.w <= auto.w && bc.sy + bc.h <= auto.h, bc);
+    room.pdfView = { cx: 300, cy: 150, scale: 2 };
+    const z2 = _renderRoomToImage(room, { focusRoom: true, outW: 400, noUrl: true, captureLabels: true });
+    check('A2: skala 2 → verdensbredde halvert', 400, z2.view.worldW === 400, z2.view.worldW);
+    check('A2: senter = pdfView.cx/cy', '300,150', z2.view.panX === 300 && z2.view.panY === 150, [z2.view.panX, z2.view.panY]);
+    check('A2: aspekt UENDRET (sideoppsettet er det samme)', auto.aspect, Math.abs(z2.aspect - auto.aspect) < 1e-12, z2.aspect);
+    check('A2: samme pikselstørrelse', auto.w + '×' + auto.h, z2.w === auto.w && z2.h === auto.h, z2.w + '×' + z2.h);
+    check('A2: _pdfRoomAspect uavhengig av pdfView', _pdfRoomAspect({ points: room.points }), _pdfRoomAspect(room) === auto.aspect, _pdfRoomAspect(room));
+    const bc2 = z2.labels.cable[cable.id];
+    // 051: labelene har fast størrelse på PAPIRET — zoomer en inn, blir rommet større i bildet,
+    // men labelen like stor (`_pdfScaleMmPerCm` følger verdensbredden). Derfor SAMME boksbredde.
+    check('A2: kabel-boksen er like bred i bildet (fast mm på papiret, 051)', bc.w.toFixed(1), bc2 && near(bc2.w, bc.w, 1), bc2 && bc2.w.toFixed(1));
+    room.pdfView = { cx: NaN, cy: 150, scale: 2 };
+    check('A3: ugyldig pdfView (NaN) → auto', 800, _renderRoomToImage(room, { focusRoom: true, outW: 400, noUrl: true }).view.worldW === 800, _pdfViewOf(room));
+    room.pdfView = { cx: 250, cy: 200, scale: 9 };
+    check('A3: skala over 4 klemmes til 4', 200, _renderRoomToImage(room, { focusRoom: true, outW: 400, noUrl: true }).view.worldW === 200, _pdfViewOf(room));
+    room.pdfView = { cx: 250, cy: 200, scale: 0.1 };
+    check('A3: skala under 0,5 klemmes til 0,5', 1600, _renderRoomToImage(room, { focusRoom: true, outW: 400, noUrl: true }).view.worldW === 1600, _pdfViewOf(room));
+    delete room.pdfView;
+    check('A3: etter rendring er hovedlerretets tilstand gjenopprettet', 'ikke pdfMode, rom uvalgt',
+      !S.ui._pdfMode && S.ui.selectedRoomId === saved.selectedRoomId, [S.ui._pdfMode, S.ui.selectedRoomId]);
+
+    // ─── B · dialogens levende forhåndsvisning ───
+    _showExportDialog();
+    _expPreviewRoom(RID);
+    const cv = document.getElementById('exp-pv-canvas');
+    check('B0: forhåndsvisningen er et <canvas>, ikke <img>', 'canvas', !!cv && !document.querySelector('#exp-preview-area img'), !!cv);
+    check('B0: rommet er IKKE valgt på hovedlerretet', saved.selectedRoomId, S.ui.selectedRoomId === saved.selectedRoomId, S.ui.selectedRoomId);
+    const r0 = cv.getBoundingClientRect();
+    const k = () => { const r = cv.getBoundingClientRect(); return { r, kx: cv.width / r.width, ky: cv.height / r.height }; };
+    const wheel = (fx, fy, dy) => { const { r } = k(); cv.dispatchEvent(new WheelEvent('wheel', { clientX: r.left + r.width * fx, clientY: r.top + r.height * fy, deltaY: dy, bubbles: true, cancelable: true })); };
+    const pe = (type, x, y) => cv.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: type === 'pointerup' ? 0 : 1, bubbles: true, cancelable: true }));
+    const drag = (x0, y0, x1, y1) => { pe('pointerdown', x0, y0); for (let i = 1; i <= 4; i++) pe('pointermove', x0 + (x1 - x0) * i / 4, y0 + (y1 - y0) * i / 4); pe('pointerup', x1, y1); };
+    const bildeAvLabel = (b) => { const { r, kx, ky } = k(); return { x: r.left + (b.sx + b.w / 2) / kx, y: r.top + (b.sy + b.h / 2) / ky }; };
+    check('B0: lerretet har størrelse og viser 1,0×', '1,0×', r0.width > 100 && document.getElementById('exp-pv-zoom').textContent === '1,0×', [r0.width, document.getElementById('exp-pv-zoom').textContent]);
+    check('B0: «Tilbakestill utsnitt» er av uten pdfView', true, document.getElementById('exp-pv-reset').disabled, document.getElementById('exp-pv-reset').disabled);
+    const undo0 = _undoStack.length;
+    wheel(0.5, 0.5, -100); _pdfPrevDraw();
+    check('B1: hjul i senter → skala 1,1, senter uendret', '1.1 @ 250,200', room.pdfView && near(room.pdfView.scale, 1.1, 0.001) && near(room.pdfView.cx, 250, 0.2) && near(room.pdfView.cy, 200, 0.2), room.pdfView);
+    check('B1: zoom-teksten følger', '1,1×', document.getElementById('exp-pv-zoom').textContent === '1,1×', document.getElementById('exp-pv-zoom').textContent);
+    check('B1: «Tilbakestill utsnitt» er på', false, document.getElementById('exp-pv-reset').disabled === false, document.getElementById('exp-pv-reset').disabled);
+    wheel(0.5, 0.5, -100); wheel(0.5, 0.5, -100); _pdfPrevDraw();
+    check('B1: tre hjul = ETT angresteg (serie)', undo0 + 1, _undoStack.length === undo0 + 1, _undoStack.length);
+    // zoom rundt pekeren: verdenspunktet under (10 %, 10 %) står stille
+    const pt = (() => { const { r, kx, ky } = k(); return { x: (r.width * 0.1) * kx, y: (r.height * 0.1) * ky }; })();
+    const wFor = _pdfPrevS2W(pt.x, pt.y);
+    wheel(0.1, 0.1, -100); _pdfPrevDraw();
+    const wEtter = _pdfPrevS2W(pt.x, pt.y);
+    check('B2: hjul ved 10 %/10 % → punktet under pekeren står stille', 'samme verdenspunkt', near(wFor.x, wEtter.x, 0.5) && near(wFor.y, wEtter.y, 0.5), [wFor, wEtter]);
+    check('B2: …og senteret flyttet mot øvre venstre', 'cx < 250, cy < 200', room.pdfView.cx < 250 && room.pdfView.cy < 200, room.pdfView);
+    _pdfPrev.undoTaken = false; clearTimeout(_pdfPrev.wheelTimer);
+    // dra på tomt område (øverste venstre hjørne er luft)
+    const cxFor = room.pdfView.cx, sc = _pdfPrevSc(), { r: r1, kx: kx1 } = k();
+    const undo1 = _undoStack.length;
+    drag(r1.left + 6, r1.top + 6, r1.left + 56, r1.top + 6); _pdfPrevDraw();
+    check('B3: dra 50 px mot høyre → senteret flytter 50/sc cm mot venstre', (cxFor - 50 * kx1 / sc).toFixed(1), near(room.pdfView.cx, cxFor - 50 * kx1 / sc, 0.3), room.pdfView.cx);
+    check('B3: ett angresteg for draget', undo1 + 1, _undoStack.length === undo1 + 1, _undoStack.length);
+    check('B3: autolagring planlagt etter draget', '>= 1', autosaves >= 1, autosaves);
+    // label-drag: kabel
+    const lb = _pdfPrev.res.labels.cable[cable.id];
+    check('B4: kabel-labelen finnes i forhåndsvisningen', true, !!lb, lb);
+    const c0 = bildeAvLabel(lb), sc4 = _pdfPrevSc(), kx4 = k().kx;
+    const undo2 = _undoStack.length;
+    drag(c0.x, c0.y, c0.x + 40, c0.y + 20); _pdfPrevDraw();
+    const lb2 = _pdfPrev.res.labels.cable[cable.id];
+    check('B4: kabel.labelPos satt (verdens-cm)', 'objekt', cable.labelPos && Number.isFinite(cable.labelPos.x), cable.labelPos);
+    check('B4: labelen flyttet 40/20 px i bildet', '40,20', lb2 && near((lb2.sx + lb2.w / 2) - (lb.sx + lb.w / 2), 40 * kx4, 1.5) && near((lb2.sy + lb2.h / 2) - (lb.sy + lb.h / 2), 20 * kx4, 1.5), lb2 && [((lb2.sx + lb2.w / 2) - (lb.sx + lb.w / 2)).toFixed(1), ((lb2.sy + lb2.h / 2) - (lb.sy + lb.h / 2)).toFixed(1)]);
+    check('B4: ett angresteg for label-draget', undo2 + 1, _undoStack.length === undo2 + 1, _undoStack.length);
+    check('B4: utsnittet er uendret av label-draget', cxFor - 50 * kx1 / sc, near(room.pdfView.cx, cxFor - 50 * kx1 / sc, 0.3), room.pdfView.cx);
+    // hovedlerretet viser det samme: labelPos ER hovedlerretets felt — tegn og les boksen der
+    render();
+    const hoved = _cableLabelBounds[cable.id];
+    const hovedW = hoved ? s2w(hoved.sx + hoved.w / 2, hoved.sy + hoved.h / 2) : null;
+    check('B4: hovedlerretet tegner labelen på labelPos', 'samme verdenspunkt', hovedW && near(hovedW.x, cable.labelPos.x, 1) && near(hovedW.y, cable.labelPos.y, 1), [hovedW, cable.labelPos]);
+    // label-drag: folie (strip) og rektangulær matte — i auto-utsnittet, så begge er i bildet
+    delete room.pdfView; _pdfPrevDraw();
+    const sb = _pdfPrev.res.labels.strip[strip.id];
+    check('B5: folie- og matte-labelen finnes i forhåndsvisningen', true, !!sb && !!_pdfPrev.res.labels.matRect[mat.id], [!!sb, !!_pdfPrev.res.labels.matRect[mat.id]]);
+    if (!sb || !_pdfPrev.res.labels.matRect[mat.id]) throw new Error('label-bokser mangler i forhåndsvisningen');
+    const s0 = bildeAvLabel(sb);
+    drag(s0.x, s0.y, s0.x - 30, s0.y); _pdfPrevDraw();
+    check('B5: folie-label: labelPos satt', 'objekt', strip.labelPos && Number.isFinite(strip.labelPos.x), strip.labelPos);
+    const mb = _pdfPrev.res.labels.matRect[mat.id];
+    const m0 = bildeAvLabel(mb);
+    drag(m0.x, m0.y, m0.x, m0.y + 25); _pdfPrevDraw();
+    check('B5: matte-label: labelPos satt', 'objekt', mat.labelPos && Number.isFinite(mat.labelPos.x), mat.labelPos);
+    // klikk uten bevegelse endrer ingenting
+    const undo3 = _undoStack.length, lpFor = JSON.stringify(cable.labelPos);
+    const c1 = bildeAvLabel(_pdfPrev.res.labels.cable[cable.id]);
+    pe('pointerdown', c1.x, c1.y); pe('pointermove', c1.x + 1, c1.y); pe('pointerup', c1.x + 1, c1.y); _pdfPrevDraw();
+    check('B6: klikk uten bevegelse → ingen endring, ingen angresteg', 'uendret', JSON.stringify(cable.labelPos) === lpFor && _undoStack.length === undo3, [cable.labelPos, _undoStack.length - undo3]);
+    // dobbeltklikk → auto
+    const c2 = bildeAvLabel(_pdfPrev.res.labels.cable[cable.id]);
+    cv.dispatchEvent(new MouseEvent('dblclick', { clientX: c2.x, clientY: c2.y, bubbles: true, cancelable: true }));
+    check('B7: dobbeltklikk på kabel-labelen → labelPos slettet', 'undefined', cable.labelPos === undefined, cable.labelPos);
+    check('B7: …folie- og matte-label urørt', 'begge satt', !!strip.labelPos && !!mat.labelPos, [strip.labelPos, mat.labelPos]);
+    // «Labels til auto» (med bekreftelse)
+    let spurt = null; window.confirm = (m) => { spurt = m; return false; };
+    _pdfPrevResetLabels();
+    check('B8: «Labels til auto» spør først (2 labels, romnavn)', 'Tilbakestill 2 labels i «Stue»', /^Tilbakestill 2 labels i «Stue»/.test(spurt || ''), spurt);
+    check('B8: nei → ingenting fjernet', 'begge satt', !!strip.labelPos && !!mat.labelPos, [strip.labelPos, mat.labelPos]);
+    window.confirm = () => true;
+    _pdfPrevResetLabels();
+    check('B8: ja → alle labels i rommet til auto', 'ingen', !strip.labelPos && !mat.labelPos && !cable.labelPos, [strip.labelPos, mat.labelPos]);
+    toasts.length = 0; _pdfPrevResetLabels();
+    check('B8: ingen manuelle → beskjed, ingen spørsmål', 'toast', toasts.length === 1 && /allerede automatiske/.test(toasts[0]), toasts);
+    // «Tilbakestill utsnitt» — først et utsnitt å tilbakestille
+    wheel(0.5, 0.5, -100); _pdfPrevDraw(); _pdfPrev.undoTaken = false; clearTimeout(_pdfPrev.wheelTimer);
+    check('B9: utsnitt satt på nytt (1,1×)', '1,1×', document.getElementById('exp-pv-zoom').textContent === '1,1\u00d7', document.getElementById('exp-pv-zoom').textContent);
+    const undo4 = _undoStack.length;
+    _pdfPrevResetView();
+    check('B9: «Tilbakestill utsnitt» sletter pdfView, ett angresteg, 1,0×', 'auto', room.pdfView === undefined && _undoStack.length === undo4 + 1 && document.getElementById('exp-pv-zoom').textContent === '1,0×', [room.pdfView, document.getElementById('exp-pv-zoom').textContent]);
+    check('B9: knappen er av igjen', true, document.getElementById('exp-pv-reset').disabled, document.getElementById('exp-pv-reset').disabled);
+    // lagret: pdfView følger rommet i prosjekt-JSON
+    room.pdfView = { cx: 260, cy: 190, scale: 1.3 };
+    const lagret = _buildSaveData().rooms.find(r => r.id === RID).pdfView;
+    check('B10: pdfView ligger i _buildSaveData for rommet', '{260,190,1.3}', lagret && lagret.cx === 260 && lagret.cy === 190 && lagret.scale === 1.3, lagret);
+    _expPreviewRoom(RID);
+    check('B10: forhåndsvisningen åpner med lagret utsnitt (1,3×)', '1,3×', document.getElementById('exp-pv-zoom').textContent === '1,3×', document.getElementById('exp-pv-zoom').textContent);
+    delete room.pdfView;
+    // skrivebeskyttet: alt vises, ingenting endres
+    S.ui.readOnly = true;
+    _expPreviewRoom(RID);
+    const cvRo = document.getElementById('exp-pv-canvas');
+    const undo5 = _undoStack.length;
+    cvRo.dispatchEvent(new WheelEvent('wheel', { clientX: cvRo.getBoundingClientRect().left + 50, clientY: cvRo.getBoundingClientRect().top + 50, deltaY: -100, bubbles: true, cancelable: true }));
+    _pdfPrevResetView(); _pdfPrevResetLabels();
+    check('B11: skrivebeskyttet → hjul endrer ingenting, ingen angresteg', 'auto', room.pdfView === undefined && _undoStack.length === undo5, [room.pdfView, _undoStack.length - undo5]);
+    check('B11: skrivebeskyttet → teksten sier det', 'Skrivebeskyttet', /Skrivebeskyttet/.test(document.getElementById('exp-preview-area').textContent), '');
+    S.ui.readOnly = false;
+    // ‹ › blar rom, avkryssing uendret
+    _expPreviewRoom(RID);
+    const cbFor = [...document.querySelectorAll('.exp-room-cb')].map(c => c.checked).join(',');
+    const knapper = [...document.querySelectorAll('#exp-preview-area button')];
+    const neste = knapper.find(b => /Neste/.test(b.textContent)), forrige = knapper.find(b => /Forrige/.test(b.textContent));
+    check('B12: «Rom 1 av 2», Forrige av, Neste på', 'ja', /Rom 1 av 2/.test(document.getElementById('exp-preview-area').textContent) && forrige && forrige.disabled && neste && !neste.disabled, [forrige && forrige.disabled, neste && neste.disabled]);
+    neste.click();
+    check('B12: Neste → Bad vises', RID2, _pdfPrev && _pdfPrev.roomId === RID2 && /Rom 2 av 2/.test(document.getElementById('exp-preview-area').textContent), _pdfPrev && _pdfPrev.roomId);
+    check('B12: avkryssingen i lista er uendret', cbFor, [...document.querySelectorAll('.exp-room-cb')].map(c => c.checked).join(',') === cbFor, [...document.querySelectorAll('.exp-room-cb')].map(c => c.checked).join(','));
+    check('B12: hovedlerretet har fortsatt ikke valgt noe rom', saved.selectedRoomId, S.ui.selectedRoomId === saved.selectedRoomId, S.ui.selectedRoomId);
+
+    // ─── VAKSINE: uten _pdfViewOf-lesing skal A2 bli rød ───
+    window._pdfViewOf = () => null;
+    room.pdfView = { cx: 300, cy: 150, scale: 2 };
+    const syk = _renderRoomToImage(room, { focusRoom: true, outW: 400, noUrl: true });
+    window._pdfViewOf = saved.viewOf;
+    check('VAKSINE: leses ikke pdfView, er bredden auto (A2 ville blitt rød)', 800, syk.view.worldW === 800, syk.view.worldW);
+    delete room.pdfView;
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    window._pdfViewOf = saved.viewOf;
+    window.confirm = saved.confirm;
+    const ov = document.getElementById('export-dialog');
+    if (ov) ov.style.display = saved.dialogDisplay || 'none';
+    _pdfPrev = null;
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree, cables: saved.cables, mats: saved.mats,
+      matPaths: saved.matPaths, plates: saved.plates, aluboard: saved.aluboard, zones: saved.zones, hindrings: saved.hindrings,
+      stairs: saved.stairs, floors: saved.floors, project: saved.project });
+    Object.assign(S.counters, saved.counters);
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId; S.ui.selectedRoomId = saved.selectedRoomId;
+    S.ui.readOnly = saved.readOnly;
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push(...saved.cats);
+    window._performAutoSave = saved.autoSave; window._scheduleAutoSave = saved.sched; window._showToast = saved.toast; window._lockToast = saved.lockToast;
+    if (saved.undoLen != null) _undoStack.length = saved.undoLen;
+    if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_pdfPreviewRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
 }
 
 // ─── PDF EXPORT ──────────────────────────────────────────────
@@ -81508,6 +81998,22 @@ async function exportPDF(opts) {
 // + 20 (folie), saa 150 cm daekker alle kombinasjoner.
 const PDF_ROOM_PAD_CM = 150;
 
+// ═══ 155 · UTSNITT PER ROM (Kenneth 28.10.2026) ═══════════════════════════════════════════
+// «Zoome inn/ut og flytte, da kan vi justere en best mulig visning av rommet.»
+// `room.pdfView = { cx, cy, scale }` — senter i verdens-cm og skala relativt til auto-utsnittet
+// (bbox + PDF_ROOM_PAD_CM). Mangler/ugyldig = auto, nøyaktig som før 155. Lagres med rommet i
+// prosjekt-JSON (`_buildSaveData` sprer hele romobjektet), ingen migrasjon. Aspektet
+// (høyde ÷ bredde) er ALLTID auto-utsnittets — zoom deler bredde og høyde med samme tall — så
+// sideoppsettet i exportPDF (`_pdfRoomAspect`) er uavhengig av utsnittet, og labelene får
+// samme mm på papiret (`_pdfScaleMmPerCm = targetWmm / worldW`, 051).
+// ⚠ pushUndo kopierer rom grunt: skriv ALLTID et nytt objekt, aldri `room.pdfView.cx = …`.
+const PDF_VIEW_SCALE_MIN = 0.5, PDF_VIEW_SCALE_MAX = 4;
+function _pdfViewOf(room) {
+  const v = room && room.pdfView;
+  if (!v || !Number.isFinite(v.cx) || !Number.isFinite(v.cy) || !(v.scale > 0)) return null;
+  return { cx: v.cx, cy: v.cy, scale: Math.min(PDF_VIEW_SCALE_MAX, Math.max(PDF_VIEW_SCALE_MIN, v.scale)) };
+}
+
 // ⚠ MAALT 08.10.2026 (051 STEG 0.3): PDF-skalaen finnes IKKE der `_pdfMode` settes, slik
 // 051-prompten antok. `_renderRoomToImage` far `targetWidthMm`, men PDF-ruta kan plassere
 // bildet SMALERE etterpaa: naar `imgW * aspect` overstiger hoeydebudsjettet, blir bredden
@@ -81568,13 +82074,19 @@ function _renderRoomToImage(room, opts) {
   // exact target pixel size and render the room 1:1 at ~300 DPI. No upscaling
   // → crisp detail for the installer. The focus box (room bbox + dim-chain
   // padding) is mapped to fill the whole canvas, so the room fills the page.
-  const worldW = rW + 2 * padCm;       // cm spanning canvas width
-  const worldH = rH + 2 * padCm;       // cm spanning canvas height
+  // 155: brukerens utsnitt (pdfView) — skala deler bredde OG høyde, så aspektet er auto-utsnittets.
+  const pv = _pdfViewOf(room);
+  const pvScale = pv ? pv.scale : 1;
+  const worldW = (rW + 2 * padCm) / pvScale;   // cm spanning canvas width
+  const worldH = (rH + 2 * padCm) / pvScale;   // cm spanning canvas height
   const aspect = worldH / worldW;      // out height / out width
   const dpi = opts.dpi || 300;
   const targetWmm = opts.targetWidthMm || 180; // A4 printable width (mm)
   const MAXPX = opts.maxWidth || 2600;         // hard cap for very long rooms
-  const outW = Math.max(600, Math.min(MAXPX, Math.round((targetWmm / 25.4) * dpi)));
+  // 155: `opts.outW` = eksakt pikselbredde (forhåndsvisningen tegner i lerretets egen oppløsning,
+  // ikke 300 DPI — målt 3 ms mot 17 ms for det største rommet). PDF-veien er uendret.
+  const outW = opts.outW > 0 ? Math.round(opts.outW)
+    : Math.max(600, Math.min(MAXPX, Math.round((targetWmm / 25.4) * dpi)));
   const outH = Math.max(1, Math.round(outW * aspect));
   // Resize the live canvas to the output resolution (restored afterwards).
   canvas.width = outW;
@@ -81585,8 +82097,8 @@ function _renderRoomToImage(room, opts) {
   // panX/panY are WORLD coords (cm) of the point that maps to canvas
   // center — see w2s(): (wx - panX) * sc + canvas.width/2. So pan to the
   // room's centroid to center the room on canvas.
-  S.view.panX = (rMinX + rMaxX) / 2;
-  S.view.panY = (rMinY + rMaxY) / 2;
+  S.view.panX = pv ? pv.cx : (rMinX + rMaxX) / 2;   // 155: lagret senter, ellers auto
+  S.view.panY = pv ? pv.cy : (rMinY + rMaxY) / 2;
   // Hide grid — user wants the PDF to show everything except the grid.
   if (S.ui) S.ui.showGrid = false;
   // Suppress room-name/area label, corner dots, transform gizmo and info
@@ -81657,14 +82169,24 @@ function _renderRoomToImage(room, opts) {
   // drawn walls) would flatten to BLACK. Composite the rendered canvas onto a
   // white background first so the printout shows a clean white page.
   const q = opts.jpegQuality || 0.9;
-  const _flat = document.createElement('canvas');
+  // 155: forhåndsvisningen får pikslene rett inn i sitt eget lerret (`opts.toCanvas`), synkront
+  // og uten JPEG-omvei (`opts.noUrl`). PDF-veien lager dataURL som før.
+  const _flat = opts.toCanvas || document.createElement('canvas');
   _flat.width = canvas.width;
   _flat.height = canvas.height;
   const _fctx = _flat.getContext('2d');
   _fctx.fillStyle = '#ffffff';
   _fctx.fillRect(0, 0, _flat.width, _flat.height);
   _fctx.drawImage(canvas, 0, 0);
-  const dataURL = _flat.toDataURL('image/jpeg', q);
+  const dataURL = opts.noUrl ? null : _flat.toDataURL('image/jpeg', q);
+  // 155: label-boksene slik de ble tegnet i DETTE bildet (lerretspiksler), tatt FØR gjenopp-
+  // rettingen under tegner hovedlerretet på nytt og overskriver lagrene. Dialogen treffer labels
+  // med nøyaktig samme bokser som hovedlerretets hitCableLabel/hitMatLabel/… leser.
+  const labels = opts.captureLabels ? {
+    cable: Object.assign({}, _cableLabelBounds), matRect: Object.assign({}, _matRectLabelBounds),
+    mat: Object.assign({}, _matLabelBounds), strip: Object.assign({}, _stripLabelBounds),
+  } : null;
+  const view = { zoom: S.view.zoom, panX: S.view.panX, panY: S.view.panY, outW, outH, worldW, worldH, scale: pvScale };
 
   // Restore canvas backing store and view, then re-render so the user's
   // on-screen view is untouched.
@@ -81693,7 +82215,7 @@ function _renderRoomToImage(room, opts) {
   room.matDimSnap = saved.matDimSnap;
   if (typeof markDirty === 'function') markDirty();
   if (typeof render === 'function') render();
-  return { url: dataURL, w: outW, h: outH, aspect };
+  return { url: dataURL, w: outW, h: outH, aspect, view, labels };   // 155: view + labels
 }
 
 // ═══ 154 · PLANTEGNING PER ETASJE (Kenneth 28.10.2026) ═════════════════════════════════════

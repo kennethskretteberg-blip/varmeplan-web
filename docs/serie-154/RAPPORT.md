@@ -89,3 +89,106 @@ Committet på `main`, **ikke pushet**.
 - Brukerens egne målelinjer (`drawUserDimLines`) tegnes fortsatt; bare de automatiske kjedene er av.
 - Gammel kode kjører på port 4001 fra `/tmp/cdp154/old` (sammenligning); CDP-harness i `/tmp/cdp154` (`smoke.mjs`,
   `measure.mjs`, bruker `/tmp/cdp142/cdp.mjs` og katalogen i `/tmp/cdp145/catalog.json`).
+
+## 155
+
+**Commit:** «155: PDF-dialog — levende forhåndsvisning: zoom/flytt lagres per rom (pdfView), labels kan dras der, Tilbakestill; PDF bruker samme utsnitt».
+Committet på `main`, **ikke pushet**.
+
+### STEG 0
+
+**0.1 · Labels på hovedlerretet** (alle fire er egne grener i `canvas`-mousedown/-mousemove/-mouseup, ingen felles funksjon):
+
+| Label | Treff (lerretspx, AABB bygd per `render()`) | Lagres (verdens-cm) | Drag-vei | Angre ved kropps-drag |
+|---|---|---|---|---|
+| Kabel | `hitCableLabel` → `_cableLabelBounds` | `cable.labelPos` (+ `labelRotation`, `labelScale`) | seed fra `_cableLabelGeom`-senter, offset = peker − labelPos, mousemove skriver `labelPos = s2w(peker) − offset`, mouseup → `_scheduleAutoSave` | **nei** (bare håndtak-drag tar `pushUndo`) |
+| Rektangulær matte | `hitMatRectLabel` → `_matRectLabelBounds` | `mat.labelPos` (+ rot/skala) | som kabel | **nei** |
+| Frihånds-matte | `hitMatLabel` → `_matLabelBounds` | `matPath.labelPos` (+ rot/skala) | som kabel | **nei** |
+| Folie | `hitStripLabel` → `_stripLabelBounds` | `strip.labelPos` (+ rot/skala) | `labelPos` og angre utsatt til første reelle bevegelse (≥ 4 px), seed fra boksens senter | ja |
+
+Treffrekkefølge: kabel → rektangulær matte → frihånds-matte → folie (107-«tre til side» i mellom). Ingen felles «hit + drag»-vei
+som kan kalles med et annet lerret/view — men **boksene bygges av `render()` i lerretspiksler for det lerretet som tegnes akkurat
+nå**. Etter PDF-tegningen i `_renderRoomToImage` inneholder de altså PDF-bildets koordinater, fram til gjenopprettingen tegner
+hovedlerretet på nytt. Det er kroken 155 bruker: `_renderRoomToImage(…, { captureLabels: true })` tar en kopi av de fire lagrene
+rett etter tegningen, og dialogen treffer med nøyaktig samme bokser som hovedlerretet ville brukt. Reset: `resetStripLabel`/
+`resetCableLabel`/`resetMatLabel`/`resetMatRectLabel` slettet de tre feltene hver for seg — nå via én `_labelClearManual(obj)`.
+Fri folie (`foilFree`) har ingen `labelPos` og kan ikke dras noe sted.
+
+**0.2 · Romsiden i `exportPDF`** leser bare `imgRes.url` (`addImage(url, 'JPEG', imgX, y, imgW2, imgH)`); `w`, `h`, `aspect`
+leses av ingen. Plasseringen regnes FØR rendringen fra `_pdfRoomAspect(room)` (bbox + 2 × 150 cm) — eneste andre leser er
+`_prefsRegressionTest` F. Forhåndsvisningen (`_expPreviewRoom`) leste også bare `url`.
+
+**0.3 · Målt** (headless Chrome, 8 rom/2 etasjer, største rom «Stue» 700 × 500 cm med 12 kabelløp, hindring og label; median av 7):
+
+| Kall | Piksler | Tid |
+|---|---|---|
+| `_renderRoomToImage` 300 DPI (PDF, 180 mm) | 2126 × 1701 | 17 ms (inkl. JPEG) |
+| `_renderRoomToImage` 300 DPI, plassert bredde 139 mm | 1642 × 1314 | 9 ms |
+| `_renderRoomToImage` 96 DPI | 680 × 544 | 3 ms |
+| **Forhåndsvisningen** (`_pdfPrevDraw`: tegning + kopi + gjenoppretting av hovedlerretet) | 562 × 450 | **1,5 ms** (maks 2,4; 0,7 ved 1,5×) |
+
+300 DPI hadde også vært raskt nok for hjulet, men forhåndsvisningen tegnes i dialoglerretets egen oppløsning (CSS-bredde ×
+devicePixelRatio, maks 2) og kopieres rett inn uten JPEG-omvei — skarpt, og ingen base64 per hjulhakk. PDF-en tegnes i 300 DPI som før.
+
+### Hva som er gjort (`index.html`)
+
+- **A · `room.pdfView = { cx, cy, scale }`** (ved `PDF_ROOM_PAD_CM`): `_pdfViewOf(room)` normaliserer (mangler/ugyldig → `null`
+  = auto; skala klemmes til 0,5–4). `_renderRoomToImage` leser den: senter = `cx, cy`, verdensbredde = auto ÷ `scale`, verdenshøyde
+  likedan — **aspektet er alltid auto-utsnittets**, så `_pdfRoomAspect` trenger ikke lese `pdfView` (sideoppsettet er uavhengig av
+  utsnittet, testet). `_pdfScaleMmPerCm = targetWmm / worldW` følger med, så labelene har **samme mm på papiret uansett zoom** (051).
+  Lagres med rommet i prosjekt-JSON (`_buildSaveData` sprer hele romobjektet), ingen migrasjon. ⚠ `pushUndo` kopierer rom grunt —
+  `pdfView` skrives alltid som nytt objekt.
+- **Nye valg i `_renderRoomToImage`** (PDF-veien uendret): `outW` (eksakt pikselbredde), `toCanvas` (pikslene rett inn i et annet
+  lerret), `noUrl` (ingen JPEG), `captureLabels` (kopi av label-boksene). Returen har i tillegg `view` (zoom/pan/px/verdensbredde/skala)
+  og `labels`.
+- **B · `_expPreviewRoom`** viser et `<canvas>` i stedet for `<img>` (`_pdfPrev*`, 230 linjer rett etter): knapperad «Tilbakestill
+  utsnitt» (av når auto) · «Labels til auto» (med `confirm`, teller labels) · «Rull for zoom · dra for å flytte · dra labels ·
+  dobbeltklikk label = auto» · gjeldende zoom «1,46×». Hjul = zoom rundt pekeren (verdenspunktet under pekeren står stille), dra på
+  tomt område = flytt, begge skriver `room.pdfView` og tegner på nytt via rAF. Dra på en label = `labelPos` (seed fra boksens senter,
+  samme offset-regning som hovedlerretet; bare rommets egne objekter). Dobbeltklikk på label = `_labelClearManual`. **Ett angresteg per
+  bevegelse** (hjul-serie / ett drag), `_scheduleAutoSave` etterpå (→ `_markProjectDirty` via `pushUndo`). Klikk uten bevegelse
+  (< 3 px) endrer ingenting. Skrivebeskyttet vindu (060): alt vises, ingenting kan endres, teksten sier det. ‹ Forrige · Rom i av N ·
+  Neste › nederst. Rommet velges aldri på hovedlerretet; hovedlerretet tegnes på nytt ved hver forhåndsvisning (gjenopprettingen), så
+  en flyttet label synes der med én gang. Rom uten polygon (kalkyle) får tekst i stedet for lerret.
+- **C · PDF-en** går gjennom samme `_renderRoomToImage`, så romsiden viser nøyaktig forhåndsvisningen (300 DPI). Målkjedene tegnes som
+  før og klippes av kanten.
+- **`_pdfExportSmokeTest`** 37 → 42: stubben logger `addImage` (side, x, y, w, h, JPEG-lengde); med `pdfView` på kabelrommet: samme
+  sideantall, samme bildeplassering på alle sider, samme tekst (revisjonen normalisert), romsidens JPEG er en annen; vaksine
+  (`_pdfViewOf → null` gjør bildet auto igjen).
+- **Ny `_pdfPreviewRegressionTest()` 57/57** (rett etter røyktesten): A1–A3 (`view` auto, skala 2 → bredde halvert, senter fra
+  `pdfView`, aspekt og pikselstørrelse uendret, labelboks like bred = fast mm på papiret, NaN → auto, 9 → 4, 0,1 → 0,5,
+  tilstand gjenopprettet) · B0–B12 (canvas ikke img, rom uvalgt, hjul i senter → 1,1× med senter i ro, tre hjul = ett angresteg, hjul
+  ved 10 %/10 % holder verdenspunktet i ro, dra 50 px → senter −50/sc, label-drag kabel 40/20 px = samme forskyvning i bildet og
+  hovedlerretet tegner labelen på `labelPos`, folie- og matte-label, klikk uten bevegelse, dobbeltklikk → auto for akkurat den,
+  «Labels til auto» spør «Tilbakestill 2 labels i «Stue»…» / nei / ja / toast når ingen, «Tilbakestill utsnitt», `pdfView` i
+  `_buildSaveData` og 1,3× ved gjenåpning, skrivebeskyttet, ‹ › blar uten å røre avkryssingen) · vaksine.
+
+### Delt med hovedlerretet / nytt
+
+Delt: `_renderRoomToImage` (hele tegningen, `_pdfMode`, gjenoppretting), label-boksene (`_*LabelBounds`), `labelPos`-feltene og
+offset-regningen, `_labelClearManual`, `_pdfRoomAspect`, `pushUndo`/`_scheduleAutoSave`-gatene (060/030). Nytt: `pdfView`-lesingen,
+`_pdfPrev*` (hendelser på dialoglerretet, zoom rundt pekeren, undo-per-bevegelse), fire valg i `_renderRoomToImage`.
+
+### Test
+
+1. **Zoom 1,46× + flytt i forhåndsvisningen** (`155-dialog-foer.png` → `155-dialog-zoom.png`) → `pdfView {cx 685,7, cy 237, scale 1,464}`
+   i `_buildSaveData` → PDF-romsiden viser samme utsnitt (`155-romside-pdfview.png`, mot `155-romside-auto.png`). Gjenåpning:
+   forhåndsvisningen starter på lagret zoom (test B10). «Tilbakestill utsnitt» → auto.
+2. **Label-drag** (`155-dialog-label.png`): kabel-labelen dratt 80/−70 px i dialogen → `labelPos` satt, hovedlerretet viser den der
+   (`155-hovedlerret.png`) og PDF-en også. Dobbeltklikk → auto (test B7). Folie- og matte-label likedan (B5).
+3. **Rom uten `pdfView` — bit-identisk med 46f1c67** (gammel kode på port 4003): SHA-256 av JPEG-en fra `_renderRoomToImage` lik
+   for alle 8 rom; hele PDF-en (17 sider): 807 tekstkall med koordinater like, alle `addImage`-plasseringer like, 1241 KB begge.
+4. **‹ ›** blar rom, avkryssingen uendret (B12).
+5. **Ytelse:** hjul-zoom på største rom **1,5 ms** per tegning (tabellen over). PDF-eksport 8 rom + 2 plantegninger: gammel
+   149/150/154/194 ms, ny 147/148/149/175 ms (4 kjøringer) — innenfor ±10 %. Med `pdfView` på Stue: 147 ms, 1232 KB.
+6. `_pdfExportSmokeTest` 42/42, `_pdfPreviewRegressionTest` 57/57, `_prefsRegressionTest` 47, `_matPathClickRegressionTest` 28,
+   `_roomMoveRegressionTest` 42, `_foilRegressionTest` 9, `_matArrangementRegressionTest` 65, `_matPathEqualizeRegressionTest` 56,
+   `_matFreeRegressionTest` 65 — alle grønne, ingen konsollfeil.
+
+### Funn
+
+- På hovedlerretet er **kropps-drag av kabel-, matte- og frihåndsmatte-label ikke angrebart** (ingen `pushUndo`; bare folie og
+  håndtakene tar snapshot). Dialogen tar alltid ett angresteg. Ikke rørt på lerretet (utenfor 155).
+- Målkjedetekstene («V1 700 cm») følger ikke papirregelen (051) — de er små på romsiden uansett utsnitt (fantes før 155).
+- CDP-harness i `/tmp/cdp155` (`fixture.mjs`, `measure0.mjs`, `preview-test.mjs`, `compare.mjs`, `run-tests.mjs`, `shots.mjs`);
+  gammel kode (46f1c67) på port 4003 fra `/tmp/cdp155/old`. ⚠ Port 4002 er opptatt av en Python-tjeneste — ikke Varmeplan.

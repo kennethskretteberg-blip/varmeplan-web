@@ -13,3 +13,15 @@
 6. **Romnavnet** er 1,2 × produktetikettene og halvfet; arealet står med én desimal (netto, som i romlista). Greit, eller
    samme størrelse som etikettene?
 7. **Brukerens egne målelinjer** tegnes fortsatt på plantegningen (bare de automatiske kjedene er av). Ønsket?
+
+## 155
+
+8. **«Labels er fortsatt ikke helt bra.»** 155 rører ikke den automatiske plasseringen. Send 2–3 eksempler (rom + skjermbilde eller
+   PDF-side) på hva som er galt — overlapp med kabel/målkjede, feil side av rommet, for stor/liten, roterer feil — så blir det en egen
+   prompt med riktig regel.
+9. **Zoomgrenser** 0,5–4× og hjulsteg 10 % per hakk. Greit, eller skal det være mulig å zoome lenger ut (for å få hele målkjeden med i
+   svært lange rom)?
+10. **Angre på hovedlerretet:** å dra en kabel-/matte-label på lerretet er ikke angrebart i dag (bare folie-label er det). Skal det
+    rettes så Ctrl+Z virker likt overalt?
+11. **Målkjedetekstene** på romsiden er små uansett (de følger ikke papirregelen som produktetikettene gjør). Skal de få samme faste
+    størrelse på papiret?
