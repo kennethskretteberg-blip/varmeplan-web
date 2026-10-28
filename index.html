@@ -15019,6 +15019,23 @@ function _ptToPolyEdgeCm(x, y, pts) {
   }
   return best;
 }
+// 157: minste avstand (cm) fra et akseparallelt rektangel {x0,y0,x1,y1} til polygonets kant. To
+// konvekse figurer: minste avstand ligger i et hjørne av den ene mot en kant av den andre, så
+// det holder å måle kantens endepunkter mot rektangelet og rektangelets hjørner mot kanten.
+// 0 når kanten går gjennom rektangelet. Brukes av kabelmerknaden i mattekjeden.
+function _rectToPolyEdgeCm(R, pts) {
+  const corners = [{ x: R.x0, y: R.y0 }, { x: R.x1, y: R.y0 }, { x: R.x1, y: R.y1 }, { x: R.x0, y: R.y1 }];
+  const ptToRect = p => Math.hypot(Math.max(R.x0 - p.x, 0, p.x - R.x1), Math.max(R.y0 - p.y, 0, p.y - R.y1));
+  const edges = [[R.x0, R.y0, R.x1, R.y0], [R.x1, R.y0, R.x1, R.y1], [R.x1, R.y1, R.x0, R.y1], [R.x0, R.y1, R.x0, R.y0]];
+  let best = Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    if (edges.some(([ex0, ey0, ex1, ey1]) => _segSegHit(a.x, a.y, b.x, b.y, ex0, ey0, ex1, ey1))) return 0;
+    best = Math.min(best, ptToRect(a), ptToRect(b));
+    for (const c of corners) best = Math.min(best, _ptToPolyEdgeCm(c.x, c.y, [a, b]));
+  }
+  return best;
+}
 // 124 / Regel 26: ligger bredde r utenfor rommet eller over en hindring? Merkes rødt med tekst,
 // spretter ALDRI tilbake — Kenneth avgjør selv. Returnerer null når alt er i orden.
 function _matRunPlacementIssue(mat, r) {
@@ -16985,7 +17002,11 @@ function _matPathCoveredLaneRects(mp) {
     const rl = _matFreeRunLen(r), cl = _matFreeCovLen(coverCm, acc, rl);
     acc += rl;
     if (rl <= 0.5 || cl <= 0.5) continue;
-    out.push(cl >= rl ? _matFreeLaneRectWorld(r, NET) : _matFreeCoveredSplit(r, NET, cl).covR);
+    const R = cl >= rl ? _matFreeLaneRectWorld(r, NET) : _matFreeCoveredSplit(r, NET, cl).covR;
+    // 157: retningen følger med (ikke-tellbar, så rektanglene forblir bit-identiske med de fulle i
+    // JSON/149-testen) — mattekjeden (_matDimChainData) slipper å utlede den av målene.
+    Object.defineProperty(R, 'axis', { value: r.axis, enumerable: false });
+    out.push(R);
   }
   return out;
 }
@@ -56468,182 +56489,341 @@ function drawAllDimAnnotations() {
 }
 
 // ─── MAT DIMENSION CHAIN (Målsett Matte) ──────────────────────
-// Shows: gaps between mat runs (across-chain) and the single run
-// length + wall margins (along-chain). Modelled after the cable dim
-// chain — same offsets and rendering helpers.
-function _drawMatDimChainForRoom(room) {
-  const mats = (S.mats||[]).filter(m => m.roomId === room.id);
-  if (!mats.length) return;
-  const xs = room.points.map(p => p.x), ys = room.points.map(p => p.y);
-  const wMinX = Math.min(...xs), wMaxX = Math.max(...xs);
-  const wMinY = Math.min(...ys), wMaxY = Math.max(...ys);
-
-  // Collect runs in world coords. Direction is determined by rotation_deg:
-  //   0  → 'v' (runs go along Y, stacked along X)
-  //   90 → 'h' (runs go along X, stacked along Y)
-  // For mixed-direction mats (shouldn't normally happen) we pick the
-  // direction of the first mat to keep the chain coherent.
-  const dir = (mats[0].rotation_deg || 0) === 90 ? 'h' : 'v';
-  const runs = [];
-  for (const mat of mats) {
-    const matDir = (mat.rotation_deg || 0) === 90 ? 'h' : 'v';
-    if (matDir !== dir) continue;
-    const n = mat.num_runs || 1;
-    const gap = mat.gap_cm != null ? mat.gap_cm : 0;
-    // 133: blokkas senter fra samme ramme som tegningen (_matFrame) — for 90° er senteret
-    // (x_cm + L/2, y_cm + totalW/2), ikke lenger (x_cm + totalW/2, y_cm + L/2). Kjeden måler
-    // fortsatt blokkas NOMINELLE lengde (ikke klippede bredder), som før.
-    const frame = _matFrame(mat);
-    const totalW = frame.totalW;
-    const cx = frame.cx;
-    const cy = frame.cy;
-    for (let r = 0; r < n; r++) {
-      const localCx = -totalW/2 + mat.width_cm/2 + _matRunAcrossOffsetCm(mat, r, gap);   // 124: inkl. sideforskyvning
-      if (dir === 'v') {
-        const perp_min = cx + localCx - mat.width_cm/2;
-        const perp_max = cx + localCx + mat.width_cm/2;
-        runs.push({ perp_min, perp_max, sweep_min: cy - mat.length_cm/2, sweep_max: cy + mat.length_cm/2 });
-      } else {
-        const perp_min = cy + localCx - mat.width_cm/2;
-        const perp_max = cy + localCx + mat.width_cm/2;
-        runs.push({ perp_min, perp_max, sweep_min: cx - mat.length_cm/2, sweep_max: cx + mat.length_cm/2 });
-      }
-    }
+// 157 (Kenneth 28.10.2026): kjeden virker for ALLE matter — auto-matter (S.mats) OG frihånds-/
+// kapittelmatter (S.matPaths) — og måler det elektrikeren trenger: vegg → nettkant på første og
+// siste bredde, mellomrommene (nettkant → nettkant) og vegg → matteende i begge ender. ÉN
+// geometrikilde: de samme rektanglene tegningen, treffene og vaktene bruker — _matRunWorldRects
+// (→ _matRunWorldGeom, 133) for S.mats og _matPathCoveredLaneRects (149, bare dekket del) for
+// S.matPaths. Før 157 leste kjeden bare S.mats og regnet blokkas nominelle bredder selv, så
+// frihåndsmatter fikk ingen kjede (P0373). Begge mattetyper i samme rom gir én felles kjede per
+// retning ('v': bredder langs Y, tverr-kjede under rommet / langs-kjede til venstre; 'h': tverr
+// til høyre / langs over). Veggmål under produktets nettmargin (_matWallMarginCm, Regel 12/128:
+// 2,5 cm for 60T/100T, 3,0 for 150T) tegnes i rødt. Kabelmerknaden under tverr-kjeden, «Kabel →
+// vegg min X cm (krav ≥ 5 cm)», er nettkantens minste avstand til rommets FAKTISKE kant
+// (_rectToPolyEdgeCm) pluss produktets kant-inntrekk (_matEdgeInsetCm) — kabelens ytterste streng
+// slik 128 kodet Regel 12. Tegningen selv legger U-svingens topp 2,5 cm og endestrengen ≥ cc/2
+// innenfor nettkanten (målt i docs/serie-157), aldri nærmere enn inntrekket, så merknaden er en
+// nedre grense. Tall i hele cm, én desimal under 10 cm. Samme utseende som folie-/kabelkjeden.
+function _matRoomHasMats(roomId) {
+  return (S.mats || []).some(m => m.roomId === roomId && !m.labelOnly)
+      || (S.matPaths || []).some(mp => mp.roomId === roomId);
+}
+function _matDimFmtCm(v) {
+  if (v < 10) { const r = Math.round(v * 10) / 10; return (r % 1 === 0 ? r.toFixed(0) : r.toFixed(1)) + ' cm'; }
+  return Math.round(v) + ' cm';
+}
+// Ren data (ingen tegning), testbar. null når rommet ikke har matter med geometri.
+// Segment: { from, to, cm, type: 'wall'|'mat'|'gap', req?, red? } i verdens-cm langs kjedens akse.
+function _matDimChainData(room) {
+  if (!room || !room.points || room.points.length < 3) return null;
+  const rects = [];
+  for (const mat of (S.mats || [])) {
+    if (mat.roomId !== room.id || mat.labelOnly) continue;
+    const prod = HEATING_PRODUCTS.find(p => p.id === mat.productId) || null;
+    const dir = (mat.rotation_deg || 0) === 90 ? 'h' : 'v';
+    for (const R of _matRunWorldRects(mat)) rects.push({ x0: R.x0, y0: R.y0, x1: R.x1, y1: R.y1, dir, prod, src: 'mat' });
   }
-  if (!runs.length) return;
-  runs.sort((a,b) => a.perp_min - b.perp_min);
-
+  for (const mp of (S.matPaths || [])) {
+    if (mp.roomId !== room.id) continue;
+    const prod = _matFreeProdOf(mp) || null;
+    for (const R of _matPathCoveredLaneRects(mp)) rects.push({ x0: R.x0, y0: R.y0, x1: R.x1, y1: R.y1, dir: R.axis === 'h' ? 'h' : 'v', prod, src: 'path' });
+  }
+  if (!rects.length) return null;
+  const xs = room.points.map(p => p.x), ys = room.points.map(p => p.y);
+  const W = { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+  // Veggmål: mot rommets bbox-vegg (som folie-/kabelkjeden). Rødt under strengeste nettmargin
+  // blant produktene i båndet. Nettkant utenfor veggen → 0, rødt.
+  const wallSeg = (from, to, prods) => {
+    const req = Math.max(...prods.map(p => _matWallMarginCm(p)));
+    const cm = Math.max(0, to - from);
+    return { from, to, cm, type: 'wall', req, red: cm < req - 0.01 };
+  };
+  const chains = {};
+  for (const dir of ['v', 'h']) {
+    const rs = rects.filter(r => r.dir === dir);
+    if (!rs.length) continue;
+    const pLo = r => dir === 'v' ? r.x0 : r.y0, pHi = r => dir === 'v' ? r.x1 : r.y1;   // på tvers
+    const aLo = r => dir === 'v' ? r.y0 : r.x0, aHi = r => dir === 'v' ? r.y1 : r.x1;   // langs
+    const nearWall = dir === 'v' ? W.minX : W.minY, farWall = dir === 'v' ? W.maxX : W.maxY;
+    const nearWallA = dir === 'v' ? W.minY : W.minX, farWallA = dir === 'v' ? W.maxY : W.maxX;
+    // Bredder som overlapper på tvers (to stykker i samme kolonne, 132) slås sammen til ett bånd.
+    const bands = [];
+    for (const r of rs.slice().sort((a, b) => pLo(a) - pLo(b))) {
+      const last = bands[bands.length - 1];
+      if (last && pLo(r) < last.to - 0.05) { last.to = Math.max(last.to, pHi(r)); last.prods.push(r.prod); }
+      else bands.push({ from: pLo(r), to: pHi(r), prods: [r.prod] });
+    }
+    const across = [wallSeg(nearWall, bands[0].from, bands[0].prods)];
+    bands.forEach((b, i) => {
+      if (i > 0) across.push({ from: bands[i - 1].to, to: b.from, cm: b.from - bands[i - 1].to, type: 'gap' });
+      across.push({ from: b.from, to: b.to, cm: b.to - b.from, type: 'mat' });
+    });
+    across.push(wallSeg(bands[bands.length - 1].to, farWall, bands[bands.length - 1].prods));
+    const minA = Math.min(...rs.map(aLo)), maxA = Math.max(...rs.map(aHi));
+    const along = [
+      wallSeg(nearWallA, minA, rs.filter(r => aLo(r) < minA + 0.05).map(r => r.prod)),
+      { from: minA, to: maxA, cm: maxA - minA, type: 'mat' },
+      wallSeg(maxA, farWallA, rs.filter(r => aHi(r) > maxA - 0.05).map(r => r.prod)),
+    ];
+    chains[dir] = { across, along, nearWall, farWall, nearWallA, farWallA };
+  }
+  let cableCm = Infinity;
+  for (const r of rects) cableCm = Math.min(cableCm, _rectToPolyEdgeCm(r, room.points) + _matEdgeInsetCm(r.prod));
+  return { rects, chains, cable: { cm: cableCm, req: MAT_CABLE_WALL_CM, red: cableCm < MAT_CABLE_WALL_CM - 0.01 } };
+}
+function _drawMatDimChainForRoom(room) {
+  try { _drawMatDimChainForRoomInner(room); }
+  catch (e) { console.error('_drawMatDimChainForRoom', e); }
+}
+function _drawMatDimChainForRoomInner(room) {
+  const data = _matDimChainData(room);
+  if (!data) return;
   ctx.save();
   ctx.font = `10px ${CANVAS_NUM_FONT}`;
   // Same orange-ish palette as cable chain but a touch darker so the
   // two chains read as related but distinct when both are visible.
   const COL = _lc('rgba(200,100,30,0.85)', 'rgba(255,170,70,0.75)');
+  const COL_RED = _lc('rgba(200,30,40,0.95)', 'rgba(248,113,113,0.95)');   // samme rød som usikre vegger (027)
   const COL_BG = _lc('rgba(240,244,248,0.92)', 'rgba(13,14,16,0.8)');
   const TICK = 8;
-  const BASE_OFF = 25 * S.view.zoom * BASE_SCALE;
-
-  function _drawChainSeg(sx1, sy1, sx2, sy2, valueCm, perpNx, perpNy, isVertLabel) {
-    if (valueCm < 0.3) return;
-    const label = Math.round(valueCm * 10) / 10;
-    const labelStr = (label % 1 === 0 ? label.toFixed(0) : label.toFixed(1)) + ' cm';
-    ctx.strokeStyle = COL; ctx.lineWidth = 0.8; ctx.setLineDash([]);
-    ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(sx1 - perpNx * TICK/2, sy1 - perpNy * TICK/2);
-    ctx.lineTo(sx1 + perpNx * TICK/2, sy1 + perpNy * TICK/2);
-    ctx.moveTo(sx2 - perpNx * TICK/2, sy2 - perpNy * TICK/2);
-    ctx.lineTo(sx2 + perpNx * TICK/2, sy2 + perpNy * TICK/2);
-    ctx.stroke();
-    const mx = (sx1 + sx2)/2, my = (sy1 + sy2)/2;
-    const tw = ctx.measureText(labelStr).width;
+  const BASE_OFF = 25 * S.view.zoom * BASE_SCALE;   // verdens-cm, som de andre kjedene
+  function _label(str, mx, my, isVert, col, offPx) {
+    const tw = ctx.measureText(str).width;
     ctx.save();
     ctx.translate(mx, my);
-    if (isVertLabel) ctx.rotate(-Math.PI/2);
-    ctx.translate(0, -12);
+    if (isVert) ctx.rotate(-Math.PI / 2);
+    ctx.translate(0, offPx);
     ctx.fillStyle = COL_BG;
-    ctx.fillRect(-tw/2 - 3, -7, tw + 6, 14);
-    ctx.fillStyle = COL;
+    ctx.fillRect(-tw / 2 - 3, -7, tw + 6, 14);
+    ctx.fillStyle = col;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(labelStr, 0, 0);
+    ctx.fillText(str, 0, 0);
     ctx.restore();
   }
-  function _drawExtLine(wallSx, wallSy, chainSx, chainSy) {
-    ctx.strokeStyle = COL; ctx.lineWidth = 0.5; ctx.setLineDash([2,3]);
+  function _seg(sx1, sy1, sx2, sy2, seg, perpNx, perpNy, isVert) {
+    if (seg.cm < 0.3 && !seg.red) return;   // et rødt 0-mål skal fortsatt vises
+    const col = seg.red ? COL_RED : COL;
+    ctx.strokeStyle = col; ctx.lineWidth = 0.8; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(sx1 - perpNx * TICK / 2, sy1 - perpNy * TICK / 2);
+    ctx.lineTo(sx1 + perpNx * TICK / 2, sy1 + perpNy * TICK / 2);
+    ctx.moveTo(sx2 - perpNx * TICK / 2, sy2 - perpNy * TICK / 2);
+    ctx.lineTo(sx2 + perpNx * TICK / 2, sy2 + perpNy * TICK / 2);
+    ctx.stroke();
+    _label(_matDimFmtCm(seg.cm), (sx1 + sx2) / 2, (sy1 + sy2) / 2, isVert, col, -12);
+  }
+  function _ext(wallSx, wallSy, chainSx, chainSy) {
+    ctx.strokeStyle = COL; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
     ctx.beginPath(); ctx.moveTo(wallSx, wallSy); ctx.lineTo(chainSx, chainSy); ctx.stroke();
     ctx.setLineDash([]);
   }
-
-  // --- Across-chain: wall | gap | mat | gap | mat | ... | gap | wall ---
-  const acrossSegs = [];
-  let nearWall, farWall;
-  if (dir === 'v') { nearWall = wMinX; farWall = wMaxX; }
-  else              { nearWall = wMinY; farWall = wMaxY; }
-  let cursor = nearWall;
-  for (const r of runs) {
-    if (r.perp_min > cursor + 0.1) acrossSegs.push({ from: cursor, to: r.perp_min });
-    acrossSegs.push({ from: r.perp_min, to: r.perp_max });
-    cursor = r.perp_max;
+  // Kjede langs en vannrett vegg (y = wallY), segmenter i x; sign +1 = under veggen, −1 = over.
+  function _chainX(segs, wallY, sign) {
+    const chainY = w2s(0, wallY).y + sign * BASE_OFF;
+    const bounds = new Set(); for (const s of segs) { bounds.add(s.from); bounds.add(s.to); }
+    for (const bx of bounds) { const sw = w2s(bx, wallY); _ext(sw.x, sw.y + sign * 4, sw.x, chainY); }
+    for (const s of segs) { const s1 = w2s(s.from, wallY), s2 = w2s(s.to, wallY); _seg(s1.x, chainY, s2.x, chainY, s, 0, 1, false); }
+    return chainY;
   }
-  if (cursor < farWall - 0.1) acrossSegs.push({ from: cursor, to: farWall });
-
-  // --- Along-chain: wall | margin | run-length | margin | wall ---
-  // All runs share the same sweep range (matched lengths), so one segment.
-  const alongSegs = [];
-  let nearWallA, farWallA;
-  if (dir === 'v') { nearWallA = wMinY; farWallA = wMaxY; }
-  else              { nearWallA = wMinX; farWallA = wMaxX; }
-  let minSweep = Infinity, maxSweep = -Infinity;
-  for (const r of runs) {
-    if (r.sweep_min < minSweep) minSweep = r.sweep_min;
-    if (r.sweep_max > maxSweep) maxSweep = r.sweep_max;
+  // Kjede langs en loddrett vegg (x = wallX), segmenter i y; sign +1 = til høyre, −1 = til venstre.
+  function _chainY(segs, wallX, sign) {
+    const chainX = w2s(wallX, 0).x + sign * BASE_OFF;
+    const bounds = new Set(); for (const s of segs) { bounds.add(s.from); bounds.add(s.to); }
+    for (const by of bounds) { const sw = w2s(wallX, by); _ext(sw.x + sign * 4, sw.y, chainX, sw.y); }
+    for (const s of segs) { const s1 = w2s(wallX, s.from), s2 = w2s(wallX, s.to); _seg(chainX, s1.y, chainX, s2.y, s, 1, 0, true); }
+    return chainX;
   }
-  if (minSweep > nearWallA + 0.1) alongSegs.push({ from: nearWallA, to: minSweep });
-  alongSegs.push({ from: minSweep, to: maxSweep });
-  if (maxSweep < farWallA - 0.1) alongSegs.push({ from: maxSweep, to: farWallA });
-
-  // --- Render across-chain (bottom for 'v', right for 'h') ---
-  if (dir === 'v') {
-    const wallY = wMaxY;
-    const sWall = w2s(0, wallY);
-    const chainScreenY = sWall.y + BASE_OFF;
-    const boundaries = new Set();
-    for (const seg of acrossSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const bx of boundaries) {
-      const sw = w2s(bx, wallY);
-      _drawExtLine(sw.x, sw.y + 4, sw.x, chainScreenY);
-    }
-    for (const seg of acrossSegs) {
-      const s1 = w2s(seg.from, wallY), s2 = w2s(seg.to, wallY);
-      _drawChainSeg(s1.x, chainScreenY, s2.x, chainScreenY, seg.to - seg.from, 0, 1, false);
-    }
-  } else {
-    const wallX = wMaxX;
-    const sWall = w2s(wallX, 0);
-    const chainScreenX = sWall.x + BASE_OFF;
-    const boundaries = new Set();
-    for (const seg of acrossSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const by of boundaries) {
-      const sw = w2s(wallX, by);
-      _drawExtLine(sw.x + 4, sw.y, chainScreenX, sw.y);
-    }
-    for (const seg of acrossSegs) {
-      const s1 = w2s(wallX, seg.from), s2 = w2s(wallX, seg.to);
-      _drawChainSeg(chainScreenX, s1.y, chainScreenX, s2.y, seg.to - seg.from, 1, 0, true);
-    }
+  let note = null;   // kabelmerknaden står utenfor den første tverr-kjeden
+  const cv = data.chains.v, ch = data.chains.h;
+  if (cv) {   // bredder langs Y: tverr-kjede under nedre vegg, langs-kjede utenfor venstre vegg
+    const y = _chainX(cv.across, cv.farWallA, +1);
+    _chainY(cv.along, cv.nearWall, -1);
+    note = { x: (w2s(cv.nearWall, 0).x + w2s(cv.farWall, 0).x) / 2, y, vert: false };
   }
-
-  // --- Render along-chain (left for 'v', top for 'h') ---
-  if (dir === 'v') {
-    const wallX = wMinX;
-    const sWall = w2s(wallX, 0);
-    const chainScreenX = sWall.x - BASE_OFF;
-    const boundaries = new Set();
-    for (const seg of alongSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const by of boundaries) {
-      const sw = w2s(wallX, by);
-      _drawExtLine(sw.x - 4, sw.y, chainScreenX, sw.y);
-    }
-    for (const seg of alongSegs) {
-      const s1 = w2s(wallX, seg.from), s2 = w2s(wallX, seg.to);
-      _drawChainSeg(chainScreenX, s1.y, chainScreenX, s2.y, seg.to - seg.from, 1, 0, true);
-    }
-  } else {
-    const wallY = wMinY;
-    const sWall = w2s(0, wallY);
-    const chainScreenY = sWall.y - BASE_OFF;
-    const boundaries = new Set();
-    for (const seg of alongSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const bx of boundaries) {
-      const sw = w2s(bx, wallY);
-      _drawExtLine(sw.x, sw.y - 4, sw.x, chainScreenY);
-    }
-    for (const seg of alongSegs) {
-      const s1 = w2s(seg.from, wallY), s2 = w2s(seg.to, wallY);
-      _drawChainSeg(s1.x, chainScreenY, s2.x, chainScreenY, seg.to - seg.from, 0, 1, false);
-    }
+  if (ch) {   // bredder langs X: tverr-kjede utenfor høyre vegg, langs-kjede over øvre vegg
+    const x = _chainY(ch.across, ch.farWallA, +1);
+    _chainX(ch.along, ch.nearWall, -1);
+    if (!note) note = { x, y: (w2s(0, ch.nearWall).y + w2s(0, ch.farWall).y) / 2, vert: true };
   }
-
+  if (note && isFinite(data.cable.cm)) {
+    const txt = `Kabel → vegg min ${_matDimFmtCm(data.cable.cm)} (krav ≥ ${_matDimFmtCm(data.cable.req)})`;
+    _label(txt, note.x, note.y, note.vert, data.cable.red ? COL_RED : COL, 14);
+  }
   ctx.restore();
+}
+// 157 — regresjonstest for mattekjeden (geometrikilde, tallene for faste rom, rødmerking,
+// PDF-auto-på, menyene). Kjøres fra konsollen: _matDimChainRegressionTest(). Vaksiner: kjeden
+// må lese _matRunWorldGeom og _matPathCoveredLaneRects — forskyves/byttes de, må tallene følge.
+function _matDimChainRegressionTest() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 0.05 : tol);
+  const saved = { prods: HEATING_PRODUCTS.slice(), rooms: S.rooms, mats: S.mats, matPaths: S.matPaths, hindrings: S.hindrings,
+    strips: S.strips, cables: S.cables, floors: S.floors, activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId,
+    selectedRoomId: S.ui.selectedRoomId, selectedMatId: S.ui.selectedMatId, selectedMatPathId: S.ui.selectedMatPathId,
+    autoSave: window._performAutoSave, toast: window._showToast, geom: _matRunWorldGeom, cov: _matPathCoveredLaneRects,
+    draw: _drawMatDimChainForRoom, view: { ...S.view } };
+  window._performAutoSave = () => Promise.resolve(); window._showToast = () => {};
+  try {
+    HEATING_PRODUCTS.length = 0;
+    // EcoMat 100T-lik (cc 120, inntrekk 25 → nettmargin 2,5) og 150T-lik (cc 80, inntrekk 20 → 3,0)
+    for (const L of [2, 4, 6, 8, 10, 12, 14, 16]) HEATING_PRODUCTS.push({ id: 995000 + L, category_id: 9800, active: true, product_family: 'EcoMat 100T',
+      name: `EcoMat 100T 0,5x${L}m`, voltage: 230, watt_per_m2: 100, mat_area_m2: L * 0.5, mat_width_mm: 500, mat_total_length_mm: L * 1000,
+      mat_cc_mm: 120, mat_edge_inset_mm: 25, mat_cut_interval_mm: 240, min_wall_margin_mm: 50, min_gap_mm: 50 });
+    HEATING_PRODUCTS.push({ id: 995150, category_id: 9800, active: true, product_family: 'EcoMat 150T', name: 'EcoMat 150T 0,5x4m', voltage: 230,
+      watt_per_m2: 150, mat_area_m2: 2, mat_width_mm: 500, mat_total_length_mm: 4000, mat_cc_mm: 80, mat_edge_inset_mm: 20, mat_cut_interval_mm: 160, min_wall_margin_mm: 50, min_gap_mm: 50 });
+    const P = 995016, P150 = 995150;
+    const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+    const mk = (id, pts, name) => ({ id, floorId: null, partId: null, name, points: pts, walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [], annotOffsets: {}, wallThicknessCm: 0 });
+    S.floors = []; S.ui.activeFloorId = null; S.ui.activePartId = null;   // ingen etasjefilter (som _matPathClickRegressionTest)
+    S.hindrings = []; S.strips = []; S.cables = [];
+    S.rooms = [mk(907201, rect(0, 0, 200, 600), 'Frihånd'), mk(907202, rect(300, 0, 250, 500), 'Auto'), mk(907203, rect(600, 0, 300, 400), 'Begge'),
+               mk(907204, rect(950, 0, 200, 300), 'For nær'), mk(907205, rect(1200, 0, 100, 1200), 'Lengre enn rullen'), mk(907206, rect(1400, 0, 200, 200), 'Uten matter'),
+               mk(907207, rect(1700, 0, 600, 200), 'Vannrett'), mk(907209, rect(1400, 300, 200, 200), 'Helt tomt'),
+               mk(907208, [{ x: 2400, y: 0 }, { x: 2800, y: 0 }, { x: 2800, y: 200 }, { x: 2600, y: 200 }, { x: 2600, y: 400 }, { x: 2400, y: 400 }], 'L-rom')];
+    const path = (id, roomId, x, y, moves, prod) => ({ id, roomId, productId: prod || P, start: { x, y }, offX: 0, offY: 0, gapCm: 7, centered: false, moves });
+    const V = (len, conn) => ({ axis: 'v', dir: conn === 'uturn' ? -1 : 1, len, conn, side: 1 });
+    S.matPaths = [
+      path(1, 907201, 27.5, 2.5, [V(528, 'first'), V(528, 'uturn'), { axis: 'v', dir: 1, len: 544, conn: 'uturn', side: 1 }]),   // 528+528+544 = 1600 → 16 m, alt dekket
+      path(2, 907203, 684.5, 2.5, [V(384, 'first'), V(384, 'uturn')]),
+      path(3, 907204, 976, 2.5, [V(288, 'first'), V(288, 'uturn')]),      // nettkant 1 cm fra venstre vegg
+      path(4, 907205, 1227.5, 2.5, [V(1104, 'first')]),                     // 1104 tegnet, rullen 10 m dekker 1000
+      path(5, 907207, 1702.5, 27.5, [{ axis: 'h', dir: 1, len: 480, conn: 'first', side: 1 }, { axis: 'h', dir: -1, len: 480, conn: 'uturn', side: 1 }]),
+      path(6, 907208, 2427.5, 2.5, [V(384, 'first')], P150),                // L-rom, 150T: nettkant 2,5 fra vegg, krav 3,0
+    ];
+    S.mats = [
+      { id: 1, roomId: 907202, productId: P, x_cm: 302.5, y_cm: 2.5, width_cm: 50, length_cm: 495, num_runs: 3, gap_cm: 7, rotation_deg: 0, matCoordV: 2 },
+      { id: 2, roomId: 907203, productId: P, x_cm: 602.5, y_cm: 2.5, width_cm: 50, length_cm: 395, num_runs: 1, gap_cm: 7, rotation_deg: 0, matCoordV: 2 },
+      { id: 3, roomId: 907206, productId: P, labelOnly: true },
+    ];
+    if (typeof _invalidateMatCache === 'function') _invalidateMatCache();
+    const room = id => S.rooms.find(r => r.id === id);
+    const cms = segs => JSON.stringify(segs.map(s => Math.round(s.cm * 10) / 10));
+    const reds = segs => segs.map(s => !!s.red);
+    // A. Frihånd (P0373-tilfellet): kjeden finnes og måler nettkantene
+    const A = _matDimChainData(room(907201));
+    check('A: frihåndsrom får kjede (før 157: ingen)', 'v', A && A.chains.v && !A.chains.h, A && Object.keys(A.chains));
+    check('A: tverr: vegg 2,5 | 50 | 7 | 50 | 7 | 50 | vegg 33,5', '[2.5,50,7,50,7,50,33.5]', A && cms(A.chains.v.across) === '[2.5,50,7,50,7,50,33.5]', A && cms(A.chains.v.across));
+    check('A: langs: vegg 2,5 | 544 | vegg 53,5 (lengste bredde)', '[2.5,544,53.5]', A && cms(A.chains.v.along) === '[2.5,544,53.5]', A && cms(A.chains.v.along));
+    check('A: segmenttyper vegg/matte/mellomrom', 'wall,mat,gap,mat,gap,mat,wall', A && A.chains.v.across.map(s => s.type).join() === 'wall,mat,gap,mat,gap,mat,wall', A && A.chains.v.across.map(s => s.type).join());
+    check('A: ingen røde', 'alle false', A && !A.chains.v.across.some(s => s.red) && !A.chains.v.along.some(s => s.red), A && reds(A.chains.v.across));
+    check('A: kabel → vegg = 2,5 nett + 2,5 inntrekk = 5,0, ikke rød', '5', A && near(A.cable.cm, 5) && !A.cable.red, A && A.cable);
+    // B. Auto (S.mats): tallene som før 157 — nå fra _matRunWorldGeom
+    const B = _matDimChainData(room(907202));
+    check('B: auto-matte: tverr som før 157 (2,5 | 50 | 7 | 50 | 7 | 50 | 83,5)', '[2.5,50,7,50,7,50,83.5]', B && cms(B.chains.v.across) === '[2.5,50,7,50,7,50,83.5]', B && cms(B.chains.v.across));
+    check('B: auto-matte: langs som før 157 (2,5 | 495 | 2,5)', '[2.5,495,2.5]', B && cms(B.chains.v.along) === '[2.5,495,2.5]', B && cms(B.chains.v.along));
+    _matRunWorldGeom = (mat, r) => { const g = saved.geom(mat, r); return g ? { ...g, quad: g.quad.map(q => ({ x: q.x + 10, y: q.y })) } : g; };
+    const Bv = _matDimChainData(room(907202));
+    _matRunWorldGeom = saved.geom;
+    check('B: VAKSINE — bredden forskjøvet 10 cm i _matRunWorldGeom → kjeden følger (12,5 | … | 73,5)', '[12.5,50,7,50,7,50,73.5]', Bv && cms(Bv.chains.v.across) === '[12.5,50,7,50,7,50,73.5]', Bv && cms(Bv.chains.v.across));
+    // C. Begge typer i samme rom: én kjede med alle bredder
+    const C = _matDimChainData(room(907203));
+    check('C: auto + frihånd: én kjede, tre bredder (2,5 | 50 | 7 | 50 | 7 | 50 | 133,5)', '[2.5,50,7,50,7,50,133.5]', C && cms(C.chains.v.across) === '[2.5,50,7,50,7,50,133.5]', C && cms(C.chains.v.across));
+    check('C: langs: 2,5 | 395 | 2,5 (auto-matta 395 er lengst)', '[2.5,395,2.5]', C && cms(C.chains.v.along) === '[2.5,395,2.5]', C && cms(C.chains.v.along));
+    check('C: rektanglene kommer fra begge kildene', 'mat×1 + path×2', C && C.rects.filter(r => r.src === 'mat').length === 1 && C.rects.filter(r => r.src === 'path').length === 2, C && C.rects.map(r => r.src));
+    // D. For nær veggen (124/135: rødmerket bredde): kjeden viser tallet i rødt
+    const D = _matDimChainData(room(907204));
+    check('D: nettkant 1 cm fra vegg → første veggmål 1, rødt (krav 2,5)', '1 rød', D && near(D.chains.v.across[0].cm, 1) && D.chains.v.across[0].red === true && near(D.chains.v.across[0].req, 2.5), D && D.chains.v.across[0]);
+    check('D: de andre målene ikke røde', 'false', D && !D.chains.v.across.slice(1).some(s => s.red) && !D.chains.v.along.some(s => s.red), D && reds(D.chains.v.across));
+    check('D: kabel → vegg 1 + 2,5 = 3,5 < 5, rød', '3.5 rød', D && near(D.cable.cm, 3.5) && D.cable.red === true, D && D.cable);
+    // E. Dekket del (149): én bane 1104 tegnet, rullen (10 m) dekker 1000 → kjeden måler 1000
+    const E = _matDimChainData(room(907205));
+    check('E: langs måler dekket del (2,5 | 1000 | 197,5), ikke tegnet 1104', '[2.5,1000,197.5]', E && cms(E.chains.v.along) === '[2.5,1000,197.5]', E && cms(E.chains.v.along));
+    _matPathCoveredLaneRects = mp => { const { NET } = _matFreeConsts(_matFreeProdOf(mp)); return _matFreeDeriveRuns(mp).map(r => { const R = _matFreeLaneRectWorld(r, NET); Object.defineProperty(R, 'axis', { value: r.axis, enumerable: false }); return R; }); };
+    const Ev = _matDimChainData(room(907205));
+    _matPathCoveredLaneRects = saved.cov;
+    check('E: VAKSINE — fulle rektangler i stedet → 1104: kjeden leser _matPathCoveredLaneRects', '[2.5,1104,93.5]', Ev && cms(Ev.chains.v.along) === '[2.5,1104,93.5]', Ev && cms(Ev.chains.v.along));
+    // F. Rom uten matter (bare «kun label»-matte): ingen kjede
+    check('F: rom uten matter (labelOnly) → null', null, _matDimChainData(room(907206)) === null, _matDimChainData(room(907206)));
+    check('F: _matRoomHasMats: labelOnly teller ikke, frihånd og auto teller', 'false/true/true', !_matRoomHasMats(907206) && _matRoomHasMats(907201) && _matRoomHasMats(907202), [_matRoomHasMats(907206), _matRoomHasMats(907201), _matRoomHasMats(907202)]);
+    // G. Vannrett bane: h-kjede, tverr i y, langs i x
+    const G = _matDimChainData(room(907207));
+    check('G: vannrett → h-kjede', 'h', G && G.chains.h && !G.chains.v, G && Object.keys(G.chains));
+    check('G: tverr (y): 2,5 | 50 | 7 | 50 | 90,5', '[2.5,50,7,50,90.5]', G && cms(G.chains.h.across) === '[2.5,50,7,50,90.5]', G && cms(G.chains.h.across));
+    check('G: langs (x): 2,5 | 480 | 117,5', '[2.5,480,117.5]', G && cms(G.chains.h.along) === '[2.5,480,117.5]', G && cms(G.chains.h.along));
+    // H. 150T (krav 3,0): 2,5 er rødt. L-rom: kjeden måler mot bbox (som folie), merknaden mot faktisk kant
+    const H = _matDimChainData(room(907208));
+    check('H: 150T: nettkant 2,5 fra vegg er under 3,0 → rødt', '2.5 rød, krav 3', H && near(H.chains.v.across[0].cm, 2.5) && H.chains.v.across[0].red && near(H.chains.v.across[0].req, 3), H && H.chains.v.across[0]);
+    check('H: L-rom: tverr-kjeden måler mot bbox-veggen (347,5 til høyre), som foliekjeden', '347.5', H && near(H.chains.v.across[2].cm, 347.5), H && cms(H.chains.v.across));
+    check('H: kabelmerknad 2,5 + 2,0 inntrekk = 4,5, rød', '4.5 rød', H && near(H.cable.cm, 4.5) && H.cable.red, H && H.cable);
+    const Rin = { x0: 2540, y0: 250, x1: 2590, y1: 350 };
+    check('H: _rectToPolyEdgeCm måler mot den innvendige veggen (x = 2600 → 10), ikke bbox', 10, near(_rectToPolyEdgeCm(Rin, room(907208).points), 10), _rectToPolyEdgeCm(Rin, room(907208).points));
+    check('H: _rectToPolyEdgeCm: rektangel over kanten → 0', 0, _rectToPolyEdgeCm({ x0: 2580, y0: 250, x1: 2620, y1: 350 }, room(907208).points) === 0, _rectToPolyEdgeCm({ x0: 2580, y0: 250, x1: 2620, y1: 350 }, room(907208).points));
+    // I. Format: hele cm, én desimal under 10
+    const fm = [2.5, 7, 83.5, 1600, 0.96].map(_matDimFmtCm).join('/');
+    check('I: format 2,5 → «2.5 cm», 7 → «7 cm», 83,5 → «84 cm», 1600 → «1600 cm», 0,96 → «1 cm»', '2.5 cm/7 cm/84 cm/1600 cm/1 cm', fm === '2.5 cm/7 cm/84 cm/1600 cm/1 cm', fm);
+    // J. Tegning + K. PDF — krever lerret
+    if (canvas && canvas.width && canvas.height) {
+      const texts = rm => { const t = []; const o = ctx.fillText; ctx.fillText = function (s, ...a) { t.push([s, ctx.fillStyle]); return o.call(this, s, ...a); }; try { _drawMatDimChainForRoom(rm); } finally { ctx.fillText = o; } return t; };
+      const tA = texts(room(907201));
+      check('J: frihåndsrommet tegner 10 tall + kabelmerknad', 11, tA.length === 11 && tA.some(([s]) => /^Kabel/.test(s)), tA.map(([s]) => s));
+      const want = '2.5 cm,50 cm,7 cm,50 cm,7 cm,50 cm,34 cm,2.5 cm,544 cm,54 cm';
+      check('J: tekstene er ' + want, want, tA.filter(([s]) => !/^Kabel/.test(s)).map(([s]) => s).join() === want, tA.map(([s]) => s).join());
+      check('J: kabelmerknaden', 'Kabel → vegg min 5 cm (krav ≥ 5 cm)', tA.some(([s]) => s === 'Kabel → vegg min 5 cm (krav ≥ 5 cm)'), tA.filter(([s]) => /^Kabel/.test(s)).map(([s]) => s));
+      const tD = texts(room(907204));
+      const norm = c => String(c).replace(/\s+/g, '');   // lerretet normaliserer fargestrenger («rgba(200, 30, …»)
+      const redCol = norm(_lc('rgba(200,30,40,0.95)', 'rgba(248,113,113,0.95)'));
+      check('J: «1 cm» og kabelmerknaden tegnes i rødt, «50 cm» ikke', 'rød/rød/ikke', tD.some(([s, c]) => s === '1 cm' && norm(c) === redCol) && tD.some(([s, c]) => /^Kabel/.test(s) && norm(c) === redCol) && tD.some(([s, c]) => s === '50 cm' && norm(c) !== redCol), tD);
+      check('J: rom uten matter tegner ingenting', 0, texts(room(907206)).length === 0, texts(room(907206)).length);
+      // K. PDF: _renderRoomToImage slår kjeden på selv for et rom med BARE frihåndsmatte
+      const calls = [];
+      _drawMatDimChainForRoom = rm => { calls.push(rm.id); };
+      try {
+        room(907201).matDimSnap = false;
+        _renderRoomToImage(room(907201), { focusRoom: true, outW: 300, noUrl: true });
+        check('K: PDF-romside slår mattekjeden på for et rom med bare S.matPaths', '907201 tegnet', calls.includes(907201), calls.slice());
+        check('K: ...og setter bryteren tilbake etterpå', false, room(907201).matDimSnap === false, room(907201).matDimSnap);
+        calls.length = 0;
+        _renderRoomToImage(room(907209), { focusRoom: true, outW: 300, noUrl: true });
+        check('K: rom uten matter: ingen mattekjede i PDF', 'ingen', !calls.includes(907209), calls.slice());
+        calls.length = 0;
+        _renderRoomToImage(room(907206), { focusRoom: true, outW: 300, noUrl: true });
+        check('K: rom med bare «kun label»-matte: bryteren slås på som før 157 (S.mats.some), kjeden tegner ingenting', '907206 kalt', calls.includes(907206), calls.slice());
+      } finally { _drawMatDimChainForRoom = saved.draw; }
+    } else {
+      results.push({ name: 'J/K: HOPPET OVER — lerretet er 0×0 (åpne et prosjekt i tegnemodulen først)', ok: true, expected: '-', got: '-' });
+    }
+    // L. Menyene og chippen
+    const fakeEv = { clientX: 10, clientY: 10, preventDefault() {}, stopPropagation() {} };
+    roomCtxMenu(fakeEv, 907201);
+    const ctxHtml = document.getElementById('ctx-menu').innerHTML; hideCtx();
+    check('L: høyreklikkmenyen har «Vis målsett matte» for frihåndsrommet', 'Vis målsett matte', /Vis målsett matte/.test(ctxHtml), ctxHtml.match(/(Vis|Skjul) målsett \w+/g));
+    roomCtxMenu(fakeEv, 907206);
+    const ctxHtml2 = document.getElementById('ctx-menu').innerHTML; hideCtx();
+    check('L: ...ikke for rommet uten matter', 'ingen', !/målsett matte/.test(ctxHtml2), ctxHtml2.match(/(Vis|Skjul) målsett \w+/g));
+    S.ui.selectedRoomId = 907201; S.ui.selectedMatId = null; S.ui.selectedMatPathId = null;
+    const moreHtml = (() => { const el = document.getElementById('produkt-menu') || document.getElementById('ctx-menu'); const before = el ? el.innerHTML : null;
+      try { _showCtxMore({ stopPropagation() {}, clientX: 10, clientY: 10, currentTarget: document.body, target: document.body }, 'room'); } catch (e) { return 'FEIL ' + e.message; }
+      const h = document.querySelectorAll('.ctx-item'); const out = Array.from(h).map(x => x.textContent).join('|'); if (typeof hideProduktMenu === 'function') hideProduktMenu(); hideCtx(); return out; })();
+    check('L: hurtigmenyen (⋯) har «Målsett matte»', 'Målsett matte', /Målsett matte/.test(moreHtml), moreHtml.match(/Målsett \w+/g) || moreHtml.slice(0, 80));
+    S.ui.selectedRoomId = null; S.ui.selectedMatId = null; S.ui.selectedMatPathId = 1;
+    const before = !!room(907201).matDimSnap;
+    toggleMatDimSnap();
+    check('L: toggleMatDimSnap finner rommet via valgt frihåndsmatte', !before, room(907201).matDimSnap === !before, room(907201).matDimSnap);
+    toggleMatDimSnap();
+    const barHtml = _ctxBarItems();
+    check('L: chip-en «Målsett Matte» vises når en frihåndsmatte er valgt', 'chip-dim-matte', /id="chip-dim-matte"/.test(barHtml), (barHtml.match(/Målsett \w+/g) || []));
+    // M. Tegneløkka og PDF-koden (kildetekst): kjeden kalles fra drawAllDimAnnotations; PDF leser S.matPaths
+    check('M: _renderRoomToImage slår matDimSnap på for S.mats ELLER S.matPaths', 'S.matPaths i kilden', /matDimSnap[\s\S]{0,200}S\.matPaths/.test(String(_renderRoomToImage)), 'mangler');
+  } catch (e) {
+    results.push({ name: 'UNNTAK: ' + (e && e.message), ok: false, expected: 'ingen', got: e && e.stack });
+  } finally {
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    S.rooms = saved.rooms; S.mats = saved.mats; S.matPaths = saved.matPaths; S.hindrings = saved.hindrings; S.strips = saved.strips; S.cables = saved.cables;
+    S.floors = saved.floors; S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId;
+    S.ui.selectedRoomId = saved.selectedRoomId; S.ui.selectedMatId = saved.selectedMatId; S.ui.selectedMatPathId = saved.selectedMatPathId;
+    S.view.zoom = saved.view.zoom; S.view.panX = saved.view.panX; S.view.panY = saved.view.panY;
+    _matRunWorldGeom = saved.geom; _matPathCoveredLaneRects = saved.cov; _drawMatDimChainForRoom = saved.draw;
+    window._performAutoSave = saved.autoSave; window._showToast = saved.toast;
+    if (typeof _invalidateMatCache === 'function') _invalidateMatCache();
+    try { _rebuildActiveFloorRoomIds(); } catch (e) {}
+    if (typeof markDirty === 'function') markDirty();
+    if (typeof render === 'function') render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_matDimChainRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
+  return { ok: allOk, results };
 }
 function _drawDimAnnotationsForRoom(room, opts) {
   if(!room||!room.walls||!room.points) return;
@@ -63417,6 +63597,7 @@ function roomItemHtml(room, indented) {
   const hasStrips = _stripsForRoom(room.id).length > 0;
   const hasCables = _cablesForRoom(room.id).length > 0;
   const cableDimOn = room.cableDimSnap;
+  const hasMats = _matRoomHasMats(room.id), matDimOn = room.matDimSnap;   // 157
 
   const onske = (typeof _forslagRomOnske === 'function') ? _forslagRomOnske(room.id) : null;
   return `<div class="room-item${sel?' sel':''}${indented?' indented':''}${onske?' kundeonske':''}" data-room-id="${room.id}" data-room-name="${esc(room.name).toLowerCase()}"
@@ -63438,7 +63619,8 @@ function roomItemHtml(room, indented) {
       <button onclick="event.stopPropagation();toggleRoomCard(${room.id})" title="Infokort" style="width:20px;height:20px;border:none;border-radius:3px;background:${room.cardVisible?'var(--accent)':'transparent'};color:${room.cardVisible?'#0d0e10':'var(--dim)'};cursor:pointer;font-size:11px;padding:0;display:flex;align-items:center;justify-content:center"><svg class="ic ic-clipboard" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2.5" width="6" height="3.5" rx="1"/></svg></button>
       <button onclick="event.stopPropagation();_toggleRoomDimSnap(${room.id})" title="Målsett rom" style="width:20px;height:20px;border:none;border-radius:3px;background:${dimOn?'var(--accent)':'transparent'};color:${dimOn?'#0d0e10':'var(--dim)'};cursor:pointer;font-size:11px;padding:0;display:flex;align-items:center;justify-content:center"><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg></button>${hasStrips ? `
       <button onclick="event.stopPropagation();_toggleStripDimSnap(${room.id})" title="Målsett folie" style="width:20px;height:20px;border:none;border-radius:3px;background:${stripDimOn?'var(--accent)':'transparent'};color:${stripDimOn?'#0d0e10':'var(--dim)'};cursor:pointer;font-size:11px;padding:0;display:flex;align-items:center;justify-content:center">〰</button>` : ''}${hasCables ? `
-      <button onclick="event.stopPropagation();_toggleCableDimSnap(${room.id})" title="Målsett kabel" style="width:20px;height:20px;border:none;border-radius:3px;background:${cableDimOn?'var(--accent)':'transparent'};color:${cableDimOn?'#0d0e10':'var(--dim)'};cursor:pointer;font-size:11px;padding:0;display:flex;align-items:center;justify-content:center"><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg></button>` : ''}
+      <button onclick="event.stopPropagation();_toggleCableDimSnap(${room.id})" title="Målsett kabel" style="width:20px;height:20px;border:none;border-radius:3px;background:${cableDimOn?'var(--accent)':'transparent'};color:${cableDimOn?'#0d0e10':'var(--dim)'};cursor:pointer;font-size:11px;padding:0;display:flex;align-items:center;justify-content:center"><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg></button>` : ''}${hasMats ? `
+      <button onclick="event.stopPropagation();_toggleMatDimSnap(${room.id})" title="Målsett matte" style="width:20px;height:20px;border:none;border-radius:3px;background:${matDimOn?'var(--accent)':'transparent'};color:${matDimOn?'#0d0e10':'var(--dim)'};cursor:pointer;font-size:11px;padding:0;display:flex;align-items:center;justify-content:center"><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg></button>` : ''}
     </span>
     <span class="room-status" style="color:${st.color}" title="${st.title}">${st.dot}</span>
   </div>${_forslagOnskeBoksHtml(room)}${_soneRowsHtml(room)}`;
@@ -64062,6 +64244,7 @@ function roomCtxMenu(e, id) {
     ? `<div class="ctx-item" onclick="mvRoom(${id},null);hideCtx()">↩ Fjern fra etasje</div>` : '';
   const _hasStrips = _stripsForRoom(id).length > 0;
   const _hasCables = _cablesForRoom(id).length > 0;
+  const _hasMats = _matRoomHasMats(id);   // 157: S.mats eller S.matPaths
   document.getElementById('ctx-menu').innerHTML=`
     <div class="ctx-item" onclick="trigRename(${id});hideCtx()"><svg class="ic ic-pencil" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Gi nytt navn</div>
     <div class="ctx-sep"></div>
@@ -64077,6 +64260,7 @@ function roomCtxMenu(e, id) {
     <div class="ctx-item" onclick="_toggleRoomDimSnap(${id});hideCtx()"><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> ${room?.dimSnap?'Skjul':'Vis'} målsett rom</div>
     ${_hasStrips ? `<div class="ctx-item" onclick="_toggleStripDimSnap(${id});hideCtx()">〰 ${room?.stripDimSnap?'Skjul':'Vis'} målsett folie</div>` : ''}
     ${_hasCables ? `<div class="ctx-item" onclick="_toggleCableDimSnap(${id});hideCtx()"><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> ${room?.cableDimSnap?'Skjul':'Vis'} målsett kabel</div>` : ''}
+    ${_hasMats ? `<div class="ctx-item" onclick="_toggleMatDimSnap(${id});hideCtx()"><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> ${room?.matDimSnap?'Skjul':'Vis'} målsett matte</div>` : ''}
     ${flOpts ? '<div class="ctx-sep"></div><div class="ctx-sub-lbl">Flytt til etasje</div>'+flOpts : ''}
     ${removeFloor}
     <div class="ctx-sep"></div>
@@ -71879,8 +72063,10 @@ function toggleCableDimSnap() {
   renderSidebar(); render();
 }
 function toggleMatDimSnap() {
+  // 157: også en valgt frihånds-/kapittelmatte (S.matPaths) peker ut rommet
   const rm = currentRoom() || S.rooms.find(r => r.id ===
-    (S.mats||[]).find(m => m.id === S.ui.selectedMatId)?.roomId);
+    ((S.mats||[]).find(m => m.id === S.ui.selectedMatId)?.roomId
+     ?? (S.matPaths||[]).find(m => m.id === S.ui.selectedMatPathId)?.roomId));
   if (!rm) return;
   rm.matDimSnap = !rm.matDimSnap;
   document.getElementById('chip-dim-matte')?.classList.toggle('on', rm.matDimSnap);
@@ -72048,6 +72234,7 @@ function _showCtxMore(e, ctx) {
     const room = S.rooms.find(r => r.id === rid);
     const hasStrips = S.strips.some(s => s.roomId === rid);
     const hasCables = (S.cables || []).some(c => c.roomId === rid);
+    const hasMats = _matRoomHasMats(rid);   // 157: S.mats eller S.matPaths
     // STEG 1 (Kenneth 19.08.2026, «Tøm rom ser ikke frihånds-matter»): samme kanoniske liste som
     // _clearRoomProducts selv bruker — et rom med KUN frihånds-matte/aluboard skal fortsatt vise
     // «Tøm rom» (før: menypunktet forsvant helt, siden denne bare sjekket strips/cables/mats/plates).
@@ -72064,6 +72251,7 @@ function _showCtxMore(e, ctx) {
     items += I(`_toggleRoomDimSnap(${rid})`, `<svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> Målsett ${_roomWord(false)}${room?.dimSnap ? ' ✓' : ''}`);
     if (hasStrips) items += I(`toggleStripDimSnap()`, `<svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> Målsett folie${room?.stripDimSnap ? ' ✓' : ''}`);
     if (hasCables) items += I(`toggleCableDimSnap()`, `<svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> Målsett kabel${room?.cableDimSnap ? ' ✓' : ''}`);
+    if (hasMats) items += I(`_toggleMatDimSnap(${rid})`, `<svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> Målsett matte${room?.matDimSnap ? ' ✓' : ''}`);
     items += `<div class="ctx-sep" style="height:1px;background:var(--border);margin:4px 6px"></div>`;
     items += I(`if(confirm('Slette rommet og alt innhold?'))deleteRoom(${rid})`, '<svg class="ic ic-trash" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M18.5 6l-1 14a2 2 0 0 1-2 1.8H8.5a2 2 0 0 1-2-1.8L5.5 6"/></svg> Slett rom', true);
   }
@@ -72642,10 +72830,9 @@ function _ctxBarItems() {
   // INGEN gren for selectedMatPathId i det hele tatt, så frihånds-matta fikk aldri en flytende
   // linje (auto-matte får sin over, folie sin lenger ned) — kun venstre sidepanel.
   //
-  // «Målsett»-chippen (toggleMatDimSnap) er BEVISST utelatt: _drawMatDimChainForRoom leser KUN
-  // S.mats, aldri S.matPaths — chippen ville sett ut som den virker, men ikke tegne noe for en
-  // frihånds-matte. Å utvide målsættlinjene til frihånd er en egen, større oppgave (vilkårlig
-  // serpentin-geometri, ikke bare rektangler), ikke bygget her — rapportert, ikke gjettet på.
+  // 157: «Målsett»-chippen (toggleMatDimSnap) vises nå også her — _drawMatDimChainForRoom leser
+  // S.matPaths (dekkede bredderektangler, 149) på linje med S.mats. Før 157 var chippen bevisst
+  // utelatt fordi kjeden bare leste S.mats.
   if (ui.selectedMatPathId != null) {
     const mp = (S.matPaths || []).find(m => m.id === ui.selectedMatPathId);
     if (mp) {
@@ -72666,6 +72853,8 @@ function _ctxBarItems() {
         <span class="tc-sep"></span>
         ${(() => { const el = _matPathEqualEligible(mp); return `<button class="snap-chip" onclick="_matPathEqualize(${mp.id})" title="${esc(el.ok ? 'Alle bredder like lange innenfor valgt rull; siste tar resten' : el.reason)}"${el.ok ? '' : ' disabled'}>Like lengder</button><span class="tc-sep"></span>`; })()}
         <button class="snap-chip${mp.centered ? ' on' : ''}" onclick="_matPathToggleCenter(${mp.id})" title="Sentrer hele arrangementet i rommet (slakk likt på begge ytterveggene)">Sentrer</button>
+        <span class="tc-sep"></span>
+        <button class="snap-chip${S.rooms.find(r => r.id === mp.roomId)?.matDimSnap ? ' on' : ''}" id="chip-dim-matte" onclick="toggleMatDimSnap()" title="Vis avstander vegg \u2192 nettkant, mellom mattene og til matteendene"><span class="snap-dot"></span>M\u00e5lsett Matte</button>
         <span class="tc-sep"></span>
         <button class="snap-chip" onclick="_matPathDelete(${mp.id})" title="Slett frihånds-matte">\u{1F5D1} Slett</button>`;
     }
@@ -82394,7 +82583,8 @@ function _renderRoomToImage(room, opts) {
   // outward offset doesn't balloon (each enabled type pushes it further out).
   room.stripDimSnap = (S.strips || []).some(s => s.roomId === room.id);
   room.cableDimSnap = (S.cables || []).some(c => c.roomId === room.id);
-  room.matDimSnap   = (S.mats   || []).some(m => m.roomId === room.id);
+  room.matDimSnap   = (S.mats   || []).some(m => m.roomId === room.id)
+                   || (S.matPaths || []).some(mp => mp.roomId === room.id);   // 157: frihånds-/kapittelmatter også
   // Render to the (resized) main canvas with the temporary view. The world
   // box already maps 1:1 onto the canvas, so the whole canvas IS the room.
   if (typeof markDirty === 'function') markDirty();
