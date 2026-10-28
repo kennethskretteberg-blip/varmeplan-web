@@ -104,3 +104,91 @@ PDF 11 sider begge, 520 tekstkall identiske, 954 → 982 KB (fire romsider med k
 - Matteutlegget, marginene, 133/149, folie- og kabelkjedene er urørt. Ikke pushet.
 - Kjeden måler mot rommets bbox-vegg (som foliekjeden) — i L-rom kan et tverrmål gå til en vegg som ikke er der; kabelmerknaden
   bruker den faktiske kanten. Se spørsmål 4.
+
+## 158
+
+**Commit:** «158: plantegning — uten romliste (bildet får siden), zoom/flytt per etasje lagret (floor.pdfView), levende forhåndsvisning som 155». På `main`, ikke pushet.
+(Nummeret 158 er også brukt av `467ae7f` «158: plantegning — rom uten varme dempet», rapport i `docs/158/`. Denne ligger her, i serie-157, som prompten ba om.)
+
+### STEG 0 (målt før endring, kode = b47764e)
+
+**P0373 kunne ikke åpnes** (ingen innlogging i den headless økten — samme sperre som 157/137). Målt på samme P0373-kopi som 157
+(`/tmp/cdp158/fixture.mjs` → `P0373`: 138 HC Gard 200 × 600 og 125 HC 250 × 500, EcoMat 100T, én etasje), PDF med forside +
+plantegning + to romsider. `addImage`-kallene fanget (side, x, y, b, h i mm):
+
+| | Før (b47764e) | Etter |
+|---|---|---|
+| Side | stående (bbox 750 × 800 cm, aspekt 1,067 → `landscape` = nei) | samme |
+| Tittel + undertittel + strek | y 15–36 mm | samme |
+| Bildet | x 15, y 36, **180 × 192 mm** | x 15, y 36, **180 × 192 mm** |
+| Romlista | overskrift y 234, én rad y 240 (2 rom i to kolonner), 12,2 mm + 6 mm luft | **borte** |
+| Tekst på siden | 24 `text`-kall (Rom/Netto m²/Produkt/W × 2, navn, 12.0, EcoMat 100T, 800 …) | 6 (tittel, undertittel, bunntekst) |
+
+Ærlig funn: på denne etasjen vokser **ikke** bildet. Det var allerede begrenset av bredden (180 mm på stående side), ikke av høyden —
+romlista lå under med luft igjen. Bildet får bare mer plass når etasjen er høyere enn bred nok til at lista presset det ned
+(aspekt > (240 − listehøyde) / 180 ≈ 1,27 med 2 rom, 1,17 med 10 rom); da er gevinsten 12–29 mm i høyden. Se spørsmål 1.
+Skjermbilder: `bilder/158-foer-side-2.png` / `158-etter-side-2.png`.
+
+**Hvordan 155 koblet utsnittet inn** (lest i koden): `room.pdfView {cx, cy, scale}` leses av én funksjon, `_pdfViewOf(room)`
+(gyldighet + klemming 0,5–4). `_renderRoomToImage` deler `worldW`/`worldH` på skalaen og bruker `cx`/`cy` som pan; `_pdfRoomAspect`
+er bare geometri (uavhengig av utsnittet), så sideoppsettet og `_pdfScaleMmPerCm` er de samme. Forhåndsvisningen (`_expPreviewRoom`
++ `_pdfPrev*`) tegner med `opts.outW/toCanvas/noUrl/captureLabels` og leser `res.view` + `res.labels`. Det som kunne gjenbrukes
+direkte: `_pdfViewOf` (tar hvilket som helst objekt med `pdfView`), hele `_pdfPrev*`-kjeden (hjul, dra, label-treff, angre,
+autolagring, skrivebeskyttet) — forutsatt at `_renderFloorToImage` returnerer det samme som `_renderRoomToImage`.
+
+### Bygg
+
+- **PDF-siden** (`exportPDF`, «154 · Plantegning per etasje»): romlista (to kolonner, `_fpHead`, radløkka) er fjernet.
+  `availImgH = (pageH − M) − y − 6`; bildet får resten av siden med bevart aspekt, liggende side som i 154. Undertittelen
+  «N rom · m² netto · W» står (tallene fra `floorSummaries`, som før), kartattribusjonen under bildet som før.
+- **Utsnitt per etasje:** `_pdfFloorViewOf(floor)` / `_pdfFloorViewSet(floor, v)` ved `_pdfViewOf` — samme leser, samme klemming.
+  Bor på `floor.pdfView`; prosjekt uten etasjer: `S.project.pdfViewFloorplan`. `_pdfFloorBox(floor)` deler `worldW`/`worldH` på
+  skalaen og gir `cx`/`cy` (lagret eller bbox-midten) og `scale`; aspekt og `landscape` er uendret av utsnittet.
+  `_renderFloorToImage` bruker `box.cx/cy` som pan (før: bbox-midten regnet på nytt) og har fått `opts.outW`, `opts.toCanvas`,
+  `opts.noUrl`, `opts.captureLabels` og returnerer `view` + `labels` — nøyaktig samme form som `_renderRoomToImage`.
+  Lagres av `_buildSaveData` (`floors.map(f => ({...f}))` / `{...S.project}`) uten ny kode; `pushUndo` kopierer etasjer grunt,
+  derfor skrives alltid et nytt objekt.
+- **Forhåndsvisningen:** `_expPreviewRoom` er delt i to: rom-spesifikt (statistikk, ‹ › rom) og `_expPreviewLive(cfg)` som
+  monterer verktøylinje, lerret, infotekst og lyttere. Ny `_expPreviewFloor(idx)` bruker den samme monteringen med etasjens
+  tittel/tall og ‹ › mellom etasjer; `_expPreviewSection('floorplan')` delegerer dit (stillbildet med `<img>` er borte).
+  `_pdfPrev` har fått `kind` ('room'/'floor'), `floorId` og `roomIds` (Set): `_pdfPrevDraw` velger `_pdfRoomAspect`/
+  `_renderRoomToImage` eller `_pdfFloorBox`/`_renderFloorToImage`; `_pdfPrevSetView`/`_pdfPrevResetView`/`_pdfPrevHasView` skriver
+  til rommet eller etasjen; `_pdfPrevHitLabel` treffer labels i alle rommene på etasjen (dempede rom har ingen). Hjul, dra,
+  label-drag, dobbeltklikk, angre-per-bevegelse, autolagring og skrivebeskyttelse er uendret kode. «Labels til auto» på etasjen
+  tar alle rommene på etasjen (bekreftelse med antall).
+- **Delt med 155 (ikke kopiert):** `_pdfViewOf`, `PDF_VIEW_SCALE_MIN/MAX`, `_expPreviewLive`, `_pdfPrevDraw`, `_pdfPrevWheel`,
+  `_pdfPrevDown/Move/Up`, `_pdfPrevDblClick`, `_pdfPrevHitLabel`, `_pdfPrevSetView`, `_pdfPrevResetView`, `_pdfPrevResetLabels`,
+  `_labelClearManual`, `_labelScaleNum`. Romsidene og romforhåndsvisningen er funksjonelt urørt (regresjonstestens A/B 57 sjekker grønne).
+
+### Test (på `TOETG`-fixturen, 8 rom / 2 etasjer, `/tmp/cdp158/shots.mjs`, `reset.mjs`, `lerret.mjs`)
+
+1. Plantegning-siden: bare tittel, undertittel, bilde, bunntekst (P0373-kopi: 24 → 6 tekstkall; mm i tabellen over).
+2. Zoom 3 hjul (1,331×) + flytt i forhåndsvisningen → `S.floors[0].pdfView = {cx 546.8, cy 469.4, scale 1.331}`; PDF-ens
+   plantegningsbilde har samme plassering (x 15, y 36, 267 × 115,25 mm) men annet innhold (JPEG 145 199 → 158 331 byte), og
+   bildet i `bilder/158-toetg-pdfview-01.png` er det samme utsnittet som `158-etter-dialog-zoom.png`.
+   Lagre/åpne: `_buildSaveData()` → `_restoreProject()` gir begge etasjenes `pdfView` tilbake uendret.
+   Tilbakestill (begge etasjer) → `pdfView` borte, knappen av, etasjebildene **bit-identiske** med auto (SHA-256 `57deb5c85dc9` /
+   `953e947280d2` før og etter, JPEG-lengder 238 975 / 145 199). (Merk: en `_restoreProject`-runde på fixturen endrer bildet fordi
+   restore legger på romfelter fixturen mangler — `foilGapCm`, `wallThicknessCm` — så bit-sjekken er gjort uten den i mellom.)
+3. To etasjer: 1. etasje 1,331×, 2. etasje 1,21× (`{cx 595, cy 200, scale 1.21}`), hver sin — `158-etter-dialog-etasje2.png`.
+4. Label-drag i plantegningen (kabelen i Stue): `cable.labelPos = {871.1, 224.2}`; romforhåndsvisningen (`158-etter-dialog-romside.png`)
+   og hovedlerretet (`158-etter-hovedlerret.png`, `_cableLabelBounds[1]` flyttet) viser labelen der.
+5. `_pdfExportSmokeTest` 49 → **55** grønne: de to romliste-sjekkene byttet ut med «ingen romliste», «undertittelen står»,
+   «bildet får resten av siden» (180/267 mm bredt eller til 6 mm over bunnmargen), `floor.pdfView` → samme sideantall, samme
+   bildeplassering, annet bilde for 1. etasje, uendret for 2. etasje, og VAKSINE (`_pdfFloorViewOf` → null gir auto igjen).
+   `_pdfPreviewRegressionTest` 57 → **84** grønne: ny seksjon C — uten etasjer (`S.project.pdfViewFloorplan`), `_pdfFloorBox`/
+   `_renderFloorToImage` leser det, ett angresteg, rommenes utsnitt urørt, dra = flytt (40 px → 40·k/sc cm), label-drag deler
+   `labelPos` med romsiden, tilbakestill bit-identisk, med etasjer hver sin `floor.pdfView`, ‹ › uten å røre avkryssingen,
+   skrivebeskyttet. Ingen konsollfeil.
+
+### Skjermbilder (`docs/serie-157/bilder/`)
+
+`158-foer-dialog.png` (stillbilde før) · `158-etter-dialog-auto.png` · `158-etter-dialog-zoom.png` · `158-etter-dialog-label.png` ·
+`158-etter-dialog-etasje2.png` · `158-etter-dialog-romside.png` · `158-etter-hovedlerret.png` · `158-toetg-auto-01.png` /
+`158-toetg-pdfview-01.png` (PDF-siden auto / med utsnitt) · `158-toetg-pdfview-02.png` (2. etasje).
+
+### Ikke gjort
+
+- Romsidene/155 og romlista er ikke flyttet noe sted (Romoversikten finnes).
+- Avkryssing av rom i dialogen tegner ikke det levende lerretet på nytt før seksjonen klikkes igjen (som stillbildet før). Spørsmål 4.
+- Ikke pushet.

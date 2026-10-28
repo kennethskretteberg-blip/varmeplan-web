@@ -16,3 +16,17 @@
 7. **Begge retninger i ett rom:** loddrette og vannrette matter gir hver sin kjede (under + venstre, og høyre + over).
    Kabelmerknaden står bare én gang, under den første. Greit?
 8. **Tekst på papiret:** 10 px som de andre kjedene — liten på A4 (står alt som 154-spørsmål 11). Skal alle tre kjedene skaleres i PDF?
+
+## 158
+
+1. **Bildet vokser ikke på P0373-kopien:** på en stående side er bildet begrenset av bredden (180 mm), ikke av høyden — romlista lå
+   under med luft igjen. Gevinsten kommer bare på etasjer som er høyere enn brede. Skal sideformatet velges etter størst bilde
+   (stående vinner mellom aspekt 0,85 og 1,0 — i dag blir det liggende der), eller står 154-regelen «liggende når bredere enn høy»?
+2. **Uten etasjer:** utsnittet bor da på `S.project.pdfViewFloorplan`, og `pushUndo` tar ikke prosjektobjektet (bare `parts`) — zoom/
+   flytt på plantegningen kan ikke angres i et prosjekt uten etasjer (lagres og tilbakestilles som normalt). Greit, eller skal
+   prosjektet inn i angre-stabelen?
+3. **«Labels til auto» på plantegningen** tilbakestiller labels i alle rommene på etasjen (med bekreftelse og antall). Ønsket, eller
+   skal knappen bare finnes på romsidene?
+4. **Avkryssing av rom** demper rom i plantegningen (forrige 158), men det levende lerretet tegnes ikke på nytt når du haker av/på før
+   du klikker «Plantegning» igjen. Skal det følge med live?
+5. **Zoomtrinn:** hjulet gir 1,1 per klikk (som 155), så «1,3×» blir 1,331× etter tre klikk. Vil du ha et tallfelt/faste trinn?

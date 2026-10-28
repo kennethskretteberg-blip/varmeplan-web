@@ -78825,45 +78825,87 @@ function _showExportDialog() {
 //   • Rommet som vises velges IKKE på hovedlerretet (`_renderRoomToImage` gjenoppretter alt).
 //   • Skrivebeskyttet vindu (060): alt vises, ingenting kan endres — samme gate som lerretet.
 // Bare labels som hører til rommet kan dras herfra; naborom som stikker inn i utsnittet røres ikke.
-let _pdfPrev = null;   // { roomId, cv, cur:{cx,cy,scale}, autoW, autoC, res, drag, undoTaken, wheelTimer, raf }
+// 158: samme komponent (_expPreviewLive + _pdfPrev*) viser også plantegningen per etasje — se
+// _expPreviewFloor; `_pdfPrev.kind` skiller rom fra etasje, utsnittet skrives via _pdfPrevSetView.
+let _pdfPrev = null;   // { kind:'room'|'floor', roomId, floorId, roomIds:Set, cv, cur:{cx,cy,scale}, autoW, res, drag, undoTaken, wheelTimer, raf }
 
 function _expPreviewRooms() { return (S.rooms || []).filter(r => !r.listDraft); }
+// 158: dialogens avkryssede rom (Set) eller null = alle — samme filter som PDF-en (opts.rooms).
+function _expPreviewSelIds() {
+  const cbs = [...document.querySelectorAll('.exp-room-cb')];
+  return cbs.length ? new Set(cbs.filter(c => c.checked).map(c => +c.value)) : null;
+}
 
 function _expPreviewRoom(roomId) {
   const room = S.rooms.find(r => r.id === roomId);
   if (!room) return;
-  const area = document.getElementById('exp-preview-area');
-  if (!area) return;
   const stats = _computeRoomStats(room);
   const wm2 = stats.nettoM2 > 0 ? Math.round(stats.totalW / stats.nettoM2) : 0;
   const coverage = stats.nettoM2 > 0 ? Math.round(stats.heatedM2/stats.nettoM2*100) : 0;
   const rooms = _expPreviewRooms();
   const idx = rooms.findIndex(r => r.id === roomId);
   const prev = idx > 0 ? rooms[idx - 1] : null, next = (idx >= 0 && idx < rooms.length - 1) ? rooms[idx + 1] : null;
-  const ro = !!(S.ui && S.ui.readOnly);
-  const tegnbar = room.points && room.points.length >= 3;
   const nav = rooms.length > 1 ? `<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px">
       <button class="adm-btn ghost" style="padding:4px 10px" ${prev ? `onclick="_expPreviewRoom(${prev.id})"` : 'disabled'} title="${prev ? _esc(prev.name || 'Rom') : ''}">&lsaquo; Forrige</button>
       <span style="font-size:12px;color:var(--muted)">Rom ${idx + 1} av ${rooms.length}</span>
       <button class="adm-btn ghost" style="padding:4px 10px" ${next ? `onclick="_expPreviewRoom(${next.id})"` : 'disabled'} title="${next ? _esc(next.name || 'Rom') : ''}">Neste &rsaquo;</button>
     </div>` : '';
+  _expPreviewLive({ kind: 'room', roomId, tegnbar: room.points && room.points.length >= 3, nav,
+    resetTitle: 'Tilbake til automatisk utsnitt (rommet med luft rundt)', labelsTitle: 'Alle labels i rommet tilbake til automatisk plassering',
+    info: `<div style="font-weight:600;font-size:14px;margin-bottom:6px">${_esc(room.name||'Rom')}</div>
+      <div>Brutto: ${stats.bruttoM2.toFixed(1)} m² · Netto: ${stats.nettoM2.toFixed(1)} m² · Dekning: ${coverage}%</div>
+      <div>Effekt: ${Math.round(stats.totalW)} W · ${wm2} W/m²</div>` });
+}
+
+// ═══ 158 · LEVENDE FORHÅNDSVISNING AV PLANTEGNINGEN (Kenneth 28.10.2026) ═══════════════════
+// «I appen må man kunne zoome og flytte slik som for rommene.» Samme lerret og samme hjul/dra/
+// label-håndtering som rommene (_expPreviewLive + _pdfPrev*), bare med etasjen som motiv:
+// bildet tegnes av `_renderFloorToImage` (det PDF-en bruker), utsnittet lagres på etasjen
+// (`floor.pdfView` via _pdfFloorViewSet; prosjekt uten etasjer: S.project.pdfViewFloorplan), og
+// labels i alle rommene på etasjen kan dras — samme `labelPos` som romsiden og hovedlerretet.
+// Dempede rom (ikke avkrysset) tegnes uten produkter og har derfor ingen labels å ta i.
+function _expPreviewFloor(idx) {
+  const area = document.getElementById('exp-preview-area');
+  if (!area) return;
+  const groups = _pdfFloorplanGroups(_expPreviewSelIds());
+  if (!groups.length) { _expPreviewSection('floorplan'); return; }
+  idx = Math.max(0, Math.min(groups.length - 1, idx || 0));
+  _expFloorplanIdx = idx;
+  const g = groups[idx];
+  const fl = g.floor ? S.floors.find(f => f.id === g.floor.id) : null;
+  const rowsF = (S.rooms || []).filter(r => !r.listDraft && (fl ? r.floorId === fl.id : true));
+  let nettoF = 0, wF = 0;
+  for (const r of rowsF) { nettoF += _computeRoomStats(r).nettoM2 || 0; wF += _roomRatedEffectW(r); }
+  const nav = groups.length > 1 ? `<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px">
+      <button class="adm-btn ghost" style="padding:4px 10px" ${idx === 0 ? 'disabled' : ''} onclick="_expPreviewFloor(${idx - 1})">&lsaquo; Forrige</button>
+      <span style="font-size:12px;color:var(--muted)">Etasje ${idx + 1} av ${groups.length}</span>
+      <button class="adm-btn ghost" style="padding:4px 10px" ${idx === groups.length - 1 ? 'disabled' : ''} onclick="_expPreviewFloor(${idx + 1})">Neste &rsaquo;</button>
+    </div>` : '';
+  _expPreviewLive({ kind: 'floor', floorId: fl ? fl.id : null, tegnbar: true, nav,
+    resetTitle: 'Tilbake til automatisk utsnitt (alle rom på etasjen med luft rundt)', labelsTitle: 'Alle labels på etasjen tilbake til automatisk plassering',
+    info: `<div style="font-weight:600;font-size:14px;margin-bottom:6px">${_esc(g.title)}</div>
+      <div>${rowsF.length} rom · ${nettoF.toFixed(1)} m² netto · ${Math.round(wF)} W${g.box.landscape ? ' · liggende side' : ''}</div>` });
+}
+
+// Felles montering (155-rom og 158-etasje): verktøylinje, lerret, infotekst, ◀ ▶, lyttere.
+function _expPreviewLive(cfg) {
+  const area = document.getElementById('exp-preview-area');
+  if (!area) return;
+  const ro = !!(S.ui && S.ui.readOnly);
   area.innerHTML = `<div style="text-align:center;width:100%;align-self:stretch;padding:8px 0">
     <div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:11px;color:var(--muted)">
-      <button class="adm-btn ghost" id="exp-pv-reset" style="padding:3px 10px;font-size:11px" onclick="_pdfPrevResetView()" title="Tilbake til automatisk utsnitt (rommet med luft rundt)">Tilbakestill utsnitt</button>
-      <button class="adm-btn ghost" id="exp-pv-labels" style="padding:3px 10px;font-size:11px" onclick="_pdfPrevResetLabels()" title="Alle labels i rommet tilbake til automatisk plassering">Labels til auto</button>
+      <button class="adm-btn ghost" id="exp-pv-reset" style="padding:3px 10px;font-size:11px" onclick="_pdfPrevResetView()" title="${_esc(cfg.resetTitle)}">Tilbakestill utsnitt</button>
+      <button class="adm-btn ghost" id="exp-pv-labels" style="padding:3px 10px;font-size:11px" onclick="_pdfPrevResetLabels()" title="${_esc(cfg.labelsTitle)}">Labels til auto</button>
       <span>${ro ? 'Skrivebeskyttet — utsnitt og labels kan ikke endres' : 'Rull for zoom · dra for å flytte · dra labels · dobbeltklikk label = auto'}</span>
       <span id="exp-pv-zoom" style="font-weight:600;color:var(--text)"></span>
     </div>
-    ${tegnbar ? `<canvas id="exp-pv-canvas" style="max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:${ro ? 'default' : 'grab'};touch-action:none;display:block;margin:0 auto;background:#fff"></canvas>`
-              : `<div style="color:var(--dim);font-size:13px;padding:40px 0">Rommet har ingen tegning (kalkyle uten polygon).</div>`}
-    <div style="margin-top:12px;text-align:left;font-size:12px;color:var(--text);max-width:500px;margin-left:auto;margin-right:auto">
-      <div style="font-weight:600;font-size:14px;margin-bottom:6px">${_esc(room.name||'Rom')}</div>
-      <div>Brutto: ${stats.bruttoM2.toFixed(1)} m² · Netto: ${stats.nettoM2.toFixed(1)} m² · Dekning: ${coverage}%</div>
-      <div>Effekt: ${Math.round(stats.totalW)} W · ${wm2} W/m²</div>
-    </div>${nav}
+    ${cfg.tegnbar ? `<canvas id="exp-pv-canvas" style="max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:${ro ? 'default' : 'grab'};touch-action:none;display:block;margin:0 auto;background:#fff"></canvas>`
+                  : `<div style="color:var(--dim);font-size:13px;padding:40px 0">Rommet har ingen tegning (kalkyle uten polygon).</div>`}
+    <div style="margin-top:12px;text-align:left;font-size:12px;color:var(--text);max-width:500px;margin-left:auto;margin-right:auto">${cfg.info}</div>${cfg.nav || ''}
   </div>`;
   const cv = document.getElementById('exp-pv-canvas');
-  _pdfPrev = cv ? { roomId, cv, cur: null, autoW: 0, autoC: null, res: null, drag: null, undoTaken: false, wheelTimer: null, raf: 0 } : null;
+  _pdfPrev = cv ? { kind: cfg.kind, roomId: cfg.roomId ?? null, floorId: cfg.floorId ?? null, roomIds: new Set(), cv,
+    cur: null, autoW: 0, res: null, drag: null, undoTaken: false, wheelTimer: null, raf: 0 } : null;
   if (!cv) return;
   cv.addEventListener('wheel', _pdfPrevWheel, { passive: false });
   cv.addEventListener('pointerdown', _pdfPrevDown);
@@ -78876,21 +78918,34 @@ function _expPreviewRoom(roomId) {
 }
 
 // Tegn forhåndsvisningen nå (synkront). Lerretet får bredden dialogen har plass til (maks 50 vh
-// høyt, som <img>-en før 155), i enhetens pikseltetthet; aspektet er `_pdfRoomAspect` — det
-// samme sideoppsettet som PDF-en. Målt 3 ms for det største rommet (STEG 0.3).
+// høyt, som <img>-en før 155), i enhetens pikseltetthet; aspektet er `_pdfRoomAspect` (rom) /
+// `_pdfFloorBox(...).aspect` (etasje, 158) — det samme sideoppsettet som PDF-en. Målt 3 ms for
+// det største rommet (STEG 0.3).
 function _pdfPrevDraw() {
   const p = _pdfPrev;
   if (!p) return;
   p.raf = 0;
-  const room = S.rooms.find(r => r.id === p.roomId);
-  if (!room || !p.cv.isConnected) { _pdfPrev = null; return; }
+  if (!p.cv.isConnected) { _pdfPrev = null; return; }
   const area = document.getElementById('exp-preview-area');
   const availW = Math.max(240, (area ? area.clientWidth : 600) - 24);
   const maxH = Math.max(200, Math.floor(window.innerHeight * 0.5));
-  const aspect = _pdfRoomAspect(room);
-  const cssW = Math.max(200, Math.min(availW, Math.floor(maxH / aspect)));
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  p.res = _renderRoomToImage(room, { focusRoom: true, outW: Math.round(cssW * dpr), toCanvas: p.cv, noUrl: true, captureLabels: true });
+  const cssWFor = aspect => Math.max(200, Math.min(availW, Math.floor(maxH / aspect)));
+  let cssW;
+  if (p.kind === 'floor') {
+    const floor = _pdfPrevFloor();
+    const box = (p.floorId != null && !floor) ? null : _pdfFloorBox(floor);
+    if (!box) { _pdfPrev = null; return; }
+    cssW = cssWFor(box.aspect);
+    p.roomIds = new Set(box.rooms.map(r => r.id));
+    p.res = _renderFloorToImage(floor, { box, selIds: _expPreviewSelIds(), outW: Math.round(cssW * dpr), toCanvas: p.cv, noUrl: true, captureLabels: true });
+  } else {
+    const room = _pdfPrevRoom();
+    if (!room) { _pdfPrev = null; return; }
+    cssW = cssWFor(_pdfRoomAspect(room));
+    p.roomIds = new Set([room.id]);
+    p.res = _renderRoomToImage(room, { focusRoom: true, outW: Math.round(cssW * dpr), toCanvas: p.cv, noUrl: true, captureLabels: true });
+  }
   const v = p.res.view;
   p.cv.style.width = cssW + 'px';
   p.cv.style.height = Math.round(v.outH / dpr) + 'px';
@@ -78899,7 +78954,7 @@ function _pdfPrevDraw() {
   const z = document.getElementById('exp-pv-zoom');
   if (z) z.textContent = _labelScaleNum(v.scale) + '×';
   const rb = document.getElementById('exp-pv-reset');
-  if (rb) rb.disabled = !room.pdfView;
+  if (rb) rb.disabled = !_pdfPrevHasView();
 }
 function _pdfPrevSchedule() {
   const p = _pdfPrev;
@@ -78919,7 +78974,8 @@ function _pdfPrevS2W(x, y) {
   return { x: (x - v.outW / 2) / sc + p.cur.cx, y: (y - v.outH / 2) / sc + p.cur.cy };
 }
 // Treff på en label i bildet — samme bokser og samme rekkefølge som hovedlerretets mousedown
-// (kabel → rektangulær matte → frihånds-matte → folie), begrenset til rommets egne objekter.
+// (kabel → rektangulær matte → frihånds-matte → folie), begrenset til motivets egne rom
+// (ett rom, eller alle rommene på etasjen — 158).
 function _pdfPrevHitLabel(x, y) {
   const p = _pdfPrev, L = p.res && p.res.labels;
   if (!L) return null;
@@ -78929,22 +78985,35 @@ function _pdfPrevHitLabel(x, y) {
     for (const [id, b] of Object.entries(bounds || {})) {
       if (x >= b.sx && x <= b.sx + b.w && y >= b.sy && y <= b.sy + b.h) {
         const obj = arr.find(o => o.id === parseInt(id));
-        if (obj && obj.roomId === p.roomId) return { kind, obj, b };
+        if (obj && p.roomIds.has(obj.roomId)) return { kind, obj, b };
       }
     }
   }
   return null;
 }
 function _pdfPrevRoom() { const p = _pdfPrev; return p ? S.rooms.find(r => r.id === p.roomId) : null; }
+// 158: etasjen forhåndsvisningen står på; null = prosjekt uten etasjer (alle rom).
+function _pdfPrevFloor() { const p = _pdfPrev; return (p && p.floorId != null) ? (S.floors || []).find(f => f.id === p.floorId) : null; }
+function _pdfPrevHasView() {
+  const p = _pdfPrev;
+  if (!p) return false;
+  if (p.kind === 'floor') return !!_pdfFloorViewOf(_pdfPrevFloor());
+  const room = _pdfPrevRoom();
+  return !!(room && room.pdfView);
+}
 function _pdfPrevLocked() { return !_pdfPrev || !!(S.ui && S.ui.readOnly); }
 // Ett angresteg per bevegelse (hjul-serie, ett drag) — ikke ett per hendelse.
 function _pdfPrevUndoOnce() { const p = _pdfPrev; if (!p.undoTaken) { pushUndo(); p.undoTaken = true; } }
+// Skriv utsnittet dit det hører hjemme: rommet (155) eller etasjen/prosjektet (158). Alltid et
+// NYTT objekt (pushUndo kopierer rom og etasjer grunt).
 function _pdfPrevSetView(cx, cy, scale) {
-  const room = _pdfPrevRoom();
-  if (!room) return;
+  const p = _pdfPrev;
+  if (!p) return;
   const s = Math.min(PDF_VIEW_SCALE_MAX, Math.max(PDF_VIEW_SCALE_MIN, scale));
-  room.pdfView = { cx: Math.round(cx * 10) / 10, cy: Math.round(cy * 10) / 10, scale: Math.round(s * 1000) / 1000 };   // nytt objekt (pushUndo kopierer grunt)
-  _pdfPrev.cur = { cx: room.pdfView.cx, cy: room.pdfView.cy, scale: room.pdfView.scale };
+  const v = { cx: Math.round(cx * 10) / 10, cy: Math.round(cy * 10) / 10, scale: Math.round(s * 1000) / 1000 };
+  if (p.kind === 'floor') _pdfFloorViewSet(_pdfPrevFloor(), v);
+  else { const room = _pdfPrevRoom(); if (!room) return; room.pdfView = v; }
+  p.cur = { cx: v.cx, cy: v.cy, scale: v.scale };
   _pdfPrevSchedule();
 }
 function _pdfPrevWheel(e) {
@@ -79027,24 +79096,28 @@ function _pdfPrevDblClick(e) {
   _pdfPrevDraw();
 }
 function _pdfPrevResetView() {
-  const room = _pdfPrevRoom();
-  if (_pdfPrevLocked() || !room || !room.pdfView) return;
+  const p = _pdfPrev;
+  if (_pdfPrevLocked() || !_pdfPrevHasView()) return;
   pushUndo();
-  delete room.pdfView;
+  if (p.kind === 'floor') _pdfFloorViewSet(_pdfPrevFloor(), null);
+  else delete _pdfPrevRoom().pdfView;
   _scheduleAutoSave && _scheduleAutoSave();
   _pdfPrevDraw();
 }
-// Alle labels i rommet som er flyttet/rotert/skalert for hånd.
-function _pdfPrevManualLabels(roomId) {
+// Alle labels i rommene (Set av id-er) som er flyttet/rotert/skalert for hånd.
+function _pdfPrevManualLabels(roomIds) {
   const alle = [...(S.cables || []), ...(S.mats || []), ...(S.matPaths || []), ...(S.strips || [])];
-  return alle.filter(o => o.roomId === roomId && (o.labelPos != null || o.labelRotation != null || o.labelScale != null));
+  return alle.filter(o => roomIds.has(o.roomId) && (o.labelPos != null || o.labelRotation != null || o.labelScale != null));
 }
 function _pdfPrevResetLabels() {
-  const room = _pdfPrevRoom();
-  if (_pdfPrevLocked() || !room) return;
-  const objs = _pdfPrevManualLabels(room.id);
-  if (!objs.length) { if (typeof _showToast === 'function') _showToast('Alle labels i rommet er allerede automatiske'); return; }
-  if (!confirm(`Tilbakestill ${objs.length} label${objs.length === 1 ? '' : 's'} i «${room.name || 'Rom'}» til automatisk plassering?`)) return;
+  const p = _pdfPrev;
+  if (_pdfPrevLocked()) return;
+  const floor = p.kind === 'floor' ? _pdfPrevFloor() : null, room = p.kind === 'room' ? _pdfPrevRoom() : null;
+  if (p.kind === 'room' && !room) return;
+  const hvor = p.kind === 'floor' ? (floor ? (floor.name || 'Etasje') : 'plantegningen') : (room.name || 'Rom');
+  const objs = _pdfPrevManualLabels(p.roomIds);
+  if (!objs.length) { if (typeof _showToast === 'function') _showToast(`Alle labels ${p.kind === 'floor' ? 'på' : 'i'} «${hvor}» er allerede automatiske`); return; }
+  if (!confirm(`Tilbakestill ${objs.length} label${objs.length === 1 ? '' : 's'} ${p.kind === 'floor' ? 'på' : 'i'} «${hvor}» til automatisk plassering?`)) return;
   pushUndo();
   for (const o of objs) _labelClearManual(o);
   _scheduleAutoSave && _scheduleAutoSave();
@@ -79226,35 +79299,10 @@ function _expPreviewSection(kind) {
     const rowsHtml = _foilResistanceRooms(rooms).map(({ room, res }) => `<tr style="border-top:1px solid var(--border)"><td style="padding:5px 8px 5px 0">${E(room.name || 'Rom')}</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.P, 1)} W</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.rLow, 1)}</td><td style="padding:5px 8px;text-align:right;color:var(--muted)">${_fmtNo(res.rNom, 1)}</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.rHigh, 1)}</td></tr>`).join('');
     html = box('Motstandsmåling — varmefolie', `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:0 8px 4px 0">Rom</th><th style="text-align:right;padding:0 8px 4px">Effekt</th><th style="text-align:right;padding:0 8px 4px">Nedre Ω</th><th style="text-align:right;padding:0 8px 4px">Nominell Ω</th><th style="text-align:right;padding:0 8px 4px">Øvre Ω</th></tr></thead><tbody>${rowsHtml}</tbody></table><div style="margin-top:10px;font-size:11px;color:var(--dim)">Effekt = tegnet lengde × W/m. Grenser: 48 400 / P (220 V) og 57 600 / P (240 V).</div>`);
   } else if (kind === 'floorplan') {
-    // 154: bildet av én etasje om gangen, ‹ › blar når det er flere. Samme bilde som PDF-en
-    // (_renderFloorToImage), samme rekkefølge (_pdfFloorplanGroups).
-    const _fpChk = [...document.querySelectorAll('.exp-room-cb')];
-    const _fpSelP = _fpChk.length ? new Set(_fpChk.filter(c => c.checked).map(c => +c.value)) : null;   // 158: som PDF-en
-    const groups = _pdfFloorplanGroups(_fpSelP);
-    if (!groups.length) {
-      html = box('Plantegning', card('<div style="color:var(--muted);font-size:13px">Ingen tegnede rom å vise.</div>'));
-    } else {
-      const idx = Math.max(0, Math.min(groups.length - 1, _expFloorplanIdx || 0));
-      _expFloorplanIdx = idx;
-      const g = groups[idx];
-      let imgData = '';
-      try { const r = _renderFloorToImage(g.floor, { box: g.box, selIds: _fpSelP, targetWidthMm: g.box.landscape ? 267 : 180 }); imgData = r && r.url ? r.url : ''; } catch (e) { console.warn('floorplan preview failed:', e); }
-      const fl = g.floor ? S.floors.find(f => f.id === g.floor.id) : null;
-      const rowsF = rooms.filter(r => !r.listDraft && (fl ? r.floorId === fl.id : true));
-      let nettoF = 0, wF = 0;
-      for (const r of rowsF) { nettoF += _computeRoomStats(r).nettoM2 || 0; wF += _roomRatedEffectW(r); }
-      const nav = groups.length > 1 ? `<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px">
-          <button class="adm-btn ghost" style="padding:4px 10px" ${idx === 0 ? 'disabled' : ''} onclick="_expFloorplanIdx=${idx - 1};_expPreviewSection('floorplan')">&lsaquo; Forrige</button>
-          <span style="font-size:12px;color:var(--muted)">Etasje ${idx + 1} av ${groups.length}</span>
-          <button class="adm-btn ghost" style="padding:4px 10px" ${idx === groups.length - 1 ? 'disabled' : ''} onclick="_expFloorplanIdx=${idx + 1};_expPreviewSection('floorplan')">Neste &rsaquo;</button>
-        </div>` : '';
-      html = `<div style="text-align:center;width:100%">
-        <img src="${imgData}" style="max-width:100%;max-height:50vh;border-radius:8px;border:1px solid var(--border)">
-        <div style="margin-top:12px;text-align:left;font-size:12px;color:var(--text);max-width:500px;margin-left:auto;margin-right:auto">
-          <div style="font-weight:600;font-size:14px;margin-bottom:6px">${E(g.title)}</div>
-          <div>${rowsF.length} rom \u00b7 ${nettoF.toFixed(1)} m\u00b2 netto \u00b7 ${Math.round(wF)} W${g.box.landscape ? ' \u00b7 liggende side' : ''}</div>
-        </div>${nav}</div>`;
-    }
+    // 154: én etasje om gangen, ‹ › blar når det er flere. 158: levende lerret (hjul = zoom,
+    // dra = flytt, labels kan dras) — samme komponent som rommene, se _expPreviewFloor.
+    if (_pdfFloorplanGroups(_expPreviewSelIds()).length) { _expPreviewFloor(_expFloorplanIdx); return; }
+    html = box('Plantegning', card('<div style="color:var(--muted);font-size:13px">Ingen tegnede rom å vise.</div>'));
   } else if (kind === 'docs') {
     const docs = S.documentation ? Object.keys(S.documentation).length : 0;
     html = box('Dokumentasjon', card(`<div style="color:var(--muted);font-size:13px;line-height:1.6">Garantibevis / dokumentasjon for rom med registrerte måleverdier (motstand, isolasjon, foto, signatur).<br><b style="color:var(--text)">${docs}</b> dokumentert ${docs === 1 ? 'rom' : 'rom'} i prosjektet.</div>`));
@@ -79897,11 +79945,36 @@ function _pdfExportSmokeTest() {
           check('«' + navn + '»: plantegning 1. etasje på side 3', 3, s1 === 3, s1);
           check('«' + navn + '»: plantegning 2. etasje på side 4', 4, s2 === 4, s2);
           check('«' + navn + '»: begge før første romside', '< ' + forsteRomside, s1 != null && s2 != null && forsteRomside != null && s2 < forsteRomside, forsteRomside);
-          // Romlista under bildet: alle rom på etasjen med netto m² (Bad 20,0 · Stue 28,0 på side 3).
+          // 158: INGEN romliste under bildet — side 3 har bare tittel, undertittel og bunntekst;
+          // romnavn og netto m² står ikke der (de står i Romoversikten).
           const paaSide = (n) => smokeSide.filter(x => x[0] === n).map(x => x[1]);
           const l3 = paaSide(3);
-          check('«' + navn + '»: romlista 1. etasje har Bad og Stue', 'Bad,Stue', l3.includes('Bad') && l3.includes('Stue') && !l3.includes('Soverom'), l3.filter(t => /^(Bad|Stue|Soverom)$/.test(t)).join(','));
-          check('«' + navn + '»: netto m² i romlista', '20.0,28.0', l3.includes('20.0') && l3.includes('28.0'), l3.filter(t => /^\d+\.\d$/.test(t)).join(','));
+          check('«' + navn + '»: 158 ingen romliste på plantegning-siden', 'ingen Bad/Stue/Rom/Produkt', !l3.some(t => /^(Bad|Stue|Soverom|Rom|Produkt|Netto m)$/.test(t)) && !l3.includes('20.0'), l3.filter(t => /^(Bad|Stue|Soverom|Rom|Produkt|Netto m|20\.0)$/.test(t)).join(','));
+          check('«' + navn + '»: 158 undertittelen står (2 rom · 48.0 m² netto)', 'ja', l3.some(t => /^2 rom \u00b7 48\.0 m/.test(t)), l3.filter(t => /rom/.test(t)).join('|'));
+          // 158: bildet på side 3 fyller plassen under streken: hele bredden (180 mm) eller hele
+          // høyden (til 6 mm over bunnmargen), aldri mindre.
+          const img3 = smokeImg.find(a => a[0] === 3);
+          check('«' + navn + '»: 158 bildet får resten av siden', 'w=180/267 eller y+h=276/189 (stående/liggende)', !!img3 && (Math.abs(img3[3] - 180) < 0.2 || Math.abs(img3[3] - 267) < 0.2 || Math.abs(img3[2] + img3[4] - 276) < 0.3 || Math.abs(img3[2] + img3[4] - 189) < 0.3), img3 && img3.slice(1));
+          // 158: et lagret utsnitt på etasjen (floor.pdfView) endrer BILDET på side 3, ikke sideoppsettet.
+          const imgAutoF = smokeImg.map(a => a.slice()), siderAuto = r.sider;
+          const fl158 = S.floors.find(f => f.id === 991951);
+          fl158.pdfView = { cx: 400, cy: 200, scale: 1.3 };
+          const medF = await kjør();
+          const plassF = a => a.map(x => x.slice(0, 5));
+          check('«' + navn + '» 158: floor.pdfView → samme sideantall', siderAuto, medF.ok && medF.sider === siderAuto, medF.sider);
+          check('«' + navn + '» 158: floor.pdfView → samme bildeplassering på alle sider', 'lik', JSON.stringify(plassF(imgAutoF)) === JSON.stringify(plassF(smokeImg)), JSON.stringify(plassF(smokeImg).filter(a => a[0] === 3)));
+          const a3 = imgAutoF.find(a => a[0] === 3), n3 = smokeImg.find(a => a[0] === 3), n4 = smokeImg.find(a => a[0] === 4), a4 = imgAutoF.find(a => a[0] === 4);
+          check('«' + navn + '» 158: floor.pdfView → bildet av 1. etasje er et ANNET', 'ulik JPEG', !!a3 && !!n3 && a3[5] !== n3[5], a3 && n3 ? a3[5] + ' vs ' + n3[5] : '-');
+          check('«' + navn + '» 158: 2. etasje (uten pdfView) er uendret', 'lik JPEG', !!a4 && !!n4 && a4[5] === n4[5], a4 && n4 ? a4[5] + ' vs ' + n4[5] : '-');
+          // VAKSINE: leses ikke etasjens utsnitt, blir bildet auto igjen.
+          const ekteFloorView = window._pdfFloorViewOf;
+          window._pdfFloorViewOf = () => null;
+          await kjør();
+          window._pdfFloorViewOf = ekteFloorView;
+          const s3 = smokeImg.find(a => a[0] === 3);
+          check('«' + navn + '» 158: VAKSINE — uten _pdfFloorViewOf er bildet auto igjen', 'lik JPEG', !!a3 && !!s3 && a3[5] === s3[5], a3 && s3 ? a3[5] + ' vs ' + s3[5] : '-');
+          delete fl158.pdfView;
+          await kjør();   // tilbake til auto før sidetellingen under
           // Valget AV: ingen plantegning-side, og én side færre per etasje.
           const med = r.sider;
           const uten = await kjør({ floorplan: false });
@@ -80095,7 +80168,9 @@ function _pdfExportSmokeTest() {
 // uendret aspekt og pikselstørrelse, ugyldig/klemt verdi); `_pdfRoomAspect` er uavhengig av utsnittet.
 // B: dialogens lerret — hjul (zoom rundt pekeren), dra (flytt), label-drag (samme `labelPos` som
 // hovedlerretet), dobbeltklikk (auto), knappene, skrivebeskyttet, ett angresteg per bevegelse,
-// ‹ › blar rom uten å røre avkryssingen. Til slutt en VAKSINE. Synkron, rydder alltid opp.
+// ‹ › blar rom uten å røre avkryssingen. C (158): plantegningen i samme lerret — utsnitt på
+// S.project.pdfViewFloorplan (uten etasjer) / floor.pdfView (per etasje), label-drag deler labelPos
+// med romsiden, ‹ › mellom etasjer, skrivebeskyttet. Til slutt en VAKSINE. Synkron, rydder alltid opp.
 function _pdfPreviewRegressionTest() {
   const results = [];
   const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
@@ -80294,6 +80369,88 @@ function _pdfPreviewRegressionTest() {
     check('B12: Neste → Bad vises', RID2, _pdfPrev && _pdfPrev.roomId === RID2 && /Rom 2 av 2/.test(document.getElementById('exp-preview-area').textContent), _pdfPrev && _pdfPrev.roomId);
     check('B12: avkryssingen i lista er uendret', cbFor, [...document.querySelectorAll('.exp-room-cb')].map(c => c.checked).join(',') === cbFor, [...document.querySelectorAll('.exp-room-cb')].map(c => c.checked).join(','));
     check('B12: hovedlerretet har fortsatt ikke valgt noe rom', saved.selectedRoomId, S.ui.selectedRoomId === saved.selectedRoomId, S.ui.selectedRoomId);
+
+    // ─── C · 158: plantegningen i samme lerret, utsnitt per etasje ───
+    const areaEl = document.getElementById('exp-preview-area');
+    const romLabelFoer = _renderRoomToImage(room, { focusRoom: true, outW: 400, noUrl: true, captureLabels: true }).labels.cable[cable.id];
+    // C1: prosjekt UTEN etasjer → S.project.pdfViewFloorplan
+    delete S.project.pdfViewFloorplan;
+    _expPreviewSection('floorplan');
+    let cvF = document.getElementById('exp-pv-canvas');
+    const kF = () => { const r = cvF.getBoundingClientRect(); return { r, kx: cvF.width / r.width, ky: cvF.height / r.height }; };
+    const wheelF = (fx, fy, dy) => { const { r } = kF(); cvF.dispatchEvent(new WheelEvent('wheel', { clientX: r.left + r.width * fx, clientY: r.top + r.height * fy, deltaY: dy, bubbles: true, cancelable: true })); };
+    const peF = (type, x, y) => cvF.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: type === 'pointerup' ? 0 : 1, bubbles: true, cancelable: true }));
+    const dragF = (x0, y0, x1, y1) => { peF('pointerdown', x0, y0); for (let i = 1; i <= 4; i++) peF('pointermove', x0 + (x1 - x0) * i / 4, y0 + (y1 - y0) * i / 4); peF('pointerup', x1, y1); };
+    const bildeAvLabelF = (b) => { const { r, kx, ky } = kF(); return { x: r.left + (b.sx + b.w / 2) / kx, y: r.top + (b.sy + b.h / 2) / ky }; };
+    check('C1: plantegningen er et <canvas> i samme komponent (kind=floor, uten etasje)', 'canvas, floor, null', !!cvF && _pdfPrev && _pdfPrev.kind === 'floor' && _pdfPrev.floorId === null && !document.querySelector('#exp-preview-area img'), _pdfPrev && [_pdfPrev.kind, _pdfPrev.floorId]);
+    check('C1: begge rommene er med (labels kan dras i begge)', 2, _pdfPrev && _pdfPrev.roomIds.size === 2, _pdfPrev && _pdfPrev.roomIds.size);
+    check('C1: 1,0× og «Tilbakestill utsnitt» av', 'ja', document.getElementById('exp-pv-zoom').textContent === '1,0×' && document.getElementById('exp-pv-reset').disabled, [document.getElementById('exp-pv-zoom').textContent, document.getElementById('exp-pv-reset').disabled]);
+    check('C1: ingen etasje-navigasjon uten etasjer', 'ingen', !/Etasje \d av/.test(areaEl.textContent), areaEl.textContent.match(/Etasje \d av \d/));
+    check('C1: hovedlerretet har ikke valgt noe rom', saved.selectedRoomId, S.ui.selectedRoomId === saved.selectedRoomId && !S.ui._pdfOverview, [S.ui.selectedRoomId, S.ui._pdfOverview]);
+    const boxAuto = _pdfFloorBox(null);
+    check('C1: auto-boksen: 1200×600 cm rundt begge rom, senter 500,200', '1200x600 @ 500,200', boxAuto.worldW === 1200 && boxAuto.worldH === 600 && boxAuto.cx === 500 && boxAuto.cy === 200 && boxAuto.scale === 1, [boxAuto.worldW, boxAuto.worldH, boxAuto.cx, boxAuto.cy]);
+    const undoC = _undoStack.length;
+    wheelF(0.5, 0.5, -100); _pdfPrevDraw();
+    const pvF = S.project.pdfViewFloorplan;
+    check('C1: hjul i senter → S.project.pdfViewFloorplan skala 1,1, senter uendret', '1.1 @ 500,200', pvF && near(pvF.scale, 1.1, 0.001) && near(pvF.cx, 500, 0.2) && near(pvF.cy, 200, 0.2), pvF);
+    check('C1: zoom-teksten følger, «Tilbakestill» på', '1,1×', document.getElementById('exp-pv-zoom').textContent === '1,1×' && !document.getElementById('exp-pv-reset').disabled, document.getElementById('exp-pv-zoom').textContent);
+    const boxZ = _pdfFloorBox(null);
+    check('C1: _pdfFloorBox leser utsnittet: bredde ÷ 1,1, aspekt og format uendret', '1090.9, aspekt 0.5', near(boxZ.worldW, 1200 / 1.1, 0.01) && near(boxZ.aspect, boxAuto.aspect, 1e-9) && boxZ.landscape === boxAuto.landscape && boxZ.scale === pvF.scale, [boxZ.worldW, boxZ.aspect, boxZ.scale]);
+    const vF = _renderFloorToImage(null, { outW: 400, noUrl: true }).view;
+    check('C1: _renderFloorToImage tegner med lagret senter og bredde', '500,200 / 1090.9', vF.panX === pvF.cx && vF.panY === pvF.cy && near(vF.worldW, 1200 / 1.1, 0.01), [vF.panX, vF.panY, vF.worldW]);
+    check('C1: ett angresteg for hjulet', undoC + 1, _undoStack.length === undoC + 1, _undoStack.length);
+    check('C1: rommenes eget utsnitt er urørt', 'ingen room.pdfView', !room.pdfView && !S.rooms[1].pdfView, [room.pdfView, S.rooms[1].pdfView]);
+    // dra på tomt område = flytt (40 css-px mot høyre → senteret går mot venstre)
+    const { r: rF0, kx: kxF } = kF();
+    const scF = cvF.width / boxZ.worldW;   // px per cm i utsnittet
+    _pdfPrev.undoTaken = false;
+    dragF(rF0.left + rF0.width * 0.5, rF0.top + rF0.height * 0.9, rF0.left + rF0.width * 0.5 + 40, rF0.top + rF0.height * 0.9); _pdfPrevDraw();
+    check('C1: dra 40 px → senteret flyttet 40·k/sc cm mot venstre', (500 - 40 * kxF / scF).toFixed(1), near(S.project.pdfViewFloorplan.cx, 500 - 40 * kxF / scF, 0.2) && near(S.project.pdfViewFloorplan.scale, 1.1, 0.001), S.project.pdfViewFloorplan);
+    // label-drag: kabel-labelen i Stue, samme labelPos som romsiden
+    const LbF = _pdfPrev.res.labels.cable[cable.id];
+    check('C1: kabel-labelen er tegnet i plantegningen (boks fanget)', 'boks', !!LbF && LbF.w > 0, LbF);
+    delete cable.labelPos;
+    const lpF = bildeAvLabelF(LbF);
+    _pdfPrev.undoTaken = false;
+    dragF(lpF.x, lpF.y, lpF.x + 30, lpF.y + 20); _pdfPrevDraw();
+    check('C1: label-drag → cable.labelPos satt (samme felt som romsiden/hovedlerretet)', 'satt', !!cable.labelPos && Number.isFinite(cable.labelPos.x), cable.labelPos);
+    const romLabelEtter = _renderRoomToImage(room, { focusRoom: true, outW: 400, noUrl: true, captureLabels: true }).labels.cable[cable.id];
+    check('C1: romsiden tegner labelen et annet sted etterpå', 'flyttet', !!romLabelFoer && !!romLabelEtter && (romLabelFoer.sx !== romLabelEtter.sx || romLabelFoer.sy !== romLabelEtter.sy), [romLabelFoer && [romLabelFoer.sx, romLabelFoer.sy], romLabelEtter && [romLabelEtter.sx, romLabelEtter.sy]]);
+    check('C1: utsnittet er ikke rørt av label-draget', '1.1', near(S.project.pdfViewFloorplan.scale, 1.1, 0.001), S.project.pdfViewFloorplan);
+    _pdfPrevResetView();
+    check('C1: «Tilbakestill utsnitt» → pdfViewFloorplan borte, 1,0×, knappen av', 'auto', S.project.pdfViewFloorplan === undefined && document.getElementById('exp-pv-zoom').textContent === '1,0×' && document.getElementById('exp-pv-reset').disabled, [S.project.pdfViewFloorplan, document.getElementById('exp-pv-zoom').textContent]);
+    const boxR = _pdfFloorBox(null);
+    check('C1: etter tilbakestilling er boksen bit-identisk med auto', 'lik', JSON.stringify([boxR.worldW, boxR.worldH, boxR.cx, boxR.cy, boxR.scale]) === JSON.stringify([boxAuto.worldW, boxAuto.worldH, boxAuto.cx, boxAuto.cy, boxAuto.scale]), [boxR.worldW, boxR.cx]);
+    // C2: MED etasjer → hvert sitt floor.pdfView
+    S.floors = [{ id: 992801, name: '1. etasje', order: 0, collapsed: false, partId: null }, { id: 992802, name: '2. etasje', order: 1, collapsed: false, partId: null }];
+    room.floorId = 992801; S.rooms[1].floorId = 992802; S.ui.activeFloorId = 992801;
+    if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+    _expFloorplanIdx = 0;
+    _expPreviewSection('floorplan');
+    cvF = document.getElementById('exp-pv-canvas');
+    check('C2: «Etasje 1 av 2», floorId = 1. etasje, bare Stue', '992801 / 1 rom', _pdfPrev && _pdfPrev.kind === 'floor' && _pdfPrev.floorId === 992801 && _pdfPrev.roomIds.size === 1 && _pdfPrev.roomIds.has(RID) && /Etasje 1 av 2/.test(areaEl.textContent), _pdfPrev && [_pdfPrev.floorId, [..._pdfPrev.roomIds]]);
+    wheelF(0.5, 0.5, -100); _pdfPrevDraw();
+    check('C2: hjul → S.floors[0].pdfView (1,1), 2. etasje og prosjektet urørt', '1.1 / undefined / undefined', S.floors[0].pdfView && near(S.floors[0].pdfView.scale, 1.1, 0.001) && S.floors[1].pdfView === undefined && S.project.pdfViewFloorplan === undefined, [S.floors[0].pdfView, S.floors[1].pdfView, S.project.pdfViewFloorplan]);
+    check('C2: _pdfFloorBox per etasje: 1. etasje skala 1,1, 2. etasje 1', '1.1 / 1', near(_pdfFloorBox(S.floors[0]).scale, 1.1, 0.001) && _pdfFloorBox(S.floors[1]).scale === 1, [_pdfFloorBox(S.floors[0]).scale, _pdfFloorBox(S.floors[1]).scale]);
+    const knapperF = [...areaEl.querySelectorAll('button')];
+    const nesteF = knapperF.find(b => /Neste/.test(b.textContent)), forrigeF = knapperF.find(b => /Forrige/.test(b.textContent));
+    check('C2: Forrige av, Neste på', 'ja', forrigeF && forrigeF.disabled && nesteF && !nesteF.disabled, [forrigeF && forrigeF.disabled, nesteF && nesteF.disabled]);
+    nesteF.click();
+    check('C2: Neste → 2. etasje: 1,0×, «Tilbakestill» av, bare Bad', '992802 / 1,0×', _pdfPrev && _pdfPrev.floorId === 992802 && document.getElementById('exp-pv-zoom').textContent === '1,0×' && document.getElementById('exp-pv-reset').disabled && _pdfPrev.roomIds.has(RID2) && /Etasje 2 av 2/.test(areaEl.textContent), _pdfPrev && [_pdfPrev.floorId, document.getElementById('exp-pv-zoom').textContent]);
+    [...areaEl.querySelectorAll('button')].find(b => /Forrige/.test(b.textContent)).click();
+    check('C2: Forrige → 1. etasje viser sitt eget utsnitt igjen (1,1×)', '1,1×', _pdfPrev && _pdfPrev.floorId === 992801 && document.getElementById('exp-pv-zoom').textContent === '1,1×', document.getElementById('exp-pv-zoom').textContent);
+    check('C2: avkryssingen i lista er uendret', cbFor, [...document.querySelectorAll('.exp-room-cb')].map(c => c.checked).join(',') === cbFor, [...document.querySelectorAll('.exp-room-cb')].map(c => c.checked).join(','));
+    // C3: skrivebeskyttet — ingenting kan endres
+    S.ui.readOnly = true;
+    const pvLaast = JSON.stringify(S.floors[0].pdfView);
+    wheelF(0.5, 0.5, -100); _pdfPrevResetView();
+    check('C3: skrivebeskyttet: hjul og Tilbakestill endrer ikke etasjens utsnitt', pvLaast, JSON.stringify(S.floors[0].pdfView) === pvLaast, JSON.stringify(S.floors[0].pdfView));
+    S.ui.readOnly = false;
+    // rydd C
+    delete S.floors[0].pdfView; S.floors = []; room.floorId = null; S.rooms[1].floorId = null; S.ui.activeFloorId = null;
+    if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+    delete cable.labelPos;
+    _expPreviewRoom(RID);
 
     // ─── VAKSINE: uten _pdfViewOf-lesing skal A2 bli rød ───
     window._pdfViewOf = () => null;
@@ -80955,7 +81112,10 @@ async function exportPDF(opts) {
 
   // ── 154 · Plantegning per etasje ── (only when selected) — etter forside/prosjektoversikt,
   // før romsidene. Liggende side når etasjen er bredere enn høy (samme grep som trappesidene).
-  // Romlista under bildet leser floorSummaries — samme rader og tall som Romoversikten.
+  // Undertittelen («N rom · m² netto · W») leser floorSummaries — samme tall som Romoversikten.
+  // 158: romlista under bildet er borte (Kenneth: «kun rom uten oversikt under») — bildet får
+  // all plassen som er igjen på siden; utsnittet er etasjens (floor.pdfView via _pdfFloorBox),
+  // det samme som forhåndsvisningen i dialogen viser.
   if (opts.floorplan) {
     const _fpSel = Array.isArray(opts.rooms) ? new Set(opts.rooms) : null;
     for (const grp of _pdfFloorplanGroups(_fpSel)) {
@@ -80970,8 +81130,8 @@ async function exportPDF(opts) {
         if (land) { doc.addPage('a4', 'landscape'); try { doc.deletePage(1); } catch (e) {} y = M; }
       } else { doc.addPage('a4', _fmt_f); y = M; }
 
-      // Radene: Romoversiktens egne (floorSummaries) for denne etasjen — alle rom på etasjen,
-      // også de som ikke er valgt for egen romside (bildet viser dem uansett).
+      // Tallene i undertittelen: Romoversiktens egne (floorSummaries) for denne etasjen — alle
+      // rom på etasjen, også de som ikke er valgt for egen romside (bildet viser dem uansett).
       const fs = floorSummaries.find(f => (f.floor ? f.floor.id : null) === (grp.floor ? grp.floor.id : null));
       const rows = fs ? fs.rooms : [];
       const nettoSum = rows.reduce((a, r) => a + (r.stats.nettoM2 || 0), 0);
@@ -80983,10 +81143,9 @@ async function exportPDF(opts) {
       doc.text(`${rows.length} rom \u00b7 ${nettoSum.toFixed(1)} m\u00b2 netto \u00b7 ${Math.round(wSum)} W`, M, y + 12);
       y += 16; _lineF(y); y += 5;
 
-      // Bildet får høyden som er igjen etter romlista (to kolonner, 4,2 mm per rad).
-      const nRows = Math.ceil(rows.length / 2);
-      const listH = rows.length ? (6 + nRows * 4.2 + 2) : 0;
-      const availImgH = (pageH_f - M) - y - listH - 6;
+      // 158: bildet får hele resten av siden (bevart aspekt — bredden begrenser på stående side,
+      // høyden på liggende). Kartattribusjonen (3 mm) står under bildet som før.
+      const availImgH = (pageH_f - M) - y - 6;
       let imgW2 = pw_f, imgH = imgW2 * box.aspect;
       if (imgH > availImgH) { imgH = Math.max(40, availImgH); imgW2 = imgH / box.aspect; }
       const imgX = M + (pw_f - imgW2) / 2;
@@ -81003,39 +81162,6 @@ async function exportPDF(opts) {
         y += 3;
       }
       y += 3;
-
-      if (rows.length) {
-        const colW = pw_f / 2;
-        const colsAt = (x0) => [x0, x0 + colW * 0.42, x0 + colW * 0.56, x0 + colW - 4];
-        const _fpHead = () => {
-          doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(120, 130, 150);
-          for (const c of [0, 1]) {
-            if (c === 1 && rows.length < 2) break;
-            const cx = colsAt(M + c * colW);
-            doc.text('Rom', cx[0], y); doc.text('Netto m\u00b2', cx[1], y);
-            doc.text('Produkt', cx[2], y); doc.text('W', cx[3], y, { align: 'right' });
-          }
-          y += 2.5; _lineF(y); y += 3.5;
-          doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(40, 50, 70);
-        };
-        const _fitF = (t, wmm) => { const p = doc.splitTextToSize(String(t == null ? '' : t), wmm); return p[0] || ''; };
-        _fpHead();
-        for (let i = 0; i < nRows; i++) {
-          if (y + 4.2 > pageH_f - M) { doc.addPage('a4', _fmt_f); y = M; _fpHead(); }
-          for (const c of [0, 1]) {
-            const r = rows[i + c * nRows]; if (!r) continue;
-            const cx = colsAt(M + c * colW);
-            doc.setTextColor(40, 50, 70);
-            doc.text(_fitF(r.name, colW * 0.40), cx[0], y);
-            doc.text(r.stats.nettoM2.toFixed(1), cx[1], y);
-            doc.setTextColor(90, 100, 120);
-            doc.text(_fitF(_roomProductFamilyName(r.room), colW * 0.40), cx[2], y);
-            doc.setTextColor(40, 50, 70);
-            doc.text(String(Math.round(r.ratedW || 0)), cx[3], y, { align: 'right' });
-          }
-          y += 4.2;
-        }
-      }
     }
   }
 
@@ -82452,6 +82578,18 @@ function _pdfViewOf(room) {
   if (!v || !Number.isFinite(v.cx) || !Number.isFinite(v.cy) || !(v.scale > 0)) return null;
   return { cx: v.cx, cy: v.cy, scale: Math.min(PDF_VIEW_SCALE_MAX, Math.max(PDF_VIEW_SCALE_MIN, v.scale)) };
 }
+// 158: utsnitt per ETASJE på plantegningen — samme form, samme klemming og samme leser
+// (`_pdfViewOf`) som rommets; bor på `floor.pdfView` (lagres med etasjen, i angre-stabelen som
+// grunn kopi → skriv alltid et nytt objekt). Prosjekt uten etasjer: `S.project.pdfViewFloorplan`
+// (ikke i angre-stabelen — pushUndo tar bare `parts` fra prosjektet). `null` = auto.
+function _pdfFloorViewOf(floor) {
+  return floor ? _pdfViewOf(floor) : _pdfViewOf({ pdfView: S.project && S.project.pdfViewFloorplan });
+}
+function _pdfFloorViewSet(floor, v) {
+  const host = floor || S.project, key = floor ? 'pdfView' : 'pdfViewFloorplan';
+  if (!host) return;
+  if (v) host[key] = v; else delete host[key];
+}
 
 // ⚠ MAALT 08.10.2026 (051 STEG 0.3): PDF-skalaen finnes IKKE der `_pdfMode` settes, slik
 // 051-prompten antok. `_renderRoomToImage` far `targetWidthMm`, men PDF-ruta kan plassere
@@ -82690,9 +82828,14 @@ function _pdfFloorBox(floor) {
     if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
     if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
   }
-  const worldW = Math.max(1, maxX - minX) + 2 * PDF_FLOOR_PAD_CM;
-  const worldH = Math.max(1, maxY - minY) + 2 * PDF_FLOOR_PAD_CM;
-  return { rooms, pid, minX, maxX, minY, maxY, worldW, worldH,
+  // 158: brukerens utsnitt (floor.pdfView) — som 155 for rom: skala deler bredde OG høyde, så
+  // aspekt og sideformat er alltid auto-utsnittets; senteret er lagret eller bbox-midten.
+  const pv = _pdfFloorViewOf(floor);
+  const scale = pv ? pv.scale : 1;
+  const worldW = (Math.max(1, maxX - minX) + 2 * PDF_FLOOR_PAD_CM) / scale;
+  const worldH = (Math.max(1, maxY - minY) + 2 * PDF_FLOOR_PAD_CM) / scale;
+  return { rooms, pid, minX, maxX, minY, maxY, worldW, worldH, scale,
+    cx: pv ? pv.cx : (minX + maxX) / 2, cy: pv ? pv.cy : (minY + maxY) / 2,
     aspect: worldH / worldW, landscape: worldW > worldH };
 }
 
@@ -82743,14 +82886,16 @@ function _renderFloorToImage(floor, opts) {
   const dpi = opts.dpi || 300;
   const targetWmm = opts.targetWidthMm || 180;
   const MAXPX = opts.maxWidth || 2600;
-  const outW = Math.max(600, Math.min(MAXPX, Math.round((targetWmm / 25.4) * dpi)));
+  // 158: `opts.outW` = eksakt pikselbredde (forhåndsvisningen, som 155 for rom). PDF-veien uendret.
+  const outW = opts.outW > 0 ? Math.round(opts.outW)
+    : Math.max(600, Math.min(MAXPX, Math.round((targetWmm / 25.4) * dpi)));
   const outH = Math.max(1, Math.round(outW * box.aspect));
   try {
     canvas.width = outW;
     canvas.height = outH;
     S.view.zoom = (outW / box.worldW) / BASE_SCALE;
-    S.view.panX = (box.minX + box.maxX) / 2;
-    S.view.panY = (box.minY + box.maxY) / 2;
+    S.view.panX = box.cx;   // 158: lagret senter (floor.pdfView), ellers bbox-midten — fra _pdfFloorBox
+    S.view.panY = box.cy;
     if (S.ui) {
       S.ui.showGrid = false;
       S.ui._pdfMode = true;
@@ -82771,14 +82916,24 @@ function _renderFloorToImage(floor, opts) {
     }
     if (typeof markDirty === 'function') markDirty();
     if (typeof render === 'function') render();
-    // JPEG uten alfa → legg på hvit bunn først (som romsidene).
+    // JPEG uten alfa → legg på hvit bunn først (som romsidene). 158: forhåndsvisningen får
+    // pikslene rett inn i sitt eget lerret (`opts.toCanvas`), uten JPEG-omvei (`opts.noUrl`).
     const q = opts.jpegQuality || 0.9;
-    const _flat = document.createElement('canvas');
+    const _flat = opts.toCanvas || document.createElement('canvas');
     _flat.width = canvas.width; _flat.height = canvas.height;
     const _fctx = _flat.getContext('2d');
     _fctx.fillStyle = '#ffffff'; _fctx.fillRect(0, 0, _flat.width, _flat.height);
     _fctx.drawImage(canvas, 0, 0);
-    return { url: _flat.toDataURL('image/jpeg', q), w: outW, h: outH, aspect: box.aspect, landscape: box.landscape };
+    // 158: label-boksene slik de ble tegnet i DETTE bildet (som _renderRoomToImage, 155) — tatt
+    // før gjenopprettingen i finally tegner hovedlerretet på nytt.
+    const labels = opts.captureLabels ? {
+      cable: Object.assign({}, _cableLabelBounds), matRect: Object.assign({}, _matRectLabelBounds),
+      mat: Object.assign({}, _matLabelBounds), strip: Object.assign({}, _stripLabelBounds),
+    } : null;
+    const view = { zoom: S.view.zoom, panX: S.view.panX, panY: S.view.panY, outW, outH,
+      worldW: box.worldW, worldH: box.worldH, scale: box.scale };
+    return { url: opts.noUrl ? null : _flat.toDataURL('image/jpeg', q), w: outW, h: outH,
+      aspect: box.aspect, landscape: box.landscape, view, labels };
   } finally {
     canvas.width = saved.canvasW;
     canvas.height = saved.canvasH;
