@@ -5976,6 +5976,8 @@ function drawRoomCard(room) {
   // 153: flere kabler i et rent rektangel som likevel dekker under 90 % — CC-en er tettere enn arealet tilsier.
   if (stats.cableCount > 1 && stats.nettoM2 > 0 && stats.cableAreaM2 / stats.nettoM2 < 0.90 && _roomIsPlainRect(room))
     rows.push(['⚠ Dekning', 'bare ' + Math.round(stats.cableAreaM2 / stats.nettoM2 * 100) + ' % · CC for tett']);
+  // 159: flateeffekt over rommets tak — advarsel, ikke sperre.
+  { const _w2 = _roomWm2OverWarn(room); if (_w2) rows.push(['\u26a0 Flateeffekt', _w2.kort]); }
   // Cable colour legend (multi-cable groups): dot + K# + product · length · effect, so the
   // installer maps colour → cable/circuit. Same hues as the serpentine strokes/labels.
   const _legCables = S.cables.filter(c => c.roomId === room.id && c.multiCableGroup != null)
@@ -81123,6 +81125,13 @@ async function exportPDF(opts) {
       doc.text('Senteravstand (CC): ' + _ccTxt +
         (_ccwPdf ? ' (' + _ccWarnText(_ccwPdf.prod, _ccwPdf.cc, false, _ccwPdf.roomId) + ')' : ''), M, y); y += 5;
     }
+    // 159: flateeffekt over rommets tak — samme tekst som romkortet, med tall.
+    const _w2Pdf = _roomWm2OverWarn(room);
+    if (_w2Pdf) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(190, 110, 0);
+      const _w2L = doc.splitTextToSize('Advarsel: ' + _w2Pdf.lang.replace(/\u00a0/g, ' '), pw - 2 * M);
+      doc.text(_w2L, M, y); y += _w2L.length * 4 + 1;
+    }
     y += 4;
     _line(y); y += 4;
 
@@ -95662,6 +95671,83 @@ function _roomCcOverWarn(room) {
     }
   }
   return null;
+}
+// 159: flateeffekten som FØLGER AV valgte produkter kan ligge over rommets tak (`_wm2MaxFor`) uten at
+// noe klemmer den — `_clampTargetWm2` klemmer bare et skrevet måltall. Fire kabler à 3210 W i 33 m²
+// er 389 W/m² mot taket 300. Appen SPERRER ikke (utlegget tegnes som før); den sier fra, med tall.
+// ÉN oppslagsvei for romkort, detaljpanel og PDF, som `_roomCcOverWarn`. null = ingen advarsel.
+function _roomWm2OverWarn(room) {
+  if (!room) return null;
+  const rows = _roomProductRows(room);
+  const ratedW = _roomRatedEffectW(room);
+  if (!(ratedW > 0)) return null;
+  const st = _computeRoomStats(room);
+  const netto = st.nettoM2 || 0;
+  const wm2 = Math.round(_roomFlateeffektWm2(room, st) || 0);
+  const max = _wm2MaxFor(room.id);
+  if (!(netto > 0) || !(max > 0) || !(wm2 > max)) return null;
+  const antall = rows.filter(r => r.kind !== 'Reservekabel').reduce((a, r) => a + (r.count || 0), 0);
+  const kinds = [...new Set(rows.filter(r => r.kind !== 'Reservekabel').map(r => r.kind))];
+  const MULTI = { Kabel: 'kabler', Matte: 'matter', Folie: 'folier', Plate: 'plater' };
+  const SING = { Kabel: 'kabel', Matte: 'matte', Folie: 'folie', Plate: 'plate' };
+  const ett = kinds.length === 1 ? kinds[0] : null;
+  const noun = ett ? (antall === 1 ? SING[ett] : MULTI[ett]) : (antall === 1 ? 'produkt' : 'produkter');
+  const fmt = (n, d) => n.toFixed(d || 0).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '\u00a0');
+  const overW = Math.round(ratedW * (1 - max / wm2) / 10) * 10;
+  const minM2 = netto * wm2 / max;
+  const mindre = ett ? ('færre eller kortere ' + MULTI[ett]) : 'færre eller svakere produkter';
+  return { wm2, max, overWm2: wm2 - max, ratedW, netto, antall, noun, overW, minM2,
+    kort: wm2 + ' W/m² · tak ' + max,
+    lang: 'Flateeffekt ' + wm2 + ' W/m² er ' + (wm2 - max) + ' W/m² over taket på ' + max + ' W/m² (' +
+      antall + ' ' + noun + ', ' + fmt(ratedW) + ' W på ' + fmt(netto, 1) + ' m²). Ca ' + fmt(overW) +
+      ' W for mye — bruk ' + mindre + ', eller et rom på minst ' + fmt(minM2, 1) + ' m².' };
+}
+// 159 · regresjonstest for `_roomWm2OverWarn`. Konsollen: await _wm2OverWarnTest(). Bruker galleri-
+// scenen (som kabelbatteriene) og rydder opp etter seg.
+async function _wm2OverWarnTest() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const K = ['rooms', 'cables', 'hindrings', 'zones', 'strips', 'mats', 'matPaths', 'plates', 'groups', 'floatingDims', 'floors', 'parts', 'varmefolie'];
+  const saved = {}; for (const k of K) saved[k] = S[k];
+  const sUi = { f: S.ui.activeFloorId, p: S.ui.activePartId, r: S.ui.selectedRoomId }, sCnt = { ...S.counters };
+  try {
+    await _cblLoadClipper();
+    const bygg = (n, w, h) => {
+      const fx = { name: 'wm2-159', productId: 151, kabler: Array(n).fill(151),
+        points: [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: -h }, { x: 0, y: -h }] };
+      _cableGalleryActiveKey = 'x';
+      const room = _cableGalleryBuildScene(fx); S.ui.selectedRoomId = room.id;
+      S.varmefolie = Object.assign({}, S.varmefolie, { direction: 'v', dirExplicit: true, startCorner: 'bl', wallMarginCm: null });
+      const cabs = _autoFillCableZonesCore(room, fx.kabler.map(id => HEATING_PRODUCTS.find(x => x.id === id)), 'v');
+      for (const c of cabs || []) { c.roomId = room.id; S.cables.push(c); }
+      return room;
+    };
+    let room = bygg(4, 300, 1100);
+    let w = _roomWm2OverWarn(room);
+    check('A: 4 × 3210 W i 33 m² gir advarsel', '389 > 300', w && w.wm2 === 389 && w.max === 300, w && w.kort);
+    check('A: utlegget tegnes likevel (4 kabler i S.cables)', 4, S.cables.filter(c => c.roomId === room.id).length === 4, S.cables.length);
+    check('A: teksten har tall og tiltak', true, !!w && /389 W\/m²/.test(w.lang) && /89 W\/m² over taket på 300/.test(w.lang)
+      && /4 kabler/.test(w.lang) && /færre eller kortere/.test(w.lang) && /42,8 m²/.test(w.lang), w && w.lang);
+    check('A: _clampTargetWm2 er urørt', 300, _clampTargetWm2(room.id, 389) === 300, _clampTargetWm2(room.id, 389));
+    S.cables = [];
+    check('D: advarselen forsvinner når kablene fjernes', null, _roomWm2OverWarn(room) === null, _roomWm2OverWarn(room));
+    room = bygg(2, 300, 1100);
+    check('B: normalt rom (2 kabler, ~197 W/m²) gir ingen advarsel', null, _roomWm2OverWarn(room) === null, _roomWm2OverWarn(room));
+    const f = Math.round(_roomFlateeffektWm2(room));
+    room.roomType = 'fryserom';
+    w = _roomWm2OverWarn(room);
+    check('C: fryserom bruker taket 30', 30, w && w.max === 30, w && w.max);
+    const rt = _roomTypeOf(room.id), keep = rt.wm2Max;
+    rt.wm2Max = f - 1; check('C: flateeffekt 1 over taket gir advarsel', true, !!_roomWm2OverWarn(room), f);
+    rt.wm2Max = f;     check('C: flateeffekt lik taket gir ingen advarsel', null, _roomWm2OverWarn(room) === null, f);
+    rt.wm2Max = keep;
+  } finally {
+    for (const k of K) S[k] = saved[k];
+    S.ui.activeFloorId = sUi.f; S.ui.activePartId = sUi.p; S.ui.selectedRoomId = sUi.r; S.counters = sCnt;
+  }
+  const bad = results.filter(r => !r.ok);
+  console.log('[159] _wm2OverWarnTest: ' + (results.length - bad.length) + '/' + results.length, bad.length ? bad : 'GRØNN');
+  return { ok: !bad.length, results };
 }
 // 016: samme advarsel som forhåndsvisnings-footeren, for de veiene som IKKE viser en
 // forhåndsvisning (Bruk direkte / Kun label / sone). Plasseringen er aldri blokkert.
