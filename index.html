@@ -5237,6 +5237,7 @@ function drawSnapDot() {
 
 // ─── SCALE BAR ───────────────────────────────────────────────
 function drawScaleBar() {
+  if (S.ui?._pdfOverview) return;   // 154: 50 cm-pillen blir en uleselig 1 mm-flekk på plantegningen
   const barW = GRID * S.view.zoom * BASE_SCALE; // px = 50cm at current zoom
   // Don't draw if bar would be tiny or enormous
   if (barW < 20 || barW > canvas.width * 0.4) return;
@@ -6110,19 +6111,26 @@ function drawRooms() {
     }
 
     // Always show room name + area on non-selected rooms (suppressed in PDF mode)
-    if (!S.ui?._pdfMode) {
+    // 154: …men VIST på plantegningen (S.ui._pdfOverview): navn + netto areal i papirstørrelse
+    // (_labelFontCm, samme regel som produktetikettene), uten ✓/⚠-merket fra planimporten.
+    if (!S.ui?._pdfMode || S.ui._pdfOverview) {
+      const ov = !!S.ui?._pdfOverview;
       const cx = spts.reduce((a,p)=>a+p.x,0)/spts.length;
       const cy = spts.reduce((a,p)=>a+p.y,0)/spts.length;
-      const fsz = Math.max(10, Math.min(13, 11*S.view.zoom));
+      // Navnet litt større og tyngre enn produktetikettene (1,2 ×, 600) — det er det man leter etter på en oversikt.
+      const fsz = ov ? Math.round(_pdfOverviewFontPx() * 1.2) : Math.max(10, Math.min(13, 11*S.view.zoom));
+      const off = ov ? Math.round(fsz * 0.7) : (S.view.zoom > 0.38 ? 9 : 0);
       ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillStyle = _lc('rgba(50,65,90,0.85)','rgba(155,165,185,0.7)');
-      ctx.font = `500 ${fsz}px 'Space Grotesk',sans-serif`;
-      ctx.fillText(room.name, cx, cy - (S.view.zoom > 0.38 ? 9 : 0));
-      _drawPlanAreaBadge(room, cx, cy - (S.view.zoom > 0.38 ? 9 : 0), fsz, ctx.measureText(room.name).width);
-      if (room.area > 0 && S.view.zoom > 0.38) {
-        ctx.fillStyle = _lc('rgba(70,85,110,0.75)','rgba(100,110,130,0.65)');
+      ctx.fillStyle = ov ? 'rgba(30,45,70,0.95)' : _lc('rgba(50,65,90,0.85)','rgba(155,165,185,0.7)');
+      ctx.font = `${ov ? 600 : 500} ${fsz}px 'Space Grotesk',sans-serif`;
+      ctx.fillText(room.name, cx, cy - off);
+      if (!ov) _drawPlanAreaBadge(room, cx, cy - off, fsz, ctx.measureText(room.name).width);
+      if (room.area > 0 && (ov || S.view.zoom > 0.38)) {
+        ctx.fillStyle = ov ? 'rgba(60,75,100,0.9)' : _lc('rgba(70,85,110,0.75)','rgba(100,110,130,0.65)');
         ctx.font = `${Math.max(9,fsz*0.82)}px ${CANVAS_NUM_FONT}`;
-        ctx.fillText((room.area/10000).toFixed(2)+' m²', cx, cy+9);
+        // Plantegningen viser NETTO (samme tall som romlista under bildet og Romoversikten).
+        const arealTxt = ov ? (_roomNetAreaCm2(room)/10000).toFixed(1)+' m²' : (room.area/10000).toFixed(2)+' m²';
+        ctx.fillText(arealTxt, cx, cy + off);
       }
     }
   }
@@ -44184,6 +44192,12 @@ function _labelFontCm() {
   return Math.min(LABEL_PDF_MAX_CM, Math.max(LABEL_PDF_MIN_CM, cm));
 }
 
+// 154: romnavn/areal på plantegningen — samme papirstørrelse som produktetikettene, i px på
+// det lerretet som tegnes akkurat nå.
+function _pdfOverviewFontPx() {
+  return Math.max(8, _labelFontCm() * S.view.zoom * BASE_SCALE);
+}
+
 function _labelScaleName(v) {
   const t = LABEL_PDF_SCALES.find(x => Math.abs(x.v - v) < 0.001);
   return t ? t.navn : _labelScaleNum(v);
@@ -56229,6 +56243,7 @@ function _presentProduktMaalSkjult() {
   return true;
 }
 function drawAllDimAnnotations() {
+  if (S.ui?._pdfOverview) return;   // 154: målkjeder utenfor rommene er støy på en plantegning
   const _skjulProdukt = _presentProduktMaalSkjult();
   for (const room of S.rooms) {
     if (!_roomOnActiveFloor(room)) continue;
@@ -78313,6 +78328,7 @@ function _showExportDialog() {
   const hasPrices = HEATING_PRODUCTS.some(p => p.price_list > 0);
   const _pp = (S.project && S.project.pricing) || {};   // lagrede rabatter per prosjekt
   const priceGroups = _projectProductGroups();
+  _expFloorplanIdx = 0;   // 154: forhåndsvisningen starter på første etasje
 
   overlay.innerHTML = `<div style="background:var(--surface);border-radius:16px;width:85vw;max-width:1100px;height:80vh;overflow:hidden;border:1px solid var(--border)">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border)">
@@ -78324,6 +78340,7 @@ function _showExportDialog() {
         <div class="exp-group">
           <div class="exp-check"><input type="checkbox" id="exp-cover" checked title="Hak av for utskrift"><span onclick="_expPreviewSection('cover')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Forside</span></div>
           <div class="exp-check"><input type="checkbox" id="exp-summary" title="Hak av for utskrift"><span onclick="_expPreviewSection('summary')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Prosjektoversikt</span></div>
+          ${hasRooms ? `<div class="exp-check"><input type="checkbox" id="exp-floorplan"${rooms.length > 1 ? ' checked' : ''} title="Hak av for utskrift"><span onclick="_expPreviewSection('floorplan')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Plantegning (alle rom per etasje)</span></div>` : ''}
         </div>
         <div class="exp-group">
           <div class="exp-group-title">Romtegninger</div>
@@ -78493,6 +78510,7 @@ function _pdfCoverMetaRows(nextRev, prevDateStr) {
 // Forhandsvisning av dokument-seksjonene (Forside/Prosjektoversikt/Romoversikt/
 // Materialliste/Dokumentasjon/Signaturside). HTML-representasjon fra ekte prosjektdata
 // sa man ser hva seksjonen inneholder for man haker den av.
+let _expFloorplanIdx = 0;   // 154: hvilken etasje forhåndsvisningen av plantegningen står på
 function _expPreviewSection(kind) {
   const area = document.getElementById('exp-preview-area');
   if (!area) return;
@@ -78588,6 +78606,34 @@ function _expPreviewSection(kind) {
     // 145: samme tall som PDF-tabellen (_foilResistanceRooms / _fmtNo).
     const rowsHtml = _foilResistanceRooms(rooms).map(({ room, res }) => `<tr style="border-top:1px solid var(--border)"><td style="padding:5px 8px 5px 0">${E(room.name || 'Rom')}</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.P, 1)} W</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.rLow, 1)}</td><td style="padding:5px 8px;text-align:right;color:var(--muted)">${_fmtNo(res.rNom, 1)}</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.rHigh, 1)}</td></tr>`).join('');
     html = box('Motstandsmåling — varmefolie', `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:0 8px 4px 0">Rom</th><th style="text-align:right;padding:0 8px 4px">Effekt</th><th style="text-align:right;padding:0 8px 4px">Nedre Ω</th><th style="text-align:right;padding:0 8px 4px">Nominell Ω</th><th style="text-align:right;padding:0 8px 4px">Øvre Ω</th></tr></thead><tbody>${rowsHtml}</tbody></table><div style="margin-top:10px;font-size:11px;color:var(--dim)">Effekt = tegnet lengde × W/m. Grenser: 48 400 / P (220 V) og 57 600 / P (240 V).</div>`);
+  } else if (kind === 'floorplan') {
+    // 154: bildet av én etasje om gangen, ‹ › blar når det er flere. Samme bilde som PDF-en
+    // (_renderFloorToImage), samme rekkefølge (_pdfFloorplanGroups).
+    const groups = _pdfFloorplanGroups(null);
+    if (!groups.length) {
+      html = box('Plantegning', card('<div style="color:var(--muted);font-size:13px">Ingen tegnede rom å vise.</div>'));
+    } else {
+      const idx = Math.max(0, Math.min(groups.length - 1, _expFloorplanIdx || 0));
+      _expFloorplanIdx = idx;
+      const g = groups[idx];
+      let imgData = '';
+      try { const r = _renderFloorToImage(g.floor, { box: g.box, targetWidthMm: g.box.landscape ? 267 : 180 }); imgData = r && r.url ? r.url : ''; } catch (e) { console.warn('floorplan preview failed:', e); }
+      const fl = g.floor ? S.floors.find(f => f.id === g.floor.id) : null;
+      const rowsF = rooms.filter(r => !r.listDraft && (fl ? r.floorId === fl.id : true));
+      let nettoF = 0, wF = 0;
+      for (const r of rowsF) { nettoF += _computeRoomStats(r).nettoM2 || 0; wF += _roomRatedEffectW(r); }
+      const nav = groups.length > 1 ? `<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px">
+          <button class="adm-btn ghost" style="padding:4px 10px" ${idx === 0 ? 'disabled' : ''} onclick="_expFloorplanIdx=${idx - 1};_expPreviewSection('floorplan')">&lsaquo; Forrige</button>
+          <span style="font-size:12px;color:var(--muted)">Etasje ${idx + 1} av ${groups.length}</span>
+          <button class="adm-btn ghost" style="padding:4px 10px" ${idx === groups.length - 1 ? 'disabled' : ''} onclick="_expFloorplanIdx=${idx + 1};_expPreviewSection('floorplan')">Neste &rsaquo;</button>
+        </div>` : '';
+      html = `<div style="text-align:center;width:100%">
+        <img src="${imgData}" style="max-width:100%;max-height:50vh;border-radius:8px;border:1px solid var(--border)">
+        <div style="margin-top:12px;text-align:left;font-size:12px;color:var(--text);max-width:500px;margin-left:auto;margin-right:auto">
+          <div style="font-weight:600;font-size:14px;margin-bottom:6px">${E(g.title)}</div>
+          <div>${rowsF.length} rom \u00b7 ${nettoF.toFixed(1)} m\u00b2 netto \u00b7 ${Math.round(wF)} W${g.box.landscape ? ' \u00b7 liggende side' : ''}</div>
+        </div>${nav}</div>`;
+    }
   } else if (kind === 'docs') {
     const docs = S.documentation ? Object.keys(S.documentation).length : 0;
     html = box('Dokumentasjon', card(`<div style="color:var(--muted);font-size:13px;line-height:1.6">Garantibevis / dokumentasjon for rom med registrerte måleverdier (motstand, isolasjon, foto, signatur).<br><b style="color:var(--text)">${docs}</b> dokumentert ${docs === 1 ? 'rom' : 'rom'} i prosjektet.</div>`));
@@ -78603,6 +78649,7 @@ function _runExportPDF() {
   const opts = {
     cover: document.getElementById('exp-cover')?.checked,
     summary: document.getElementById('exp-summary')?.checked,
+    floorplan: !!document.getElementById('exp-floorplan')?.checked,   // 154
     rooms: [...document.querySelectorAll('.exp-room-cb:checked')].map(c => +c.value),
     stairs: [...document.querySelectorAll('.exp-stair-cb:checked')].map(c => +c.value),
     stairSide: [...document.querySelectorAll('.exp-stair-side-cb:checked')].map(c => +c.value),   // 085
@@ -79045,6 +79092,7 @@ function _pdfExportSmokeTest() {
   };
   let sistSideantall = null, sisteToast = null;
   const smokeTekst = [];   // 145: all tekst som tegnes i siste eksport (søkes i foliefixturen)
+  const smokeSide = [];    // 154: [sidenr, tekst] for samme kall — rekkefølgen av seksjoner
   try {
     window._performAutoSave = () => Promise.resolve();
     window._showToast = (m) => { sisteToast = m; };
@@ -79056,7 +79104,12 @@ function _pdfExportSmokeTest() {
       const d = new EkteJsPDF(...a);
       d.save = function () { sistSideantall = d.internal.getNumberOfPages(); return d; };
       const t0 = d.text.bind(d);
-      d.text = function (txt, ...r) { smokeTekst.push(Array.isArray(txt) ? txt.join(' ') : String(txt)); return t0(txt, ...r); };
+      d.text = function (txt, ...r) {
+        const t = Array.isArray(txt) ? txt.join(' ') : String(txt);
+        smokeTekst.push(t);
+        smokeSide.push([d.internal.getCurrentPageInfo().pageNumber, t]);   // 154: side per tekst
+        return t0(txt, ...r);
+      };
       return d;
     };
 
@@ -79108,15 +79161,17 @@ function _pdfExportSmokeTest() {
     };
 
     // Én full eksport. Returnerer { ok, sider, feil } — kaster ALDRI, så alle fixtures kjøres.
-    const kjør = async () => {
+    const kjør = async (ekstra) => {
       sistSideantall = null;
-      const opts = { cover: true, summary: true, rooms: S.rooms.map(r => r.id),
+      const opts = Object.assign({ cover: true, summary: true, floorplan: true, rooms: S.rooms.map(r => r.id),
         stairs: (S.stairs || []).map(s => s.id), roomTable: true, stairTable: true,
         materialList: true, resistance: true, pricing: false, discount: 0, showDGDB: false, docs: false,
-        signature: false, freeText: '' };
-      smokeTekst.length = 0;
-      // Minst én side per valgt seksjon: forside + sammendrag + én side per rom og per trapp.
-      const minSider = 1 + 1 + opts.rooms.length + opts.stairs.length;
+        signature: false, freeText: '' }, ekstra || {});
+      smokeTekst.length = 0; smokeSide.length = 0;
+      // Minst én side per valgt seksjon: forside + sammendrag + plantegning (154: én per etasje
+      // med tegnede rom) + én side per rom og per trapp.
+      const planSider = opts.floorplan ? _pdfFloorplanGroups(new Set(opts.rooms)).length : 0;
+      const minSider = 1 + 1 + planSider + opts.rooms.length + opts.stairs.length;
       try {
         await exportPDF(opts);
         return { ok: true, sider: sistSideantall, minSider };
@@ -79170,6 +79225,20 @@ function _pdfExportSmokeTest() {
                     { id: 991902, roomId: RID, productId: FOLIE.id, direction: 'v', pos_cm: 100, start_cm: 20, length_cm: 300 }];
         _invalidateStripCache();
       }],
+      ['to etasjer, tre rom — plantegning (154)', () => {
+        tomState();
+        // Etasjene lagt inn i FEIL rekkefølge med vilje: PDF-en skal sortere på tallet i navnet.
+        S.floors = [{ id: 991950, name: '2. etasje', order: 0, collapsed: false, partId: null },
+                    { id: 991951, name: '1. etasje', order: 1, collapsed: false, partId: null }];
+        S.ui.activeFloorId = 991951;
+        S.rooms = [mkRoom(RID, 'Bad', rect(0, 0, 500, 400), { floorId: 991951 }),
+                   mkRoom(RID + 1, 'Stue', rect(600, 0, 700, 400), { floorId: 991951 }),
+                   mkRoom(RID + 2, 'Soverom', rect(0, 0, 400, 300), { floorId: 991950 })];
+        S.cables = [{ id: 991551, roomId: RID, productId: CAB.id, direction: 'v', spacing_cm: 20,
+          startCorner: 'bl', totalLength_cm: 3300,
+          runs: [{ pos_cm: 50, segments: [{ start_cm: 20, end_cm: 380 }] }], connections: [] }];
+        _invalidateCableCache && _invalidateCableCache();
+      }],
       ['listedel (Hurtig prosjektering)', () => {
         tomState();
         S.project.parts = [{ id: 991800, name: 'Hurtig prosjektering', type: 'list', moduleType: 'list' }];
@@ -79191,6 +79260,40 @@ function _pdfExportSmokeTest() {
         check('«' + navn + '»: ingen unntak', 'ok', r.ok, r.ok ? 'ok' : r.feil);
         check('«' + navn + '»: minst én side per valgt seksjon', '>= ' + r.minSider,
           r.ok && r.sider >= r.minSider, r.sider);
+        if (navn.indexOf('(154)') >= 0) {
+          // 154: én plantegning-side per etasje, i Romoversiktens rekkefølge (1. før 2.), rett etter
+          // forsiden + prosjektoversikten (side 3 og 4) og FØR første romside.
+          const side = (t) => { const e = smokeSide.find(x => x[1] === t); return e ? e[0] : null; };
+          const s1 = side('Plantegning \u2013 1. etasje'), s2 = side('Plantegning \u2013 2. etasje');
+          const forsteRomside = side('Spesifikasjon');
+          check('«' + navn + '»: plantegning 1. etasje på side 3', 3, s1 === 3, s1);
+          check('«' + navn + '»: plantegning 2. etasje på side 4', 4, s2 === 4, s2);
+          check('«' + navn + '»: begge før første romside', '< ' + forsteRomside, s1 != null && s2 != null && forsteRomside != null && s2 < forsteRomside, forsteRomside);
+          // Romlista under bildet: alle rom på etasjen med netto m² (Bad 20,0 · Stue 28,0 på side 3).
+          const paaSide = (n) => smokeSide.filter(x => x[0] === n).map(x => x[1]);
+          const l3 = paaSide(3);
+          check('«' + navn + '»: romlista 1. etasje har Bad og Stue', 'Bad,Stue', l3.includes('Bad') && l3.includes('Stue') && !l3.includes('Soverom'), l3.filter(t => /^(Bad|Stue|Soverom)$/.test(t)).join(','));
+          check('«' + navn + '»: netto m² i romlista', '20.0,28.0', l3.includes('20.0') && l3.includes('28.0'), l3.filter(t => /^\d+\.\d$/.test(t)).join(','));
+          // Valget AV: ingen plantegning-side, og én side færre per etasje.
+          const med = r.sider;
+          const uten = await kjør({ floorplan: false });
+          check('«' + navn + '»: uten valget finnes ingen «Plantegning»', 'ingen', uten.ok && !smokeTekst.some(t => t.startsWith('Plantegning')), smokeTekst.filter(t => t.startsWith('Plantegning')).join(','));
+          check('«' + navn + '»: valget gir nøyaktig 2 sider ekstra', med - 2, uten.ok && uten.sider === med - 2, uten.sider);
+          // Bare noen rom valgt: etasjen uten valgt rom får ingen side.
+          const bare = await kjør({ rooms: [RID] });
+          const plan = smokeTekst.filter(t => t.startsWith('Plantegning'));
+          check('«' + navn + '»: bare Bad valgt → bare «Plantegning – 1. etasje»', 'Plantegning – 1. etasje', bare.ok && plan.length === 1 && plan[0] === 'Plantegning \u2013 1. etasje', plan.join(','));
+          // VAKSINE: uten grupper skal sjekkene over bli røde.
+          const ekteGrupper = window._pdfFloorplanGroups;
+          window._pdfFloorplanGroups = () => [];
+          const syk = await kjør();
+          window._pdfFloorplanGroups = ekteGrupper;
+          check('«' + navn + '»: VAKSINE — fjernes gruppene, forsvinner siden', 'ingen', syk.ok && !smokeTekst.some(t => t.startsWith('Plantegning')), smokeTekst.filter(t => t.startsWith('Plantegning')).length);
+        }
+        if (navn.indexOf('innendørs rom med kabel') === 0) {
+          // 154: ett rom uten etasjer → tittelen er bare «Plantegning» (uten etasjenavn).
+          check('«' + navn + '»: uten etasjer heter siden «Plantegning»', 'Plantegning', smokeTekst.includes('Plantegning') && !smokeTekst.some(t => t.startsWith('Plantegning \u2013')), smokeTekst.filter(t => t.startsWith('Plantegning')).join(','));
+        }
         if (navn.indexOf('(145)') >= 0) {
           // 145: 6,0 m × 36 W/m = 216,0 W → øvre 266,7 · nominell 244,9 · nedre 224,1 (håndregnet).
           const har = (t) => smokeTekst.includes(t);
@@ -79505,7 +79608,7 @@ function _pdfSuperscriptPatch(doc) {
 }
 
 async function exportPDF(opts) {
-  opts = opts || { cover:true, summary:true, rooms:S.rooms.map(r=>r.id), stairs:(S.stairs||[]).map(s=>s.id), roomTable:true, stairTable:true, materialList:true, resistance:true, pricing:false, discount:0, showDGDB:false, docs:false, signature:false, freeText:'' };
+  opts = opts || { cover:true, summary:true, floorplan:S.rooms.length > 1, rooms:S.rooms.map(r=>r.id), stairs:(S.stairs||[]).map(s=>s.id), roomTable:true, stairTable:true, materialList:true, resistance:true, pricing:false, discount:0, showDGDB:false, docs:false, signature:false, freeText:'' };
   if (!window.jspdf) { alert('PDF-bibliotek ikke lastet. Prøv igjen.'); return; }
   // Foil-accessories modal — gathers tilbehør quantities before render.
   // Cancelled modal short-circuits the whole export (per spec).
@@ -79927,6 +80030,92 @@ async function exportPDF(opts) {
     for (const ln of doc.splitTextToSize(_RES_EXPL, pw)) { doc.text(ln, M, y); y += 3.4; }
     y += 4;
   };
+
+  // ── 154 · Plantegning per etasje ── (only when selected) — etter forside/prosjektoversikt,
+  // før romsidene. Liggende side når etasjen er bredere enn høy (samme grep som trappesidene).
+  // Romlista under bildet leser floorSummaries — samme rader og tall som Romoversikten.
+  if (opts.floorplan) {
+    const _fpSel = Array.isArray(opts.rooms) ? new Set(opts.rooms) : null;
+    for (const grp of _pdfFloorplanGroups(_fpSel)) {
+      const box = grp.box;
+      const land = box.landscape;
+      const pageW_f = land ? 297 : 210, pageH_f = land ? 210 : 297;
+      const pw_f = pageW_f - 2 * M;
+      const _fmt_f = land ? 'landscape' : 'portrait';
+      const _lineF = (y0) => { doc.setDrawColor(180); doc.setLineWidth(0.3); doc.line(M, y0, pageW_f - M, y0); };
+      if (!_pageStarted) {
+        _pageStarted = true;
+        if (land) { doc.addPage('a4', 'landscape'); try { doc.deletePage(1); } catch (e) {} y = M; }
+      } else { doc.addPage('a4', _fmt_f); y = M; }
+
+      // Radene: Romoversiktens egne (floorSummaries) for denne etasjen — alle rom på etasjen,
+      // også de som ikke er valgt for egen romside (bildet viser dem uansett).
+      const fs = floorSummaries.find(f => (f.floor ? f.floor.id : null) === (grp.floor ? grp.floor.id : null));
+      const rows = fs ? fs.rooms : [];
+      const nettoSum = rows.reduce((a, r) => a + (r.stats.nettoM2 || 0), 0);
+      const wSum = rows.reduce((a, r) => a + (r.ratedW || 0), 0);
+
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(20, 40, 80);
+      doc.text(grp.title, M, y + 6);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(120, 130, 150);
+      doc.text(`${rows.length} rom \u00b7 ${nettoSum.toFixed(1)} m\u00b2 netto \u00b7 ${Math.round(wSum)} W`, M, y + 12);
+      y += 16; _lineF(y); y += 5;
+
+      // Bildet får høyden som er igjen etter romlista (to kolonner, 4,2 mm per rad).
+      const nRows = Math.ceil(rows.length / 2);
+      const listH = rows.length ? (6 + nRows * 4.2 + 2) : 0;
+      const availImgH = (pageH_f - M) - y - listH - 6;
+      let imgW2 = pw_f, imgH = imgW2 * box.aspect;
+      if (imgH > availImgH) { imgH = Math.max(40, availImgH); imgW2 = imgH / box.aspect; }
+      const imgX = M + (pw_f - imgW2) / 2;
+      try {
+        const imgRes = _renderFloorToImage(grp.floor, { box, targetWidthMm: imgW2 });
+        if (imgRes && imgRes.url) doc.addImage(imgRes.url, 'JPEG', imgX, y, imgW2, imgH);
+      } catch (e) { console.warn('PDF floorplan image failed:', e); }
+      y += imgH + 3;
+      // 007: kartgrunnlag krediteres der det vises — som under romtegningene.
+      const _geoBgF = grp.floor && S.bgs && S.bgs[grp.floor.id];
+      if (_bgIsGeo(_geoBgF)) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(130, 140, 155);
+        doc.text(_geoBgF.geo.attribution || 'Kartgrunnlag \u00a9 Kartverket (CC BY 4.0)', M, y);
+        y += 3;
+      }
+      y += 3;
+
+      if (rows.length) {
+        const colW = pw_f / 2;
+        const colsAt = (x0) => [x0, x0 + colW * 0.42, x0 + colW * 0.56, x0 + colW - 4];
+        const _fpHead = () => {
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(120, 130, 150);
+          for (const c of [0, 1]) {
+            if (c === 1 && rows.length < 2) break;
+            const cx = colsAt(M + c * colW);
+            doc.text('Rom', cx[0], y); doc.text('Netto m\u00b2', cx[1], y);
+            doc.text('Produkt', cx[2], y); doc.text('W', cx[3], y, { align: 'right' });
+          }
+          y += 2.5; _lineF(y); y += 3.5;
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(40, 50, 70);
+        };
+        const _fitF = (t, wmm) => { const p = doc.splitTextToSize(String(t == null ? '' : t), wmm); return p[0] || ''; };
+        _fpHead();
+        for (let i = 0; i < nRows; i++) {
+          if (y + 4.2 > pageH_f - M) { doc.addPage('a4', _fmt_f); y = M; _fpHead(); }
+          for (const c of [0, 1]) {
+            const r = rows[i + c * nRows]; if (!r) continue;
+            const cx = colsAt(M + c * colW);
+            doc.setTextColor(40, 50, 70);
+            doc.text(_fitF(r.name, colW * 0.40), cx[0], y);
+            doc.text(r.stats.nettoM2.toFixed(1), cx[1], y);
+            doc.setTextColor(90, 100, 120);
+            doc.text(_fitF(_roomProductFamilyName(r.room), colW * 0.40), cx[2], y);
+            doc.setTextColor(40, 50, 70);
+            doc.text(String(Math.round(r.ratedW || 0)), cx[3], y, { align: 'right' });
+          }
+          y += 4.2;
+        }
+      }
+    }
+  }
 
   // ── Room detail pages ──
   // Respekter et EKSPLISITT utvalg (array fra dialogen) — ogsa nar det er TOMT (ingen rom
@@ -81242,15 +81431,20 @@ async function exportPDF(opts) {
   const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
+    // 154: sidens EGEN størrelse — en liggende side (trapp, plantegning) er 297×210, og med de
+    // faste 210×297-tallene havnet bunnteksten utenfor arket (målt: ingen bunntekst på liggende
+    // trappesider). Stående sider får nøyaktig samme tall som før.
+    // A4 er hele millimeter (210/297) — avrundet, så stående sider får nøyaktig de gamle tallene.
+    const _pgW = Math.round(doc.internal.pageSize.getWidth()), _pgH = Math.round(doc.internal.pageSize.getHeight());
     // Erase any earlier footer stamp
     doc.setFillColor(255, 255, 255);
-    doc.rect(M - 1, H - 12, W - 2 * M + 2, 6, 'F');
+    doc.rect(M - 1, _pgH - 12, _pgW - 2 * M + 2, 6, 'F');
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(150, 160, 180);
     const left = `${S.project.name || 'Prosjekt'} · rev. ${rev}`;
-    doc.text(left, M, H - 8);
-    doc.text(`Side ${i} av ${pageCount}`, W - M, H - 8, { align: 'right' });
+    doc.text(left, M, _pgH - 8);
+    doc.text(`Side ${i} av ${pageCount}`, _pgW - M, _pgH - 8, { align: 'right' });
   }
 
   _pdfStampBranding(doc, M);   // org-logo (co-brand) på forside/alle sider iht. flagg
@@ -81500,6 +81694,158 @@ function _renderRoomToImage(room, opts) {
   if (typeof markDirty === 'function') markDirty();
   if (typeof render === 'function') render();
   return { url: dataURL, w: outW, h: outH, aspect };
+}
+
+// ═══ 154 · PLANTEGNING PER ETASJE (Kenneth 28.10.2026) ═════════════════════════════════════
+// «Et oversiktsbilde av alle rommene … før rommene kommer.» Én side per etasje rett etter
+// forsiden/prosjektoversikten. Samme mekanisme som _renderRoomToImage (midlertidig view på
+// hovedlerretet, _pdfMode, gjenoppretting), men bbox = alle tegnede rom på etasjen + trappene
+// drawStairs ville tegnet med etasjens del aktiv, pad 100 cm, og S.ui._pdfOverview = true:
+//   • romnavn + netto areal vises i hvert rom (drawRooms pass 1, papirstørrelse)
+//   • målkjeder utenfor rommene tegnes ikke (drawAllDimAnnotations)
+//   • ellers som romsidene: produkter, hindringer, soner, bakgrunn — infokort/gizmo/hjørner
+//     er allerede skjult av _pdfMode.
+// Ingen rom er valgt under tegningen, så alle rom går gjennom pass 1 og ser like ut.
+const PDF_FLOOR_PAD_CM = 100;
+
+// Rommene som tegnes på plantegningen for en etasje. floor = null → prosjekt uten etasjer
+// (alle rom). Utkast (listDraft) og Hurtig prosjektering-rom (listMode, ingen polygon) tegnes
+// ikke — de står i romlista under bildet via floorSummaries, som Romoversikten.
+function _pdfFloorRooms(floor) {
+  const fid = floor ? floor.id : null;
+  return (S.rooms || []).filter(r => !r.listDraft && !r.listMode && r.points && r.points.length >= 3
+    && (fid == null || r.floorId === fid));
+}
+// Trapper har partId, ikke floorId — ta med dem drawStairs tegner med etasjens del aktiv.
+function _pdfFloorStairs(pid) {
+  return (S.stairs || []).filter(st => !(pid && st.partId && st.partId !== pid));
+}
+// Én kilde for bbox + sideformat (samme grunn som _pdfRoomAspect: bredden bildet plasseres
+// med må være kjent FØR rendringen, og aspektet er bare geometri).
+function _pdfFloorBox(floor) {
+  const rooms = _pdfFloorRooms(floor);
+  if (!rooms.length) return null;
+  const pid = (floor && floor.partId != null) ? floor.partId
+    : ((rooms.find(r => r.partId != null) || {}).partId ?? null);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const r of rooms) for (const p of r.points) {
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+  }
+  const stairs = _pdfFloorStairs(pid);
+  for (const st of stairs) {
+    let b; try { b = _stairBounds(st); } catch (e) { b = null; }
+    if (!b) continue;
+    minX = Math.min(minX, b.x); maxX = Math.max(maxX, b.x + b.w);
+    minY = Math.min(minY, b.y); maxY = Math.max(maxY, b.y + b.h);
+  }
+  const worldW = Math.max(1, maxX - minX) + 2 * PDF_FLOOR_PAD_CM;
+  const worldH = Math.max(1, maxY - minY) + 2 * PDF_FLOOR_PAD_CM;
+  return { rooms, stairs, pid, minX, maxX, minY, maxY, worldW, worldH,
+    aspect: worldH / worldW, landscape: worldW > worldH };
+}
+
+// Etasjene som får en plantegning-side, i PDF-ens rekkefølge (_floorLevelCompare, som
+// Romoversikten). `selIds` = valgte rom i dialogen (Set) eller null = alle: en etasje er med når
+// minst ett VALGT rom ligger der, men alle rommene på etasjen tegnes likevel (sammenhengen).
+// Prosjekt uten etasjer: én side «Plantegning». Rom uten etasje i et prosjekt MED etasjer får
+// ingen side (de står i Romoversikten under «Uten etasje»).
+function _pdfFloorplanGroups(selIds) {
+  const floors = (S.floors || []).slice().sort(_floorLevelCompare);
+  const hasSel = rooms => !selIds || rooms.some(r => selIds.has(r.id));
+  const groups = [];
+  if (!floors.length) {
+    const box = _pdfFloorBox(null);
+    if (box && hasSel(box.rooms)) groups.push({ floor: null, box });
+  } else {
+    for (const fl of floors) {
+      const box = _pdfFloorBox(fl);
+      if (box && hasSel(box.rooms)) groups.push({ floor: fl, box });
+    }
+  }
+  const single = floors.length <= 1;
+  for (const g of groups) g.title = (single || !g.floor) ? 'Plantegning' : 'Plantegning \u2013 ' + (g.floor.name || 'Etasje');
+  return groups;
+}
+
+function _renderFloorToImage(floor, opts) {
+  opts = opts || {};
+  const box = opts.box || _pdfFloorBox(floor);
+  if (!box) return null;
+  const saved = {
+    zoom: S.view.zoom, panX: S.view.panX, panY: S.view.panY,
+    activePartId: S.ui?.activePartId, activeFloorId: S.ui?.activeFloorId,
+    selectedRoomId: S.ui?.selectedRoomId, selectedStripId: S.ui?.selectedStripId,
+    selectedStripIds: S.ui?.selectedStripIds, selectedCableId: S.ui?.selectedCableId,
+    selectedMatId: S.ui?.selectedMatId, selectedMatPathId: S.ui?.selectedMatPathId,
+    selectedWallId: S.ui?.selectedWallId, selectedHindringId: S.ui?.selectedHindringId,
+    selectedAnnot: S.ui?.selectedAnnot, selectedFoilFreeId: S.ui?.selectedFoilFreeId,
+    selectedZoneId: S.ui?.selectedZoneId, selectedPlateId: S.ui?.selectedPlateId,
+    selectedAluboardId: S.ui?.selectedAluboardId, selectedStairId: S.ui?.selectedStairId,
+    selectedDimId: S.ui?.selectedDimId, selectedBg: S.ui?.selectedBg,
+    showGrid: S.ui?.showGrid, pdfMode: S.ui?._pdfMode, pdfOverview: S.ui?._pdfOverview,
+    pdfScaleMmPerCm: S.ui?._pdfScaleMmPerCm, theme: S.ui?.theme,
+    canvasW: canvas.width, canvasH: canvas.height,
+  };
+  const dpi = opts.dpi || 300;
+  const targetWmm = opts.targetWidthMm || 180;
+  const MAXPX = opts.maxWidth || 2600;
+  const outW = Math.max(600, Math.min(MAXPX, Math.round((targetWmm / 25.4) * dpi)));
+  const outH = Math.max(1, Math.round(outW * box.aspect));
+  try {
+    canvas.width = outW;
+    canvas.height = outH;
+    S.view.zoom = (outW / box.worldW) / BASE_SCALE;
+    S.view.panX = (box.minX + box.maxX) / 2;
+    S.view.panY = (box.minY + box.maxY) / 2;
+    if (S.ui) {
+      S.ui.showGrid = false;
+      S.ui._pdfMode = true;
+      S.ui._pdfOverview = true;
+      S.ui._pdfScaleMmPerCm = targetWmm / box.worldW;   // 051: papirstørrelse på etikettene
+      S.ui.theme = 'light';
+      // Hele filtertilstanden fra etasjen (samme lærdom som _renderRoomToImage, MEKANISME 1/2).
+      if (S.ui.activePartId !== undefined) S.ui.activePartId = box.pid;
+      if (S.ui.activeFloorId !== undefined) S.ui.activeFloorId = floor ? floor.id : '__none__';
+      S.ui.selectedRoomId = null;   // ingen valgt → alle rom tegnes likt (pass 1)
+      S.ui.selectedStripId = null; S.ui.selectedStripIds = new Set();
+      S.ui.selectedCableId = null; S.ui.selectedMatId = null; S.ui.selectedMatPathId = null;
+      S.ui.selectedWallId = null; S.ui.selectedHindringId = null; S.ui.selectedAnnot = null;
+      S.ui.selectedFoilFreeId = null; S.ui.selectedZoneId = null; S.ui.selectedPlateId = null;
+      S.ui.selectedAluboardId = null; S.ui.selectedStairId = null; S.ui.selectedDimId = null;
+      S.ui.selectedBg = null;
+    }
+    if (typeof markDirty === 'function') markDirty();
+    if (typeof render === 'function') render();
+    // JPEG uten alfa → legg på hvit bunn først (som romsidene).
+    const q = opts.jpegQuality || 0.9;
+    const _flat = document.createElement('canvas');
+    _flat.width = canvas.width; _flat.height = canvas.height;
+    const _fctx = _flat.getContext('2d');
+    _fctx.fillStyle = '#ffffff'; _fctx.fillRect(0, 0, _flat.width, _flat.height);
+    _fctx.drawImage(canvas, 0, 0);
+    return { url: _flat.toDataURL('image/jpeg', q), w: outW, h: outH, aspect: box.aspect, landscape: box.landscape };
+  } finally {
+    canvas.width = saved.canvasW;
+    canvas.height = saved.canvasH;
+    S.view.zoom = saved.zoom; S.view.panX = saved.panX; S.view.panY = saved.panY;
+    if (S.ui) {
+      if (saved.activePartId !== undefined) S.ui.activePartId = saved.activePartId;
+      if (saved.activeFloorId !== undefined) S.ui.activeFloorId = saved.activeFloorId;
+      S.ui.selectedRoomId = saved.selectedRoomId; S.ui.selectedStripId = saved.selectedStripId;
+      S.ui.selectedStripIds = saved.selectedStripIds; S.ui.selectedCableId = saved.selectedCableId;
+      S.ui.selectedMatId = saved.selectedMatId; S.ui.selectedMatPathId = saved.selectedMatPathId;
+      S.ui.selectedWallId = saved.selectedWallId; S.ui.selectedHindringId = saved.selectedHindringId;
+      S.ui.selectedAnnot = saved.selectedAnnot; S.ui.selectedFoilFreeId = saved.selectedFoilFreeId;
+      S.ui.selectedZoneId = saved.selectedZoneId; S.ui.selectedPlateId = saved.selectedPlateId;
+      S.ui.selectedAluboardId = saved.selectedAluboardId; S.ui.selectedStairId = saved.selectedStairId;
+      S.ui.selectedDimId = saved.selectedDimId; S.ui.selectedBg = saved.selectedBg;
+      S.ui.showGrid = saved.showGrid; S.ui._pdfMode = saved.pdfMode; S.ui._pdfOverview = saved.pdfOverview;
+      S.ui._pdfScaleMmPerCm = saved.pdfScaleMmPerCm; S.ui.theme = saved.theme;
+    }
+    if (typeof markDirty === 'function') markDirty();
+    if (typeof render === 'function') render();
+  }
 }
 
 // STEG 6 (Kenneth 19.08.2026, oppløsning på lange trapper): kjernen som faktisk tegner en trapp
