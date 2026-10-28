@@ -5413,11 +5413,22 @@ function _clipChainToPoly(pts, poly, keep) {
 // sin margin-kilde (`_effectiveMarginCm`) — ikke en ny klippfunksjon.
 function _reserveClipToRoom(res, room) {
   if (!room || !room.points || room.points.length < 3) return res.totalLength_cm || 0;
-  const margin = _effectiveMarginCm(res.productId, room.id);
+  let margin = _effectiveMarginCm(res.productId, room.id);
+  // 157: på et fryserom ligger hovedkabelen ½ CC fra veggen og reserven kan ligge RESERVE_OFFSET
+  // nærmere (15 mot 20 cm) — fortsatt innenfor rommet. Klipper vi mot hovedkabelens margin, blir
+  // akkurat dette løpet kuttet, så grensen flyttes tilsvarende.
+  if (_isFryserom(room) && res._frysMarginCm != null) margin = Math.max(0, margin - _reserveOffsetCm(res.spacing_cm));   // bare 157-utlegg (stemplet); eldre beholder margin som før
   const inset = (typeof _offsetPolygon === 'function') ? _offsetPolygon(room.points, margin) : room.points;   // samme innsett motoren bruker (:17237)
   const poly = (inset && inset.length >= 3) ? inset : room.points;
   const keep = (x, y) => (typeof ptInPoly === 'function') ? ptInPoly(x, y, poly) : true;
   let len = 0;
+  // 157: på et fryserom skal ½ CC-marginen gjøre klippingen overflødig. Klipper den likevel, er det
+  // en feil vi vil se — ikke noe som skjules.
+  if (_isFryserom(room)) {
+    let ute = 0;
+    for (const el of (res.pathEls || [])) for (const q of [el.a, el.b, el.from, el.to, ...(el.pts || [])]) if (q && !keep(q.x, q.y)) ute++;
+    if (ute) console.warn('[157] fryserom «' + room.name + '»: reservekabelen ble klippet (' + ute + ' punkt utenfor innsatt polygon, margin ' + margin + ' cm) — hovedkabelens margin er for liten');
+  }
   if (res.pathEls && res.pathEls.length) {
     // 156: KLIPP PER DELSTREKNING. Geo-motoren (070/083) leverer hele banen som ÉN `uturn`-kjede;
     // «behold elementet bare hvis alle punkter er inne» kastet derfor hele reserven når ytterste
@@ -33853,8 +33864,34 @@ function _cableSwapToBetter(productId) {
   else if (typeof _placeCableProduct === 'function') _placeCableProduct(productId, null, null);
 }
 
+// 157: fryserom legges ut med margin = ½ CC. Start på standard-CC / 2; blir CC-en større enn det
+// (arealet gir CC = m² / lengde × 100), økes marginen til ½ den CC-en og utlegget lages på nytt.
+// Større margin → mindre areal → mindre CC, så følgen konvergerer (MÅLT, se docs/157/RAPPORT.md).
+function _autoFillFryserom(roomId, productId) {
+  let m = FRYSEROM.ccStandardCm / 2, cable = null, used = m;   // produktets minimum vinner uansett i `_effectiveMarginCm`
+  try {
+    for (let i = 0; i < 6; i++) {
+      used = m;
+      _frysMarginOverride = { roomId, cm: m };
+      cable = _autoFillCableImpl(roomId, productId);
+      if (!cable) return null;
+      const need = (cable.spacing_cm || 0) / 2;
+      if (need <= m + 0.05) break;
+      m = need;
+    }
+  } finally { _frysMarginOverride = null; }
+  // Stemples med marginen utlegget FAKTISK ble laget med (ikke den siste kandidaten, hvis følgen ikke konvergerte).
+  if (cable) {
+    cable._frysMarginCm = used;
+    if (cable.spacing_cm / 2 > used + 0.05) console.warn('[157] fryserom: margin ' + used.toFixed(1) + ' cm konvergerte ikke mot ½ CC (' + (cable.spacing_cm / 2).toFixed(1) + ' cm)');
+  }
+  return cable;
+}
+
 function autoFillCable(roomId, productId) {
-  const cable = _autoFillCableImpl(roomId, productId);
+  const _rm = S.rooms.find(r => r.id === roomId);
+  const cable = (_rm && _isFryserom(_rm) && _isCableProductId(productId))
+    ? _autoFillFryserom(roomId, productId) : _autoFillCableImpl(roomId, productId);
   if (cable) {
     const room = S.rooms.find(r => r.id === roomId);
     const roomType = room ? _classifyCableRoom(room, roomId) : '?';
@@ -42253,6 +42290,52 @@ function _reserveCableRegressionTest() {
       !gOld || !gOld.pathEls.length || gOld.drawnLength_cm < 0.5 * _glen, gOld && gOld.pathEls.length);
     window._clipChainToPoly = _clipSaved;
     _invalidateCableCache();
+
+    // ─── I — 157: fryserom, veggmargin = ½ CC ───
+    const RI = 995002;
+    S.rooms.push({ id: RI, name: 'Frys 157', floorId: null, partId: 1, shape: 'rect', wallThicknessCm: 0,
+      points: [{x:1000,y:0},{x:1700,y:0},{x:1700,y:500},{x:1000,y:500}], walls: [], dims: [], area: 350000,
+      roomType: 'fryserom', targetWm2: 25, reserveCable: true });
+    S.cables = [];
+    // Produktets gulv: 5 cm når kategorien er «cable» (virkelig app); testen leser det i stedet for å anta,
+    // så den ikke avhenger av at kategoriene er lastet.
+    S.rooms.find(r => r.id === RI).roomType = 'bad';
+    const FLOOR_I = _effectiveMarginCm(CAB.id, RI);
+    S.rooms.find(r => r.id === RI).roomType = 'fryserom';
+    check('I: ikke-fryserom har margin 5 (cable-kategori) — uendret av 157', true,
+      FLOOR_I === (_productModuleType(CAB.id) === 'cable' ? 5 : FLOOR_I) && FLOOR_I <= 5, FLOOR_I);
+    check('I: ingen kabel ennå → margin = standard-CC 40 / 2 = 20', 20, _effectiveMarginCm(CAB.id, RI) === 20, _effectiveMarginCm(CAB.id, RI));
+    const _w157 = []; const _cw = console.warn; console.warn = (...a) => { _w157.push(a.join(' ')); };
+    let c157;
+    try { c157 = autoFillCable(RI, CAB.id); } finally { console.warn = _cw; }
+    check('I: auto-utlegg finnes og er stemplet', true, !!c157 && c157._frysMarginCm != null, c157 && c157._frysMarginCm);
+    if (c157) {
+      c157.id = S.counters.nextCableId++; S.cables.push(c157); _invalidateCableCache();
+      const mI = _effectiveMarginCm(CAB.id, RI);
+      check('I: margin ≥ ½ CC (stemplet margin brukes)', true, mI >= c157.spacing_cm / 2 - 0.06 && mI === c157._frysMarginCm, mI + ' mot CC ' + c157.spacing_cm);
+      const insI = _offsetPolygon(S.rooms.find(r => r.id === RI).points, mI - 0.01);   // flyttallstoleranse
+      const ptsOf = c => { const a = []; for (const e of (c.pathEls || [])) { if (e.pts) a.push(...e.pts); if (e.a) a.push(e.a, e.b); } return a; };
+      const mainI = S.cables.find(c => c.roomId === RI && !c.reserve), resI = S.cables.find(c => c.roomId === RI && c.reserve);
+      check('I: hovedkabel har 0 punkter utenfor innsatt polygon', 0, ptsOf(mainI).filter(q => !ptInPoly(q.x, q.y, insI)).length === 0, ptsOf(mainI).length);
+      const rp = resI ? ptsOf(resI) : [];
+      check('I: reserven finnes og har 0 punkter utenfor rommet', true, !!resI && rp.length > 0
+        && rp.every(q => ptInPoly(q.x, q.y, S.rooms.find(r => r.id === RI).points)), rp.length);
+      check('I: reserven er IKKE klippet (ingen advarsel, full tegnet lengde)', true,
+        !_w157.length && resI && resI.drawnLength_cm >= 0.99 * mainI.totalLength_cm, (resI && resI.drawnLength_cm) + ' / ' + (_w157[0] || 'ingen advarsel'));
+      // CC 40 → 20; CC 8 → produktets minimum (5) vinner
+      mainI._frysMarginCm = 20; _invalidateCableCache();
+      check('I: CC 40 gir margin 20 cm', 20, _effectiveMarginCm(CAB.id, RI) === 20, _effectiveMarginCm(CAB.id, RI));
+      mainI._frysMarginCm = 4; _invalidateCableCache();
+      check('I: CC 8 → ½ CC = 4, produktets minimum vinner når det er høyere (5 med cable-kategori)', Math.max(FLOOR_I, 4), _effectiveMarginCm(CAB.id, RI) === Math.max(FLOOR_I, 4), _effectiveMarginCm(CAB.id, RI));
+      delete mainI._frysMarginCm; _invalidateCableCache();
+      check('I: eldre utlegg uten stempel beholder margin som før', FLOOR_I, _effectiveMarginCm(CAB.id, RI) === FLOOR_I, _effectiveMarginCm(CAB.id, RI));
+    }
+    // kontroll: andre romtyper har uendret margin
+    S.rooms.find(r => r.id === RI).roomType = 'bad'; _invalidateCableCache();
+    check('I: bad (ikke fryserom) har uendret margin', FLOOR_I, _effectiveMarginCm(CAB.id, RI) === FLOOR_I, _effectiveMarginCm(CAB.id, RI));
+    check('I: RESERVE_OFFSET_CM er fortsatt 5', 5, RESERVE_OFFSET_CM === 5, RESERVE_OFFSET_CM);
+    check('I: ccMinCm 30 og ccStandardCm 40 uendret', true,
+      FRYSEROM.ccStandardCm === 40 && _ROOMTYPE_HARDCODED.fryserom.ccMinCm === 30, FRYSEROM.ccStandardCm);
   } finally {
     HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
     S.rooms = saved.rooms; S.cables = saved.cables; S.mats = saved.mats; S.strips = saved.strips;
@@ -95633,15 +95716,45 @@ function _roomWallMarginCm(roomId) {
   return _userPrefs().wallMarginCm;
 }
 
+// 157 · FRYSEROM: veggmargin = ½ CC. Sirkelen (margin → areal → CC → margin) brytes slik:
+//  • UNDER utlegg (`_autoFillFryserom`) ligger kandidatmarginen i `_frysMarginOverride`.
+//  • Et NYTT utlegg stemples med marginen det ble laget med (`cable._frysMarginCm`) — den leses
+//    etterpå, så reserve-klipping/validering ser samme margin som utlegget.
+//  • Uten kabel i rommet: romtypens standard-CC / 2 (ingen sirkel — ingen CC å vente på).
+//  • Kabel UTEN stempel = lagret før 157: `null` → margin som før (5 cm). Gamle utlegg endres ikke.
+// Kabel = kategorien sier «cable», eller produktet har fast kabellengde (kategoriene kan mangle i
+// en kald last — da ville fryseromsregelen ellers stilltiende falle bort).
+function _isCableProductId(productId) {
+  if (_productModuleType(productId) === 'cable') return true;
+  const p = HEATING_PRODUCTS.find(x => x.id === productId);
+  return !!(p && p.cable_length_m > 0);
+}
+let _frysMarginOverride = null;   // { roomId, cm }
+function _frysMarginCm(roomId) {
+  if (_frysMarginOverride && _frysMarginOverride.roomId === roomId) return _frysMarginOverride.cm;
+  const room = S.rooms.find(r => r.id === roomId);
+  if (!room || !_isFryserom(room)) return null;
+  const mains = S.cables.filter(c => c.roomId === roomId && !c.reserve);
+  if (!mains.length) return FRYSEROM.ccStandardCm / 2;
+  if (mains.some(c => c._frysMarginCm == null)) return null;
+  return Math.max(...mains.map(c => c._frysMarginCm));
+}
+
 function _effectiveMarginCm(productId, roomId) {
   if (roomId ? _roomModuleType(roomId) === 'snow' : _isSnowModule()) return 5;
   // Hard 5 cm wall margin for indoor heating CABLE and MAT (like snow) — guarantees
   // 5 cm even when a DB product is missing min_wall_margin_mm. Foil/plate keep their
   // own supplier margin (don't force 5 cm on them).
   const mt = _productModuleType(productId);
-  const base = (mt === 'cable' || mt === 'mat')
+  let base = (mt === 'cable' || mt === 'mat')
     ? Math.max(5, _productMinMarginCm(productId))
     : _productMinMarginCm(productId);
+  // 157: fryserom — kabelen skal ligge ½ CC fra veggen, så reservekabelen (5 cm forskjøvet)
+  // også er innenfor. Produktets minimum er fortsatt den harde grensen (`Math.max`).
+  if (roomId != null && _isCableProductId(productId)) {
+    const fm = _frysMarginCm(roomId);
+    if (fm != null) base = Math.max(base, fm);
+  }
   // 023: brukerens/rommets ønske kan bare ØKE avstanden. «Aldri mindre enn tillatt» er hele
   // poenget — produktets minimum er et leverandørkrav, ikke en preferanse.
   const wish = _roomWallMarginCm(roomId);
