@@ -5191,6 +5191,13 @@ function _rebuildActiveFloorRoomIds() {
   if (fid != null) filtered = filtered.filter(r => r.floorId === fid);
   _activeFloorRoomIds = new Set(filtered.map(r => r.id));
 }
+/** 158: rom på plantegningen som ikke er valgt for egen romside (S.ui._pdfMuted = Set av room.id)
+ *  tegnes dempet og uten produkter. Kun satt av _renderFloorToImage. */
+function _pdfRoomMuted(roomId) {
+  const m = S.ui && S.ui._pdfMuted;
+  return !!(m && m.has(roomId));
+}
+
 /** Returns true if a roomId belongs to the active floor/part. */
 function _roomIdOnActiveFloor(roomId) {
   if (!_activeFloorRoomIds) return true; // no floor/part filter
@@ -6137,17 +6144,18 @@ function drawRooms() {
     if (room.id === S.ui.selectedRoomId) continue;
     if (!room.points || room.points.length < 3) continue;
     const spts = room.points.map(p => w2s(p.x, p.y));
+    const muted = _pdfRoomMuted(room.id);   // 158: rom uten varme på plantegningen — lysere, uten produkter
 
     ctx.beginPath();
     ctx.moveTo(spts[0].x, spts[0].y);
     for (let i=1; i<spts.length; i++) ctx.lineTo(spts[i].x, spts[i].y);
     ctx.closePath();
-    ctx.fillStyle   = room.shape==='outer-wall' ? _lc('rgba(0,60,130,0.1)','rgba(71,180,255,0.07)') : _lc('rgba(0,100,200,0.07)','rgba(71,180,255,0.04)');
+    ctx.fillStyle   = muted ? 'rgba(0,100,200,0.025)' : room.shape==='outer-wall' ? _lc('rgba(0,60,130,0.1)','rgba(71,180,255,0.07)') : _lc('rgba(0,100,200,0.07)','rgba(71,180,255,0.04)');
     ctx.fill();
     const _effThick = room.wallThicknessCm || (room.shape==='outer-wall' ? 20 : 0);
     if (_effThick > 0 && room.walls.length >= 3) {
-      const _dStroke = _lc('rgba(40,60,100,0.5)','rgba(200,208,224,0.35)');
-      const _dFill = _lc('rgba(40,60,100,0.08)','rgba(200,208,224,0.06)');
+      const _dStroke = muted ? 'rgba(40,60,100,0.22)' : _lc('rgba(40,60,100,0.5)','rgba(200,208,224,0.35)');
+      const _dFill = muted ? 'rgba(40,60,100,0.03)' : _lc('rgba(40,60,100,0.08)','rgba(200,208,224,0.06)');
       const outerPts = computeWallOutline(room);
       if (outerPts) {
         const sOuter = outerPts.map(p => w2s(p.x, p.y));
@@ -6173,7 +6181,7 @@ function drawRooms() {
         ctx.strokeStyle = _dStroke; ctx.lineWidth = 0.8; ctx.setLineDash([3,3]); ctx.stroke(); ctx.setLineDash([]);
       }
     } else {
-      ctx.strokeStyle = _lc('rgba(40,60,100,0.5)','rgba(200,208,224,0.35)');
+      ctx.strokeStyle = muted ? 'rgba(40,60,100,0.22)' : _lc('rgba(40,60,100,0.5)','rgba(200,208,224,0.35)');
       ctx.lineWidth = 1.5; ctx.setLineDash([]); ctx.stroke();
     }
 
@@ -6188,12 +6196,12 @@ function drawRooms() {
       const fsz = ov ? Math.round(_pdfOverviewFontPx() * 1.2) : Math.max(10, Math.min(13, 11*S.view.zoom));
       const off = ov ? Math.round(fsz * 0.7) : (S.view.zoom > 0.38 ? 9 : 0);
       ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillStyle = ov ? 'rgba(30,45,70,0.95)' : _lc('rgba(50,65,90,0.85)','rgba(155,165,185,0.7)');
+      ctx.fillStyle = muted ? 'rgba(30,45,70,0.5)' : ov ? 'rgba(30,45,70,0.95)' : _lc('rgba(50,65,90,0.85)','rgba(155,165,185,0.7)');
       ctx.font = `${ov ? 600 : 500} ${fsz}px 'Space Grotesk',sans-serif`;
       ctx.fillText(room.name, cx, cy - off);
       if (!ov) _drawPlanAreaBadge(room, cx, cy - off, fsz, ctx.measureText(room.name).width);
       if (room.area > 0 && (ov || S.view.zoom > 0.38)) {
-        ctx.fillStyle = ov ? 'rgba(60,75,100,0.9)' : _lc('rgba(70,85,110,0.75)','rgba(100,110,130,0.65)');
+        ctx.fillStyle = muted ? 'rgba(60,75,100,0.45)' : ov ? 'rgba(60,75,100,0.9)' : _lc('rgba(70,85,110,0.75)','rgba(100,110,130,0.65)');
         ctx.font = `${Math.max(9,fsz*0.82)}px ${CANVAS_NUM_FONT}`;
         // Plantegningen viser NETTO (samme tall som romlista under bildet og Romoversikten).
         const arealTxt = ov ? (_roomNetAreaCm2(room)/10000).toFixed(1)+' m²' : (room.area/10000).toFixed(2)+' m²';
@@ -23865,7 +23873,7 @@ function _drawMatPathCable(mp, coverCm, opts) {
 }
 
 function _drawMatPathObj(mp, active) {
-  if (!_roomIdOnActiveFloor(mp.roomId)) return;
+  if (!_roomIdOnActiveFloor(mp.roomId) || _pdfRoomMuted(mp.roomId)) return;
   const { NET } = _matFreeConsts(_matFreeProdOf(mp));
   const runs = _matFreeDeriveRuns(mp);
   // Committet matte trimmes mot valgt katalog-rull (dekket vs udekket); under tegning ingen trim.
@@ -44005,7 +44013,7 @@ function drawStrips() {
   _stripLabelGeom = {};
   _placedAutoLabelBoxes = [];
   for (const strip of S.strips) {
-    if (!_roomIdOnActiveFloor(strip.roomId)) continue;
+    if (!_roomIdOnActiveFloor(strip.roomId) || _pdfRoomMuted(strip.roomId)) continue;
     const room = S.rooms.find(r => r.id === strip.roomId);
     const nettoCm = _stripNettoCm(strip);
     if (!room || nettoCm <= 0) continue;
@@ -44215,7 +44223,7 @@ function drawStrips() {
 // (oransje, samme _lc-tema-par) så den fortsatt leses som folie, bare rotert.
 function drawFoilFree() {
   for (const ff of (S.foilFree || [])) {
-    if (!_roomIdOnActiveFloor(ff.roomId)) continue;
+    if (!_roomIdOnActiveFloor(ff.roomId) || _pdfRoomMuted(ff.roomId)) continue;
     const corners = _foilFreeCorners(ff);
     if (!corners) continue;
     const isSel = S.ui.selectedFoilFreeId === ff.id;
@@ -44971,7 +44979,7 @@ function _drawCableLabelOnly(cable, room) {
 function drawCables() {
   _cableLabelBounds = {}; _cableLabelGeom = {};   // rebuild per render (v2)
   for (const cable of S.cables) {
-    if (!_roomIdOnActiveFloor(cable.roomId)) continue;
+    if (!_roomIdOnActiveFloor(cable.roomId) || _pdfRoomMuted(cable.roomId)) continue;
     const room = S.rooms.find(r => r.id === cable.roomId);
     if (!room) continue;
     if (cable.labelOnly) { _drawCableLabelOnly(cable, room); continue; }
@@ -45593,7 +45601,7 @@ function drawMats() {
   _matRectLabelBounds = {}; _matRectLabelGeom = {};   // rebuild per render (v2), som drawStrips/drawCables
   for (const mat of S.mats) {
     if (mat.labelOnly) continue;   // «kun label»-matte (Hurtig prosjektering) har ingen geometri
-    if (!_roomIdOnActiveFloor(mat.roomId)) continue;
+    if (!_roomIdOnActiveFloor(mat.roomId) || _pdfRoomMuted(mat.roomId)) continue;
     const isSel = S.ui.selectedMatId === mat.id;
     const isHov = !isSel && _hoveredMatId === mat.id;
     // FEIL 2 (Kenneth 19.08.2026): farge + label + serpentin vises PERMANENT for hver matte,
@@ -46187,6 +46195,7 @@ function drawAluboard() {
     const room = S.rooms.find(r => r.id === ab.roomId);
     if (!room) continue;
     if (typeof _roomOnActiveFloor === 'function' && !_roomOnActiveFloor(room)) continue;
+    if (_pdfRoomMuted(ab.roomId)) continue;
     const L = _aluboardCompute(room, ab.direction);
     // felt-omriss
     const c0 = w2s(L.minX + _ALU.EDGE, L.minY + _ALU.EDGE);
@@ -46225,7 +46234,7 @@ function drawAluboard() {
 
 function drawPlates() {
   for (const plate of S.plates) {
-    if (!_roomIdOnActiveFloor(plate.roomId)) continue;
+    if (!_roomIdOnActiveFloor(plate.roomId) || _pdfRoomMuted(plate.roomId)) continue;
     const isSel = S.ui.selectedPlateId === plate.id;
     const isHov = !isSel && _hoveredPlateId === plate.id;
     const isOtherRoom = plate.roomId !== S.ui.selectedRoomId;
@@ -46415,6 +46424,7 @@ let _stairDragging = false;
 let _stairDragOff = {x:0,y:0};
 
 function drawStairs() {
+  if (S.ui?._pdfOverview) return;   // 158: trapper har egne sider og hører ikke hjemme på plantegningen
   const pid = S.ui.activePartId;
   for (const stair of S.stairs) {
     // Filter by active part
@@ -48587,7 +48597,7 @@ function getStairCableViolations(stairId) {
 // ─── ZONES (forbidden / preferred) ──────────────────────────
 function drawZones() {
   for (const zone of S.zones) {
-    if (!_roomIdOnActiveFloor(zone.roomId)) continue;
+    if (!_roomIdOnActiveFloor(zone.roomId) || _pdfRoomMuted(zone.roomId)) continue;
     if (!zone.points || zone.points.length < 3) continue;
     const isSel = zone.id === S.ui.selectedZoneId;
     const isForbidden = zone.type === 'forbidden';
@@ -79027,7 +79037,9 @@ function _expPreviewSection(kind) {
   } else if (kind === 'floorplan') {
     // 154: bildet av én etasje om gangen, ‹ › blar når det er flere. Samme bilde som PDF-en
     // (_renderFloorToImage), samme rekkefølge (_pdfFloorplanGroups).
-    const groups = _pdfFloorplanGroups(null);
+    const _fpChk = [...document.querySelectorAll('.exp-room-cb')];
+    const _fpSelP = _fpChk.length ? new Set(_fpChk.filter(c => c.checked).map(c => +c.value)) : null;   // 158: som PDF-en
+    const groups = _pdfFloorplanGroups(_fpSelP);
     if (!groups.length) {
       html = box('Plantegning', card('<div style="color:var(--muted);font-size:13px">Ingen tegnede rom å vise.</div>'));
     } else {
@@ -79035,7 +79047,7 @@ function _expPreviewSection(kind) {
       _expFloorplanIdx = idx;
       const g = groups[idx];
       let imgData = '';
-      try { const r = _renderFloorToImage(g.floor, { box: g.box, targetWidthMm: g.box.landscape ? 267 : 180 }); imgData = r && r.url ? r.url : ''; } catch (e) { console.warn('floorplan preview failed:', e); }
+      try { const r = _renderFloorToImage(g.floor, { box: g.box, selIds: _fpSelP, targetWidthMm: g.box.landscape ? 267 : 180 }); imgData = r && r.url ? r.url : ''; } catch (e) { console.warn('floorplan preview failed:', e); }
       const fl = g.floor ? S.floors.find(f => f.id === g.floor.id) : null;
       const rowsF = rooms.filter(r => !r.listDraft && (fl ? r.floorId === fl.id : true));
       let nettoF = 0, wF = 0;
@@ -79714,6 +79726,35 @@ function _pdfExportSmokeTest() {
           const syk = await kjør();
           window._pdfFloorplanGroups = ekteGrupper;
           check('«' + navn + '»: VAKSINE — fjernes gruppene, forsvinner siden', 'ingen', syk.ok && !smokeTekst.some(t => t.startsWith('Plantegning')), smokeTekst.filter(t => t.startsWith('Plantegning')).length);
+          // 158: rom uten varme dempes uten produkter, trapper holdes utenfor, tom etasje gir ingen side.
+          const fl1 = S.floors.find(f => f.id === 991951);
+          const b0 = _pdfFloorBox(fl1);
+          const bildeAlle = _renderFloorToImage(fl1, { box: b0 }).url;
+          const kunStue = new Set([RID + 1]);      // Bad (med kabel) er ikke valgt → dempet
+          const dempet = _renderFloorToImage(fl1, { box: b0, selIds: kunStue }).url;
+          const kabler = S.cables; S.cables = []; _invalidateCableCache && _invalidateCableCache();
+          const dempetUtenKabel = _renderFloorToImage(fl1, { box: b0, selIds: kunStue }).url;
+          const alleUtenKabel = _renderFloorToImage(fl1, { box: b0 }).url;
+          S.cables = kabler; _invalidateCableCache && _invalidateCableCache();
+          check('«' + navn + '»: 158 sanity — kabelen tegnes når rommet er valgt', 'ulike', bildeAlle !== alleUtenKabel, bildeAlle === alleUtenKabel);
+          check('«' + navn + '»: 158 rom uten varme tegnes uten produkter', 'lik', dempet === dempetUtenKabel, dempet === dempetUtenKabel);
+          check('«' + navn + '»: 158 dempet rom ser annerledes ut enn valgt', 'ulike', dempet !== bildeAlle, dempet !== bildeAlle);
+          check('«' + navn + '»: 158 demping ryddes etter tegning', 'null', !S.ui._pdfMuted, String(S.ui._pdfMuted));
+          const st158 = _createStairObj({ name: 'T158', width_cm: 100, step_depth_cm: 30, step_height_cm: 17, step_count: 8,
+            edgeMargin_cm: 5, stepCC_cm: 10, cableSpacing_cm: 10, riserOffset_cm: 2, noseOffset_cm: 2 });
+          st158.x_cm = 9000; st158.y_cm = 9000;
+          const gStairs = S.stairs; S.stairs = [st158];
+          const b1 = _pdfFloorBox(fl1);
+          check('«' + navn + '»: 158 utsnittet er uavhengig av trapper', b0.worldW + 'x' + b0.worldH, b1.worldW === b0.worldW && b1.worldH === b0.worldH, b1.worldW + 'x' + b1.worldH);
+          const medTrapp = _renderFloorToImage(fl1, { box: b1 }).url;
+          check('«' + navn + '»: 158 trappen tegnes ikke på plantegningen', 'lik', medTrapp === bildeAlle, medTrapp === bildeAlle);
+          // Etasje med bare trapp (ingen rom): ingen plantegningsside.
+          S.floors.push({ id: 991952, name: '3. etasje', order: 2, collapsed: false, partId: null });
+          const tomBox = _pdfFloorBox(S.floors[S.floors.length - 1]);
+          const sTom = await kjør();
+          const planTom = smokeTekst.filter(t => t.startsWith('Plantegning'));
+          check('«' + navn + '»: 158 etasje uten rom gir ingen plantegningsside', 'null / 2 sider', tomBox === null && planTom.length === 2 && !planTom.some(t => t.includes('3. etasje')), planTom.join(','));
+          S.floors.pop(); S.stairs = gStairs;
         }
         if (navn.indexOf('innendørs rom med kabel') === 0) {
           // 154: ett rom uten etasjer → tittelen er bare «Plantegning» (uten etasjenavn).
@@ -80759,7 +80800,7 @@ async function exportPDF(opts) {
       if (imgH > availImgH) { imgH = Math.max(40, availImgH); imgW2 = imgH / box.aspect; }
       const imgX = M + (pw_f - imgW2) / 2;
       try {
-        const imgRes = _renderFloorToImage(grp.floor, { box, targetWidthMm: imgW2 });
+        const imgRes = _renderFloorToImage(grp.floor, { box, selIds: _fpSel, targetWidthMm: imgW2 });
         if (imgRes && imgRes.url) doc.addImage(imgRes.url, 'JPEG', imgX, y, imgW2, imgH);
       } catch (e) { console.warn('PDF floorplan image failed:', e); }
       y += imgH + 3;
@@ -82421,8 +82462,8 @@ function _renderRoomToImage(room, opts) {
 // ═══ 154 · PLANTEGNING PER ETASJE (Kenneth 28.10.2026) ═════════════════════════════════════
 // «Et oversiktsbilde av alle rommene … før rommene kommer.» Én side per etasje rett etter
 // forsiden/prosjektoversikten. Samme mekanisme som _renderRoomToImage (midlertidig view på
-// hovedlerretet, _pdfMode, gjenoppretting), men bbox = alle tegnede rom på etasjen + trappene
-// drawStairs ville tegnet med etasjens del aktiv, pad 100 cm, og S.ui._pdfOverview = true:
+// hovedlerretet, _pdfMode, gjenoppretting), men bbox = alle tegnede rom på etasjen (158: trapper utelatt),
+// pad 100 cm, og S.ui._pdfOverview = true:
 //   • romnavn + netto areal vises i hvert rom (drawRooms pass 1, papirstørrelse)
 //   • målkjeder utenfor rommene tegnes ikke (drawAllDimAnnotations)
 //   • ellers som romsidene: produkter, hindringer, soner, bakgrunn — infokort/gizmo/hjørner
@@ -82438,10 +82479,6 @@ function _pdfFloorRooms(floor) {
   return (S.rooms || []).filter(r => !r.listDraft && !r.listMode && r.points && r.points.length >= 3
     && (fid == null || r.floorId === fid));
 }
-// Trapper har partId, ikke floorId — ta med dem drawStairs tegner med etasjens del aktiv.
-function _pdfFloorStairs(pid) {
-  return (S.stairs || []).filter(st => !(pid && st.partId && st.partId !== pid));
-}
 // Én kilde for bbox + sideformat (samme grunn som _pdfRoomAspect: bredden bildet plasseres
 // med må være kjent FØR rendringen, og aspektet er bare geometri).
 function _pdfFloorBox(floor) {
@@ -82454,16 +82491,9 @@ function _pdfFloorBox(floor) {
     if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
     if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
   }
-  const stairs = _pdfFloorStairs(pid);
-  for (const st of stairs) {
-    let b; try { b = _stairBounds(st); } catch (e) { b = null; }
-    if (!b) continue;
-    minX = Math.min(minX, b.x); maxX = Math.max(maxX, b.x + b.w);
-    minY = Math.min(minY, b.y); maxY = Math.max(maxY, b.y + b.h);
-  }
   const worldW = Math.max(1, maxX - minX) + 2 * PDF_FLOOR_PAD_CM;
   const worldH = Math.max(1, maxY - minY) + 2 * PDF_FLOOR_PAD_CM;
-  return { rooms, stairs, pid, minX, maxX, minY, maxY, worldW, worldH,
+  return { rooms, pid, minX, maxX, minY, maxY, worldW, worldH,
     aspect: worldH / worldW, landscape: worldW > worldH };
 }
 
@@ -82494,6 +82524,8 @@ function _renderFloorToImage(floor, opts) {
   opts = opts || {};
   const box = opts.box || _pdfFloorBox(floor);
   if (!box) return null;
+  // 158: rom som ikke er valgt for egen romside (opts.selIds = Set, null = alle valgt) dempes.
+  const muted = opts.selIds ? new Set(box.rooms.filter(r => !opts.selIds.has(r.id)).map(r => r.id)) : null;
   const saved = {
     zoom: S.view.zoom, panX: S.view.panX, panY: S.view.panY,
     activePartId: S.ui?.activePartId, activeFloorId: S.ui?.activeFloorId,
@@ -82505,7 +82537,7 @@ function _renderFloorToImage(floor, opts) {
     selectedZoneId: S.ui?.selectedZoneId, selectedPlateId: S.ui?.selectedPlateId,
     selectedAluboardId: S.ui?.selectedAluboardId, selectedStairId: S.ui?.selectedStairId,
     selectedDimId: S.ui?.selectedDimId, selectedBg: S.ui?.selectedBg,
-    showGrid: S.ui?.showGrid, pdfMode: S.ui?._pdfMode, pdfOverview: S.ui?._pdfOverview,
+    showGrid: S.ui?.showGrid, pdfMode: S.ui?._pdfMode, pdfOverview: S.ui?._pdfOverview, pdfMuted: S.ui?._pdfMuted,
     pdfScaleMmPerCm: S.ui?._pdfScaleMmPerCm, theme: S.ui?.theme,
     canvasW: canvas.width, canvasH: canvas.height,
   };
@@ -82524,6 +82556,7 @@ function _renderFloorToImage(floor, opts) {
       S.ui.showGrid = false;
       S.ui._pdfMode = true;
       S.ui._pdfOverview = true;
+      S.ui._pdfMuted = muted && muted.size ? muted : null;
       S.ui._pdfScaleMmPerCm = targetWmm / box.worldW;   // 051: papirstørrelse på etikettene
       S.ui.theme = 'light';
       // Hele filtertilstanden fra etasjen (samme lærdom som _renderRoomToImage, MEKANISME 1/2).
@@ -82562,7 +82595,7 @@ function _renderFloorToImage(floor, opts) {
       S.ui.selectedZoneId = saved.selectedZoneId; S.ui.selectedPlateId = saved.selectedPlateId;
       S.ui.selectedAluboardId = saved.selectedAluboardId; S.ui.selectedStairId = saved.selectedStairId;
       S.ui.selectedDimId = saved.selectedDimId; S.ui.selectedBg = saved.selectedBg;
-      S.ui.showGrid = saved.showGrid; S.ui._pdfMode = saved.pdfMode; S.ui._pdfOverview = saved.pdfOverview;
+      S.ui.showGrid = saved.showGrid; S.ui._pdfMode = saved.pdfMode; S.ui._pdfOverview = saved.pdfOverview; S.ui._pdfMuted = saved.pdfMuted;
       S.ui._pdfScaleMmPerCm = saved.pdfScaleMmPerCm; S.ui.theme = saved.theme;
     }
     if (typeof markDirty === 'function') markDirty();
