@@ -33820,6 +33820,25 @@ function _cableStatusLines(cable, room) {
       handling: { tekst: 'Bytt', fn: `_cableSwapToBetter(${bp.id})` } });
   }
 
+  // ─── 161 · KRYMPET FELT OG LØSE ENDER SIES FRA OM ────────────────────────────────────────
+  // Kabelen ligger uansett (myke avvik), men Kenneth skal se hvorfor kantene er tomme.
+  if (m && m.kantGapCm != null && m.ccFieldCm && m.kantGapCm > m.ccFieldCm + 1) {
+    ut.push({ niva: 'advarsel',
+      tekst: `⚠ Kabelfeltet stopper ${(m.kantGapCm + (m.marginCm || 0)).toFixed(0)} cm fra veggen (kantavstand ${m.marginCm != null ? m.marginCm : '?'} cm)` });
+  }
+  if (m && m.loseEnder > 0) {
+    ut.push({ niva: 'advarsel', tekst: `⚠ ${m.loseEnder} løp slutter midt i rommet uten grunn` });
+  }
+  // 161: låst retning, den andre er renere — tilbys med tall, byttes aldri til av seg selv.
+  if (cable._renereAlt) {
+    const ra = cable._renereAlt;
+    const navn = ra.dir === 'v' ? 'Loddrett' : 'Vannrett';
+    ut.push({ niva: 'advarsel',
+      tekst: `${navn} gir et renere utlegg her (dekning ${Math.round(ra.dek)} % mot ${Math.round(ra.dekNaa)} %, CC ${ra.cc} cm).`,
+      handling: { tekst: 'Vis ' + navn.toLowerCase() + ' i stedet', kind: 'bytt-retning', dir: ra.dir,
+                  fn: `_cableLeggRetning(${cable.id}, '${ra.dir}')` } });
+  }
+
   if (!ut.length && dekn != null) ut.push({ niva: 'ok', tekst: `● ok · dekning ${dekn.toFixed(0)} %` });
   // 080: starten havnet ikke der velgeren sto. Rutens to ender er gitt av geometrien — i et rom
   // der transitten går ut av et hjørne, kan nettopp det hjørnet ikke også være kabelens ende.
@@ -33874,6 +33893,30 @@ function _cableStatusToast(cable, room) {
   const linjer = _cableStatusLines(cable, room).filter(l => l.niva !== 'ok');
   if (!linjer.length || typeof _showToast !== 'function') return;
   _showToast(linjer.map(l => l.tekst).join(' — '), linjer.some(l => l.niva === 'feil') ? 'warn' : 'warn');
+}
+
+// 161 · «Vis loddrett i stedet» fra merknaden om renere retning. Brukeren VELGER retningen her,
+// så velgeren settes (dirExplicit) og kabelen legges på nytt gjennom den vanlige kaskaden —
+// ingen egen vei. Gates som alt annet som skriver: ikke i kundemodus, ikke i lest-bare-vindu.
+function _cableLeggRetning(cableId, dir) {
+  if (S.ui && (S.ui.readOnly || S.ui.kundeMode)) return;
+  const cable = S.cables.find(c => c.id === cableId);
+  if (!cable) return;
+  const room = S.rooms.find(r => r.id === cable.roomId);
+  if (!room) return;
+  S.varmefolie = Object.assign(S.varmefolie || {}, { direction: dir, dirExplicit: true });
+  const fresh = _autoFillCableImpl(cable.roomId, cable.productId, { allowPartial: true });
+  if (!fresh) { if (typeof _showToast === 'function') _showToast('Fikk ikke lagt kabelen i den retningen.', 'warn'); return; }
+  pushUndo();
+  fresh.id = cable.id;
+  S.cables = S.cables.filter(c => c.id !== cable.id);
+  S.cables.push(fresh);
+  S.ui.selectedCableId = fresh.id;
+  _cableViolationsDirty = true;
+  _invalidateCableCache();
+  renderSidebar(); updateCtxBar(); render();
+  if (typeof _scheduleAutoSave === 'function') _scheduleAutoSave();
+  if (typeof _cableStatusToast === 'function') _cableStatusToast(fresh, room);
 }
 
 // «Prøv loddrett likevel»: legg beste kandidat i den retningen brukeren valgte, merket ⚠
@@ -34594,7 +34637,14 @@ function _cableGeometryCheck(cable, room, opts) {
   const ccForCov = ccMed || ccHint || 10;
   let coveragePct = null;
   if (nettoCm2 > 0) {
-    const sig = 'chk:' + cable.roomId + ':' + segs.length + ':' + Math.round(laidCm) + ':' + Math.round(ccForCov * 10) + ':' + Math.round(nettoCm2);
+    // ─── 161 · NØKKELEN MÅ SKILLE VARIANTER MED SAMME LENGDE ────────────────────────────
+    // ⚠ MÅLT på Kenneths rom loddrett `tr`: den holete og den hullfrie varianten på CC 13,72
+    // har samme antall segmenter, samme lengde (69,9 m) og samme CC → samme nøkkel → den
+    // hullfrie ARVET den holetes 94,0 % (sann verdi 96,2 %). Poengsummen og hjørnerundens
+    // «ikke mer enn 3 pp dårligere» leste altså feil tall. En billig geometrisum skiller dem.
+    let _gh = 0;
+    for (const sg of segs) _gh = (_gh + sg.a.x * 31 + sg.a.y * 17 + sg.b.x * 13 + sg.b.y * 7) % 1e9;
+    const sig = 'chk:' + cable.roomId + ':' + segs.length + ':' + Math.round(laidCm) + ':' + Math.round(ccForCov * 10) + ':' + Math.round(nettoCm2) + ':' + Math.round(_gh);
     coveragePct = Math.min(100, _cableCoveredCm2(room, flat, ccForCov, nettoCm2, sig) / nettoCm2 * 100);
   }
 
@@ -34633,6 +34683,7 @@ function _cableGeometryCheck(cable, room, opts) {
   if (coveragePct != null && coveragePct < 95) soft.push({ kind: 'dekning', at: null, value: +coveragePct.toFixed(1),
     msg: `Dekning ${coveragePct.toFixed(0)} % av netto areal (${((1 - coveragePct / 100) * nettoCm2 / 10000).toFixed(2)} m² ligger kaldt).` });
 
+  const _kg161 = _cableKantGap(cable, room, legal);
   const metrics = {
     engine: cable._engine || ((cable.pathEls && cable.pathEls.length) ? 'pathEls' : 'runs'),
     form: (cable.pathEls && cable.pathEls.length) ? 'pathEls' : 'runs',
@@ -34667,10 +34718,19 @@ function _cableGeometryCheck(cable, room, opts) {
     // 19,6 cm i feltet under. Det er to ubrukte baner som finnes i rutenettet.
     wallStripeCm: _cableWallStripe(cable, room, legal),
     // 094 · R-ENDE: hvor mye kortere den verste frie enden er enn naboløpets sving (cm).
-    endeKortCm: _cableEndeKort(cable, room)
+    endeKortCm: _cableEndeKort(cable, room),
+    // 161 · løse endepunkter (fragmentering) og kantgap (vegg → kabelfelt utover kantavstanden)
+    loseEnder: _cableLoseEnder(cable, room, legal),
+    kantGapCm: _kg161 ? +_kg161.maks.toFixed(1) : null,
+    kantGapSider: _kg161 ? _kg161.sider : null
   };
   metrics.wallStripeCC = (metrics.wallStripeCm == null || !metrics.ccFieldCm) ? null
     : +(metrics.wallStripeCm / metrics.ccFieldCm).toFixed(2);
+  metrics.kantGapCC = (metrics.kantGapCm == null || !metrics.ccFieldCm) ? null
+    : +(metrics.kantGapCm / metrics.ccFieldCm).toFixed(2);
+  // 161: begge er MÅL, ikke myke avvik. ⚠ Et `soft`-innslag trekker 2 poeng i `_geoScore` i
+  // ALLE rom, og 161 skal ikke røre rom uten hindring — poengene ligger derfor i `_geoScore`
+  // bak `ctx.hind`, og panelet (`_cableStatusLines`) leser målene direkte.
   if (S.ui && S.ui.debugCableEngine) {
     console.log('[cable-check]', room && room.name, metrics.engine, hard.length ? 'FEIL' : 'ok',
       { hard: hard.map(d => d.kind), soft: soft.map(d => d.kind), metrics });
@@ -34804,6 +34864,108 @@ function _cableEndeKort(cable, room) {
   } catch (e) { return null; }
 }
 
+// ─── 161 · LØSE ENDEPUNKTER (fragmentering) ────────────────────────────────────────────────
+// Kenneth 29.10.2026: «mange bredder stopper midt i rommet — også langt under hindringen, der det
+// ikke er noe i veien». Et løpsende er LØST når (1) det lovlige området på banen fortsetter mer
+// enn én CC forbi enden (svingen CC/2 medregnet), (2) enden ikke ligger inntil en hindring
+// (transitt- og omveisgeometrien fra 072 ligger nettopp der, og er ønsket), og (3) et naboløp i
+// samme bånd går mer enn én CC lenger ut. Krav (3) skiller «bølgete ender» fra en JEVN
+// inntrekking: trekkes alle svinger like mye inn (extraSweep), er ingen ende løs — det måles
+// av `_cableKantGap` under i stedet. Returnerer antall løse ender, null uten geometri.
+function _cableLoseEnder(cable, room, legal) {
+  try {
+    const cl = (cable && cable.centerline) || [];
+    const cc = cable && cable.spacing_cm || 0;
+    if (cl.length < 4 || !(cc > 0) || !legal || !legal.paths || !legal.paths.length) return null;
+    const dir = cable.direction === 'h' ? 'h' : 'v';
+    const pk = dir === 'v' ? 'x' : 'y';          // på tvers av løpene
+    const sk = dir === 'v' ? 'y' : 'x';          // langs løpene
+    const runs = [];
+    for (let i = 0; i + 1 < cl.length; i++) {
+      const a = cl[i], b = cl[i + 1];
+      if (Math.abs(a[pk] - b[pk]) < 0.05 && Math.abs(a[sk] - b[sk]) > cc * 0.5)
+        runs.push({ p: a[pk], lo: Math.min(a[sk], b[sk]), hi: Math.max(a[sk], b[sk]) });
+    }
+    if (runs.length < 3) return 0;
+    const marg = legal.margin || 0;
+    const blk = (legal.blockers || []).map(b => {
+      const xs = b.map(p => p.x), ys = b.map(p => p.y);
+      return { x0: Math.min(...xs) - marg, x1: Math.max(...xs) + marg, y0: Math.min(...ys) - marg, y1: Math.max(...ys) + marg };
+    });
+    const vedHindring = (p, e) => blk.some(b => {
+      const p0 = dir === 'v' ? b.x0 : b.y0, p1 = dir === 'v' ? b.x1 : b.y1;
+      const s0 = dir === 'v' ? b.y0 : b.x0, s1 = dir === 'v' ? b.y1 : b.x1;
+      return p > p0 - 1.5 * cc && p < p1 + 1.5 * cc && e > s0 - 2 * cc && e < s1 + 2 * cc;
+    });
+    let antall = 0;
+    for (const r of runs) {
+      // intervallet løpet ligger i (størst overlapp) — banen kan være delt av en hindring
+      let iv = null, best = -Infinity;
+      for (const [lo, hi] of _geoClipScanline(legal, sk, r.p)) {
+        const o = Math.min(hi, r.hi) - Math.max(lo, r.lo);
+        if (o > best) { best = o; iv = [lo, hi]; }
+      }
+      if (!iv) continue;
+      const krav = Math.min(cc, (r.hi - r.lo) * 0.6);
+      for (const side of [-1, 1]) {
+        const e = side < 0 ? r.lo : r.hi;
+        const L = side < 0 ? iv[0] + cc / 2 : iv[1] - cc / 2;       // der løpet KUNNE sluttet
+        const rest = side < 0 ? e - L : L - e;                       // lovlig område som står igjen
+        if (rest <= cc) continue;                                    // inntil vegg/hindring (± sving)
+        if (vedHindring(r.p, e)) continue;                           // omvei/transitt rundt hindringen
+        const naboUt = runs.some(o => o !== r && Math.abs(o.p - r.p) > cc * 0.3 && Math.abs(o.p - r.p) < cc * 1.6
+          && Math.min(o.hi, r.hi) - Math.max(o.lo, r.lo) > krav
+          && (side < 0 ? o.lo < r.lo - cc : o.hi > r.hi + cc));
+        if (naboUt) antall++;
+      }
+    }
+    return antall;
+  } catch (e) { return null; }
+}
+
+// ─── 161 · KANTGAP — vegg → kabelfelt, utover kantavstanden, på alle fire sider ───────────
+// Kenneth 29.10.2026: løpene legges helt ut mot veggen, og CC-en velges heller et hakk STØRRE
+// enn at feltet krympes og etterlater tomme kanter. Målt på hans rom: 22 cm fra vegg til sving
+// med 5 cm kantavstand (CC 12,0) — en jevn inntrekking på 16,7 cm som ingen av de andre målene
+// så (R-VEGG måler på tvers av løpene, R-ENDE bare de to frie endene, hull bare inne i feltet).
+//
+// På tvers av løpene er ytterste streng ventet PÅ det lovlige området (= kantavstanden fra
+// veggen, 072), langs løpene er svingtoppen ventet inntil kantavstanden (løpet slutter CC/2
+// inne, svingen bulker CC/2 ut). Begge måles likt: senterlinjens ytterste punkt på hver side,
+// strålekastet langs aksen til rommets kontur, minus kantavstanden. Én tom bane ved veggen
+// (074b: lov) gir nøyaktig 1 CC — grensen for en defekt ligger derfor OVER én CC.
+// Returnerer { maks, sider:{venstre,hoyre,topp,bunn} } i cm, eller null uten geometri.
+function _cableKantGap(cable, room, legal) {
+  try {
+    const cl = (cable && cable.centerline) || [];
+    if (cl.length < 4 || !room || !room.points || room.points.length < 3) return null;
+    const marg = (legal && legal.margin) || 0;
+    const pts = room.points;
+    const ray = (p, ax, sgn) => {
+      const ok = ax === 'x' ? 'y' : 'x';
+      let best = Infinity;
+      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        const a = pts[j], b = pts[i];
+        if ((a[ok] <= p[ok]) === (b[ok] <= p[ok])) continue;          // kanten spenner ikke over punktet
+        const t = (p[ok] - a[ok]) / ((b[ok] - a[ok]) || 1e-9);
+        const d = (a[ax] + t * (b[ax] - a[ax]) - p[ax]) * sgn;
+        if (d >= -0.01 && d < best) best = d;
+      }
+      return best;
+    };
+    const sider = {};
+    for (const [navn, ax, sgn] of [['venstre', 'x', -1], ['hoyre', 'x', 1], ['topp', 'y', -1], ['bunn', 'y', 1]]) {
+      let ext = null;
+      for (const p of cl) if (!ext || p[ax] * sgn > ext[ax] * sgn) ext = p;
+      const d = ray(ext, ax, sgn);
+      sider[navn] = d === Infinity ? null : +(d - marg).toFixed(1);
+    }
+    const vals = Object.values(sider).filter(v => v != null);
+    if (!vals.length) return null;
+    return { maks: Math.max(...vals), sider };
+  } catch (e) { return null; }
+}
+
 // ─── Fixture-rom (spec §6) ──────────────────────────────────────────────────────────────────
 // Faste testrom i KODEN, aldri i skyen. `badHakk` er Kenneths eget bad, hentet som GEOMETRI
 // fra prosjektet «Ekebergveien 28» / rom «Bad» (punkter, ingen hindringer, ingen soner, ingen
@@ -34822,6 +34984,16 @@ const _cableFixtures = {
   enHindring: { name: 'Rektangel med én hindring', klasse: 'hindring', productId: 31,
     points: [{x:0,y:0},{x:400,y:0},{x:400,y:300},{x:0,y:300}],
     hindrings: [[{x:150,y:110},{x:250,y:110},{x:250,y:190},{x:150,y:190}]] },
+
+  // 161 (Kenneth 29.10.2026): «Her løser den kabelutlegget dårlig når jeg setter inn hindring.»
+  // Hans rom fra skjermbildene: 312×323, InFloor 17T 1200 W 70,5 m, én 20×20 hindring oppe til
+  // høyre (60 cm fra høyre vegg, 50 cm fra toppen — topp = minst y). Vannrett ga CC 12,0 med
+  // svingene 22 cm fra veggen og 83,8 % dekning; loddrett var rent. `laas` er Kenneths krav.
+  hind1: { name: 'Kenneths rom 312x323 med 20x20 hindring oppe til høyre (161)', klasse: 'hindring', productId: 28,
+    note: 'Rekonstruert fra skjermbildene 29.10.2026 (mål, ikke piksler). Målt FØR 161: h/bl CC 12,0 · 83,8 % · 21,7 cm fra vegg.',
+    points: [{x:0,y:0},{x:312,y:0},{x:312,y:323},{x:0,y:323}],
+    hindrings: [[{x:232,y:50},{x:252,y:50},{x:252,y:70},{x:232,y:70}]],
+    laas: { dekMin: 95, devMax: 1, loseMax: 0, kantGapCCMax: 1 } },
 
   flereHindringer: { name: 'Rektangel med tre hindringer', klasse: 'hindring', productId: 30,
     points: [{x:0,y:0},{x:400,y:0},{x:400,y:300},{x:0,y:300}],
@@ -36374,6 +36546,19 @@ function _geoScore(chk, ctx) {
     const over = (m.endeKortCm - 1) / m.ccFieldCm;
     if (over > 0) s -= 22 * Math.min(1, over);
   }
+  // ─── 161 · KANTGAP og LØSE ENDER ─────────────────────────────────────────────────────────
+  // Kantgap: gradert fra «kant + 1 CC» (én tom bane, lov etter 074b) til «kant + 2 CC». Vekten
+  // ligger som R-VEGG/R-ENDE under hull-straffen (25): et krympet felt er ikke verdt et hull.
+  // ⚠ Poengene alene redder ikke Kenneths rom — der velges kandidaten av hjørnerunden, som
+  // ikke sammenligner poeng. Derfor er kantgap også et AKSEPTKRAV i reparasjonsrundene
+  // (079d, 099, hjørnerunden), se `_geoKantOk` i `generateCableGeo`.
+  // Bare i rom med hindring (`ctx.hind`) — rom uten hindring er bit for bit som før 161.
+  if (ctx.hind && m.kantGapCm != null && m.ccFieldCm) {
+    const over = (m.kantGapCm - m.ccFieldCm) / m.ccFieldCm;
+    if (over > 0) s -= 20 * Math.min(1, over);
+  }
+  // Løse ender: 6 per ende, høyst 24 — under hull-straffen, over dekningsleddet for ett bånd.
+  if (ctx.hind) s -= 6 * Math.min(4, m.loseEnder || 0);
   return s;
 }
 
@@ -36484,6 +36669,45 @@ function generateCableGeo(roomId, productId, opts) {
   const dirExplicit = !!(opts.direction) || !!(S.varmefolie && S.varmefolie.dirExplicit);
   const dirs = (dirExplicit && wantDir) ? [wantDir] : ['v', 'h'];
   const wantCorner = opts.startCorner || (S.varmefolie && S.varmefolie.startCorner) || 'bl';
+
+  // ─── 161 · ET KRYMPET FELT ER IKKE EN REPARASJON ────────────────────────────────────────
+  // Kenneth 29.10.2026 (rom 312×323, InFloor 17T 1200 W, én 20×20 hindring): vannrett fikk CC
+  // 12,0 med svingene 22 cm fra veggen og 83,8 % dekning, mens lengdesøket allerede HADDE et
+  // rent utlegg på CC 14,2 (+0,14 %, 98,5 %). Det rene bommet på hjørnet, og hjørnerunden
+  // (083) kjøpte hjørnet med 16,7 cm jevn inntrekking i hver ende — ingen av målene den sjekket
+  // (gyldig, lengde, hjørne) så det. Loddrett `tl`/`tr` var samme klasse via 079d: 26 cm.
+  // Regelen: en kandidat som står mer enn én CC fra veggen utover kantavstanden
+  // (`kantGapCm > CC + 1`, 074b-banen ved veggen er fortsatt lov) godtas ikke av NOEN
+  // reparasjonsrunde. Lengdesøkets egne `tries` er ikke rørt — der trimming er eneste utvei
+  // (grov sagtann), legges den fortsatt, straffet i poengene og sagt fra om i panelet.
+  // ⚠ ALT i 161 gjelder bare rom MED hindringer/forbudte soner (`legal.blockers`). MÅLT: uten
+  // denne avgrensningen endret vaktene sju rom uten hindring (lRom, uRom, utsparing, badHakk,
+  // rom5, badHakk41 — R-START tapt i fem rader), og det er utenfor 161s mandat. Rom uten
+  // hindring er bit for bit som før; det er målt mot baselinjen.
+  const _har161 = !!(legal.blockers && legal.blockers.length);
+  const _geoKantOk = r => !_har161 || !(r && r.chk && r.chk.metrics && r.chk.metrics.kantGapCm != null
+                          && r.chk.metrics.kantGapCm > (r.cable.spacing_cm || 0) + 1);
+  // Defekter som teller i retningsvalget: hull inne i feltet, løse ender, krympet felt.
+  const _geoDefekter = r => (r.cable._geoHoles || 0) + (r.chk.metrics.loseEnder || 0) + (_geoKantOk(r) ? 0 : 1);
+  // 161 · Retningsvalget i rom MED hindringer: færrest defekter først, så R-START, så poeng
+  // (dekning og lengdeavvik ligger i poengene, som før). Uten hindringer: poeng alene, bit for
+  // bit som før — rom uten hindring skal ikke endres av 161.
+  const _geoBedre = (ny, gml) => {
+    if (!gml) return true;
+    if (dirs.length > 1 && (legal.blockers || []).length) {
+      const d = _geoDefekter(ny) - _geoDefekter(gml);
+      if (d !== 0) return d < 0;
+      const h = (_cableHitsCorner(ny.cable, room, wantCorner) ? 1 : 0) - (_cableHitsCorner(gml.cable, room, wantCorner) ? 1 : 0);
+      if (h !== 0) return h > 0;
+      // Dekning før poeng: lengdeleddet (20 poeng per %) gjør at −0,8 % (innenfor toleransen)
+      // taper 16 poeng mot 0,0 %, mens 4,5 prosentpoeng dekning bare gir 1,35. MÅLT på
+      // hindMidt `bl`: loddrett 98,5 % (−0,8 %) tapte mot vannrett 94,0 % (0,0 %). Begge
+      // lengder er lovlige; det Kenneth ser er dekningen. Under 2 prosentpoeng avgjør poengene.
+      const dk = (ny.chk.metrics.coveragePct || 0) - (gml.chk.metrics.coveragePct || 0);
+      if (Math.abs(dk) > 2) return dk > 0;
+    }
+    return ny.score > gml.score;
+  };
 
   // Lengdesøket (lag F) trenger bare LENGDEN av en kandidat, ikke hele geometrikontrollen.
   // Kontrollen koster et rutenett-sveip over dekningen og et par-sveip over alle segmenter —
@@ -36638,7 +36862,7 @@ function generateCableGeo(roomId, productId, opts) {
         // sammenligningen i `_geoScore` alltid sann — et dødt ledd.
         const sc = _geoScore(chk, { dir, wantDir, wantCorner, parity: _parityOn,
                                     cornerDist: _geoCornerDist(cable.start, room, wantCorner),
-                                    nCells: grid.cells.length, hull })
+                                    nCells: grid.cells.length, hull, hind: _har161 })
                  - 0.5 * ((grid.transits || []).length);   // ren avgjørelse ved likt, ikke straff
         if (sc > bestScore) { bestScore = sc; best = { cable, chk, grid, score: sc }; }
         if (_cableHitsCorner(cable, room, wantCorner) && sc > treffScore) {
@@ -36822,7 +37046,8 @@ function generateCableGeo(roomId, productId, opts) {
           }
           const r = attempt(dir, cc, gotEx);
           if (r && !(r.cable._geoHoles > 0)
-              && Math.abs(r.chk.metrics.lenDevPct || 0) <= tolPct) fant = r;
+              && Math.abs(r.chk.metrics.lenDevPct || 0) <= tolPct
+              && _geoKantOk(r)) fant = r;                        // 161: ikke et krympet felt
         }
         if (fant) bestR = fant;
         if (opts.trace) opts.trace.push({ steg: '079d', dir, fant: !!fant, cc: fant ? +fant.cable.spacing_cm.toFixed(3) : null, dek: fant ? fant.chk.metrics.coveragePct : null, score: fant ? +fant.score.toFixed(1) : null, hjorne: fant ? _cableHitsCorner(fant.cable, room, wantCorner) : null });
@@ -36875,10 +37100,16 @@ function generateCableGeo(roomId, productId, opts) {
         let valgt = bestR, valgtTreff = treffer(bestR);
         for (const cc of kand) {
           const nk = +cc.toFixed(4) + '|0';
-          if (provd.has(nk)) continue;
+          // ─── 161 · ET TRINN `tries` ALT PRØVDE UTRIMMET, FÅR LIKEVEL PRØVE TRIMMET ──────
+          // ⚠ MÅLT på Kenneths rom loddrett `tl`: nabotrinnet 13,126 lå i `tries` (som
+          // `overCc`, ex 0 → +2,75 %, avvist på lengde), og ble derfor hoppet over HER — også
+          // den trimmede varianten (3,7 cm per ende, hullfri, treffer hjørnet). Vinneren ble
+          // 13,723 med ett hull. Nå hoppes bare det utrimmede forsøket over; trimmingen prøves.
+          const alleredeProvd = provd.has(nk);
+          if (alleredeProvd && !_har161) continue;                 // uten hindring: som før 161
           provd.add(nk);
           if (cc < ccLo - _GEO_EPS || cc > ccHi + _GEO_EPS) continue;
-          let r = attempt(dir, cc, 0);
+          let r = alleredeProvd ? null : attempt(dir, cc, 0);
           let ex = 0;
           if (!r || Math.abs(r.chk.metrics.lenDevPct || 0) > tolPct || r.cable._geoHoles > 0) {
             // Den hullfrie varianten på dette trinnet kan være FOR LANG og usynlig for `tries`
@@ -36902,6 +37133,7 @@ function generateCableGeo(roomId, productId, opts) {
           }
           if (opts.trace) opts.trace.push({ steg: '099', dir, cc: +cc.toFixed(3), ex: +ex.toFixed(2), ok: !!r, score: r ? +r.score.toFixed(1) : null, celler: r ? r.grid.cells.length : null, dek: r ? r.chk.metrics.coveragePct : null, dev: r ? r.chk.metrics.lenDevPct : null, hull: r ? r.cable._geoHoles : null });
           if (!r || Math.abs(r.chk.metrics.lenDevPct || 0) > tolPct) continue;   // må treffe lengden selv
+          if (!_geoKantOk(r)) continue;                                           // 161: ikke et krympet felt
           const h = treffer(r);
           if (!valgt || (h && !valgtTreff) || (h === valgtTreff && r.score > valgt.score)) { valgt = r; valgtTreff = h; }   // R-START, så poeng
         }
@@ -36926,7 +37158,7 @@ function generateCableGeo(roomId, productId, opts) {
     }
     diag.push({ dir, cc: bestCc == null ? null : +bestCc.toFixed(2), ex: +bestEx.toFixed(2),
                 sokDiffCm: bestDiff === Infinity ? null : +bestDiff.toFixed(1), godkjent: !!bestR });
-    if (bestR && bestR.score > winnerScore) { winnerScore = bestR.score; winner = bestR; }
+    if (bestR && _geoBedre(bestR, winner)) { winnerScore = bestR.score; winner = bestR; }   // 161
   }
 
   // ─── 083 · HJØRNERUNDEN: SØKET GIR IKKE OPP FØR DET HAR LETT ETTER HJØRNET ───────────────
@@ -36944,8 +37176,15 @@ function generateCableGeo(roomId, productId, opts) {
   // ⚠ MÅLT: retningsfallbacken kjører et HELT nytt søk i den andre retningen, og når det søket
   // også kjørte hjørnerunden, gikk regresjonssuiten til 96 s (grensen er 40). Alt-retningen
   // trenger ikke runden: den brukes bare hvis den treffer hjørnet av seg selv.
+  // 161: runden kjører OGSÅ når vinneren treffer hjørnet MED et hull inne i feltet. ⚠ MÅLT på
+  // Kenneths rom loddrett `tr`: 13,723 treffer hjørnet med ett hull (94,2 %), og ingen annen
+  // kandidat i 099 treffer. Da skal stigen letes etter et HULLFRITT treff (sorteringen under
+  // setter færrest hull først), og vinneren byttes bare når treffet har færre hull. Rom der
+  // vinneren alt er hullfri og treffer, er uendret — ingen baselinjerad har hull.
+  const _hullVinner = !!(_har161 && winner && winner.chk.ok && winner.cable._geoHoles > 0
+                         && _cableHitsCorner(winner.cable, room, wantCorner));
   if (winner && winner.chk.ok && targetCm && !opts.noCornerRound
-      && !_cableHitsCorner(winner.cable, room, wantCorner)) {
+      && (!_cableHitsCorner(winner.cable, room, wantCorner) || _hullVinner)) {
     const dir = winner.cable.direction, cc0 = winner.cable.spacing_cm;
     _parityOn = true;
     try {
@@ -36962,11 +37201,21 @@ function generateCableGeo(roomId, productId, opts) {
       // (lRom h 98,5 → 89, umuligStartHjorne h 99,1 → 89,9, badHakk41 v bl R-START 24 → 83).
       // Grovsveipet her er altså ikke bare en felle — det er også det som rekker LANGT innenfor
       // budsjettet. Står som åpent punkt i STATUS §40.
-      for (let st = 0; st <= 5 && budsjett > 0 && !ferdig; st++) {
+      // ─── 161 · DE TO NÆRMESTE N-TRINNENE FØR GROVSVEIPET, MED EGET BUDSJETT ─────────────
+      // Kenneths rom vannrett: hjørnet nås bare med et PARTALL løp, og nabotrinnet N+1 (CC
+      // 13,6) ligger 3 % for langt — trimbart med ~6 cm, innenfor én CC. Grovsveipet (17, 14,
+      // 11, 8, 5) går aldri innom det, og landet på CC 12,0 med 16,7 cm inntrekking. 099 målte
+      // at HELE stigen nærmeste-først sulter de fjerne trinnene (budsjettet på 40); derfor bare
+      // de to nærmeste, og budsjettet økes med det de høyst kan koste (1 + 14 sonder hver), så
+      // grovsveipet har nøyaktig like mye igjen som før. Rom der nabotrinnene ikke treffer
+      // hjørnet, går videre til grovsveipet som før.
+      const naer = (_har161 && bundetCc == null) ? _geoCcStige(legal, dir, ccLo, ccHi, cc0, 3).slice(1) : [];
+      budsjett += 15 * naer.length;
+      const trinn = [cc0].concat(naer, bundetCc != null ? [] : [1, 2, 3, 4, 5].map(st => ccHi - (ccHi - ccLo) * st / 5));
+      for (let ti = 0; ti < trinn.length && budsjett > 0 && !ferdig; ti++) {
         // 096: med bundet CC er det bare ETT trinn å prøve — CC-en selv. Å vandre stigen her
         // ville gitt ulik W/m² over sømmen.
-        if (bundetCc != null && st > 0) break;
-        const cc = st === 0 ? cc0 : ccHi - (ccHi - ccLo) * st / 5;
+        const cc = trinn[ti];
         if (cc < ccLo - _GEO_EPS || cc > ccHi + _GEO_EPS) continue;
         const len = pLen(dir, cc, 0);
         let ex = 0;
@@ -36984,9 +37233,13 @@ function generateCableGeo(roomId, productId, opts) {
         }
         for (const e of (ex ? [ex, 0] : [0])) {
           const r = attempt(dir, cc, e);
+          if (opts.trace) opts.trace.push({ steg: 'hjorne-trinn', dir, cc: +cc.toFixed(3), len: len == null ? null : +(len / 100).toFixed(2), ex: +e.toFixed(2), ok: !!(r && r.chk.ok), dev: r ? r.chk.metrics.lenDevPct : null, hjorne: r ? _cableHitsCorner(r.cable, room, wantCorner) : null, start: r ? _cableStartCornerOffCm(r.cable, room, wantCorner) : null, kantGap: r ? r.chk.metrics.kantGapCm : null, lose: r ? r.chk.metrics.loseEnder : null, hull: r ? r.cable._geoHoles : null, dek: r ? r.chk.metrics.coveragePct : null, budsjett });
           if (r && r.chk.ok
               && Math.abs(r.chk.metrics.lenDevPct || 0) <= tolPct
-              && _cableHitsCorner(r.cable, room, wantCorner)) {
+              && _cableHitsCorner(r.cable, room, wantCorner)
+              && _geoKantOk(r)                                                   // 161: ikke et krympet felt
+              && (!_har161 || (r.chk.metrics.loseEnder || 0) <= (winner.chk.metrics.loseEnder || 0))
+              && (!_har161 || (r.cable._geoHoles || 0) <= (winner.cable._geoHoles || 0))) {   // 161: hjørnet kjøpes ikke for et hull (074b)
             treff.push(r);
             // ⚠ MÅLT: å stoppe på FØRSTE hullfrie treff ga Rom 5 vannrett `tr` et utlegg med
             // 73,9 % dekning der et senere trinn hadde 91 %. R-START vinner over dekning, men
@@ -37004,7 +37257,9 @@ function generateCableGeo(roomId, productId, opts) {
           (a.cable._geoHoles || 0) - (b.cable._geoHoles || 0)                      // færrest hull
           || (b.chk.metrics.coveragePct || 0) - (a.chk.metrics.coveragePct || 0)   // så dekning
           || Math.abs(a.cable.spacing_cm - cc0) - Math.abs(b.cable.spacing_cm - cc0)); // så nærmest utgangs-CC
-        winner = treff[0]; winnerScore = treff[0].score;
+        if (!_hullVinner || (treff[0].cable._geoHoles || 0) < (winner.cable._geoHoles || 0)) {   // 161
+          winner = treff[0]; winnerScore = treff[0].score;
+        }
       }
     } finally { _parityOn = false; }
   }
@@ -37122,6 +37377,29 @@ function generateCableGeo(roomId, productId, opts) {
       }
       if (funnet) { winner = funnet; winnerScore = funnet.score; }
     } finally { _parityOn = false; }
+  }
+
+  // ─── 161 · AUTO-RETNING MED HINDRING: BOMMER VINNEREN PÅ HJØRNET, FÅR DEN ANDRE PRØVE SEG ──
+  // Retningsvalget over skjer FØR reparasjonsrundene, på kandidatene slik lengdesøket ga dem.
+  // MÅLT på Kenneths rom `tr`: loddrett hadde da et hull (defekt) og tapte mot vannrett uten
+  // defekter — men vannrett kan ikke nå `tr`, og loddretts hull lot seg reparere (hjørnerunden
+  // over, 96,2 %). Derfor: i auto-modus, i rom med hindring, når vinneren bommer på hjørnet,
+  // kjøres hele søket i den andre retningen, og den tas BARE om den treffer hjørnet uten
+  // defekter og ikke dekker merkbart dårligere. Låst retning (dirs.length 1) rører dette aldri.
+  if (winner && winner.chk.ok && targetCm && !opts.noCornerRound && _har161 && dirs.length > 1
+      && !opts._161alt && !_cableHitsCorner(winner.cable, room, wantCorner)) {
+    const other = winner.cable.direction === 'v' ? 'h' : 'v';
+    let alt = null;
+    try { alt = generateCableGeo(roomId, productId, Object.assign({}, opts, { direction: other, _161alt: true })); } catch (e) { alt = null; }
+    if (alt && alt.ok !== false && alt.centerline && _cableHitsCorner(alt, room, wantCorner) && !(alt._geoHoles > 0)) {
+      const chkA = _cableGeometryCheck(alt, room, { lengthTolPct: tolPct });
+      const mA = chkA.metrics || {};
+      if (chkA.ok && !(mA.loseEnder > 0) && !(mA.kantGapCm != null && mA.kantGapCm > (alt.spacing_cm || 0) + 1)
+          && (mA.coveragePct || 0) >= (winner.chk.metrics.coveragePct || 0) - 3) {
+        if (opts.trace) opts.trace.push({ steg: '161-altretning', fra: winner.cable.direction, til: other, dek: mA.coveragePct, start: _cableStartCornerOffCm(alt, room, wantCorner) });
+        return alt;
+      }
+    }
   }
 
   if (winner) {
@@ -37590,6 +37868,33 @@ function _autoFillCableImpl(roomId, productId, opts) {
     }
   }
 
+  // ─── 161 · LÅST RETNING I ET ROM MED HINDRINGER: SI FRA NÅR DEN ANDRE ER RENERE ──────────
+  // Retningen byttes aldri (088b står). Men har det låste utlegget en defekt (hull, løse ender,
+  // krympet felt) eller under 90 % dekning, måles den andre retningen — og er den uten defekter
+  // og minst like godt dekket, får panelet en linje med tall og en knapp. Valget er Kenneths.
+  // Måles bare når det trengs: ett ekstra geo-søk, bare i rom med hindring, bare ved defekt.
+  let renereAlt = null;
+  if (best && best.chk.ok && dirExplicit && best.source === 'geo'
+      && S.hindrings.some(h => h.roomId === roomId && h.points && h.points.length >= 3)) {
+    const _def = c => { const m = c.chk.metrics || {};
+      return (c.cable._geoHoles || 0) + (m.loseEnder || 0)
+           + ((m.kantGapCm != null && m.ccFieldCm && m.kantGapCm > m.ccFieldCm + 1) ? 1 : 0); };
+    const m0 = best.chk.metrics || {}, def0 = _def(best);
+    if (def0 > 0 || (m0.coveragePct || 0) < 95) {
+      const other = userDir === 'v' ? 'h' : 'v';
+      const alt = _cableCandidatesForDirection(roomId, productId,
+        Object.assign({}, opts, { noCornerRound: true }), other, room);
+      const altGeo = (alt.cands || []).find(c => c.source === 'geo' && c.chk.ok);
+      if (altGeo) {
+        const m1 = altGeo.chk.metrics || {}, def1 = _def(altGeo);
+        if (def1 === 0 && def1 < def0 && (m1.coveragePct || 0) >= (m0.coveragePct || 0) - 0.5
+            || def1 <= def0 && (m1.coveragePct || 0) >= (m0.coveragePct || 0) + 5)
+          renereAlt = { dir: other, dek: m1.coveragePct, dekNaa: m0.coveragePct,
+                        cc: +(altGeo.cable.spacing_cm || 0).toFixed(1), defekter: def0 };
+      }
+    }
+  }
+
   // Ingen gyldig kandidat i noen retning → legg ut den beste likevel, MERKET (spec §5 / 070.3).
   const chosen = (best && best.chk.ok) ? best : (best || cands[0] || null);
   if (!chosen) {
@@ -37643,6 +37948,7 @@ function _autoFillCableImpl(roomId, productId, opts) {
   cable._startCornerWanted = wantCorner;
   cable._startCornerOffCm = _cableStartCornerOffCm(cable, room, wantCorner);
   if (cornerAlt) cable._cornerAlt = cornerAlt;
+  if (renereAlt) cable._renereAlt = renereAlt;                       // 161
   room._cableNoSolution = (!chosen.chk.ok && geoNo) ? geoNo : null;
   // 074: forslaget regnes på VINNERENS dekning, ikke på en kandidat som tapte.
   // ⚠ Målt: `_finishCableAutoFill` kjører bare inne i den GAMLE kaskaden, og dens formel leser
@@ -39381,6 +39687,11 @@ function _cableGeoSuiteRow(key, fx, dir, corner) {
       start: (() => { const v = _cableStartCornerOffCm(cab, room, corner); return v == null ? null : +v.toFixed(0); })(),
       hull: cab._geoHoles || 0,
       gyldig: !!chk.ok,
+      // 161: løse ender og kantgap (i CC) er låste mål; `laas` er fixturens egne krav
+      lose: m.loseEnder == null ? null : +m.loseEnder,
+      kantGapCC: m.kantGapCC == null ? null : +m.kantGapCC,
+      dev: m.lenDevPct == null ? null : +m.lenDevPct,
+      laas: fx.laas || null,
       // form — brukes av forstyrrelsestesten, ikke av dominansen
       celler: cab._geoCells || null,
       transitt: (cab._geoTransits || 0) > 0,
@@ -39439,6 +39750,21 @@ function _cableGeoSuiteCompare(base, naa) {
   if (base.dek != null && naa.dek != null) {
     if (naa.dek < base.dek - 1) feil.push(`dekning ${base.dek} → ${naa.dek}`);
     else if (naa.dek > base.dek + 1) bedre.push(`dekning ${base.dek} → ${naa.dek}`);
+  }
+  // ─── 161 · LØSE ENDER OG KANTGAP ER LÅSTE MÅL ────────────────────────────────────────────
+  // Bare når baselinjen HAR tallet (eldre baselinjer uten 161-feltene feiler ikke på det).
+  if (base.lose != null && naa.lose != null) {
+    if (naa.lose > base.lose) feil.push(`løse ender ${base.lose} → ${naa.lose}`);
+    else if (naa.lose < base.lose) bedre.push(`løse ender ${base.lose} → ${naa.lose}`);
+  }
+  if (base.kantGapCC != null && naa.kantGapCC != null && base.kantGapCC <= 1.1 && naa.kantGapCC > 1.1)
+    feil.push(`kantgap ${base.kantGapCC} → ${naa.kantGapCC} CC`);
+  if (naa.laas) {
+    const L = naa.laas;
+    if (L.dekMin != null && naa.dek != null && naa.dek < L.dekMin) feil.push(`dekning ${naa.dek} % under ${L.dekMin} %`);
+    if (L.devMax != null && naa.dev != null && Math.abs(naa.dev) > L.devMax) feil.push(`lengdeavvik ${naa.dev} % over ±${L.devMax} %`);
+    if (L.loseMax != null && naa.lose != null && naa.lose > L.loseMax) feil.push(`løse ender ${naa.lose} over ${L.loseMax}`);
+    if (L.kantGapCCMax != null && naa.kantGapCC != null && naa.kantGapCC > L.kantGapCCMax + 0.1) feil.push(`kantgap ${naa.kantGapCC} CC over ${L.kantGapCCMax}`);
   }
   if (base.cc !== naa.cc || base.n !== naa.n)
     endret.push(`N ${base.n}→${naa.n} · CC ${base.cc}→${naa.cc} · ${base.m}→${naa.m} m`);
@@ -39659,7 +39985,7 @@ async function _cableForstyrrelsesTest(opts) {
 // hovedløkka på ett utvalg — én fixture per motorfamilie — og alle seksjonene. Fullt batteri
 // uten argument, som før. `_cableGeometryQuickTest()` er det korte navnet.
 const _CABLE_GEO_RASK_FIXTURES = ['rektangel', 'skraa', 'rom5', 'badHakk41', 'rekt2kab', 'lRom'];
-const _CABLE_GEO_RASK_SEKSJONER = ['076', '080', '082', '077', '074b'];
+const _CABLE_GEO_RASK_SEKSJONER = ['076', '080', '082', '077', '074b', '161'];   // 161: fixturen hører i den raske porten
 async function _cableGeometryQuickTest() { return _cableGeometryRegressionTest({ rask: true }); }
 async function _cableGeometryRegressionTest(opts) {
   opts = opts || {};
@@ -40025,6 +40351,68 @@ async function _cableGeometryRegressionTest(opts) {
       add('088: 076-fasiten står — Rom 5 / 700W / loddrett / tr gir CC 13,2 loddrett',
           !!kf && kf.direction === 'v' && Math.abs(kf.spacing_cm - 13.2) < 0.15,
           'loddrett, CC 13,2', kf ? (kf.direction + ' CC ' + kf.spacing_cm.toFixed(2)) : 'ingen');
+    }
+
+    // ── 161 · KABEL + LITEN HINDRING: DET RENE UTLEGGET VINNER ───────────────────────────
+    // Kenneth 29.10.2026. Fixturen er rommet hans; to varianter flytter hindringen (midt i
+    // rommet, nede til venstre). Krav: auto velger et utlegg uten defekter, feltet fyller
+    // rommet (kantgap ≤ 1 CC), ingen løse ender; låst vannrett legges vannrett.
+    if (_vil('161')) {
+      const fxH = _cableFixtures.hind1;
+      const varianter = [
+        ['hind1', fxH],
+        ['hindMidt', Object.assign({}, fxH, { name: '312x323 + hindring midt i rommet',
+          hindrings: [[{x:146,y:151},{x:166,y:151},{x:166,y:171},{x:146,y:171}]] })],
+        ['hindNV', Object.assign({}, fxH, { name: '312x323 + hindring nede til venstre',
+          hindrings: [[{x:60,y:253},{x:80,y:253},{x:80,y:273},{x:60,y:273}]] })]];
+      const _def161 = c => { const m = c._geomMetrics || {};
+        return { hull: c._geoHoles || 0, lose: m.loseEnder || 0,
+                 kant: (m.kantGapCm != null && m.ccFieldCm) ? +(m.kantGapCm / m.ccFieldCm).toFixed(2) : null, dek: m.coveragePct }; };
+      for (const [navn, fx] of varianter) {
+        for (const hj of ['bl', 'tr']) {
+          _cableGalleryBuildScene(fx); S.ui.selectedRoomId = 1;
+          S.varmefolie = Object.assign({}, snap.vf, { direction: 'v', dirExplicit: false, startCorner: hj, wallMarginCm: null });
+          const a = _autoFillCableImpl(1, fx.productId, { allowPartial: true });
+          const d = a ? _def161(a) : null;
+          add('161 ' + navn + '/auto/' + hj + ': gyldig, uten hull og løse ender, feltet fyller rommet (kantgap ≤ 1 CC)',
+              !!a && a._geomOk && d.hull === 0 && d.lose === 0 && d.kant != null && d.kant <= 1.1,
+              'gyldig · hull 0 · løse 0 · kantgap ≤ 1 CC', a ? JSON.stringify(Object.assign({ dir: a.direction, cc: +a.spacing_cm.toFixed(2) }, d)) : 'ingen kabel');
+          // R-START står over dekning (083): treffer bare én retning hjørnet, legges den selv om den
+          // andre dekker mer. MÅLT hindMidt `tr`: vannrett 90 % treffer, loddrett 98,5 % bommer 311 cm.
+          add('161 ' + navn + '/auto/' + hj + ': dekning ≥ 95 %, eller hjørnet truffet med ≥ 88 %',
+              !!a && d && (d.dek >= 95 || (a._startCornerOffCm != null && a._startCornerOffCm <= 40 && d.dek >= 88)),
+              '≥ 95 % · eller start ≤ 40 cm og ≥ 88 %', a ? (d.dek + ' % · start ' + a._startCornerOffCm + ' cm') : 'ingen');
+        }
+        for (const dir of ['h', 'v']) {
+          _cableGalleryBuildScene(fx); S.ui.selectedRoomId = 1;
+          S.varmefolie = Object.assign({}, snap.vf, { direction: dir, dirExplicit: true, startCorner: 'bl', wallMarginCm: null });
+          const k = _autoFillCableImpl(1, fx.productId, { allowPartial: true });
+          const d = k ? _def161(k) : null;
+          add('161 ' + navn + '/låst ' + dir + ': lagt i valgt retning, uten løse ender', !!k && k.direction === dir && d.lose === 0,
+              dir + ' · løse 0', k ? k.direction + ' · ' + JSON.stringify(d) : 'ingen');
+          // Et krympet felt i låst retning skal enten ikke finnes, eller sies fra om — med knapp til den andre retningen.
+          const linjer = k ? _cableStatusLines(k, S.rooms[0]) : [];
+          const krympet = !!(d && d.kant != null && d.kant > 1.1);
+          add('161 ' + navn + '/låst ' + dir + ': feltet fyller rommet, ellers står det i panelet',
+              !!k && (!krympet || linjer.some(l => /Kabelfeltet stopper/.test(l.tekst))),
+              'kantgap ≤ 1 CC eller «Kabelfeltet stopper …»', k ? ('kantgap ' + d.kant + ' CC · ' + linjer.map(l => l.tekst).join(' | ').slice(0, 120)) : 'ingen');
+          if (k && k._renereAlt) add('161 ' + navn + '/låst ' + dir + ': merknaden om renere retning har knapp',
+              linjer.some(l => l.handling && l.handling.kind === 'bytt-retning' && /_cableLeggRetning/.test(l.handling.fn || '')),
+              'handling _cableLeggRetning', linjer.map(l => l.tekst).join(' | ').slice(0, 120));
+          // hindNV låst loddrett: 91,5 % mot vannrett 98,4 % — merknaden SKAL komme, med tall.
+          if (navn === 'hindNV' && dir === 'v' && k)
+            add('161 hindNV/låst v: panelet sier at vannrett er renere (98 % mot 92 %)',
+                !!k._renereAlt && k._renereAlt.dir === 'h' && linjer.some(l => /Vannrett gir et renere utlegg/.test(l.tekst)),
+                '«Vannrett gir et renere utlegg her …»', k._renereAlt ? JSON.stringify(k._renereAlt) : 'ingen merknad');
+        }
+      }
+      // Kenneths egen sak: vannrett låst nede til venstre var CC 12,0 · 83,8 % · 21,7 cm fra vegg.
+      _cableGalleryBuildScene(fxH); S.ui.selectedRoomId = 1;
+      S.varmefolie = Object.assign({}, snap.vf, { direction: 'h', dirExplicit: true, startCorner: 'bl', wallMarginCm: null });
+      const kh = _autoFillCableImpl(1, fxH.productId, { allowPartial: true });
+      const dh = kh ? _def161(kh) : null;
+      add('161 hind1/h/bl (Kenneths bilde): ikke lenger 22 cm fra veggen — kantgap ≤ 1 CC og dekning ≥ 95 %',
+          !!kh && dh.kant <= 1.1 && dh.dek >= 95, 'kantgap ≤ 1 CC · ≥ 95 %', kh ? JSON.stringify(Object.assign({ cc: +kh.spacing_cm.toFixed(2) }, dh)) : 'ingen');
     }
 
     // ── 083b · LERRETET MÅ TÅLE EN GEO-KABEL ────────────────────────────────────────────

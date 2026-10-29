@@ -2361,3 +2361,18 @@ tiden. **Rask: 67 påstander, 18,8 s. Fullt: 132 påstander (127 + 5 nye), 30,0 
 
 `_cableGeoSuite()`: **142 rader, 0 feil, 0 bedre, 0 endret, 0 nye, 0 borte** — 19,7 s (én blokk, uten
 ballingen §38 beskrev). `_cableForstyrrelsesTest()`: **31 brudd**, 1 hoppet, 67,9 s — ikke verre enn sist.
+
+## §46 · 161 — kabel + liten hindring: krympet felt var aldri et mål (29.10.2026)
+
+Kenneths rom 312 × 323 med én 20 × 20 hindring, InFloor 17T 1200 W: vannrett fikk CC 12,0 med svingene
+21,7 cm fra veggen og 83,8 % dekning. Lengdesøket HADDE 14,223 (98,5 %), men den bommer på hjørnet, og
+hjørnerunden (083) kjøpte hjørnet med 16,7 cm jevn inntrekking — aksepttesten så gyldig · lengde ·
+hjørne, aldri feltet. Loddrett `tl`/`br` samme klasse via 079d (26 cm). Cellene var lærebok-BCD (ingen
+cellefeil). Nye mål `loseEnder` og `kantGapCm` i kontrollen, poeng og aksepttest i 079d/099/hjørnerunden,
+nabotrinn i hjørnerunden med eget budsjett, retningsvalg færrest defekter → R-START → dekning → poeng,
+merknad i panelet når den andre retningen er renere. **Alt bak `legal.blockers`** — uten avgrensningen
+endret vaktene seks rom uten hindring (R-START tapt i fem rader). Funn: `_cableCovCache`-nøkkelen i
+kontrollen blandet varianter med samme lengde/CC/segmenttall (hullfri arvet 94,0 % for 96,2 %) — rettet
+med geometrisum. Fixture `hind1` (8 rader, `laas`), baselinje 144 → 152 rader med `lose`/`kantGapCC`;
+enHindring og umuligStartHjorne bedre (77 → 89, 79 → 96,5 %). Suite 26 s, fullt batteri 159/159, rask
+94/94. Hele målingen: `docs/161/RAPPORT.md`, spørsmål `docs/161/SPØRSMÅL.md`.

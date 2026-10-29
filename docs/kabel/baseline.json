@@ -1,6 +1,6 @@
 {
- "laget": "2026-10-27T10:32:44.174Z",
- "commit": null,
+ "laget": "2026-10-29T11:13:44.164Z",
+ "commit": "161",
  "rader": {
   "rektangel|v|tr": {
    "status": "ok",
@@ -13,6 +13,10 @@
    "start": 15,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.22,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 18.2
@@ -28,6 +32,10 @@
    "start": 15,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.22,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 18.2
@@ -43,6 +51,10 @@
    "start": 15,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.22,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 18.2
@@ -58,6 +70,10 @@
    "start": 15,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.22,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 18.2
@@ -73,6 +89,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.91,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 18.6
@@ -88,6 +108,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.91,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 18.6
@@ -103,6 +127,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.91,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 18.6
@@ -118,6 +146,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.91,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 18.6
@@ -133,6 +165,10 @@
    "start": 13,
    "hull": 0,
    "gyldig": true,
+   "lose": 1,
+   "kantGapCC": 0.08,
+   "dev": 0,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 17.8
@@ -148,6 +184,10 @@
    "start": 13,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 1.01,
+   "dev": 0.07,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 17.8
@@ -163,6 +203,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0,
+   "dev": -0.89,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 18.2
@@ -178,6 +222,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0,
+   "dev": -0.89,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 18.2
@@ -193,6 +241,10 @@
    "start": 336,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.67,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 18.1
@@ -208,6 +260,10 @@
    "start": 239,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.67,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 18.1
@@ -223,6 +279,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.67,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 18.1
@@ -238,6 +298,10 @@
    "start": 217,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.67,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 18.1
@@ -253,6 +317,10 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 1,
+   "kantGapCC": 0.37,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 17.5
@@ -268,6 +336,10 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 1,
+   "kantGapCC": 0.37,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 17.5
@@ -283,6 +355,10 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 1,
+   "kantGapCC": 0.37,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 17.5
@@ -298,6 +374,10 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 1,
+   "kantGapCC": 0.37,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 17.5
@@ -313,6 +393,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.01,
+   "dev": 0.18,
+   "laas": null,
    "celler": 3,
    "transitt": true,
    "strGrense": 18.1
@@ -328,6 +412,10 @@
    "start": 271,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.01,
+   "dev": 0.18,
+   "laas": null,
    "celler": 3,
    "transitt": true,
    "strGrense": 18.1
@@ -343,6 +431,10 @@
    "start": 36,
    "hull": 0,
    "gyldig": true,
+   "lose": 4,
+   "kantGapCC": 2.92,
+   "dev": -0.04,
+   "laas": null,
    "celler": 3,
    "transitt": true,
    "strGrense": 15.1
@@ -358,6 +450,10 @@
    "start": 36,
    "hull": 0,
    "gyldig": true,
+   "lose": 4,
+   "kantGapCC": 2.92,
+   "dev": -0.04,
+   "laas": null,
    "celler": 3,
    "transitt": true,
    "strGrense": 15.1
@@ -373,24 +469,32 @@
    "start": 14,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.23,
+   "dev": 0,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 17.1
   },
   "enHindring|v|bl": {
    "status": "ok",
-   "n": 51,
-   "cc": 10.26,
-   "m": 96,
-   "dek": 89,
+   "n": 49,
+   "cc": 10.83,
+   "m": 96.02,
+   "dek": 93.8,
    "stripe": 5.1,
    "ende": 0,
-   "start": 19,
+   "start": 13,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.14,
+   "dev": 0.02,
+   "laas": null,
    "celler": 4,
    "transitt": true,
-   "strGrense": 16.3
+   "strGrense": 16.8
   },
   "enHindring|v|tl": {
    "status": "ok",
@@ -403,24 +507,32 @@
    "start": 14,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.23,
+   "dev": 0,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 17.1
   },
   "enHindring|v|br": {
    "status": "ok",
-   "n": 50,
-   "cc": 10.54,
+   "n": 49,
+   "cc": 10.83,
    "m": 96,
-   "dek": 90.7,
+   "dek": 93.7,
    "stripe": 5.1,
    "ende": 0,
-   "start": 20,
+   "start": 13,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.14,
+   "dev": 0,
+   "laas": null,
    "celler": 4,
    "transitt": true,
-   "strGrense": 16.5
+   "strGrense": 16.8
   },
   "enHindring|h|tr": {
    "status": "ok",
@@ -433,39 +545,51 @@
    "start": 21,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.93,
+   "dev": 0,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 16.7
   },
   "enHindring|h|bl": {
    "status": "ok",
-   "n": 42,
-   "cc": 9.06,
+   "n": 39,
+   "cc": 10.35,
    "m": 96,
-   "dek": 77.1,
-   "stripe": 14.1,
+   "dek": 89.3,
+   "stripe": 5.1,
    "ende": 0,
-   "start": 32,
+   "start": 19,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.77,
+   "dev": 0,
+   "laas": null,
    "celler": 4,
    "transitt": true,
-   "strGrense": 15.1
+   "strGrense": 16.4
   },
   "enHindring|h|tl": {
    "status": "ok",
-   "n": 42,
-   "cc": 9.06,
-   "m": 96,
-   "dek": 77.1,
-   "stripe": 14.1,
+   "n": 39,
+   "cc": 10.35,
+   "m": 96.01,
+   "dek": 89.3,
+   "stripe": 5.1,
    "ende": 0,
-   "start": 35,
+   "start": 19,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.77,
+   "dev": 0.01,
+   "laas": null,
    "celler": 4,
    "transitt": true,
-   "strGrense": 15.1
+   "strGrense": 16.4
   },
   "enHindring|h|br": {
    "status": "ok",
@@ -478,9 +602,205 @@
    "start": 21,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.93,
+   "dev": 0,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 16.7
+  },
+  "hind1|v|tr": {
+   "status": "ok",
+   "n": 26,
+   "cc": 13.72,
+   "m": 69.86,
+   "dek": 96.2,
+   "stripe": 18.8,
+   "ende": 0,
+   "start": 22,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 1.01,
+   "dev": -0.91,
+   "laas": {
+    "dekMin": 95,
+    "devMax": 1,
+    "loseMax": 0,
+    "kantGapCCMax": 1
+   },
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 19.7
+  },
+  "hind1|v|bl": {
+   "status": "ok",
+   "n": 26,
+   "cc": 14.38,
+   "m": 69.94,
+   "dek": 98.5,
+   "stripe": 5.1,
+   "ende": 0,
+   "start": 13,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.8,
+   "laas": {
+    "dekMin": 95,
+    "devMax": 1,
+    "loseMax": 0,
+    "kantGapCCMax": 1
+   },
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 20.4
+  },
+  "hind1|v|tl": {
+   "status": "ok",
+   "n": 27,
+   "cc": 13.72,
+   "m": 70.5,
+   "dek": 95.1,
+   "stripe": 5.1,
+   "ende": 0,
+   "start": 18,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.39,
+   "dev": 0,
+   "laas": {
+    "dekMin": 95,
+    "devMax": 1,
+    "loseMax": 0,
+    "kantGapCCMax": 1
+   },
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 19.7
+  },
+  "hind1|v|br": {
+   "status": "ok",
+   "n": 27,
+   "cc": 13.72,
+   "m": 70.5,
+   "dek": 95.1,
+   "stripe": 5.1,
+   "ende": 0,
+   "start": 18,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.39,
+   "dev": 0,
+   "laas": {
+    "dekMin": 95,
+    "devMax": 1,
+    "loseMax": 0,
+    "kantGapCCMax": 1
+   },
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 19.7
+  },
+  "hind1|h|tr": {
+   "status": "ok",
+   "n": 27,
+   "cc": 14.22,
+   "m": 70.6,
+   "dek": 98.5,
+   "stripe": 5.1,
+   "ende": 0,
+   "start": 300,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.14,
+   "laas": {
+    "dekMin": 95,
+    "devMax": 1,
+    "loseMax": 0,
+    "kantGapCCMax": 1
+   },
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 20.2
+  },
+  "hind1|h|bl": {
+   "status": "ok",
+   "n": 27,
+   "cc": 14.22,
+   "m": 70.6,
+   "dek": 98.5,
+   "stripe": 5.1,
+   "ende": 0,
+   "start": 300,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.14,
+   "laas": {
+    "dekMin": 95,
+    "devMax": 1,
+    "loseMax": 0,
+    "kantGapCCMax": 1
+   },
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 20.2
+  },
+  "hind1|h|tl": {
+   "status": "ok",
+   "n": 27,
+   "cc": 14.22,
+   "m": 70.6,
+   "dek": 98.5,
+   "stripe": 5.1,
+   "ende": 0,
+   "start": 13,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.14,
+   "laas": {
+    "dekMin": 95,
+    "devMax": 1,
+    "loseMax": 0,
+    "kantGapCCMax": 1
+   },
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 20.2
+  },
+  "hind1|h|br": {
+   "status": "ok",
+   "n": 27,
+   "cc": 14.22,
+   "m": 70.6,
+   "dek": 98.5,
+   "stripe": 5.1,
+   "ende": 0,
+   "start": 13,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.14,
+   "laas": {
+    "dekMin": 95,
+    "devMax": 1,
+    "loseMax": 0,
+    "kantGapCCMax": 1
+   },
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 20.2
   },
   "flereHindringer|v|tr": {
    "status": "ingen"
@@ -517,6 +837,10 @@
    "start": 18,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.5,
+   "dev": 0.23,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.5
@@ -532,6 +856,10 @@
    "start": 18,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.5,
+   "dev": 0.23,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.5
@@ -547,6 +875,10 @@
    "start": 18,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.5,
+   "dev": 0.23,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.5
@@ -562,6 +894,10 @@
    "start": 18,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.5,
+   "dev": 0.23,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.5
@@ -589,6 +925,10 @@
    "start": 20,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.8,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": true,
    "strGrense": 17.1
@@ -604,6 +944,10 @@
    "start": 23,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 1,
+   "dev": -0.83,
+   "laas": null,
    "celler": 3,
    "transitt": true,
    "strGrense": 17.5
@@ -619,6 +963,10 @@
    "start": 222,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.48,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": true,
    "strGrense": 17.5
@@ -634,6 +982,10 @@
    "start": 17,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.48,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": true,
    "strGrense": 17.5
@@ -649,6 +1001,10 @@
    "start": 295,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.01,
+   "dev": -0.94,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.1
@@ -664,6 +1020,10 @@
    "start": 295,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.01,
+   "dev": -0.94,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.1
@@ -679,6 +1039,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.01,
+   "dev": -0.94,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.1
@@ -694,6 +1058,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.01,
+   "dev": -0.94,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.1
@@ -721,6 +1089,10 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.2,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 19.8
@@ -736,6 +1108,10 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.2,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 19.8
@@ -751,6 +1127,10 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.2,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 19.8
@@ -766,33 +1146,13 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.2,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 19.8
-  },
-  "skraa|v|tr": {
-   "status": "ingen"
-  },
-  "skraa|v|bl": {
-   "status": "ingen"
-  },
-  "skraa|v|tl": {
-   "status": "ingen"
-  },
-  "skraa|v|br": {
-   "status": "ingen"
-  },
-  "skraa|h|tr": {
-   "status": "ingen"
-  },
-  "skraa|h|bl": {
-   "status": "ingen"
-  },
-  "skraa|h|tl": {
-   "status": "ingen"
-  },
-  "skraa|h|br": {
-   "status": "ingen"
   },
   "kabelForLang|v|tr": {
    "status": "ingen"
@@ -829,6 +1189,10 @@
    "start": 129,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 2.03,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 54.7
@@ -844,6 +1208,10 @@
    "start": 129,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 2.03,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 54.7
@@ -859,6 +1227,10 @@
    "start": 129,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 2.03,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 54.7
@@ -874,6 +1246,10 @@
    "start": 129,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 2.03,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 54.7
@@ -889,6 +1265,10 @@
    "start": 161,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 2.73,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 54.3
@@ -904,6 +1284,10 @@
    "start": 161,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 2.73,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 54.3
@@ -919,6 +1303,10 @@
    "start": 161,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 2.73,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 54.3
@@ -934,6 +1322,10 @@
    "start": 161,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 2.73,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 54.3
@@ -964,18 +1356,22 @@
   },
   "umuligStartHjorne|v|tr": {
    "status": "ok",
-   "n": 44,
-   "cc": 9.07,
-   "m": 96,
-   "dek": 79.1,
-   "stripe": 5,
+   "n": 35,
+   "cc": 11.14,
+   "m": 96.35,
+   "dek": 96.5,
+   "stripe": 16.2,
    "ende": 0,
-   "start": 36,
+   "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 1.01,
+   "dev": 0.36,
+   "laas": null,
    "celler": 2,
    "transitt": false,
-   "strGrense": 15.1
+   "strGrense": 17.1
   },
   "umuligStartHjorne|v|bl": {
    "status": "ok",
@@ -988,6 +1384,10 @@
    "start": 289,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.41,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 17.5
@@ -1003,6 +1403,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.41,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 17.5
@@ -1018,6 +1422,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.41,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 17.5
@@ -1033,6 +1441,10 @@
    "start": 389,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.8,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 17.6
@@ -1048,6 +1460,10 @@
    "start": 121,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.8,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 17.6
@@ -1063,6 +1479,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.8,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 17.6
@@ -1078,9 +1498,37 @@
    "start": 279,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": -0.8,
+   "laas": null,
    "celler": 2,
    "transitt": false,
    "strGrense": 17.6
+  },
+  "skraa|v|tr": {
+   "status": "ingen"
+  },
+  "skraa|v|bl": {
+   "status": "ingen"
+  },
+  "skraa|v|tl": {
+   "status": "ingen"
+  },
+  "skraa|v|br": {
+   "status": "ingen"
+  },
+  "skraa|h|tr": {
+   "status": "ingen"
+  },
+  "skraa|h|bl": {
+   "status": "ingen"
+  },
+  "skraa|h|tl": {
+   "status": "ingen"
+  },
+  "skraa|h|br": {
+   "status": "ingen"
   },
   "badHakk|v|tr": {
    "status": "ok",
@@ -1093,6 +1541,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 1.01,
+   "dev": 0.19,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 17.6
@@ -1108,6 +1560,10 @@
    "start": 20,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.97,
+   "dev": 0.19,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 17.6
@@ -1123,6 +1579,10 @@
    "start": 197,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.97,
+   "dev": 0.19,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 17.6
@@ -1138,6 +1598,10 @@
    "start": 204,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 1.01,
+   "dev": 0.19,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 17.6
@@ -1153,6 +1617,10 @@
    "start": 94,
    "hull": 0,
    "gyldig": true,
+   "lose": 1,
+   "kantGapCC": 0.45,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 17.2
@@ -1168,6 +1636,10 @@
    "start": 37,
    "hull": 0,
    "gyldig": true,
+   "lose": 4,
+   "kantGapCC": 2.69,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 15.2
@@ -1183,6 +1655,10 @@
    "start": 206,
    "hull": 0,
    "gyldig": true,
+   "lose": 1,
+   "kantGapCC": 0.45,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 17.2
@@ -1198,6 +1674,10 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 1,
+   "kantGapCC": 0.45,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 17.2
@@ -1213,6 +1693,10 @@
    "start": 13,
    "hull": 0,
    "gyldig": true,
+   "lose": 3,
+   "kantGapCC": 0,
+   "dev": -0.07,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 19.2
@@ -1228,6 +1712,10 @@
    "start": 25,
    "hull": 0,
    "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.96,
+   "dev": 0,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 17.6
@@ -1243,6 +1731,10 @@
    "start": 124,
    "hull": 0,
    "gyldig": true,
+   "lose": 3,
+   "kantGapCC": 0,
+   "dev": -0.07,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 19.2
@@ -1258,6 +1750,10 @@
    "start": 195,
    "hull": 0,
    "gyldig": true,
+   "lose": 3,
+   "kantGapCC": 0,
+   "dev": -0.07,
+   "laas": null,
    "celler": 4,
    "transitt": true,
    "strGrense": 19.2
@@ -1273,6 +1769,10 @@
    "start": 13,
    "hull": 0,
    "gyldig": true,
+   "lose": 3,
+   "kantGapCC": 0.01,
+   "dev": -0.59,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.9
@@ -1288,6 +1788,10 @@
    "start": 19,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.52,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.9
@@ -1303,6 +1807,10 @@
    "start": 19,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.52,
+   "dev": 0,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.9
@@ -1318,6 +1826,10 @@
    "start": 13,
    "hull": 0,
    "gyldig": true,
+   "lose": 3,
+   "kantGapCC": 0.01,
+   "dev": -0.59,
+   "laas": null,
    "celler": 3,
    "transitt": false,
    "strGrense": 18.9
@@ -1333,6 +1845,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.06,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 17.1
@@ -1348,6 +1864,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.06,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 17.1
@@ -1363,6 +1883,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.06,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 17.1
@@ -1378,6 +1902,10 @@
    "start": 12,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.01,
+   "dev": 0.06,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 17.1
@@ -1393,6 +1921,10 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.44,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 16.9
@@ -1408,6 +1940,10 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.44,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 16.9
@@ -1423,6 +1959,10 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.44,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 16.9
@@ -1438,132 +1978,19 @@
    "start": 16,
    "hull": 0,
    "gyldig": true,
+   "lose": 0,
+   "kantGapCC": 0.44,
+   "dev": 0,
+   "laas": null,
    "celler": 1,
    "transitt": false,
    "strGrense": 16.9
   },
-  "badHakk41|v|tr": {
-   "status": "ok",
-   "n": 46,
-   "cc": 9.06,
-   "m": 41.01,
-   "dek": 63.3,
-   "stripe": 13.3,
-   "ende": 0,
-   "start": 33,
-   "hull": 0,
-   "gyldig": true,
-   "celler": 4,
-   "transitt": true,
-   "strGrense": 15.1
-  },
-  "badHakk41|v|bl": {
-   "status": "ok",
-   "n": 34,
-   "cc": 12.09,
-   "m": 41,
-   "dek": 84.4,
-   "stripe": 17.1,
-   "ende": 0,
-   "start": 24,
-   "hull": 0,
-   "gyldig": true,
-   "celler": 4,
-   "transitt": true,
-   "strGrense": 18.1
-  },
-  "badHakk41|v|tl": {
-   "status": "ok",
-   "n": 31,
-   "cc": 13.81,
-   "m": 41.04,
-   "dek": 94.9,
-   "stripe": 18,
-   "ende": 0,
-   "start": 125,
-   "hull": 0,
-   "gyldig": true,
-   "celler": 4,
-   "transitt": true,
-   "strGrense": 19.8
-  },
-  "badHakk41|v|br": {
-   "status": "ok",
-   "n": 31,
-   "cc": 13.81,
-   "m": 41.04,
-   "dek": 94.9,
-   "stripe": 18,
-   "ende": 0,
-   "start": 96,
-   "hull": 0,
-   "gyldig": true,
-   "celler": 4,
-   "transitt": true,
-   "strGrense": 19.8
-  },
-  "badHakk41|h|tr": {
-   "status": "ok",
-   "n": 18,
-   "cc": 11.87,
-   "m": 41.37,
-   "dek": 82.9,
-   "stripe": 5.1,
-   "ende": 0,
-   "start": 21,
-   "hull": 0,
-   "gyldig": true,
-   "celler": 3,
-   "transitt": false,
-   "strGrense": 17.9
-  },
-  "badHakk41|h|bl": {
-   "status": "ok",
-   "n": 16,
-   "cc": 13.45,
-   "m": 41.23,
-   "dek": 91.4,
-   "stripe": 5.1,
-   "ende": 0,
-   "start": 13,
-   "hull": 0,
-   "gyldig": true,
-   "celler": 2,
-   "transitt": false,
-   "strGrense": 19.4
-  },
-  "badHakk41|h|tl": {
-   "status": "ok",
-   "n": 16,
-   "cc": 13.45,
-   "m": 41.23,
-   "dek": 91.4,
-   "stripe": 5.1,
-   "ende": 0,
-   "start": 202,
-   "hull": 0,
-   "gyldig": true,
-   "celler": 2,
-   "transitt": false,
-   "strGrense": 19.4
-  },
-  "badHakk41|h|br": {
-   "status": "ok",
-   "n": 18,
-   "cc": 11.87,
-   "m": 41.37,
-   "dek": 82.9,
-   "stripe": 5.1,
-   "ende": 0,
-   "start": 21,
-   "hull": 0,
-   "gyldig": true,
-   "celler": 3,
-   "transitt": false,
-   "strGrense": 17.9
-  },
   "rom8|v|soner": {
    "status": "ok",
+   "dek": 99.4,
+   "forhold": 1.006,
+   "laas": null,
    "motorer": [
     "geo",
     "geo"
@@ -1587,6 +2014,9 @@
   },
   "rom8|h|soner": {
    "status": "ok",
+   "dek": 98.6,
+   "forhold": 1.014,
+   "laas": null,
    "motorer": [
     "geo",
     "geo"
@@ -1610,6 +2040,9 @@
   },
   "rekt2kab|v|soner": {
    "status": "ok",
+   "dek": 99.6,
+   "forhold": 1.004,
+   "laas": null,
    "motorer": [
     "geo",
     "geo"
@@ -1633,6 +2066,9 @@
   },
   "rekt2kab|h|soner": {
    "status": "ok",
+   "dek": 100.1,
+   "forhold": 0.999,
+   "laas": null,
    "motorer": [
     "geo",
     "geo"
@@ -1648,52 +2084,6 @@
    ],
    "gyldig": true,
    "søm": 12.56,
-   "kobl": [
-    0,
-    0
-   ],
-   "busteBueCm": 0
-  },
-  "rekt2kabUlike|v|soner": {
-   "status": "ok",
-   "motorer": [
-    "geo",
-    "geo"
-   ],
-   "cc": [
-    17.62,
-    17.62
-   ],
-   "ccLik": 0,
-   "dev": [
-    -0.13,
-    0.87
-   ],
-   "gyldig": true,
-   "søm": 17.62,
-   "kobl": [
-    0,
-    0
-   ],
-   "busteBueCm": 0
-  },
-  "rekt2kabUlike|h|soner": {
-   "status": "ok",
-   "motorer": [
-    "geo",
-    "geo"
-   ],
-   "cc": [
-    16.8,
-    16.8
-   ],
-   "ccLik": 0,
-   "dev": [
-    0,
-    0
-   ],
-   "gyldig": true,
-   "søm": 16.8,
    "kobl": [
     0,
     0
@@ -1769,6 +2159,210 @@
     0
    ],
    "busteBueCm": 0
+  },
+  "rekt2kabUlike|v|soner": {
+   "status": "ok",
+   "dek": 100.2,
+   "forhold": 0.998,
+   "laas": null,
+   "motorer": [
+    "geo",
+    "geo"
+   ],
+   "cc": [
+    17.62,
+    17.62
+   ],
+   "ccLik": 0,
+   "dev": [
+    -0.13,
+    0.87
+   ],
+   "gyldig": true,
+   "søm": 17.62,
+   "kobl": [
+    0,
+    0
+   ],
+   "busteBueCm": 0
+  },
+  "rekt2kabUlike|h|soner": {
+   "status": "ok",
+   "dek": 95.5,
+   "forhold": 1.048,
+   "laas": null,
+   "motorer": [
+    "geo",
+    "geo"
+   ],
+   "cc": [
+    16.8,
+    16.8
+   ],
+   "ccLik": 0,
+   "dev": [
+    0,
+    0
+   ],
+   "gyldig": true,
+   "søm": 16.8,
+   "kobl": [
+    0,
+    0
+   ],
+   "busteBueCm": 0
+  },
+  "badHakk41|v|tr": {
+   "status": "ok",
+   "n": 46,
+   "cc": 9.06,
+   "m": 41.01,
+   "dek": 63.3,
+   "stripe": 13.3,
+   "ende": 0,
+   "start": 33,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 5,
+   "kantGapCC": 2.53,
+   "dev": 0.02,
+   "laas": null,
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 15.1
+  },
+  "badHakk41|v|bl": {
+   "status": "ok",
+   "n": 34,
+   "cc": 12.09,
+   "m": 41,
+   "dek": 84.4,
+   "stripe": 17.1,
+   "ende": 0,
+   "start": 24,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 3,
+   "kantGapCC": 0.97,
+   "dev": 0,
+   "laas": null,
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 18.1
+  },
+  "badHakk41|v|tl": {
+   "status": "ok",
+   "n": 31,
+   "cc": 13.81,
+   "m": 41.04,
+   "dek": 94.9,
+   "stripe": 18,
+   "ende": 0,
+   "start": 125,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.01,
+   "dev": 0.09,
+   "laas": null,
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 19.8
+  },
+  "badHakk41|v|br": {
+   "status": "ok",
+   "n": 31,
+   "cc": 13.81,
+   "m": 41.04,
+   "dek": 94.9,
+   "stripe": 18,
+   "ende": 0,
+   "start": 96,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.01,
+   "dev": 0.09,
+   "laas": null,
+   "celler": 4,
+   "transitt": true,
+   "strGrense": 19.8
+  },
+  "badHakk41|h|tr": {
+   "status": "ok",
+   "n": 18,
+   "cc": 11.87,
+   "m": 41.37,
+   "dek": 82.9,
+   "stripe": 5.1,
+   "ende": 0,
+   "start": 21,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.79,
+   "dev": 0.91,
+   "laas": null,
+   "celler": 3,
+   "transitt": false,
+   "strGrense": 17.9
+  },
+  "badHakk41|h|bl": {
+   "status": "ok",
+   "n": 16,
+   "cc": 13.45,
+   "m": 41.23,
+   "dek": 91.4,
+   "stripe": 5.1,
+   "ende": 0,
+   "start": 13,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 1,
+   "kantGapCC": 0.01,
+   "dev": 0.57,
+   "laas": null,
+   "celler": 2,
+   "transitt": false,
+   "strGrense": 19.4
+  },
+  "badHakk41|h|tl": {
+   "status": "ok",
+   "n": 16,
+   "cc": 13.45,
+   "m": 41.23,
+   "dek": 91.4,
+   "stripe": 5.1,
+   "ende": 0,
+   "start": 202,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 1,
+   "kantGapCC": 0.01,
+   "dev": 0.57,
+   "laas": null,
+   "celler": 2,
+   "transitt": false,
+   "strGrense": 19.4
+  },
+  "badHakk41|h|br": {
+   "status": "ok",
+   "n": 18,
+   "cc": 11.87,
+   "m": 41.37,
+   "dek": 82.9,
+   "stripe": 5.1,
+   "ende": 0,
+   "start": 21,
+   "hull": 0,
+   "gyldig": true,
+   "lose": 2,
+   "kantGapCC": 0.79,
+   "dev": 0.91,
+   "laas": null,
+   "celler": 3,
+   "transitt": false,
+   "strGrense": 17.9
   }
  }
 }
