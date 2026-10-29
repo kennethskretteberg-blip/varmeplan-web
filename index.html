@@ -28064,6 +28064,25 @@ async function _planRegressionTest() {
     check('F: _rasterChoose(\'plan\') går til vegg-sjekken', true,
       /if \(mode === 'plan'\) \{ _planStartFraFil\(file\); return; \}/.test(u(_rasterChoose)), 'feil ruting');
 
+    // ── 160: «Rett opp etter vegg» også i høyreklikkmenyen (to innganger, én funksjon) ──
+    {
+      const bgSaved = S.bgs[1], floorSaved = S.ui.activeFloorId;
+      try {
+        S.ui.activeFloorId = 1;
+        const lagBg = (geo) => ({ img: {}, originX: 0, originY: 0, widthCm: 1000, heightCm: 800,
+                                  opacity: 1, locked: true, ...(geo ? { geo: { epsg: 25833 } } : {}) });
+        S.bgs[1] = lagBg(false);
+        check('160: høyreklikk (låst, uvalgt plantegning) har «Rett opp etter vegg»', true,
+          /startBgStraighten\(\)/.test(_bgCtxMenuItems()), 'mangler');
+        S.bgs[1] = lagBg(true);
+        checkIkke('160: høyreklikk på kart-bakgrunn har det IKKE',
+          /startBgStraighten/.test(_bgCtxMenuItems()), 'finnes på kart');
+        check('160: ⋯-menyene bruker samme funksjon (ingen kopi)', true,
+          (u(_bgSelMore).match(/startBgStraighten\(\)/g) || []).length === 1
+          && (u(_bgCtxMore).match(/startBgStraighten\(\)/g) || []).length === 1, 'kopiert logikk');
+      } finally { S.bgs[1] = bgSaved; S.ui.activeFloorId = floorSaved; }
+    }
+
     // ── J (052) — målestokk fra motoren, kalibrering, rom på lerretet ──
     {
       const bgSaved = S.bgs[1], modeSaved = S.ui.drawMode, romSaved = S.rooms;
@@ -71256,6 +71275,7 @@ function _bgCtxMenuItems() {
       <input type="range" min="5" max="100" value="${opVal}" style="flex:1;min-width:70px" oninput="setBgOpacity(this.value)" onclick="event.stopPropagation()"></div>
     <div class="ctx-item" onclick="selectBgLayer(_activeBgLayer());hideCtx()">${IC('move',14)} Velg / flytt plantegning</div>
     <div class="ctx-item" onclick="startBgCalibrate();hideCtx()">${IC('ruler',14)} Sett målestokk på nytt</div>
+    ${_bgIsGeo(bg) ? '' : `<div class="ctx-item" onclick="startBgStraighten();hideCtx()">${IC('ruler',14)} Rett opp etter vegg</div>`}
     <div class="ctx-item" onclick="_replaceFloorBg(S.ui.activeFloorId);hideCtx()">${IC('camera',14)} Bytt plantegning</div>
     <div class="ctx-item" onclick="toggleBgLock();renderSidebar();hideCtx()">${IC(bg.locked?'lock-open':'lock',14)} ${bg.locked?'Lås opp':'Lås'} underlag</div>
     <div class="ctx-item danger" onclick="removeBgImage();hideCtx()">${IC('trash',14)} Fjern bakgrunn</div>`;
@@ -72325,6 +72345,7 @@ function _bgCtxMore(e) {
   }
   let items = I(`_bgStartMove()`, IC('move',14)+' Flytt underlag');
   items += I(`startBgCalibrate()`, '<svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> Sett målestokk på nytt');
+  items += I(`startBgStraighten()`, IC('ruler',14)+' Rett opp etter vegg');
   items += I(`_replaceFloorBg(S.ui.activeFloorId)`, IC('camera',14)+' Bytt plantegning');
   items += `<div class="ctx-sep" style="height:1px;background:var(--border);margin:4px 6px"></div>`;
   items += I(`removeBgImage()`, '<svg class="ic ic-trash" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M18.5 6l-1 14a2 2 0 0 1-2 1.8H8.5a2 2 0 0 1-2-1.8L5.5 6"/></svg> Fjern bakgrunn', true);
