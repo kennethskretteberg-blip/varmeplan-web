@@ -83141,7 +83141,8 @@ async function exportPDF(opts) {
       const _sorted = title === 'Tilbehør varmefolie' ? _sortFoilAccessories(list)
         : [...list].sort((a, b) => (a.art_no || '').localeCompare(b.art_no || ''));
       for (const it of _sorted) {
-        _matRow(it.name, it.qty, it.unit || 'stk', it.el_no, it.art_no);
+        // 163: dekket areal bak enheten — «60 | stk (43,2 m²)» for plater og plastfolie, ellers som før.
+        _matRow(it.name, it.qty, (it.unit || 'stk') + _accCoversSuffix(it.id, it.qty), it.el_no, it.art_no);
         if (it.rooms && it.rooms.length) {
           doc.setFontSize(7); doc.setTextColor(120, 130, 150);
           doc.text('Rom: ' + it.rooms.join(', '), col5[0] + 2, y); y += 4;
@@ -84687,14 +84688,26 @@ let PRODUCT_CATEGORIES = []; // [{id, name, module_type, sort_order, ...}]
 // ─── FOIL ACCESSORIES (per foil-accessories-spec.md) ─────────
 // Declarative catalog: a new accessory = a new entry, no logic changes.
 // All article numbers intentionally blank — filled in by Kenneth later.
+// 163 (Kenneth 30.10.2026) — tre valgfrie felt på en oppføring, lest av _accInfoText/_accCoversSuffix:
+//   coversM2PerUnit  areal én enhet dekker (plate 0,72 m², plastrull 39 m²) → «= 43,2 m² (brutto 39,2 m²)»
+//                    i dialogen (live med antallet) og «60 stk (43,2 m²)» i PDF-lista og Excel «Bestilling».
+//   coversRef        hva dekningen måles mot: 'gross' (romareal brutto) eller 'foil' (tegnet folieareal).
+//   packSize         selges bare i hele pakker: forslaget OG et tall brukeren skriver rundes OPP til hel
+//                    pakke (0 forblir 0). Kapton Disc = 100 i dag; når Cenika går over til 50-ruller,
+//                    endres tallet her — ett sted.
+//   basis(ctx, qty)  liten skrift under navnet (kabeltilbehøret hadde det alt): «Tegnet: 20 stk …».
 const FOIL_ACCESSORIES = [
   { id: 'tilkoblingsklemmer', name: 'FlexFoil Tilkoblingsklemme AMP', art_no: 'CVA54124', el_no: '5418928',
     unit: 'stk',  group: 'auto',   defaultEnabled: true, defaultChecked: true,
     calc: (ctx) => ctx.stripCount * 2,
-    overheadPct: 0, roundTo: 1 },
+    // 163: forslaget = tegnet + 15 % (Kenneth: «vi pleier alltid å legge ved noen ekstra, 10–20 %»).
+    basis: (ctx) => `Tegnet: ${ctx.stripCount * 2} stk (2 pr foliebredde)`,
+    overheadPct: 15, roundTo: 1 },
   { id: 'kapton_disc', name: 'FlexFoil Kapton Disc endeforsegling', art_no: 'CVA54214', el_no: '5418934',
     unit: 'stk',  group: 'auto',   defaultEnabled: true, defaultChecked: true,
     calc: (ctx) => ctx.stripCount * 2,
+    // 163: selges nå kun som hel rull à 100 — sett til 50 når 50-rullene kommer (Kenneth 30.10.2026).
+    packSize: 100,
     overheadPct: 0, roundTo: 1 },
   { id: 'lerretstape', name: 'FlexFoil Lerretstape 48mm×50m', art_no: 'CVA54211', el_no: '5418931',
     unit: 'rull', group: 'auto',   defaultEnabled: true, defaultChecked: true,
@@ -84707,14 +84720,17 @@ const FOIL_ACCESSORIES = [
   { id: 'underlagsplater', name: 'FlexFoil Underlagsplate Gul 50T 6mm 60×120', art_no: 'CVA54206', el_no: '5400765',
     unit: 'stk',  group: 'auto',   defaultEnabled: true, defaultChecked: true,
     calc: (ctx) => ctx.roomGrossArea_m2 / 0.72,
+    coversM2PerUnit: 0.72, coversRef: 'gross',   // 163: 60 × 120 cm = 0,72 m² per plate
     overheadPct: 10, roundTo: 1 },
   { id: 'plast_over', name: 'FlexFoil Plastfolie 0,20mm 2,60×15m (39 m²)', art_no: 'CVA54212', el_no: '5418932',
     unit: 'rull', group: 'auto',   defaultEnabled: true, defaultChecked: true,   // påbud
     calc: (ctx) => Math.ceil(ctx.totalFoilArea_m2 / 39),
+    coversM2PerUnit: 39, coversRef: 'foil',       // 163: 2,60 × 15 m = 39 m² per rull
     overheadPct: 0, roundTo: 1 },
   { id: 'plast_under', name: 'FlexFoil Plastfolie under varmefolie (39 m²)', art_no: 'CVA54212', el_no: '5418932',
     unit: 'rull', group: 'auto',   defaultEnabled: false, defaultChecked: false,
     calc: (ctx) => Math.ceil(ctx.totalFoilArea_m2 / 39),
+    coversM2PerUnit: 39, coversRef: 'foil',
     overheadPct: 0, roundTo: 1 },
   { id: 'dobbeltsidig_tape', name: 'FlexFoil Dobbelsidig tape 25mm×50m', art_no: 'CVA54210', el_no: '5418930',
     unit: 'rull', group: 'manual', defaultEnabled: false, defaultChecked: false,
@@ -84892,12 +84908,52 @@ function _heatedRoomIds() {
   return ids;
 }
 
-function _applyAccessoryCalc(acc, ctx) {
+// 163: pakkestørrelse — packSize (hele ruller, Kapton Disc) og roundTo (kabel-strips à 100) går
+// samme vei: rund OPP til hel pakke, 0 forblir 0. Brukes av forslaget (_applyAccessoryCalc) OG av
+// det brukeren skriver i dialogen (readRow i showAccessoriesModal) — samme regel begge steder.
+function _accPackSize(acc) { return Math.max(Number(acc && acc.packSize) || 1, Number(acc && acc.roundTo) || 1); }
+function _accRoundToPack(acc, qty) {
+  const p = _accPackSize(acc);
+  return (p > 1 && qty > 0) ? Math.ceil(qty / p) * p : qty;
+}
+// Behovet FØR pakkeavrunding: calc × (1 + påslag), hele enheter. 1e-9 tar flyttallsstøy
+// (40 × 1,15 = 46,00000000000001 skal bli 46, ikke 47 — samme grep som _foilSuggestQtyM).
+function _accNeedQty(acc, ctx) {
   let qty = Number(acc.calc(ctx) || 0);
   if (acc.overheadPct) qty = qty * (1 + acc.overheadPct / 100);
-  qty = Math.ceil(qty);
-  if (acc.roundTo > 1) qty = Math.ceil(qty / acc.roundTo) * acc.roundTo;
-  return qty;
+  return Math.max(0, Math.ceil(qty - 1e-9));
+}
+function _applyAccessoryCalc(acc, ctx) {
+  return _accRoundToPack(acc, _accNeedQty(acc, ctx));
+}
+// 163: dekket areal for et antall («43,2 m²») — null når oppføringen ikke har coversM2PerUnit.
+function _accCoversM2(acc, qty) {
+  return acc && acc.coversM2PerUnit > 0 ? Math.round(qty * acc.coversM2PerUnit * 10) / 10 : null;
+}
+function _accFmtM2(m2) { return Number(m2).toFixed(1).replace('.', ',') + ' m²'; }
+// Tillegget bak antallet i eksportene (PDF-tilbehørslista, Excel «Bestilling»): « (43,2 m²)», ellers ''.
+// Oppslag på id, siden lagrede rader bare bærer id/qty — katalogoppføringen eier arealet per enhet.
+function _accCoversSuffix(accId, qty) {
+  const a = FOIL_ACCESSORIES.find(x => x.id === accId);
+  const m2 = _accCoversM2(a, Number(qty) || 0);
+  return m2 == null ? '' : ` (${_accFmtM2(m2)})`;
+}
+// Dialogens informasjonslinje under raden — ÉN formatter, live med antallet i feltet:
+//   coversM2PerUnit → «= 43,2 m² (brutto 39,2 m²)» / «= 39,0 m² (folie 25,0 m²)»
+//   packSize        → «= 1 rull à 100 (behov 20)», pluss «— rundes opp til 200 stk» når tallet ikke er hel pakke
+function _accInfoText(acc, qty, ctx) {
+  qty = Math.max(0, Math.round(Number(qty) || 0));
+  if (acc.coversM2PerUnit > 0) {
+    const ref = acc.coversRef === 'foil' ? ['folie', ctx.totalFoilArea_m2] : ['brutto', ctx.roomGrossArea_m2];
+    return `= ${_accFmtM2(_accCoversM2(acc, qty))} (${ref[0]} ${_accFmtM2(ref[1] || 0)})`;
+  }
+  if (acc.packSize > 1) {
+    const need = _accNeedQty(acc, ctx);
+    const rund = _accRoundToPack(acc, qty);
+    return `= ${Math.ceil(qty / acc.packSize)} rull à ${acc.packSize} (behov ${need})`
+      + (rund !== qty ? ` — rundes opp til ${rund} stk` : '');
+  }
+  return '';
 }
 
 // localStorage key for persisted accessory choices (checkboxes + RKK dim only,
@@ -84975,7 +85031,9 @@ function showAccessoriesModal() {
     const enabledFor = (a) => hasSaved ? savedById.has(a.id) : (a.defaultChecked === true);
 
     // Generisk rad. basisText = utregningsgrunnlag; warn = flagg (f.eks. mangler i katalog).
-    const renderRow = (a, autoQty, basisText, warn) => {
+    // 163: infoCtx (folie) → en ekstra liten linje fra _accInfoText (dekket m² / hele ruller) som
+    // følger feltverdien live (lytteren under, data-acc-info). Kabel/matte sender ingen ctx → ingen linje.
+    const renderRow = (a, autoQty, basisText, warn, infoCtx) => {
       const enabled = enabledFor(a);
       const isAuto = a.group === 'auto';
       // Manuelle tilbehør (f.eks. FlexFoil tang) er avhuket AV som standard; når montøren huker
@@ -84985,11 +85043,12 @@ function showAccessoriesModal() {
       // justert det i modalen, og det er justeringen som er verdifull. Ikke regnet på nytt her.
       const savedQty = hasSaved ? savedById.get(a.id)?.qty : null;
       const startVal = savedQty != null ? savedQty : (isAuto ? autoQty : 1);
+      const infoText = infoCtx ? _accInfoText(a, startVal, infoCtx) : '';
       return `
         <div class="acc-row" style="display:flex;align-items:center;gap:10px;padding:6px 4px;border-bottom:1px solid var(--border,#eee)">
           <label style="display:flex;align-items:center;gap:6px;flex:1;cursor:pointer">
             <input type="checkbox" data-acc-id="${a.id}" data-role="enabled" tabindex="-1" ${enabled ? 'checked' : ''}>
-            <span style="font-size:13px">${esc(a.name)}${basisText ? `<br><span style="font-size:10px;color:var(--dim)">${esc(basisText)}</span>` : ''}${warn ? `<br><span style="font-size:10px;color:#d9822b">⚠ ${esc(warn)}</span>` : ''}</span>
+            <span style="font-size:13px">${esc(a.name)}${basisText ? `<br><span style="font-size:10px;color:var(--dim)">${esc(basisText)}</span>` : ''}${infoText ? `<br><span style="font-size:10px;color:var(--dim)" data-acc-info="${a.id}">${esc(infoText)}</span>` : ''}${warn ? `<br><span style="font-size:10px;color:#d9822b">⚠ ${esc(warn)}</span>` : ''}</span>
           </label>
           ${isAuto
             ? `<span style="font-size:11px;color:var(--dim);min-width:56px;text-align:right" title="Auto-foreslått">forslag: ${autoQty}</span>`
@@ -85064,7 +85123,11 @@ function showAccessoriesModal() {
       const _rkkAt = _foilAccOrderIdx(RKK_PRODUCTS[0].id);
       const foilBefore = foilSorted.filter(a => _foilAccOrderIdx(a.id) < _rkkAt);
       const foilAfter  = foilSorted.filter(a => _foilAccOrderIdx(a.id) >= _rkkAt);
-      const foilRows = (arr) => arr.length ? `<div>${arr.map(a => renderRow(a, a.group === 'auto' ? foilAutoQtys[a.id] : 0)).join('')}</div>` : '';
+      // 163: basis («Tegnet: 20 stk …») og info-linje (m² / hele ruller) fra oppføringen + foilCtx.
+      const foilRows = (arr) => arr.length ? `<div>${arr.map(a => {
+        const q = a.group === 'auto' ? foilAutoQtys[a.id] : 0;
+        return renderRow(a, q, a.basis ? a.basis(foilCtx, q) : '', undefined, foilCtx);
+      }).join('')}</div>` : '';
       // RKK har sin egen UI (radio + to tallfelt, ikke data-acc-id/renderRow) — samme
       // hasSaved-forrang som resten, men utledet direkte fra RKK_PRODUCTS sine id-er siden
       // savedById er nøkkeldrevet uansett rad-type. Ingen lagret RKK-rad → dim faller tilbake til
@@ -85207,6 +85270,15 @@ function showAccessoriesModal() {
     };
     overlay.querySelectorAll('input[data-stalnett-room]').forEach(cb => cb.addEventListener('change', _updateStalnettTotal));
     _updateStalnettTotal();
+    // 163: info-linja (dekket m² / hele ruller) følger antallet mens det skrives. Bare rader med
+    // data-acc-info har den (folietilbehør med coversM2PerUnit/packSize) — resten urørt.
+    overlay.querySelectorAll('span[data-acc-info]').forEach(sp => {
+      const id = sp.getAttribute('data-acc-info');
+      const a = FOIL_ACCESSORIES.find(x => x.id === id);
+      const qi = overlay.querySelector(`input[data-acc-id="${id}"][data-role="qty"]`);
+      if (!a || !qi) return;
+      qi.addEventListener('input', () => { sp.textContent = _accInfoText(a, qi.value, foilCtx); });
+    });
     // 125: «+1 m» / «+5 m» — legger til på feltets nåværende verdi (tomt felt regnes som 0).
     overlay.querySelectorAll('button[data-foil-plus]').forEach(b => b.addEventListener('click', () => {
       const qi = overlay.querySelector(`input[data-foil-pid="${b.getAttribute('data-foil-pid')}"][data-role="foil-qty"]`);
@@ -85232,9 +85304,14 @@ function showAccessoriesModal() {
         if (!enabled) return;
         const raw = qi?.value?.trim();
         let qty = raw !== '' && raw != null ? Math.max(0, Math.round(Number(raw))) : fallbackQty;
-        if (a.roundTo > 1 && qty > 0) qty = Math.ceil(qty / a.roundTo) * a.roundTo;  // strips alltid multiplum av 100
+        // Hele pakker: strips alltid multiplum av 100 (roundTo); 163: Kapton Disc hel rull (packSize).
+        // Skriver brukeren 130 på Kapton, blir det 200 — med en liten melding, ikke stille.
+        const skrevet = qty;
+        qty = _accRoundToPack(a, qty);
+        if (a.packSize > 1 && qty !== skrevet && typeof _showToast === 'function')
+          _showToast(`${a.name}: selges bare i hele ruller à ${a.packSize} — ${skrevet} rundet opp til ${qty} stk`, 'warning');
         // Avhuket manuelt tilbehør med tomt/0 antall → tell minst 1 (avrundet), så det ikke faller ut.
-        if (enabled && qty <= 0 && a.group !== 'auto') qty = a.roundTo > 1 ? a.roundTo : 1;
+        if (enabled && qty <= 0 && a.group !== 'auto') qty = _accPackSize(a);
         if (qty > 0) {
           const art = resolved ? resolved.art_no : (a.art_no || '');
           const el  = resolved ? resolved.el_no  : _accessoryElNo(a.art_no, a.el_no);
@@ -90975,6 +91052,32 @@ function _accessoryFoilQtyRegressionTest() {
     check('144 _aggregateAccessoryItems: folie i fasit, så ukjent, kabel sist', _fasit + ',framtidig_x,kabel_strips', _agg.join(',') === _fasit + ',framtidig_x,kabel_strips', _agg.join(','));
     check('144 uten RKK og tang: riktig innbyrdes rekkefølge', 'underlagsplater,kapton_disc,lerretstape', _aggregateAccessoryItems(_rev.filter(i => ['lerretstape', 'kapton_disc', 'underlagsplater'].includes(i.id))).map(i => i.id).join(',') === 'underlagsplater,kapton_disc,lerretstape', '');
 
+    // ── 163: dekket m² (coversM2PerUnit), klemmer tegnet + 15 %, Kapton Disc i hele ruller ──
+    const _acc = (id) => FOIL_ACCESSORIES.find(a => a.id === id);
+    const _ctx = (n, gross, foil) => ({ stripCount: n, stripWidthCount: n, roomGrossArea_m2: gross, totalFoilArea_m2: foil });
+    const KL = _acc('tilkoblingsklemmer'), KD = _acc('kapton_disc'), UP = _acc('underlagsplater'), PO = _acc('plast_over');
+    check('163 klemmer: 10 bredder → tegnet 20, forslag 23 (+15 %)', 23, _applyAccessoryCalc(KL, _ctx(10, 39.2, 25)) === 23, _applyAccessoryCalc(KL, _ctx(10, 39.2, 25)));
+    check('163 klemmer: 20 bredder → 46, ikke 47 (flyttallsstøy 46,00000000000001)', 46, _applyAccessoryCalc(KL, _ctx(20, 0, 0)) === 46, _applyAccessoryCalc(KL, _ctx(20, 0, 0)));
+    check('163 klemmer: 5 bredder → 11,5 → 12', 12, _applyAccessoryCalc(KL, _ctx(5, 0, 0)) === 12, _applyAccessoryCalc(KL, _ctx(5, 0, 0)));
+    check('163 klemmer basis-tekst', 'Tegnet: 20 stk (2 pr foliebredde)', KL.basis(_ctx(10, 0, 0)) === 'Tegnet: 20 stk (2 pr foliebredde)', KL.basis(_ctx(10, 0, 0)));
+    check('163 Kapton packSize = 100 (bytt til 50 når 50-rullene kommer)', 100, KD.packSize === 100, KD.packSize);
+    check('163 Kapton: behov 20 → 100', 100, _applyAccessoryCalc(KD, _ctx(10, 0, 0)) === 100, _applyAccessoryCalc(KD, _ctx(10, 0, 0)));
+    check('163 Kapton: behov 100 → 100 (ikke 200)', 100, _applyAccessoryCalc(KD, _ctx(50, 0, 0)) === 100, _applyAccessoryCalc(KD, _ctx(50, 0, 0)));
+    check('163 Kapton: behov 102 → 200', 200, _applyAccessoryCalc(KD, _ctx(51, 0, 0)) === 200, _applyAccessoryCalc(KD, _ctx(51, 0, 0)));
+    check('163 Kapton: 0 bredder → 0', 0, _applyAccessoryCalc(KD, _ctx(0, 0, 0)) === 0, _applyAccessoryCalc(KD, _ctx(0, 0, 0)));
+    check('163 _accRoundToPack: skrevet 130 → 200', 200, _accRoundToPack(KD, 130) === 200, _accRoundToPack(KD, 130));
+    check('163 _accRoundToPack: 0 → 0, 200 → 200', '0/200', _accRoundToPack(KD, 0) === 0 && _accRoundToPack(KD, 200) === 200, _accRoundToPack(KD, 0) + '/' + _accRoundToPack(KD, 200));
+    check('163 _accRoundToPack: uten pakke urørt (klemmer 23 → 23)', 23, _accRoundToPack(KL, 23) === 23, _accRoundToPack(KL, 23));
+    check('163 plater: 60 stk = 43,2 m²', 43.2, _accCoversM2(UP, 60) === 43.2, _accCoversM2(UP, 60));
+    check('163 plater: forslag 60 på 39,2 m² brutto (uendret fra før)', 60, _applyAccessoryCalc(UP, _ctx(10, 39.2, 25)) === 60, _applyAccessoryCalc(UP, _ctx(10, 39.2, 25)));
+    check('163 info plater', '= 43,2 m² (brutto 39,2 m²)', _accInfoText(UP, 60, _ctx(10, 39.2, 25)) === '= 43,2 m² (brutto 39,2 m²)', _accInfoText(UP, 60, _ctx(10, 39.2, 25)));
+    check('163 info plastfolie (mot folieareal)', '= 39,0 m² (folie 25,0 m²)', _accInfoText(PO, 1, _ctx(10, 39.2, 25)) === '= 39,0 m² (folie 25,0 m²)', _accInfoText(PO, 1, _ctx(10, 39.2, 25)));
+    check('163 info Kapton hel rull', '= 1 rull à 100 (behov 20)', _accInfoText(KD, 100, _ctx(10, 0, 0)) === '= 1 rull à 100 (behov 20)', _accInfoText(KD, 100, _ctx(10, 0, 0)));
+    check('163 info Kapton 130 varsler avrunding', true, /rundes opp til 200 stk$/.test(_accInfoText(KD, 130, _ctx(10, 0, 0))), _accInfoText(KD, 130, _ctx(10, 0, 0)));
+    check('163 info: klemmer/tape har ingen info-linje', '', _accInfoText(KL, 23, _ctx(10, 0, 0)) === '' && _accInfoText(_acc('lerretstape'), 2, _ctx(10, 0, 0)) === '', _accInfoText(KL, 23, _ctx(10, 0, 0)));
+    check('163 _accCoversSuffix: plater « (43,2 m²)», klemmer «»', ' (43,2 m²)/', _accCoversSuffix('underlagsplater', 60) === ' (43,2 m²)' && _accCoversSuffix('tilkoblingsklemmer', 23) === '', _accCoversSuffix('underlagsplater', 60) + '/' + _accCoversSuffix('tilkoblingsklemmer', 23));
+    check('163 kabel-strips roundTo 100 går samme vei (200 → 200, 201 → 300)', '200/300', _accRoundToPack({ roundTo: 100 }, 200) === 200 && _accRoundToPack({ roundTo: 100 }, 201) === 300, _accRoundToPack({ roundTo: 100 }, 201));
+
     // ── Én kilde i eksportene ───────────────────────────────────────────────────────────────
     const vismaLinje = (items, art) => {
       _vismaPasteAccessoryItems = items;
@@ -91076,6 +91179,75 @@ function _accessoryFoilQtyRegressionTest() {
           const t = await pdfTekster(innsatt);
           const pArt = t.filter(x => fasitArt.includes(x));
           check('144 PDF materialliste: folietilbehør i fasitrekkefølge', fasitArt.join(','), pArt.join(',') === fasitArt.join(','), pArt);
+        }
+      }
+
+      // ── 163: selve dialogen (DOM) — info-linje live, bekreftelse runder Kapton til hel rull ──
+      // Fiksturen: 5 bredder → klemmer tegnet 10, forslag 12; Kapton behov 10 → 100; brutto 38,0 m²
+      // (20 + 12 + 6) → plater 59; folie 29,16 m². saved.modal er den EKTE modalen (window-stubben over
+      // svarer bare med lagrede rader).
+      {
+        const toasts = []; const stilleToast = window._showToast; window._showToast = (m) => toasts.push(String(m));
+        const ektePrefs = window._saveAccessoryPrefs; window._saveAccessoryPrefs = () => {};   // ingen localStorage-skriving fra testen
+        const aapne = () => { const pr = saved.modal.call(window); return { pr, ov: document.querySelector('.exp-overlay') }; };
+        const felt = (ov, id) => ov.querySelector(`input[data-acc-id="${id}"][data-role="qty"]`);
+        const info = (ov, id) => { const s = ov.querySelector(`span[data-acc-info="${id}"]`); return s ? s.textContent : null; };
+        const radTekst = (ov, id) => { const i = felt(ov, id); return i ? i.closest('.acc-row').innerText.replace(/\s+/g, ' ').trim() : null; };
+        const skriv = (ov, id, v) => { const i = felt(ov, id); i.value = String(v); i.dispatchEvent(new Event('input', { bubbles: true })); };
+        try {
+          S.project.accessories = undefined;
+          let { pr, ov } = aapne();
+          check('163 dialog: klemmer «Tegnet: 10 stk (2 pr foliebredde)», forslag 12', '…Tegnet: 10 stk… / 12', /Tegnet: 10 stk \(2 pr foliebredde\)/.test(radTekst(ov, 'tilkoblingsklemmer')) && felt(ov, 'tilkoblingsklemmer').value === '12', radTekst(ov, 'tilkoblingsklemmer'));
+          check('163 dialog: Kapton forslag 100, «= 1 rull à 100 (behov 10)»', '100 / = 1 rull à 100 (behov 10)', felt(ov, 'kapton_disc').value === '100' && info(ov, 'kapton_disc') === '= 1 rull à 100 (behov 10)', felt(ov, 'kapton_disc').value + ' / ' + info(ov, 'kapton_disc'));
+          check('163 dialog: plater 59 → «= 42,5 m² (brutto 38,0 m²)»', '= 42,5 m² (brutto 38,0 m²)', felt(ov, 'underlagsplater').value === '59' && info(ov, 'underlagsplater') === '= 42,5 m² (brutto 38,0 m²)', felt(ov, 'underlagsplater').value + ' / ' + info(ov, 'underlagsplater'));
+          check('163 dialog: plastfolie «= 39,0 m² (folie 29,2 m²)»', '= 39,0 m² (folie 29,2 m²)', info(ov, 'plast_over') === '= 39,0 m² (folie 29,2 m²)', info(ov, 'plast_over'));
+          check('163 dialog: klemmer/tape uten info-linje', null, info(ov, 'tilkoblingsklemmer') === null && info(ov, 'lerretstape') === null, info(ov, 'tilkoblingsklemmer'));
+          skriv(ov, 'underlagsplater', 60);
+          check('163 dialog live: 60 plater → «= 43,2 m² (brutto 38,0 m²)»', '= 43,2 m² (brutto 38,0 m²)', info(ov, 'underlagsplater') === '= 43,2 m² (brutto 38,0 m²)', info(ov, 'underlagsplater'));
+          skriv(ov, 'kapton_disc', 130);
+          check('163 dialog live: Kapton 130 → «= 2 rull à 100 (behov 10) — rundes opp til 200 stk»', '= 2 rull à 100 (behov 10) — rundes opp til 200 stk', info(ov, 'kapton_disc') === '= 2 rull à 100 (behov 10) — rundes opp til 200 stk', info(ov, 'kapton_disc'));
+          document.getElementById('acc-confirm').click();
+          const r = await pr;
+          const kd = r.items.find(i => i.id === 'kapton_disc'), kl = r.items.find(i => i.id === 'tilkoblingsklemmer'), up = r.items.find(i => i.id === 'underlagsplater');
+          check('163 bekreft: Kapton 130 → 200 stk', 200, kd && kd.qty === 200, kd && kd.qty);
+          check('163 bekreft: melding om avrundingen', '…130 rundet opp til 200…', toasts.some(m => /130 rundet opp til 200/.test(m)), toasts);
+          check('163 bekreft: klemmer 12 og plater 60 urørt av pakkeregelen', '12/60', kl && kl.qty === 12 && up && up.qty === 60, (kl && kl.qty) + '/' + (up && up.qty));
+          // Lagret rad fra før (gammelt prosjekt: Kapton 20, plater 50): tallet står (125-regelen), tekstene vises likevel.
+          S.project.accessories = { items: [
+            { id: 'kapton_disc', name: KD.name, art_no: KD.art_no, unit: 'stk', qty: 20, source: 'auto', type: 'foil' },
+            { id: 'underlagsplater', name: UP.name, art_no: UP.art_no, unit: 'stk', qty: 50, source: 'auto', type: 'foil' }], savedAt: 1 };
+          ({ pr, ov } = aapne());
+          check('163 lagret Kapton 20 står, info varsler hel rull', '20 / …rundes opp til 100 stk', felt(ov, 'kapton_disc').value === '20' && /rundes opp til 100 stk$/.test(info(ov, 'kapton_disc')), felt(ov, 'kapton_disc').value + ' / ' + info(ov, 'kapton_disc'));
+          check('163 lagret plater 50 står, «= 36,0 m² (brutto 38,0 m²)»', '50 / = 36,0 m² (brutto 38,0 m²)', felt(ov, 'underlagsplater').value === '50' && info(ov, 'underlagsplater') === '= 36,0 m² (brutto 38,0 m²)', felt(ov, 'underlagsplater').value + ' / ' + info(ov, 'underlagsplater'));
+          document.getElementById('acc-cancel').click(); await pr;
+          S.project.accessories = undefined;
+          // VAKSINE: uten packSize ville 130 gått rett gjennom — sjekken over MÅ da bli rød.
+          const ektePack = KD.packSize; let syk = null;
+          try {
+            delete KD.packSize;
+            ({ pr, ov } = aapne()); skriv(ov, 'kapton_disc', 130); document.getElementById('acc-confirm').click();
+            syk = (await pr).items.find(i => i.id === 'kapton_disc');
+          } finally { KD.packSize = ektePack; }
+          check('VAKSINE 163: uten packSize går 130 rett gjennom (innført feil synlig)', 130, syk && syk.qty === 130, syk && syk.qty);
+        } finally {
+          window._showToast = stilleToast; window._saveAccessoryPrefs = ektePrefs; S.project.accessories = undefined;
+          const ov = document.querySelector('.exp-overlay'); if (ov) ov.style.display = 'none';
+        }
+      }
+      // 163: eksportene viser dekket m² bak enheten (PDF-tilbehørslista og Excel «Bestilling»)
+      {
+        const plateRad = { id: 'underlagsplater', name: UP.name, art_no: UP.art_no, el_no: UP.el_no, unit: 'stk', qty: 60, source: 'auto', type: 'foil' };
+        const kdRad = { id: 'kapton_disc', name: KD.name, art_no: KD.art_no, el_no: KD.el_no, unit: 'stk', qty: 100, source: 'auto', type: 'foil' };
+        const bRows = await xlsxBestilling([plateRad, kdRad]);
+        const bPlate = bRows.find(r => r[0] === 'CVA54206'), bKd = bRows.find(r => r[0] === 'CVA54214');
+        check('163 XLSX Bestilling: plater «60 stk (43,2 m²)»', '60 stk (43,2 m²)', bPlate && bPlate[1] === '60 stk (43,2 m²)', bPlate && bPlate[1]);
+        check('163 XLSX Bestilling: Kapton «100 stk» (ingen m²)', '100 stk', bKd && bKd[1] === '100 stk', bKd && bKd[1]);
+        if (window.jspdf && saved.jsPDF) {
+          const t = await pdfTekster([plateRad, kdRad]);
+          const i = t.indexOf(UP.name);   // superscript-patchen deler «m²» i biter → «stk (43,2 m», «2», «)»
+          check('163 PDF tilbehørslista: 60 | stk (43,2 m²)', '60 | stk (43,2 m', i >= 0 && t[i + 1] === '60' && t[i + 2] === 'stk (43,2 m', i >= 0 ? t.slice(i + 1, i + 4).join(' | ') : null);
+          const j = t.indexOf(KD.name);
+          check('163 PDF tilbehørslista: Kapton 100 | stk', '100 | stk', j >= 0 && t[j + 1] === '100' && t[j + 2] === 'stk', j >= 0 ? t.slice(j + 1, j + 3).join(' | ') : null);
         }
       }
 
@@ -91966,8 +92138,9 @@ async function _exportMaterialListXLSX() {
     const _emit = (label, list) => {
       if (!list.length) return;
       orderRows.push(['', '', `— ${label} —`]);
-      for (const { name, art_no, unit, qty } of _aggregateAccessoryItems(list)) {
-        orderRows.push([art_no, `${qty} ${unit || ''}`.trim(), name]);
+      for (const { id, name, art_no, unit, qty } of _aggregateAccessoryItems(list)) {
+        // 163: «60 stk (43,2 m²)» for plater og plastfolie (coversM2PerUnit), ellers som før.
+        orderRows.push([art_no, `${qty} ${unit || ''}`.trim() + _accCoversSuffix(id, qty), name]);
       }
     };
     for (const g of _accGroups) _emit(g.label, _accOnly.filter(it => (it.type || 'foil') === g.key));
