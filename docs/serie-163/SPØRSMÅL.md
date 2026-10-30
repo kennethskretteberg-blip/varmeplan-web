@@ -16,3 +16,23 @@
    er 20 mm bred. Greit, eller heller en egen liten linje under raden («Dekker 43,2 m²») som «Rom:»-linja?
 6. **Når 50-rullene kommer:** skal appen kunne velge 50 eller 100 per prosjekt (begge i omløp en stund), eller
    bare byttes til 50 når lageret er tomt for 100?
+
+## 164
+
+1. **B=20 i P0378** hører etter prøvepunkt-regelen til den 13 cm brede kanten V13 (midt på bredden, x = 320,7,
+   treffer y = 323) og får en egen liten kjede «1,2 | 19» som står klemt mellom romdimensjonene «13 cm» og
+   «37 cm». Alternativer: ta den med i stammens bunnkjede (da «begynner» den 11,8 cm før stammens vegg x = 323)
+   eller i venstre arms kjede. Hvilken?
+2. **Stabling av langs-kjeder:** stammens kjede (2,5 | 1083 | 2,5) ligger ett trinn utenfor venstre arms (−45 mot
+   −25), og høyre arms kjede havner på høyre side av rommet. Greit, eller vil du heller alltid ha alle på samme
+   side (stablet utover)?
+3. **U-rom:** midtfeltets langs-kjede går til høyre side (venstre og høyre kolliderer), og står langt fra sine
+   bredder. Skal den heller tegnes inne i åpningen, under innerveggen?
+4. **To produkttyper i samme rom** (folie + kabel, eller matte + kabel): kjedene ligger fortsatt oppå hverandre
+   ved 25 cm, som før 164. Skal de stables (modellen kan det nå)?
+5. **Romdimensjonene (blå) på innervegger** (V7 364, V11 310) tegnes innvendig i armen fordi retningen velges
+   etter rommets tyngdepunkt — det sto fra før og er urørt (V1–V13 skulle ikke røres). Egen sak for å legge dem
+   utenfor?
+6. **Treffsonen for romdimensjoner** brukte 65 cm for kabel/matte der tegningen bruker 20 (altså 45 cm feil ved
+   drag) — rettet til én kilde. Greit at det ble med i 164?
+7. **Skjeve/roterte rom** har ingen akseparallelle kanter → kjedene måler mot ytterboksen som før. Greit?

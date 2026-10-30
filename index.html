@@ -51292,7 +51292,7 @@ function deselectCable() {
 let _stripCacheVer = 0;
 const _stripCacheStore = {};
 
-function _invalidateStripCache() { _stripCacheVer++; }
+function _invalidateStripCache() { _stripCacheVer++; if (typeof _dimLayoutMemo !== 'undefined') _dimLayoutMemo.clear(); }
 
 /** All strips belonging to a room */
 function _stripsForRoom(roomId) {
@@ -51330,6 +51330,7 @@ let _cableCacheVer = 0;
 const _cableCacheStore = {};
 function _invalidateCableCache() {
   _cableCacheVer++;
+  if (typeof _dimLayoutMemo !== 'undefined') _dimLayoutMemo.clear();   // 164
   // 025: DET ENE etterpunktet for reservekabler. STEG 0.4 målte at alle 22 kallsteder for denne
   // funksjonen er MUTASJONER (plassering, sletting, retningsbytte, undo, prosjektåpning) — ingen
   // render- eller lesevei kaller den. Reserven følger derfor hovedkabelen uansett hvilken av de
@@ -51345,7 +51346,7 @@ function _cablesForRoom(roomId) {
 // ── Mat cache (same pattern as cable cache) ──
 let _matCacheVer = 0;
 const _matCacheStore = {};
-function _invalidateMatCache() { _matCacheVer++; }
+function _invalidateMatCache() { _matCacheVer++; if (typeof _dimLayoutMemo !== 'undefined') _dimLayoutMemo.clear(); }
 function _matsForRoom(roomId) {
   const key = 'r_' + roomId;
   const c = _matCacheStore[key];
@@ -56895,6 +56896,7 @@ function _presentProduktMaalSkjult() {
   return true;
 }
 function drawAllDimAnnotations() {
+  _dimLayoutMemo.clear();   // 164: kjedeoppsettene regnes én gang per tegneomgang
   if (S.ui?._pdfOverview) return;   // 154: målkjeder utenfor rommene er støy på en plantegning
   const _skjulProdukt = _presentProduktMaalSkjult();
   for (const room of S.rooms) {
@@ -56908,6 +56910,308 @@ function drawAllDimAnnotations() {
   }
 }
 
+// ─── 164 · FELLES KANTMODELL OG OPPSETT FOR PRODUKT-KJEDENE (folie / kabel / matte) ─────────
+// Kenneth 30.10.2026 (P0378 side 2): «mål under hver vegg, og ikke en felles, når det er slike rom».
+// Før 164 målte alle tre kjedene mot rommets YTTERBOKS (min/max av punktene): i T-rommet lå
+// bunnkjeden 7 m under armenes egne vegger og målte «mellomrom» (22 cm) tvers over vegger som ikke
+// finnes. Lukker serie-157 spørsmål 4.
+//
+// Modellen (én for alle tre kjedene):
+//  • _dimRoomEdges: rommets maksimale kollineære, akseparallelle ytterveggkanter med side (hvor
+//    utsiden er). Skjeve kanter inngår ikke — finnes ingen kant i retningen, brukes ytterboksen
+//    som før (syntetisk kant), så roterte rom tegnes nøyaktig som før.
+//  • _dimEdgeFacing: en bredde hører til den kanten et prøvepunkt midt på bredden treffer først
+//    i produktets retning (samme idé som snapToWalls/136 E). Tverr-kjeden (bredder og mellomrom)
+//    får ÉN kjede per kant som har produkter, tegnet utenfor rommet i kantens egen bredde, og
+//    veggmålene måles mot DEN kanten. Kanter uten produkter får ingen kjede.
+//  • Langs-kjeden (vegg → start, lengde, slutt → vegg) grupperes på (nær vegg, fjern vegg) og
+//    legges utenfor rommets utstrekning i den gruppens bånd: først vanlig side (venstre for 'v',
+//    over for 'h'), så motsatt side, så ett trinn (20 cm) lenger ut — til den ikke kolliderer med
+//    en kjede som alt ligger der. Romdimensjonene (V1–Vn) skyves ut like mange trinn på den
+//    veggen (_roomDimBaseOffCm), og PDF-luften følger (_pdfRoomPadCm).
+//  • Rektangler har én kant per side og én gruppe → bit-identisk med før (målt: lerretshash lik
+//    for rektangler med folie, kabel og matte, docs/serie-163/RAPPORT.md «164»).
+// Regresjon: _dimChainEdgeRegressionTest() (+ _matDimChainRegressionTest for mattekjeden).
+const DIM_CHAIN_OFF_CM = 25, DIM_CHAIN_STEP_CM = 20;
+function _dimRoomEdges(room) {
+  const pts = (room && room.points) || [];
+  const n = pts.length;
+  const out = { edges: [], bbox: null };
+  if (n < 3) return out;
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  out.bbox = { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+  const EPS = 0.01;
+  const raw = [];   // råkanter i polygonrekkefølge; null = skjev (bryter sammenslåingen)
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    if (Math.abs(dx) < EPS && Math.abs(dy) < EPS) continue;
+    if (Math.abs(dy) < EPS) raw.push({ axis: 'h', c: a.y, from: a.x, to: b.x });
+    else if (Math.abs(dx) < EPS) raw.push({ axis: 'v', c: a.x, from: a.y, to: b.y });
+    else raw.push(null);
+  }
+  if (!raw.length) return out;
+  const canMerge = (p, q) => !!(p && q && p.axis === q.axis && Math.abs(p.c - q.c) < EPS
+    && Math.sign(p.to - p.from) === Math.sign(q.to - q.from) && Math.abs(p.to - q.from) < EPS);
+  let start = 0;   // begynn på en kant som ikke fortsetter den foran, så ingen kant deles over start
+  for (let i = 0; i < raw.length; i++) if (!canMerge(raw[(i - 1 + raw.length) % raw.length], raw[i])) { start = i; break; }
+  const merged = [];
+  for (let k = 0; k < raw.length; k++) {
+    const e = raw[(start + k) % raw.length];
+    if (!e) { merged.push(null); continue; }
+    const last = merged[merged.length - 1];
+    if (canMerge(last, e)) last.to = e.to; else merged.push({ ...e });
+  }
+  for (const e of merged) {
+    if (!e) continue;
+    const lo = Math.min(e.from, e.to), hi = Math.max(e.from, e.to), mid = (lo + hi) / 2;
+    let side = null;   // hvor UTSIDEN er, funnet med prøvepunkt 0,5 cm til hver side
+    if (e.axis === 'h') side = ptInPoly(mid, e.c + 0.5, pts) ? 'top' : ptInPoly(mid, e.c - 0.5, pts) ? 'bottom' : null;
+    else side = ptInPoly(e.c + 0.5, mid, pts) ? 'left' : ptInPoly(e.c - 0.5, mid, pts) ? 'right' : null;
+    if (!side) continue;
+    out.edges.push({ id: out.edges.length, axis: e.axis, c: e.c, lo, hi, side, synthetic: false });
+  }
+  return out;
+}
+// Retningsavhengige navn: A = langs produktet, P = på tvers. 'v' (bredder langs y): tverr-kjeden
+// under rommet (+A = 'bottom'), langs-kjeden til venstre (−P = 'left'). 'h': tverr til høyre, langs over.
+function _dimDirSides(dir) {
+  return dir === 'v' ? { aPlus: 'bottom', aMinus: 'top', pMinus: 'left', pPlus: 'right' }
+                     : { aPlus: 'right', aMinus: 'left', pMinus: 'top', pPlus: 'bottom' };
+}
+// Kanten bredden (midt på tvers = pc, langs a0..a1) vender mot i +A (sign +1) eller −A (−1):
+// nærmeste kant med riktig side som dekker pc, regnet fra breddens egen start (så en bredde som
+// stikker litt over veggen fortsatt finner den — og får 0 / rødt som før). Ingen → ytterboksen.
+function _dimEdgeFacing(model, dir, pc, a0, a1, sign) {
+  const sides = _dimDirSides(dir);
+  const want = sign > 0 ? sides.aPlus : sides.aMinus;
+  let best = null;
+  for (const e of model.edges) {
+    if (e.side !== want || e.lo - 0.05 > pc || e.hi + 0.05 < pc) continue;
+    if (sign > 0) { if (e.c < a0 - 0.05) continue; if (!best || e.c < best.c) best = e; }
+    else { if (e.c > a1 + 0.05) continue; if (!best || e.c > best.c) best = e; }
+  }
+  if (best) return best;
+  const bb = model.bbox;
+  if (dir === 'v') return sign > 0 ? { id: 'bbox+', axis: 'h', c: bb.maxY, lo: bb.minX, hi: bb.maxX, side: 'bottom', synthetic: true }
+                                   : { id: 'bbox-', axis: 'h', c: bb.minY, lo: bb.minX, hi: bb.maxX, side: 'top', synthetic: true };
+  return sign > 0 ? { id: 'bbox+', axis: 'v', c: bb.maxX, lo: bb.minY, hi: bb.maxY, side: 'right', synthetic: true }
+                  : { id: 'bbox-', axis: 'v', c: bb.minX, lo: bb.minY, hi: bb.maxY, side: 'left', synthetic: true };
+}
+// Rommets utstrekning på tvers (P) innenfor båndet [aLo, aHi] langs A — polygonkanten klippet til båndet.
+function _dimPolyExtentInBand(pts, dir, aLo, aHi) {
+  const A = p => dir === 'v' ? p.y : p.x, P = p => dir === 'v' ? p.x : p.y;
+  let min = Infinity, max = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    const a0 = A(a), a1 = A(b), p0 = P(a), p1 = P(b);
+    if (Math.max(a0, a1) < aLo - 1e-9 || Math.min(a0, a1) > aHi + 1e-9) continue;
+    if (Math.abs(a1 - a0) < 1e-9) { min = Math.min(min, p0, p1); max = Math.max(max, p0, p1); continue; }
+    const t0 = Math.max(0, Math.min(1, (aLo - a0) / (a1 - a0))), t1 = Math.max(0, Math.min(1, (aHi - a0) / (a1 - a0)));
+    const pa = p0 + (p1 - p0) * t0, pb = p0 + (p1 - p0) * t1;
+    min = Math.min(min, pa, pb); max = Math.max(max, pa, pb);
+  }
+  return isFinite(min) ? { min, max } : null;
+}
+// Verdenspunkt fra (P, A) for retningen.
+function _dimPA(dir, p, a) { return dir === 'v' ? { x: p, y: a } : { x: a, y: p }; }
+// Fortsetter rommet forbi kantens ende (lo/hi) i breddens egen høyde (aMid = midt på bredden
+// langs A) — altså ligger bredden over en annen del av rommet, ikke utenfor det? Da finnes ingen
+// vegg å måle mot der, og veggmålet sløyfes (B=20 i P0378 ligger over både den 13 cm brede kanten
+// V13 og stammens åpning; en kort matte i L-rommets øvre felt rager forbi den nedre delens vegg).
+// Utenfor rommet → 0 / rødt som før.
+function _dimBeyondEdgeInside(room, dir, edge, end, aMid) {
+  if (edge.synthetic) return false;
+  const p = end === 'lo' ? edge.lo - 1 : edge.hi + 1;
+  const w = _dimPA(dir, p, aMid);
+  return ptInPoly(w.x, w.y, room.points);
+}
+// Oppsettet for én retning. items: [{ p0, p1, a0, a1, ... }] (verdens-cm på tvers / langs).
+// build.across(itemsSortertPåP0, edge, ctx) og build.along(items, nearEdge, farEdge, ctx) gir
+// segmentlistene [{ from, to, type, cm?, red?, req? }] i kjedens akse.
+function _dimChainLayout(room, dir, items, build) {
+  const model = _dimRoomEdges(room);
+  const sides = _dimDirSides(dir);
+  const acrossMap = new Map(), alongMap = new Map();
+  for (const it of items) {
+    const pc = (it.p0 + it.p1) / 2;
+    const far = _dimEdgeFacing(model, dir, pc, it.a0, it.a1, +1);
+    const near = _dimEdgeFacing(model, dir, pc, it.a0, it.a1, -1);
+    it.farEdge = far; it.nearEdge = near;
+    const k = far.synthetic ? 'bbox' : far.id;
+    if (!acrossMap.has(k)) acrossMap.set(k, { edge: far, items: [] });
+    acrossMap.get(k).items.push(it);
+    const ka = Math.round(near.c * 100) + '|' + Math.round(far.c * 100);   // samme vegg-koordinater → én langs-kjede
+    if (!alongMap.has(ka)) alongMap.set(ka, { near, far, items: [] });
+    alongMap.get(ka).items.push(it);
+  }
+  const ctx2 = { room, model, dir, sides };
+  const across = [];
+  for (const g of acrossMap.values()) {
+    g.items.sort((a, b) => a.p0 - b.p0);
+    const segs = build.across(g.items, g.edge, ctx2);
+    across.push({ kind: 'across', edge: g.edge, items: g.items, segs, c: g.edge.c, lo: g.edge.lo, hi: g.edge.hi,
+      line: g.edge.c + DIM_CHAIN_OFF_CM, sign: +1, depth: 0, side: sides.aPlus, bandLo: g.edge.lo, bandHi: g.edge.hi });
+  }
+  across.sort((a, b) => a.lo - b.lo || a.c - b.c);
+  const along = [];
+  const groups = [...alongMap.values()].sort((a, b) => Math.min(...a.items.map(i => i.p0)) - Math.min(...b.items.map(i => i.p0)));
+  const pOf = dir === 'v' ? { min: model.bbox.minX, max: model.bbox.maxX } : { min: model.bbox.minY, max: model.bbox.maxY };
+  for (const g of groups) {
+    const segs = build.along(g.items, g.near, g.far, ctx2);
+    const bandLo = Math.min(g.near.c, g.far.c), bandHi = Math.max(g.near.c, g.far.c);
+    const ext = _dimPolyExtentInBand(room.points, dir, bandLo, bandHi) || pOf;
+    const pcMean = g.items.reduce((s, i) => s + (i.p0 + i.p1) / 2, 0) / g.items.length;
+    let placed = null;
+    for (let depth = 0; depth < 8 && !placed; depth++) {
+      // trinn 0: vanlig side først (rektangler → som før); lenger ut: siden nærmest breddene først
+      const order = depth === 0 || (pcMean - ext.min) <= (ext.max - pcMean) ? [-1, +1] : [+1, -1];
+      for (const sgn of order) {
+        const wallC = sgn < 0 ? ext.min : ext.max;
+        const line = wallC + sgn * (DIM_CHAIN_OFF_CM + DIM_CHAIN_STEP_CM * depth);
+        const hit = along.some(o => o.sign === sgn && Math.abs(o.line - line) < DIM_CHAIN_STEP_CM - 1
+          && Math.min(o.bandHi, bandHi) + 15 > Math.max(o.bandLo, bandLo) - 15);
+        if (!hit) { placed = { sign: sgn, wallC, line, depth }; break; }
+      }
+    }
+    if (!placed) placed = { sign: -1, wallC: ext.min, line: ext.min - DIM_CHAIN_OFF_CM, depth: 0 };
+    along.push({ kind: 'along', ...placed, near: g.near, far: g.far, items: g.items, segs, bandLo, bandHi,
+      side: placed.sign < 0 ? sides.pMinus : sides.pPlus });
+  }
+  return { dir, model, sides, across, along };
+}
+// Tegner ett oppsett. st: { col, colRed, bg, fmt(cm) }. Samme strek, haker, stiplede hjelpelinjer
+// og tekstplassering som de tre kjedene hadde hver for seg før 164 (bit-identisk for rektangler).
+function _drawDimChainLayout(layout, st) {
+  const TICK = 8;
+  const zps = S.view.zoom * BASE_SCALE;
+  function _label(str, mx, my, isVert, col, offPx) {
+    const tw = ctx.measureText(str).width;
+    ctx.save();
+    ctx.translate(mx, my);
+    if (isVert) ctx.rotate(-Math.PI / 2);
+    ctx.translate(0, offPx);
+    ctx.fillStyle = st.bg;
+    ctx.fillRect(-tw / 2 - 3, -7, tw + 6, 14);
+    ctx.fillStyle = col;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(str, 0, 0);
+    ctx.restore();
+  }
+  function _seg(sx1, sy1, sx2, sy2, seg, perpNx, perpNy, isVert) {
+    const cm = seg.cm != null ? seg.cm : seg.to - seg.from;
+    if (cm < 0.3 && !seg.red) return;   // et rødt 0-mål skal fortsatt vises
+    const col = seg.red ? st.colRed : st.col;
+    ctx.strokeStyle = col; ctx.lineWidth = 0.8; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(sx1 - perpNx * TICK / 2, sy1 - perpNy * TICK / 2);
+    ctx.lineTo(sx1 + perpNx * TICK / 2, sy1 + perpNy * TICK / 2);
+    ctx.moveTo(sx2 - perpNx * TICK / 2, sy2 - perpNy * TICK / 2);
+    ctx.lineTo(sx2 + perpNx * TICK / 2, sy2 + perpNy * TICK / 2);
+    ctx.stroke();
+    _label(st.fmt(cm), (sx1 + sx2) / 2, (sy1 + sy2) / 2, isVert, col, -12);
+  }
+  function _ext(wallSx, wallSy, chainSx, chainSy) {
+    ctx.strokeStyle = st.col; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(wallSx, wallSy); ctx.lineTo(chainSx, chainSy); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // Kjede langs en vannrett linje (y = wallY), segmenter i x; sign +1 = under, −1 = over.
+  function _chainX(segs, wallY, sign, offPx) {
+    const chainY = w2s(0, wallY).y + sign * offPx;
+    const bounds = new Set(); for (const s of segs) { bounds.add(s.from); bounds.add(s.to); }
+    for (const bx of bounds) { const sw = w2s(bx, wallY); _ext(sw.x, sw.y + sign * 4, sw.x, chainY); }
+    for (const s of segs) { const s1 = w2s(s.from, wallY), s2 = w2s(s.to, wallY); _seg(s1.x, chainY, s2.x, chainY, s, 0, 1, false); }
+    return chainY;
+  }
+  // Kjede langs en loddrett linje (x = wallX), segmenter i y; sign +1 = til høyre, −1 = til venstre.
+  function _chainY(segs, wallX, sign, offPx) {
+    const chainX = w2s(wallX, 0).x + sign * offPx;
+    const bounds = new Set(); for (const s of segs) { bounds.add(s.from); bounds.add(s.to); }
+    for (const by of bounds) { const sw = w2s(wallX, by); _ext(sw.x + sign * 4, sw.y, chainX, sw.y); }
+    for (const s of segs) { const s1 = w2s(wallX, s.from), s2 = w2s(wallX, s.to); _seg(chainX, s1.y, chainX, s2.y, s, 1, 0, true); }
+    return chainX;
+  }
+  ctx.save();
+  ctx.font = `10px ${CANVAS_NUM_FONT}`;
+  const out = { across: [], along: [] };
+  for (const ch of layout.across) {
+    const offPx = (DIM_CHAIN_OFF_CM + DIM_CHAIN_STEP_CM * ch.depth) * zps;
+    // 'v': tverr-kjeden ligger vannrett under kanten (y = c); 'h': loddrett til høyre for kanten (x = c)
+    const at = layout.dir === 'v' ? _chainX(ch.segs, ch.c, ch.sign, offPx) : _chainY(ch.segs, ch.c, ch.sign, offPx);
+    out.across.push({ ch, at });
+  }
+  for (const ch of layout.along) {
+    const offPx = (DIM_CHAIN_OFF_CM + DIM_CHAIN_STEP_CM * ch.depth) * zps;
+    const at = layout.dir === 'v' ? _chainY(ch.segs, ch.wallC, ch.sign, offPx) : _chainX(ch.segs, ch.wallC, ch.sign, offPx);
+    out.along.push({ ch, at });
+  }
+  ctx.restore();
+  out.label = (str, mx, my, isVert, col, offPx) => { ctx.save(); ctx.font = `10px ${CANVAS_NUM_FONT}`; _label(str, mx, my, isVert, col, offPx); ctx.restore(); };
+  return out;
+}
+// Oppsettene for et rom og en produkttype ('strip' | 'cable' | 'mat'), husket per tegneomgang
+// (tømmes i drawAllDimAnnotations) så romdimensjonene og kjedene regner én gang.
+const _dimLayoutMemo = new Map();   // romobjekt → { strip, cable, mat, matData }
+function _dimMemoOf(room) { let m = _dimLayoutMemo.get(room); if (!m) { m = {}; _dimLayoutMemo.set(room, m); } return m; }
+function _matDimChainDataMemo(room) { const m = _dimMemoOf(room); if (!('matData' in m)) m.matData = _matDimChainData(room); return m.matData; }
+function _dimLayoutsFor(room, kind) {
+  const m = _dimMemoOf(room);
+  if (kind in m) return m[kind];
+  let layouts = [];
+  try {
+    if (kind === 'strip') { const L = _stripDimChainLayout(room); if (L) layouts = [L]; }
+    else if (kind === 'cable') { const L = _cableDimChainLayout(room); if (L) layouts = [L]; }
+    else if (kind === 'mat') { const d = _matDimChainDataMemo(room); if (d) layouts = Object.values(d.chains); }
+  } catch (e) { console.warn('_dimLayoutsFor', kind, e); layouts = []; }
+  m[kind] = layouts;
+  return layouts;
+}
+// Veggens akse/koordinat/side — null for skjeve vegger.
+function _dimWallGeom(room, wl) {
+  const EPS = 0.01;
+  const dx = wl.x2 - wl.x1, dy = wl.y2 - wl.y1;
+  if (Math.abs(dy) < EPS && Math.abs(dx) >= EPS) {
+    const lo = Math.min(wl.x1, wl.x2), hi = Math.max(wl.x1, wl.x2), mid = (lo + hi) / 2;
+    const side = ptInPoly(mid, wl.y1 + 0.5, room.points) ? 'top' : ptInPoly(mid, wl.y1 - 0.5, room.points) ? 'bottom' : null;
+    return side ? { axis: 'h', c: wl.y1, lo, hi, side } : null;
+  }
+  if (Math.abs(dx) < EPS && Math.abs(dy) >= EPS) {
+    const lo = Math.min(wl.y1, wl.y2), hi = Math.max(wl.y1, wl.y2), mid = (lo + hi) / 2;
+    const side = ptInPoly(wl.x1 + 0.5, mid, room.points) ? 'left' : ptInPoly(wl.x1 - 0.5, mid, room.points) ? 'right' : null;
+    return side ? { axis: 'v', c: wl.x1, lo, hi, side } : null;
+  }
+  return null;
+}
+// Hvor mange trinn (0, 1, 2 …) produkt-kjedene av én type er stablet utenfor denne veggen.
+function _dimChainDepthOutsideWall(room, kind, wl) {
+  const wg = _dimWallGeom(room, wl);
+  if (!wg) return 0;
+  let depth = 0;
+  for (const L of _dimLayoutsFor(room, kind)) {
+    for (const ch of [...L.across, ...L.along]) {
+      if (ch.side !== wg.side) continue;
+      if (Math.min(ch.bandHi, wg.hi) < Math.max(ch.bandLo, wg.lo) - 0.05) continue;
+      if (Math.abs(ch.line - wg.c) > DIM_CHAIN_OFF_CM + DIM_CHAIN_STEP_CM * ch.depth + 1) continue;
+      depth = Math.max(depth, ch.depth);
+    }
+  }
+  return depth;
+}
+// Romdimensjonens avstand fra veggen (verdens-cm): 32 + 20 per aktiv produkt-kjede (som før 164)
+// pluss 20 per ekstra trinn kjedene av den typen er stablet utenfor akkurat denne veggen.
+// ÉN kilde for tegning (_drawDimAnnotationsForRoom), treff (hitAnnotation) og gizmo (hitAnnotGizmo).
+const DIM_BASE_CM = 32, DIM_CHAIN_CLEARANCE_CM = 20;
+function _roomDimBaseOffCm(room, wl) {
+  let off = DIM_BASE_CM;
+  for (const [flag, kind] of [['stripDimSnap', 'strip'], ['cableDimSnap', 'cable'], ['matDimSnap', 'mat']]) {
+    if (!room[flag]) continue;
+    off += DIM_CHAIN_CLEARANCE_CM * (1 + _dimChainDepthOutsideWall(room, kind, wl));
+  }
+  return off;
+}
+
 // ─── MAT DIMENSION CHAIN (Målsett Matte) ──────────────────────
 // 157 (Kenneth 28.10.2026): kjeden virker for ALLE matter — auto-matter (S.mats) OG frihånds-/
 // kapittelmatter (S.matPaths) — og måler det elektrikeren trenger: vegg → nettkant på første og
@@ -56917,7 +57221,8 @@ function drawAllDimAnnotations() {
 // S.matPaths. Før 157 leste kjeden bare S.mats og regnet blokkas nominelle bredder selv, så
 // frihåndsmatter fikk ingen kjede (P0373). Begge mattetyper i samme rom gir én felles kjede per
 // retning ('v': bredder langs Y, tverr-kjede under rommet / langs-kjede til venstre; 'h': tverr
-// til høyre / langs over). Veggmål under produktets nettmargin (_matWallMarginCm, Regel 12/128:
+// til høyre / langs over). 164: veggmålene måles mot den FAKTISKE veggkanten bredden vender mot
+// (felles kantmodell over), ikke lenger mot ytterboksen. Veggmål under produktets nettmargin (_matWallMarginCm, Regel 12/128:
 // 2,5 cm for 60T/100T, 3,0 for 150T) tegnes i rødt. Kabelmerknaden under tverr-kjeden, «Kabel →
 // vegg min X cm (krav ≥ 5 cm)», er nettkantens minste avstand til rommets FAKTISKE kant
 // (_rectToPolyEdgeCm) pluss produktets kant-inntrekk (_matEdgeInsetCm) — kabelens ytterste streng
@@ -56933,6 +57238,8 @@ function _matDimFmtCm(v) {
   return Math.round(v) + ' cm';
 }
 // Ren data (ingen tegning), testbar. null når rommet ikke har matter med geometri.
+// 164: chains[dir] er et oppsett fra _dimChainLayout — { across: [kjede…], along: [kjede…] }, én
+// tverr-kjede per faktisk veggkant med bredder og én langs-kjede per (nær vegg, fjern vegg).
 // Segment: { from, to, cm, type: 'wall'|'mat'|'gap', req?, red? } i verdens-cm langs kjedens akse.
 function _matDimChainData(room) {
   if (!room || !room.points || room.points.length < 3) return null;
@@ -56949,11 +57256,11 @@ function _matDimChainData(room) {
     for (const R of _matPathCoveredLaneRects(mp)) rects.push({ x0: R.x0, y0: R.y0, x1: R.x1, y1: R.y1, dir: R.axis === 'h' ? 'h' : 'v', prod, src: 'path' });
   }
   if (!rects.length) return null;
-  const xs = room.points.map(p => p.x), ys = room.points.map(p => p.y);
-  const W = { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
-  // Veggmål: mot rommets bbox-vegg (som folie-/kabelkjeden). Rødt under strengeste nettmargin
-  // blant produktene i båndet. Nettkant utenfor veggen → 0, rødt.
-  const wallSeg = (from, to, prods) => {
+  // Veggmål: mot den faktiske veggkanten (164). Rødt under strengeste nettmargin blant produktene i
+  // båndet. Nettkant utenfor veggen → 0, rødt. Fortsetter rommet forbi kantens ende (bredden ligger
+  // over en annen del av rommet), finnes ingen vegg der → ikke noe veggmål (null).
+  const wallSeg = (from, to, prods, beyondInside) => {
+    if (to < from - 0.05 && beyondInside) return null;
     const req = Math.max(...prods.map(p => _matWallMarginCm(p)));
     const cm = Math.max(0, to - from);
     return { from, to, cm, type: 'wall', req, red: cm < req - 0.01 };
@@ -56962,30 +57269,39 @@ function _matDimChainData(room) {
   for (const dir of ['v', 'h']) {
     const rs = rects.filter(r => r.dir === dir);
     if (!rs.length) continue;
-    const pLo = r => dir === 'v' ? r.x0 : r.y0, pHi = r => dir === 'v' ? r.x1 : r.y1;   // på tvers
-    const aLo = r => dir === 'v' ? r.y0 : r.x0, aHi = r => dir === 'v' ? r.y1 : r.x1;   // langs
-    const nearWall = dir === 'v' ? W.minX : W.minY, farWall = dir === 'v' ? W.maxX : W.maxY;
-    const nearWallA = dir === 'v' ? W.minY : W.minX, farWallA = dir === 'v' ? W.maxY : W.maxX;
-    // Bredder som overlapper på tvers (to stykker i samme kolonne, 132) slås sammen til ett bånd.
-    const bands = [];
-    for (const r of rs.slice().sort((a, b) => pLo(a) - pLo(b))) {
-      const last = bands[bands.length - 1];
-      if (last && pLo(r) < last.to - 0.05) { last.to = Math.max(last.to, pHi(r)); last.prods.push(r.prod); }
-      else bands.push({ from: pLo(r), to: pHi(r), prods: [r.prod] });
-    }
-    const across = [wallSeg(nearWall, bands[0].from, bands[0].prods)];
-    bands.forEach((b, i) => {
-      if (i > 0) across.push({ from: bands[i - 1].to, to: b.from, cm: b.from - bands[i - 1].to, type: 'gap' });
-      across.push({ from: b.from, to: b.to, cm: b.to - b.from, type: 'mat' });
+    const items = rs.map(r => dir === 'v' ? { p0: r.x0, p1: r.x1, a0: r.y0, a1: r.y1, prod: r.prod, rect: r }
+                                          : { p0: r.y0, p1: r.y1, a0: r.x0, a1: r.x1, prod: r.prod, rect: r });
+    chains[dir] = _dimChainLayout(room, dir, items, {
+      across: (its, edge, c) => {
+        // Bredder som overlapper på tvers (to stykker i samme kolonne, 132) slås sammen til ett bånd.
+        const bands = [];
+        for (const r of its) {
+          const last = bands[bands.length - 1];
+          if (last && r.p0 < last.to - 0.05) { last.to = Math.max(last.to, r.p1); last.prods.push(r.prod); if (r.p1 >= last.to) last.hiItem = r; }
+          else bands.push({ from: r.p0, to: r.p1, prods: [r.prod], loItem: r, hiItem: r });
+        }
+        const segs = [];
+        const aMid = it => (it.a0 + it.a1) / 2;
+        const w0 = wallSeg(edge.lo, bands[0].from, bands[0].prods, _dimBeyondEdgeInside(c.room, dir, edge, 'lo', aMid(bands[0].loItem)));
+        if (w0) segs.push(w0);
+        bands.forEach((b, i) => {
+          if (i > 0) segs.push({ from: bands[i - 1].to, to: b.from, cm: b.from - bands[i - 1].to, type: 'gap' });
+          segs.push({ from: b.from, to: b.to, cm: b.to - b.from, type: 'mat' });
+        });
+        const bl = bands[bands.length - 1];
+        const w1 = wallSeg(bl.to, edge.hi, bl.prods, _dimBeyondEdgeInside(c.room, dir, edge, 'hi', aMid(bl.hiItem)));
+        if (w1) segs.push(w1);
+        return segs;
+      },
+      along: (its, near, far) => {
+        const minA = Math.min(...its.map(i => i.a0)), maxA = Math.max(...its.map(i => i.a1));
+        return [
+          wallSeg(near.c, minA, its.filter(i => i.a0 < minA + 0.05).map(i => i.prod), false),
+          { from: minA, to: maxA, cm: maxA - minA, type: 'mat' },
+          wallSeg(maxA, far.c, its.filter(i => i.a1 > maxA - 0.05).map(i => i.prod), false),
+        ];
+      },
     });
-    across.push(wallSeg(bands[bands.length - 1].to, farWall, bands[bands.length - 1].prods));
-    const minA = Math.min(...rs.map(aLo)), maxA = Math.max(...rs.map(aHi));
-    const along = [
-      wallSeg(nearWallA, minA, rs.filter(r => aLo(r) < minA + 0.05).map(r => r.prod)),
-      { from: minA, to: maxA, cm: maxA - minA, type: 'mat' },
-      wallSeg(maxA, farWallA, rs.filter(r => aHi(r) > maxA - 0.05).map(r => r.prod)),
-    ];
-    chains[dir] = { across, along, nearWall, farWall, nearWallA, farWallA };
   }
   let cableCm = Infinity;
   for (const r of rects) cableCm = Math.min(cableCm, _rectToPolyEdgeCm(r, room.points) + _matEdgeInsetCm(r.prod));
@@ -56996,81 +57312,33 @@ function _drawMatDimChainForRoom(room) {
   catch (e) { console.error('_drawMatDimChainForRoom', e); }
 }
 function _drawMatDimChainForRoomInner(room) {
-  const data = _matDimChainData(room);
+  const layouts = _dimLayoutsFor(room, 'mat');
+  if (!layouts.length) return;
+  const data = _matDimChainDataMemo(room);
   if (!data) return;
-  ctx.save();
-  ctx.font = `10px ${CANVAS_NUM_FONT}`;
   // Same orange-ish palette as cable chain but a touch darker so the
   // two chains read as related but distinct when both are visible.
-  const COL = _lc('rgba(200,100,30,0.85)', 'rgba(255,170,70,0.75)');
-  const COL_RED = _lc('rgba(200,30,40,0.95)', 'rgba(248,113,113,0.95)');   // samme rød som usikre vegger (027)
-  const COL_BG = _lc('rgba(240,244,248,0.92)', 'rgba(13,14,16,0.8)');
-  const TICK = 8;
-  const BASE_OFF = 25 * S.view.zoom * BASE_SCALE;   // verdens-cm, som de andre kjedene
-  function _label(str, mx, my, isVert, col, offPx) {
-    const tw = ctx.measureText(str).width;
-    ctx.save();
-    ctx.translate(mx, my);
-    if (isVert) ctx.rotate(-Math.PI / 2);
-    ctx.translate(0, offPx);
-    ctx.fillStyle = COL_BG;
-    ctx.fillRect(-tw / 2 - 3, -7, tw + 6, 14);
-    ctx.fillStyle = col;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(str, 0, 0);
-    ctx.restore();
-  }
-  function _seg(sx1, sy1, sx2, sy2, seg, perpNx, perpNy, isVert) {
-    if (seg.cm < 0.3 && !seg.red) return;   // et rødt 0-mål skal fortsatt vises
-    const col = seg.red ? COL_RED : COL;
-    ctx.strokeStyle = col; ctx.lineWidth = 0.8; ctx.setLineDash([]);
-    ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(sx1 - perpNx * TICK / 2, sy1 - perpNy * TICK / 2);
-    ctx.lineTo(sx1 + perpNx * TICK / 2, sy1 + perpNy * TICK / 2);
-    ctx.moveTo(sx2 - perpNx * TICK / 2, sy2 - perpNy * TICK / 2);
-    ctx.lineTo(sx2 + perpNx * TICK / 2, sy2 + perpNy * TICK / 2);
-    ctx.stroke();
-    _label(_matDimFmtCm(seg.cm), (sx1 + sx2) / 2, (sy1 + sy2) / 2, isVert, col, -12);
-  }
-  function _ext(wallSx, wallSy, chainSx, chainSy) {
-    ctx.strokeStyle = COL; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
-    ctx.beginPath(); ctx.moveTo(wallSx, wallSy); ctx.lineTo(chainSx, chainSy); ctx.stroke();
-    ctx.setLineDash([]);
-  }
-  // Kjede langs en vannrett vegg (y = wallY), segmenter i x; sign +1 = under veggen, −1 = over.
-  function _chainX(segs, wallY, sign) {
-    const chainY = w2s(0, wallY).y + sign * BASE_OFF;
-    const bounds = new Set(); for (const s of segs) { bounds.add(s.from); bounds.add(s.to); }
-    for (const bx of bounds) { const sw = w2s(bx, wallY); _ext(sw.x, sw.y + sign * 4, sw.x, chainY); }
-    for (const s of segs) { const s1 = w2s(s.from, wallY), s2 = w2s(s.to, wallY); _seg(s1.x, chainY, s2.x, chainY, s, 0, 1, false); }
-    return chainY;
-  }
-  // Kjede langs en loddrett vegg (x = wallX), segmenter i y; sign +1 = til høyre, −1 = til venstre.
-  function _chainY(segs, wallX, sign) {
-    const chainX = w2s(wallX, 0).x + sign * BASE_OFF;
-    const bounds = new Set(); for (const s of segs) { bounds.add(s.from); bounds.add(s.to); }
-    for (const by of bounds) { const sw = w2s(wallX, by); _ext(sw.x + sign * 4, sw.y, chainX, sw.y); }
-    for (const s of segs) { const s1 = w2s(wallX, s.from), s2 = w2s(wallX, s.to); _seg(chainX, s1.y, chainX, s2.y, s, 1, 0, true); }
-    return chainX;
-  }
-  let note = null;   // kabelmerknaden står utenfor den første tverr-kjeden
-  const cv = data.chains.v, ch = data.chains.h;
-  if (cv) {   // bredder langs Y: tverr-kjede under nedre vegg, langs-kjede utenfor venstre vegg
-    const y = _chainX(cv.across, cv.farWallA, +1);
-    _chainY(cv.along, cv.nearWall, -1);
-    note = { x: (w2s(cv.nearWall, 0).x + w2s(cv.farWall, 0).x) / 2, y, vert: false };
-  }
-  if (ch) {   // bredder langs X: tverr-kjede utenfor høyre vegg, langs-kjede over øvre vegg
-    const x = _chainY(ch.across, ch.farWallA, +1);
-    _chainX(ch.along, ch.nearWall, -1);
-    if (!note) note = { x, y: (w2s(0, ch.nearWall).y + w2s(0, ch.farWall).y) / 2, vert: true };
+  const st = {
+    col: _lc('rgba(200,100,30,0.85)', 'rgba(255,170,70,0.75)'),
+    colRed: _lc('rgba(200,30,40,0.95)', 'rgba(248,113,113,0.95)'),   // samme rød som usikre vegger (027)
+    bg: _lc('rgba(240,244,248,0.92)', 'rgba(13,14,16,0.8)'), fmt: _matDimFmtCm,
+  };
+  let note = null;   // kabelmerknaden står utenfor den første tverr-kjeden (den første kanten)
+  for (const dir of ['v', 'h']) {
+    const L = data.chains[dir];
+    if (!L) continue;
+    const drawn = _drawDimChainLayout(L, st);
+    const first = drawn.across[0];
+    if (!note && first) {
+      const e = first.ch;
+      note = dir === 'v' ? { x: (w2s(e.lo, 0).x + w2s(e.hi, 0).x) / 2, y: first.at, vert: false, label: drawn.label }
+                         : { x: first.at, y: (w2s(0, e.lo).y + w2s(0, e.hi).y) / 2, vert: true, label: drawn.label };
+    }
   }
   if (note && isFinite(data.cable.cm)) {
     const txt = `Kabel → vegg min ${_matDimFmtCm(data.cable.cm)} (krav ≥ ${_matDimFmtCm(data.cable.req)})`;
-    _label(txt, note.x, note.y, note.vert, data.cable.red ? COL_RED : COL, 14);
+    note.label(txt, note.x, note.y, note.vert, data.cable.red ? st.colRed : st.col, 14);
   }
-  ctx.restore();
 }
 // 157 — regresjonstest for mattekjeden (geometrikilde, tallene for faste rom, rødmerking,
 // PDF-auto-på, menyene). Kjøres fra konsollen: _matDimChainRegressionTest(). Vaksiner: kjeden
@@ -57124,48 +57392,48 @@ function _matDimChainRegressionTest() {
     // A. Frihånd (P0373-tilfellet): kjeden finnes og måler nettkantene
     const A = _matDimChainData(room(907201));
     check('A: frihåndsrom får kjede (før 157: ingen)', 'v', A && A.chains.v && !A.chains.h, A && Object.keys(A.chains));
-    check('A: tverr: vegg 2,5 | 50 | 7 | 50 | 7 | 50 | vegg 33,5', '[2.5,50,7,50,7,50,33.5]', A && cms(A.chains.v.across) === '[2.5,50,7,50,7,50,33.5]', A && cms(A.chains.v.across));
-    check('A: langs: vegg 2,5 | 544 | vegg 53,5 (lengste bredde)', '[2.5,544,53.5]', A && cms(A.chains.v.along) === '[2.5,544,53.5]', A && cms(A.chains.v.along));
-    check('A: segmenttyper vegg/matte/mellomrom', 'wall,mat,gap,mat,gap,mat,wall', A && A.chains.v.across.map(s => s.type).join() === 'wall,mat,gap,mat,gap,mat,wall', A && A.chains.v.across.map(s => s.type).join());
-    check('A: ingen røde', 'alle false', A && !A.chains.v.across.some(s => s.red) && !A.chains.v.along.some(s => s.red), A && reds(A.chains.v.across));
+    check('A: tverr: vegg 2,5 | 50 | 7 | 50 | 7 | 50 | vegg 33,5', '[2.5,50,7,50,7,50,33.5]', A && cms(A.chains.v.across[0].segs) === '[2.5,50,7,50,7,50,33.5]', A && cms(A.chains.v.across[0].segs));
+    check('A: langs: vegg 2,5 | 544 | vegg 53,5 (lengste bredde)', '[2.5,544,53.5]', A && cms(A.chains.v.along[0].segs) === '[2.5,544,53.5]', A && cms(A.chains.v.along[0].segs));
+    check('A: segmenttyper vegg/matte/mellomrom', 'wall,mat,gap,mat,gap,mat,wall', A && A.chains.v.across[0].segs.map(s => s.type).join() === 'wall,mat,gap,mat,gap,mat,wall', A && A.chains.v.across[0].segs.map(s => s.type).join());
+    check('A: ingen røde', 'alle false', A && !A.chains.v.across[0].segs.some(s => s.red) && !A.chains.v.along[0].segs.some(s => s.red), A && reds(A.chains.v.across[0].segs));
     check('A: kabel → vegg = 2,5 nett + 2,5 inntrekk = 5,0, ikke rød', '5', A && near(A.cable.cm, 5) && !A.cable.red, A && A.cable);
     // B. Auto (S.mats): tallene som før 157 — nå fra _matRunWorldGeom
     const B = _matDimChainData(room(907202));
-    check('B: auto-matte: tverr som før 157 (2,5 | 50 | 7 | 50 | 7 | 50 | 83,5)', '[2.5,50,7,50,7,50,83.5]', B && cms(B.chains.v.across) === '[2.5,50,7,50,7,50,83.5]', B && cms(B.chains.v.across));
-    check('B: auto-matte: langs som før 157 (2,5 | 495 | 2,5)', '[2.5,495,2.5]', B && cms(B.chains.v.along) === '[2.5,495,2.5]', B && cms(B.chains.v.along));
+    check('B: auto-matte: tverr som før 157 (2,5 | 50 | 7 | 50 | 7 | 50 | 83,5)', '[2.5,50,7,50,7,50,83.5]', B && cms(B.chains.v.across[0].segs) === '[2.5,50,7,50,7,50,83.5]', B && cms(B.chains.v.across[0].segs));
+    check('B: auto-matte: langs som før 157 (2,5 | 495 | 2,5)', '[2.5,495,2.5]', B && cms(B.chains.v.along[0].segs) === '[2.5,495,2.5]', B && cms(B.chains.v.along[0].segs));
     _matRunWorldGeom = (mat, r) => { const g = saved.geom(mat, r); return g ? { ...g, quad: g.quad.map(q => ({ x: q.x + 10, y: q.y })) } : g; };
     const Bv = _matDimChainData(room(907202));
     _matRunWorldGeom = saved.geom;
-    check('B: VAKSINE — bredden forskjøvet 10 cm i _matRunWorldGeom → kjeden følger (12,5 | … | 73,5)', '[12.5,50,7,50,7,50,73.5]', Bv && cms(Bv.chains.v.across) === '[12.5,50,7,50,7,50,73.5]', Bv && cms(Bv.chains.v.across));
+    check('B: VAKSINE — bredden forskjøvet 10 cm i _matRunWorldGeom → kjeden følger (12,5 | … | 73,5)', '[12.5,50,7,50,7,50,73.5]', Bv && cms(Bv.chains.v.across[0].segs) === '[12.5,50,7,50,7,50,73.5]', Bv && cms(Bv.chains.v.across[0].segs));
     // C. Begge typer i samme rom: én kjede med alle bredder
     const C = _matDimChainData(room(907203));
-    check('C: auto + frihånd: én kjede, tre bredder (2,5 | 50 | 7 | 50 | 7 | 50 | 133,5)', '[2.5,50,7,50,7,50,133.5]', C && cms(C.chains.v.across) === '[2.5,50,7,50,7,50,133.5]', C && cms(C.chains.v.across));
-    check('C: langs: 2,5 | 395 | 2,5 (auto-matta 395 er lengst)', '[2.5,395,2.5]', C && cms(C.chains.v.along) === '[2.5,395,2.5]', C && cms(C.chains.v.along));
+    check('C: auto + frihånd: én kjede, tre bredder (2,5 | 50 | 7 | 50 | 7 | 50 | 133,5)', '[2.5,50,7,50,7,50,133.5]', C && cms(C.chains.v.across[0].segs) === '[2.5,50,7,50,7,50,133.5]', C && cms(C.chains.v.across[0].segs));
+    check('C: langs: 2,5 | 395 | 2,5 (auto-matta 395 er lengst)', '[2.5,395,2.5]', C && cms(C.chains.v.along[0].segs) === '[2.5,395,2.5]', C && cms(C.chains.v.along[0].segs));
     check('C: rektanglene kommer fra begge kildene', 'mat×1 + path×2', C && C.rects.filter(r => r.src === 'mat').length === 1 && C.rects.filter(r => r.src === 'path').length === 2, C && C.rects.map(r => r.src));
     // D. For nær veggen (124/135: rødmerket bredde): kjeden viser tallet i rødt
     const D = _matDimChainData(room(907204));
-    check('D: nettkant 1 cm fra vegg → første veggmål 1, rødt (krav 2,5)', '1 rød', D && near(D.chains.v.across[0].cm, 1) && D.chains.v.across[0].red === true && near(D.chains.v.across[0].req, 2.5), D && D.chains.v.across[0]);
-    check('D: de andre målene ikke røde', 'false', D && !D.chains.v.across.slice(1).some(s => s.red) && !D.chains.v.along.some(s => s.red), D && reds(D.chains.v.across));
+    check('D: nettkant 1 cm fra vegg → første veggmål 1, rødt (krav 2,5)', '1 rød', D && near(D.chains.v.across[0].segs[0].cm, 1) && D.chains.v.across[0].segs[0].red === true && near(D.chains.v.across[0].segs[0].req, 2.5), D && D.chains.v.across[0].segs[0]);
+    check('D: de andre målene ikke røde', 'false', D && !D.chains.v.across[0].segs.slice(1).some(s => s.red) && !D.chains.v.along[0].segs.some(s => s.red), D && reds(D.chains.v.across[0].segs));
     check('D: kabel → vegg 1 + 2,5 = 3,5 < 5, rød', '3.5 rød', D && near(D.cable.cm, 3.5) && D.cable.red === true, D && D.cable);
     // E. Dekket del (149): én bane 1104 tegnet, rullen (10 m) dekker 1000 → kjeden måler 1000
     const E = _matDimChainData(room(907205));
-    check('E: langs måler dekket del (2,5 | 1000 | 197,5), ikke tegnet 1104', '[2.5,1000,197.5]', E && cms(E.chains.v.along) === '[2.5,1000,197.5]', E && cms(E.chains.v.along));
+    check('E: langs måler dekket del (2,5 | 1000 | 197,5), ikke tegnet 1104', '[2.5,1000,197.5]', E && cms(E.chains.v.along[0].segs) === '[2.5,1000,197.5]', E && cms(E.chains.v.along[0].segs));
     _matPathCoveredLaneRects = mp => { const { NET } = _matFreeConsts(_matFreeProdOf(mp)); return _matFreeDeriveRuns(mp).map(r => { const R = _matFreeLaneRectWorld(r, NET); Object.defineProperty(R, 'axis', { value: r.axis, enumerable: false }); return R; }); };
     const Ev = _matDimChainData(room(907205));
     _matPathCoveredLaneRects = saved.cov;
-    check('E: VAKSINE — fulle rektangler i stedet → 1104: kjeden leser _matPathCoveredLaneRects', '[2.5,1104,93.5]', Ev && cms(Ev.chains.v.along) === '[2.5,1104,93.5]', Ev && cms(Ev.chains.v.along));
+    check('E: VAKSINE — fulle rektangler i stedet → 1104: kjeden leser _matPathCoveredLaneRects', '[2.5,1104,93.5]', Ev && cms(Ev.chains.v.along[0].segs) === '[2.5,1104,93.5]', Ev && cms(Ev.chains.v.along[0].segs));
     // F. Rom uten matter (bare «kun label»-matte): ingen kjede
     check('F: rom uten matter (labelOnly) → null', null, _matDimChainData(room(907206)) === null, _matDimChainData(room(907206)));
     check('F: _matRoomHasMats: labelOnly teller ikke, frihånd og auto teller', 'false/true/true', !_matRoomHasMats(907206) && _matRoomHasMats(907201) && _matRoomHasMats(907202), [_matRoomHasMats(907206), _matRoomHasMats(907201), _matRoomHasMats(907202)]);
     // G. Vannrett bane: h-kjede, tverr i y, langs i x
     const G = _matDimChainData(room(907207));
     check('G: vannrett → h-kjede', 'h', G && G.chains.h && !G.chains.v, G && Object.keys(G.chains));
-    check('G: tverr (y): 2,5 | 50 | 7 | 50 | 90,5', '[2.5,50,7,50,90.5]', G && cms(G.chains.h.across) === '[2.5,50,7,50,90.5]', G && cms(G.chains.h.across));
-    check('G: langs (x): 2,5 | 480 | 117,5', '[2.5,480,117.5]', G && cms(G.chains.h.along) === '[2.5,480,117.5]', G && cms(G.chains.h.along));
-    // H. 150T (krav 3,0): 2,5 er rødt. L-rom: kjeden måler mot bbox (som folie), merknaden mot faktisk kant
+    check('G: tverr (y): 2,5 | 50 | 7 | 50 | 90,5', '[2.5,50,7,50,90.5]', G && cms(G.chains.h.across[0].segs) === '[2.5,50,7,50,90.5]', G && cms(G.chains.h.across[0].segs));
+    check('G: langs (x): 2,5 | 480 | 117,5', '[2.5,480,117.5]', G && cms(G.chains.h.along[0].segs) === '[2.5,480,117.5]', G && cms(G.chains.h.along[0].segs));
+    // H. 150T (krav 3,0): 2,5 er rødt. L-rom: kjeden måler mot den FAKTISKE veggen (164), merknaden også
     const H = _matDimChainData(room(907208));
-    check('H: 150T: nettkant 2,5 fra vegg er under 3,0 → rødt', '2.5 rød, krav 3', H && near(H.chains.v.across[0].cm, 2.5) && H.chains.v.across[0].red && near(H.chains.v.across[0].req, 3), H && H.chains.v.across[0]);
-    check('H: L-rom: tverr-kjeden måler mot bbox-veggen (347,5 til høyre), som foliekjeden', '347.5', H && near(H.chains.v.across[2].cm, 347.5), H && cms(H.chains.v.across));
+    check('H: 150T: nettkant 2,5 fra vegg er under 3,0 → rødt', '2.5 rød, krav 3', H && near(H.chains.v.across[0].segs[0].cm, 2.5) && H.chains.v.across[0].segs[0].red && near(H.chains.v.across[0].segs[0].req, 3), H && H.chains.v.across[0].segs[0]);
+    check('H: 164 — L-rom: tverr-kjeden måler mot den faktiske veggen (147,5 til innvendig hjørne x = 2600), ikke ytterboksen (347,5)', '147.5', H && near(H.chains.v.across[0].segs[2].cm, 147.5) && H.chains.v.across.length === 1 && H.chains.v.across[0].hi === 2600, H && cms(H.chains.v.across[0].segs));
     check('H: kabelmerknad 2,5 + 2,0 inntrekk = 4,5, rød', '4.5 rød', H && near(H.cable.cm, 4.5) && H.cable.red, H && H.cable);
     const Rin = { x0: 2540, y0: 250, x1: 2590, y1: 350 };
     check('H: _rectToPolyEdgeCm måler mot den innvendige veggen (x = 2600 → 10), ikke bbox', 10, near(_rectToPolyEdgeCm(Rin, room(907208).points), 10), _rectToPolyEdgeCm(Rin, room(907208).points));
@@ -57245,6 +57513,139 @@ function _matDimChainRegressionTest() {
   console[allOk ? 'log' : 'error'](`_matDimChainRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
   return { ok: allOk, results };
 }
+// 164 — regresjonstest for den felles kantmodellen: P0378-rommet (T-form) med folie, L-rom med
+// kabel og matte, transponert T-rom ('h'), rektangel (også med mellompunkter) som før, romdimensjonenes
+// avstand og PDF-luft, og vaksinen: måles det igjen mot ytterboksen, blir V11-kjedens siste mål
+// 514,8 i stedet for 0,8. Kjøres fra konsollen: _dimChainEdgeRegressionTest().
+function _dimChainEdgeRegressionTest() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 0.05 : tol);
+  const saved = { prods: HEATING_PRODUCTS.slice(), rooms: S.rooms, strips: S.strips, cables: S.cables, mats: S.mats, matPaths: S.matPaths, hindrings: S.hindrings,
+    floors: S.floors, activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, autoSave: window._performAutoSave, toast: window._showToast };
+  window._performAutoSave = () => Promise.resolve(); window._showToast = () => {};
+  try {
+    HEATING_PRODUCTS.length = 0;
+    const foil = (id, b) => ({ id, category_id: 9900, active: true, name: 'FlexFoil B=' + b + 'cm', width_mm: b * 10, netto_width_mm: b * 10 - 10, watt_per_m2: 60 });
+    const F = { 100: 998100, 20: 998020, 120: 998120, 80: 998080, 60: 998060 };
+    for (const b of [100, 20, 120, 80, 60]) HEATING_PRODUCTS.push(foil(F[b], b));
+    HEATING_PRODUCTS.push({ id: 998500, category_id: 9800, active: true, product_family: 'EcoMat 100T', name: 'EcoMat 100T 0,5x8m', voltage: 230, watt_per_m2: 100, mat_area_m2: 4,
+      mat_width_mm: 500, mat_total_length_mm: 8000, mat_cc_mm: 120, mat_edge_inset_mm: 25, mat_cut_interval_mm: 240, min_wall_margin_mm: 50, min_gap_mm: 50 });
+    const mk = (id, pts, name) => ({ id, floorId: null, partId: null, name, points: pts.map(p => ({ ...p })), walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [], annotOffsets: {}, wallThicknessCm: 0, dimSnap: true, stripDimSnap: true, cableDimSnap: true, matDimSnap: true });
+    const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+    // P0378 «Rom 2» (mål lest av PDF-en side 2): V9 824, V8 323, V7 364, V6 644, V5 77, V4 121, V3 77, V2 137, V1 765, V13 13, V12 37, V11 310, V10 360
+    const T = [{ x: 0, y: 0 }, { x: 824, y: 0 }, { x: 824, y: 323 }, { x: 460, y: 323 }, { x: 460, y: 967 }, { x: 537, y: 967 }, { x: 537, y: 1088 }, { x: 460, y: 1088 }, { x: 323, y: 1088 }, { x: 323, y: 323 }, { x: 310, y: 323 }, { x: 310, y: 360 }, { x: 0, y: 360 }];
+    const Tt = T.map(p => ({ x: p.y + 2000, y: p.x }));   // transponert (x ↔ y) for 'h'
+    const L = [{ x: 4000, y: 0 }, { x: 4400, y: 0 }, { x: 4400, y: 200 }, { x: 4200, y: 200 }, { x: 4200, y: 400 }, { x: 4000, y: 400 }];
+    const Lm = L.map(p => ({ x: p.x + 1000, y: p.y }));
+    const Rr = rect(7000, 0, 400, 300);
+    const Rsplit = [{ x: 8000, y: 0 }, { x: 8200, y: 0 }, { x: 8400, y: 0 }, { x: 8400, y: 300 }, { x: 8000, y: 300 }, { x: 8000, y: 150 }];   // vegg-for-vegg: mellompunkter
+    S.floors = []; S.ui.activeFloorId = null; S.ui.activePartId = null; S.hindrings = []; S.matPaths = [];
+    S.rooms = [mk(908201, T, 'P0378'), mk(908202, Tt, 'P0378 transponert'), mk(908203, L, 'L kabel'), mk(908204, Lm, 'L matte'), mk(908205, Rr, 'Rektangel'), mk(908206, Rsplit, 'Rektangel m/ delte vegger')];
+    let sid = 1;
+    const st = (roomId, b, pos, start, len, dir) => ({ id: sid++, roomId, productId: F[b], direction: dir || 'v', pos_cm: pos, start_cm: start, length_cm: len });
+    const P = [[100, 8.2, 5, 350], [100, 109.2, 5, 350], [100, 210.2, 5, 350], [20, 311.2, 2.5, 320], [120, 332.2, 2.5, 1083], [80, 453.2, 969.5, 116], [100, 554.2, 2.5, 320], [100, 655.2, 2.5, 320], [60, 756.2, 2.5, 320]];
+    S.strips = [...P.map(([b, pos, s, l]) => st(908201, b, pos, s, l)), ...P.map(([b, pos, s, l]) => st(908202, b, pos, s + 2000, l, 'h')),
+      st(908205, 100, 7005, 5, 290), st(908205, 100, 7106, 5, 290), st(908206, 100, 8005, 5, 290), st(908206, 100, 8106, 5, 290)];
+    S.cables = [{ id: 9901, roomId: 908203, productId: 998500, direction: 'v', spacing_cm: 20, startCorner: 'bl', totalLength_cm: 3000, connections: [],
+      runs: [4020, 4040, 4060, 4080, 4100, 4120, 4140, 4160, 4180, 4220, 4240, 4260].map(p => ({ pos_cm: p, segments: [{ start_cm: 20, end_cm: p < 4200 ? 380 : 180 }] })) }];
+    S.mats = [{ id: 9801, roomId: 908204, productId: 998500, x_cm: 5002.5, y_cm: 2.5, width_cm: 50, length_cm: 395, num_runs: 2, gap_cm: 7, rotation_deg: 0, matCoordV: 2 },
+              { id: 9802, roomId: 908204, productId: 998500, x_cm: 5216.5, y_cm: 2.5, width_cm: 50, length_cm: 195, num_runs: 2, gap_cm: 7, rotation_deg: 0, matCoordV: 2 }];
+    _invalidateStripCache(); _invalidateCableCache(); if (typeof _invalidateMatCache === 'function') _invalidateMatCache();
+    _dimLayoutMemo.clear();
+    const room = id => S.rooms.find(r => r.id === id);
+    const cms = segs => JSON.stringify(segs.map(s => Math.round((s.cm != null ? s.cm : s.to - s.from) * 10) / 10));
+    // A. Kantmodellen for T-rommet
+    const M = _dimRoomEdges(room(908201));
+    check('A: T-rommet har 12 kanter (V2 + V3 er kollineære og slås sammen til én bunnkant 323–537)', 12, M.edges.length === 12, M.edges.length);
+    const bottoms = M.edges.filter(e => e.side === 'bottom').map(e => `${e.c}:${e.lo}-${e.hi}`).sort();
+    check('A: fire bunnvendte kanter: V11 (360: 0–310), V13 (323: 310–323), V2+V3 (1088: 323–537), V7 (323: 460–824)', '1088:323-537,323:310-323,323:460-824,360:0-310', bottoms.join() === '1088:323-537,323:310-323,323:460-824,360:0-310', bottoms);
+    check('A: V5 (967: 460–537) er toppvendt (utsiden over)', 'top', M.edges.some(e => e.c === 967 && e.side === 'top' && e.lo === 460 && e.hi === 537), M.edges.filter(e => e.c === 967));
+    // B. Foliekjeden i P0378: fire tverr-kjeder med tall mot hver sin vegg
+    const Ls = _stripDimChainLayout(room(908201));
+    const acr = Ls.across.map(ch => `${ch.c}@${ch.lo}-${ch.hi}=${cms(ch.segs)}`);
+    check('B: V11-kjeden: 8,2 | 99 | 2 | 99 | 2 | 99 | 0,8 (siste mål mot x = 310, ikke 8,8 mot x = 824)', '360@0-310=[8.2,99,2,99,2,99,0.8]', acr.includes('360@0-310=[8.2,99,2,99,2,99,0.8]'), acr);
+    check('B: V7-kjeden: 94,2 | 99 | 2 | 99 | 2 | 59 | 8,8 (første mål mot stammens høyre vegg x = 460, ikke «22»)', '323@460-824=[94.2,99,2,99,2,59,8.8]', acr.includes('323@460-824=[94.2,99,2,99,2,59,8.8]'), acr);
+    check('B: stammens bunnkjede (V2+V3): 9,2 | 119 | 2 | 79 | 4,8', '1088@323-537=[9.2,119,2,79,4.8]', acr.includes('1088@323-537=[9.2,119,2,79,4.8]'), acr);
+    check('B: B=20 hører til V13 (prøvepunkt x = 320,7 treffer y = 323): 1,2 | 19, uten «siste → vegg» (bredden fortsetter over stammen)', '323@310-323=[1.2,19]', acr.includes('323@310-323=[1.2,19]'), acr);
+    check('B: ingen kjede under ytterboksen (ingen kant spenner 0–824 i bunnen)', 'ingen', Ls.across.length === 4 && !Ls.across.some(ch => ch.lo === 0 && ch.hi === 824), acr);
+    const alo = Ls.along.map(ch => `${ch.bandLo}-${ch.bandHi}:${ch.side}${ch.depth}@${ch.line}=${cms(ch.segs)}`);
+    check('B: langs: venstre arm (0–360) til venstre, trinn 0: 5 | 350 | 5', '0-360:left0@-25=[5,350,5]', alo.includes('0-360:left0@-25=[5,350,5]'), alo);
+    check('B: langs: høyre arm + B=20 (0–323) kolliderer til venstre → høyre side: 2,5 | 320 | 0,5', '0-323:right0@849=[2.5,320,0.5]', alo.includes('0-323:right0@849=[2.5,320,0.5]'), alo);
+    check('B: langs: stammen (0–1088) kolliderer på begge sider → venstre, ett trinn ut (−45): 2,5 | 1083 | 2,5', '0-1088:left1@-45=[2.5,1083,2.5]', alo.includes('0-1088:left1@-45=[2.5,1083,2.5]'), alo);
+    check('B: langs: utstikkeren (967–1088) ved stammens venstre vegg x = 323 → linje 298: 2,5 | 116 | 2,5', '967-1088:left0@298=[2.5,116,2.5]', alo.includes('967-1088:left0@298=[2.5,116,2.5]'), alo);
+    // C. Transponert T-rom med vannrette striper: samme tall, kanter speilet (x ↔ y)
+    const Lt = _stripDimChainLayout(room(908202));
+    const acrT = Lt.across.map(ch => `${ch.c - 2000}@${ch.lo}-${ch.hi}=${cms(ch.segs)}`).sort();
+    check('C: transponert: tverr-kjedene (til høyre for hver høyrevendt kant) har samme tall', JSON.stringify(acr.slice().sort()), JSON.stringify(acrT) === JSON.stringify(acr.slice().sort()), acrT);
+    const wantT = Ls.along.map(ch => (ch.side === 'left' ? 'top' : 'bottom') + ch.depth).join();
+    check('C: transponert: langs-kjedene over (top) / under (bottom) med samme trinn', wantT, Lt.along.map(ch => ch.side + ch.depth).join() === wantT, Lt.along.map(ch => ch.side + ch.depth));
+    // D. Rektangel: som ytterboks-regningen før 164 (én kant per side, én gruppe, trinn 0)
+    const Lr = _stripDimChainLayout(room(908205));
+    check('D: rektangel: én tverr-kjede under y = 300 (7000–7400), én langs-kjede til venstre på trinn 0 (x = 6975)', 'ok',
+      Lr.across.length === 1 && Lr.across[0].c === 300 && Lr.across[0].lo === 7000 && Lr.across[0].hi === 7400 && Lr.along.length === 1 && Lr.along[0].side === 'left' && Lr.along[0].depth === 0 && Lr.along[0].line === 6975,
+      { across: Lr.across.map(ch => [ch.c, ch.lo, ch.hi]), along: Lr.along.map(ch => [ch.side, ch.depth, ch.line]) });
+    check('D: rektangel: tall som før (5 | 99 | 2 | 99 | 195 og 5 | 290 | 5)', '[5,99,2,99,195] [5,290,5]', cms(Lr.across[0].segs) === '[5,99,2,99,195]' && cms(Lr.along[0].segs) === '[5,290,5]', [cms(Lr.across[0].segs), cms(Lr.along[0].segs)]);
+    const Lr2 = _stripDimChainLayout(room(908206));
+    check('D: rektangel med mellompunkter (vegg-for-vegg): kantene slås sammen → samme kjeder som et rent rektangel', 'ok',
+      _dimRoomEdges(room(908206)).edges.length === 4 && Lr2.across.length === 1 && Lr2.across[0].lo === 8000 && Lr2.across[0].hi === 8400 && Lr2.along.length === 1 && cms(Lr2.across[0].segs) === '[5,99,2,99,195]',
+      { n: _dimRoomEdges(room(908206)).edges.length, across: Lr2.across.map(ch => [ch.lo, ch.hi, cms(ch.segs)]) });
+    // E. Romdimensjonenes avstand: rektangel 52 (som før), T-rommets V10 72 (to kjeder stablet), V8/V11 52
+    const wallAt = (rm, x1, y1, x2, y2) => rm.walls.find(w => (w.x1 === x1 && w.y1 === y1 && w.x2 === x2 && w.y2 === y2) || (w.x1 === x2 && w.y1 === y2 && w.x2 === x1 && w.y2 === y1));
+    const Rr5 = room(908205); Rr5.cableDimSnap = false; Rr5.matDimSnap = false; _dimLayoutMemo.clear();
+    check('E: rektangel med foliebryter: romdimensjonen 32 + 20 = 52 cm ut på alle fire vegger (som før 164)', '52,52,52,52', Rr5.walls.map(w => _roomDimBaseOffCm(Rr5, w)).join() === '52,52,52,52', Rr5.walls.map(w => _roomDimBaseOffCm(Rr5, w)));
+    Rr5.cableDimSnap = true; Rr5.matDimSnap = true;
+    check('E: rektangel med alle tre bryterne: 92 (som før)', 92, _roomDimBaseOffCm(Rr5, Rr5.walls[0]) === 92, _roomDimBaseOffCm(Rr5, Rr5.walls[0]));
+    const Tr = room(908201); Tr.cableDimSnap = false; Tr.matDimSnap = false; _dimLayoutMemo.clear();
+    check('E: T-rommet: V10 (x = 0) har to foliekjeder utenfor seg (−25 og −45) → 32 + 40 = 72', 72, _roomDimBaseOffCm(Tr, wallAt(Tr, 0, 360, 0, 0)) === 72, _roomDimBaseOffCm(Tr, wallAt(Tr, 0, 360, 0, 0)));
+    const e2 = [_roomDimBaseOffCm(Tr, wallAt(Tr, 824, 0, 824, 323)), _roomDimBaseOffCm(Tr, wallAt(Tr, 310, 360, 0, 360)), _roomDimBaseOffCm(Tr, wallAt(Tr, 323, 1088, 323, 323))];
+    check('E: T-rommet: V8 (x = 824) én kjede (849) → 52; V11 (y = 360) én tverr-kjede → 52; V1 (x = 323) utstikkerens kjede (298) → 52', '52,52,52', e2.join() === '52,52,52', e2);
+    check('E: PDF-luften: rektangel 150 (som før), T-rommet 150 (72 + 58 < 150)', '150,150', _pdfRoomPadCm(Rr5) === 150 && _pdfRoomPadCm(Tr) === 150, [_pdfRoomPadCm(Rr5), _pdfRoomPadCm(Tr)]);
+    // F. Kabel i L-rom: strengene over venstre del måler mot y = 400, strengene i høyre felt mot y = 200
+    const Lc = _cableDimChainLayout(room(908203));
+    const acrC = Lc.across.map(ch => `${ch.c}@${ch.lo}-${ch.hi}=${cms(ch.segs)}`).sort();
+    check('F: kabel: to tverr-kjeder — under y = 400 (4000–4200: 20 | 20 | 20 | 20) og under y = 200 (4200–4400: 20 | 20 | 20 | 140)', '200@4200-4400=[20,20,20,140],400@4000-4200=[20,20,20,20]', acrC.join() === '200@4200-4400=[20,20,20,140],400@4000-4200=[20,20,20,20]', acrC);
+    const aloC = Lc.along.map(ch => `${ch.bandLo}-${ch.bandHi}:${ch.side}${ch.depth}=${cms(ch.segs)}`).sort();
+    check('F: kabel: to langs-kjeder — 0–400 (10 | 380 | 10) til venstre, 0–200 (10 | 180 | 10) til høyre', '0-200:right0=[10,180,10],0-400:left0=[10,380,10]', aloC.join() === '0-200:right0=[10,180,10],0-400:left0=[10,380,10]', aloC);
+    // G. Matte i L-rom: samme deling, veggmål mot faktisk vegg, ingen falske røde
+    const Dm = _matDimChainData(room(908204));
+    const acrM = Dm.chains.v.across.map(ch => `${ch.c}@${ch.lo}-${ch.hi}=${cms(ch.segs)}`).sort();
+    check('G: matte: under y = 400 (5000–5200): 2,5 | 50 | 7 | 50 | 90,5; under y = 200 (5200–5400): 16,5 | 50 | 7 | 50 | 76,5', '200@5200-5400=[16.5,50,7,50,76.5],400@5000-5200=[2.5,50,7,50,90.5]', acrM.join() === '200@5200-5400=[16.5,50,7,50,76.5],400@5000-5200=[2.5,50,7,50,90.5]', acrM);
+    check('G: matte: veggmålene er av typen wall med krav 2,5, ingen røde', 'ok', Dm.chains.v.across.every(ch => ch.segs[0].type === 'wall' && near(ch.segs[0].req, 2.5) && !ch.segs.some(s => s.red)), Dm.chains.v.across.map(ch => ch.segs.map(s => s.type + (s.red ? '!' : ''))));
+    // H. VAKSINE: måles det igjen mot ytterboksen, blir V11-kjedens siste mål 514,8 (310 → 824) og ikke 0,8
+    const v11 = Ls.across.find(ch => ch.c === 360);
+    const lastSeg = v11.segs[v11.segs.length - 1];
+    const bboxLast = Math.max(...room(908201).points.map(p => p.x)) - v11.items[v11.items.length - 1].p1;
+    check('H: VAKSINE — ytterboks-regning ville gitt 514,8 som siste mål under venstre arm; kantmodellen gir 0,8', '514.8 → 0.8', near(bboxLast, 514.8) && near(lastSeg.to - lastSeg.from, 0.8) && lastSeg.to === 310, [bboxLast, lastSeg]);
+    // I. Tegning: kjedene tegnes uten feil, tallene mot faktiske vegger finnes, de gale ikke (krever lerret)
+    if (canvas && canvas.width && canvas.height) {
+      const texts = (rm, fn) => { const t = []; const o = ctx.fillText; ctx.fillText = function (s, ...a) { t.push(String(s)); return o.call(this, s, ...a); }; try { fn(rm); } finally { ctx.fillText = o; } return t; };
+      _dimLayoutMemo.clear();
+      const tT = texts(Tr, _drawStripDimChainForRoom);
+      check('I: P0378 tegner 21 tverr-tall + 12 langs-tall = 33', 33, tT.length === 33, tT);
+      check('I: tallene 94.2, 0.8, 1.2 og 4.8 finnes (mot faktiske vegger), 22 og 514.8 ikke', 'ok', ['94.2 cm', '0.8 cm', '1.2 cm', '4.8 cm'].every(s => tT.includes(s)) && !tT.includes('22 cm') && !tT.includes('514.8 cm'), tT);
+      const tC = texts(room(908203), _drawCableDimChainForRoom);
+      check('I: kabel-L tegner 8 tverr-tall + 6 langs-tall = 14', 14, tC.length === 14, tC);
+      const tM = texts(room(908204), _drawMatDimChainForRoom);
+      check('I: matte-L tegner 10 tverr-tall + 6 langs-tall + kabelmerknad = 17', 17, tM.length === 17 && tM.some(s => /^Kabel/.test(s)), tM);
+    } else results.push({ name: 'I: HOPPET OVER — lerretet er 0×0 (åpne et prosjekt i tegnemodulen først)', ok: true, expected: '-', got: '-' });
+  } catch (e) {
+    results.push({ name: 'UNNTAK: ' + (e && e.message), ok: false, expected: 'ingen', got: e && e.stack });
+  } finally {
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    S.rooms = saved.rooms; S.strips = saved.strips; S.cables = saved.cables; S.mats = saved.mats; S.matPaths = saved.matPaths; S.hindrings = saved.hindrings;
+    S.floors = saved.floors; S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId;
+    window._performAutoSave = saved.autoSave; window._showToast = saved.toast;
+    _invalidateStripCache(); _invalidateCableCache(); if (typeof _invalidateMatCache === 'function') _invalidateMatCache();
+    _dimLayoutMemo.clear();
+    try { _rebuildActiveFloorRoomIds(); } catch (e) {}
+    if (typeof markDirty === 'function') markDirty();
+    if (typeof render === 'function') render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_dimChainEdgeRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
+  return { ok: allOk, results };
+}
 function _drawDimAnnotationsForRoom(room, opts) {
   if(!room||!room.walls||!room.points) return;
   const TICK=8;
@@ -57262,12 +57663,9 @@ function _drawDimAnnotationsForRoom(room, opts) {
     // 32cm + 20cm klaring pr. aktiv produkt-kjede (folie = 52cm, som før). Én felles
     // konstant → kabel og matte kan ikke drifte fra folie igjen.
     const _zps = S.view.zoom * BASE_SCALE;
-    const DIM_BASE_CM = 32, DIM_CHAIN_CLEARANCE_CM = 20;
-    const baseOff_cm = DIM_BASE_CM
-      + (room.stripDimSnap ? DIM_CHAIN_CLEARANCE_CM : 0)
-      + (room.cableDimSnap ? DIM_CHAIN_CLEARANCE_CM : 0)
-      + (room.matDimSnap   ? DIM_CHAIN_CLEARANCE_CM : 0);
-    const baseOff = baseOff_cm * _zps + (room.annotOffsets[wl.id]||0);
+    // 164: + 20 cm per ekstra trinn produkt-kjedene er stablet utenfor akkurat denne veggen
+    // (T-/U-rom). Rektangler: 32 + 20 per aktiv kjede, nøyaktig som før. Samme kilde som hitAnnotation.
+    const baseOff = _roomDimBaseOffCm(room, wl) * _zps + (room.annotOffsets[wl.id]||0);
     const s1=w2s(wl.x1,wl.y1),s2=w2s(wl.x2,wl.y2);
     const wallAng=Math.atan2(s2.y-s1.y,s2.x-s1.x),perpAng=wallAng+Math.PI/2;
     const outDotScreen=(s1.x+s2.x)/2-w2s(cxW,cyW).x;
@@ -57358,207 +57756,105 @@ function _drawDimAnnotationsForRoom(room, opts) {
 }
 
 // ─── STRIP DIMENSION CHAIN (Målsett Folie) ────────────────────
-function _drawStripDimChainForRoom(room) {
+// 164: oppsettet (hvilke bredder som hører til hvilken vegg, og hvor kjedene ligger) kommer fra den
+// felles kantmodellen (_dimChainLayout); tallene per segment er som før: vegg → første bredde,
+// nettobredder og mellomrom, siste bredde → vegg. Dominerende retning som før.
+function _stripDimChainLayout(room) {
   const strips = _stripsForRoom(room.id);
-  if (!strips.length) return;
-  const xs = room.points.map(p => p.x), ys = room.points.map(p => p.y);
-  // Use actual wall boundaries — dimensions should show real distance to wall
-  const wMinX = Math.min(...xs), wMaxX = Math.max(...xs);
-  const wMinY = Math.min(...ys), wMaxY = Math.max(...ys);
-
-  // Determine dominant direction
+  if (!strips.length || !room.points || room.points.length < 3) return null;
   const dirs = strips.map(s => s.direction);
   const dir = dirs.filter(d => d === 'v').length >= dirs.filter(d => d === 'h').length ? 'v' : 'h';
   const dirStrips = strips.filter(s => s.direction === dir).sort((a, b) => a.pos_cm - b.pos_cm);
-  if (!dirStrips.length) return;
-
-  ctx.save();
-  ctx.font = `10px ${CANVAS_NUM_FONT}`;
-  const COL = _lc('rgba(220,120,20,0.85)', 'rgba(255,180,80,0.75)');
-  const COL_BG = _lc('rgba(240,244,248,0.92)', 'rgba(13,14,16,0.8)');
-  const TICK = 8;
-
-  // World-cm offset, so chain stays at constant distance from room under zoom.
-  // 25cm = 37.5px at zoom 1× (was hardcoded 38px).
-  const BASE_OFF = 25 * S.view.zoom * BASE_SCALE;
-
-  // --- Helper: draw one dimension chain segment ---
-  function _drawChainSeg(sx1, sy1, sx2, sy2, valueCm, perpNx, perpNy, isVertLabel) {
-    if (valueCm < 0.3) return;
-    const label = Math.round(valueCm * 10) / 10;
-    const labelStr = (label % 1 === 0 ? label.toFixed(0) : label.toFixed(1)) + ' cm';
-
-    // Solid line between endpoints
-    ctx.strokeStyle = COL; ctx.lineWidth = 0.8; ctx.setLineDash([]);
-    ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
-
-    // Tick marks at endpoints (perpendicular to chain)
-    ctx.beginPath();
-    ctx.moveTo(sx1 - perpNx * TICK / 2, sy1 - perpNy * TICK / 2);
-    ctx.lineTo(sx1 + perpNx * TICK / 2, sy1 + perpNy * TICK / 2);
-    ctx.moveTo(sx2 - perpNx * TICK / 2, sy2 - perpNy * TICK / 2);
-    ctx.lineTo(sx2 + perpNx * TICK / 2, sy2 + perpNy * TICK / 2);
-    ctx.stroke();
-
-    // Label at midpoint — offset perpendicular so labels sit above/beside the line
-    const mx = (sx1 + sx2) / 2, my = (sy1 + sy2) / 2;
-    const tw = ctx.measureText(labelStr).width;
-    const LABEL_OFF = -12; // px: moves label above (horiz) or left (vert) of the chain line
-    ctx.save();
-    ctx.translate(mx, my);
-    if (isVertLabel) ctx.rotate(-Math.PI / 2);
-    ctx.translate(0, LABEL_OFF);
-    ctx.fillStyle = COL_BG;
-    ctx.fillRect(-tw / 2 - 3, -7, tw + 6, 14);
-    ctx.fillStyle = COL;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(labelStr, 0, 0);
-    ctx.restore();
-  }
-
-  // --- Helper: draw extension line (dashed) from wall to chain level ---
-  function _drawExtLine(wallSx, wallSy, chainSx, chainSy) {
-    ctx.strokeStyle = COL; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
-    ctx.beginPath(); ctx.moveTo(wallSx, wallSy); ctx.lineTo(chainSx, chainSy); ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  // --- Build across-chain segments (perpendicular to strip direction) ---
-  const acrossSegs = [];
-  let nearWall, farWall;
-  if (dir === 'v') { nearWall = wMinX; farWall = wMaxX; }
-  else              { nearWall = wMinY; farWall = wMaxY; }
-
-  let cursor = nearWall;
-  for (const st of dirStrips) {
-    const nc = _stripNettoCm(st);
-    if (st.pos_cm > cursor + 0.1) {
-      acrossSegs.push({ from: cursor, to: st.pos_cm, type: 'gap' });
-    }
-    acrossSegs.push({ from: st.pos_cm, to: st.pos_cm + nc, type: 'strip' });
-    cursor = st.pos_cm + nc;
-  }
-  if (cursor < farWall - 0.1) {
-    acrossSegs.push({ from: cursor, to: farWall, type: 'gap' });
-  }
-
-  // --- Build along-chain segments (parallel to strip direction) ---
-  const alongSegs = [];
-  let nearWallA, farWallA;
-  if (dir === 'v') { nearWallA = wMinY; farWallA = wMaxY; }
-  else              { nearWallA = wMinX; farWallA = wMaxX; }
-
-  let minStart = Infinity, maxEnd = -Infinity;
-  for (const st of dirStrips) {
-    const s = st.start_cm, e = st.start_cm + st.length_cm;
-    if (s < minStart) minStart = s;
-    if (e > maxEnd) maxEnd = e;
-  }
-  if (minStart > nearWallA + 0.1) {
-    alongSegs.push({ from: nearWallA, to: minStart, type: 'gap' });
-  }
-  alongSegs.push({ from: minStart, to: maxEnd, type: 'strip' });
-  if (maxEnd < farWallA - 0.1) {
-    alongSegs.push({ from: maxEnd, to: farWallA, type: 'gap' });
-  }
-
-  // --- Render across-chain (bottom for 'v', right for 'h') ---
-  const cx = room.points.reduce((a, p) => a + p.x, 0) / room.points.length;
-  const cy = room.points.reduce((a, p) => a + p.y, 0) / room.points.length;
-
-  if (dir === 'v') {
-    // Across-chain runs horizontally along the bottom wall
-    const wallY = wMaxY; // bottom wall in world coords
-    const sWall = w2s(0, wallY);
-    const sCenter = w2s(0, cy);
-    // Offset downward (away from room center)
-    const offPx = BASE_OFF;
-    const chainScreenY = sWall.y + offPx;
-
-    // Extension lines from each segment boundary to chain level
-    const boundaries = new Set();
-    for (const seg of acrossSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const bx of boundaries) {
-      const sw = w2s(bx, wallY);
-      _drawExtLine(sw.x, sw.y + 4, sw.x, chainScreenY);
-    }
-
-    // Perpendicular direction for ticks (vertical)
-    const perpNx = 0, perpNy = 1;
-    for (const seg of acrossSegs) {
-      const s1 = w2s(seg.from, wallY), s2 = w2s(seg.to, wallY);
-      _drawChainSeg(s1.x, chainScreenY, s2.x, chainScreenY, seg.to - seg.from, perpNx, perpNy, false);
-    }
-  } else {
-    // Across-chain runs vertically along the right wall
-    const wallX = wMaxX;
-    const offPx = BASE_OFF;
-    const sWall = w2s(wallX, 0);
-    const chainScreenX = sWall.x + offPx;
-
-    const boundaries = new Set();
-    for (const seg of acrossSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const by of boundaries) {
-      const sw = w2s(wallX, by);
-      _drawExtLine(sw.x + 4, sw.y, chainScreenX, sw.y);
-    }
-
-    const perpNx = 1, perpNy = 0;
-    for (const seg of acrossSegs) {
-      const s1 = w2s(wallX, seg.from), s2 = w2s(wallX, seg.to);
-      _drawChainSeg(chainScreenX, s1.y, chainScreenX, s2.y, seg.to - seg.from, perpNx, perpNy, true);
-    }
-  }
-
-  // --- Render along-chain (left for 'v', top for 'h') ---
-  if (dir === 'v') {
-    // Along-chain runs vertically along the left wall
-    const wallX = wMinX;
-    const sWall = w2s(wallX, 0);
-    const offPx = BASE_OFF;
-    const chainScreenX = sWall.x - offPx;
-
-    const boundaries = new Set();
-    for (const seg of alongSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const by of boundaries) {
-      const sw = w2s(wallX, by);
-      _drawExtLine(sw.x - 4, sw.y, chainScreenX, sw.y);
-    }
-
-    const perpNx = 1, perpNy = 0;
-    for (const seg of alongSegs) {
-      const s1 = w2s(wallX, seg.from), s2 = w2s(wallX, seg.to);
-      _drawChainSeg(chainScreenX, s1.y, chainScreenX, s2.y, seg.to - seg.from, perpNx, perpNy, true);
-    }
-  } else {
-    // Along-chain runs horizontally along the top wall
-    const wallY = wMinY;
-    const sWall = w2s(0, wallY);
-    const offPx = BASE_OFF;
-    const chainScreenY = sWall.y - offPx;
-
-    const boundaries = new Set();
-    for (const seg of alongSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const bx of boundaries) {
-      const sw = w2s(bx, wallY);
-      _drawExtLine(sw.x, sw.y - 4, sw.x, chainScreenY);
-    }
-
-    const perpNx = 0, perpNy = 1;
-    for (const seg of alongSegs) {
-      const s1 = w2s(seg.from, wallY), s2 = w2s(seg.to, wallY);
-      _drawChainSeg(s1.x, chainScreenY, s2.x, chainScreenY, seg.to - seg.from, perpNx, perpNy, false);
-    }
-  }
-
-  ctx.restore();
+  if (!dirStrips.length) return null;
+  const items = dirStrips.map(st => ({ p0: st.pos_cm, p1: st.pos_cm + _stripNettoCm(st), a0: st.start_cm, a1: st.start_cm + st.length_cm, strip: st }));
+  return _dimChainLayout(room, dir, items, {
+    across: (its, edge) => {
+      const segs = [];
+      let cursor = edge.lo;
+      for (const it of its) {
+        if (it.p0 > cursor + 0.1) segs.push({ from: cursor, to: it.p0, type: 'gap' });
+        segs.push({ from: it.p0, to: it.p1, type: 'strip' });
+        cursor = it.p1;
+      }
+      if (cursor < edge.hi - 0.1) segs.push({ from: cursor, to: edge.hi, type: 'gap' });
+      return segs;
+    },
+    along: (its, near, far) => {
+      let minStart = Infinity, maxEnd = -Infinity;
+      for (const it of its) { if (it.a0 < minStart) minStart = it.a0; if (it.a1 > maxEnd) maxEnd = it.a1; }
+      const segs = [];
+      if (minStart > near.c + 0.1) segs.push({ from: near.c, to: minStart, type: 'gap' });
+      segs.push({ from: minStart, to: maxEnd, type: 'strip' });
+      if (maxEnd < far.c - 0.1) segs.push({ from: maxEnd, to: far.c, type: 'gap' });
+      return segs;
+    },
+  });
+}
+function _dimFmtCmTenths(valueCm) {
+  const label = Math.round(valueCm * 10) / 10;
+  return (label % 1 === 0 ? label.toFixed(0) : label.toFixed(1)) + ' cm';
+}
+function _drawStripDimChainForRoom(room) {
+  const layout = _dimLayoutsFor(room, 'strip')[0];
+  if (!layout) return;
+  _drawDimChainLayout(layout, {
+    col: _lc('rgba(220,120,20,0.85)', 'rgba(255,180,80,0.75)'), colRed: _lc('rgba(200,30,40,0.95)', 'rgba(248,113,113,0.95)'),
+    bg: _lc('rgba(240,244,248,0.92)', 'rgba(13,14,16,0.8)'), fmt: _dimFmtCmTenths,
+  });
 }
 
 // ─── CABLE DIMENSION CHAIN (Målsett Kabel) ────────────────────
-// Modeled after _drawStripDimChainForRoom — same layout approach
+// Modeled after _drawStripDimChainForRoom — same layout approach (164: samme kantmodell).
 function _drawCableDimChainForRoom(room) {
   try { _drawCableDimChainForRoomInner(room); }
   catch(e) { console.warn('Cable dim chain error:', e.message, e.stack); }
+}
+// Tverr: vegg → første streng, CC mellom de to første, CC mellom de to siste, siste streng → vegg
+// (like CC-er i midten sløyfes). Langs: vegg → kabelens ytterkant (U-svingen stikker cc/2 ut) → vegg.
+function _cableDimChainLayout(room) {
+  const cables = _cablesForRoom(room.id);
+  const axisCables = cables.filter(c => c.runs && c.runs.length);
+  if (!axisCables.length || !room.points || room.points.length < 3) return null;
+  const dirs = axisCables.map(c => c.direction);
+  const dir = dirs.filter(d => d === 'v').length >= dirs.filter(d => d === 'h').length ? 'v' : 'h';
+  const dirCables = axisCables.filter(c => c.direction === dir);
+  if (!dirCables.length) return null;
+  const uRadius = (dirCables[0]?.spacing_cm || 10) / 2;
+  const items = [];
+  for (const cable of dirCables) {
+    for (const run of cable.runs) {
+      let sweepMin = Infinity, sweepMax = -Infinity;
+      for (const seg of run.segments) {
+        if (seg.start_cm < sweepMin) sweepMin = seg.start_cm;
+        if (seg.end_cm > sweepMax) sweepMax = seg.end_cm;
+      }
+      items.push({ p0: run.pos_cm, p1: run.pos_cm, a0: sweepMin, a1: sweepMax, cable });
+    }
+  }
+  if (!items.length) return null;
+  return _dimChainLayout(room, dir, items, {
+    across: (its, edge) => {
+      const segs = [];
+      const n = its.length;
+      if (its[0].p0 > edge.lo + 0.1) segs.push({ from: edge.lo, to: its[0].p0 });
+      if (n >= 2) segs.push({ from: its[0].p0, to: its[1].p0 });
+      if (n >= 3) segs.push({ from: its[n - 2].p0, to: its[n - 1].p0 });
+      if (its[n - 1].p0 < edge.hi - 0.1) segs.push({ from: its[n - 1].p0, to: edge.hi });
+      return segs;
+    },
+    along: (its, near, far) => {
+      let minSweep = Infinity, maxSweep = -Infinity;
+      for (const it of its) {
+        if (it.a0 - uRadius < minSweep) minSweep = it.a0 - uRadius;
+        if (it.a1 + uRadius > maxSweep) maxSweep = it.a1 + uRadius;
+      }
+      const segs = [];
+      if (minSweep > near.c + 0.1) segs.push({ from: near.c, to: minSweep });
+      segs.push({ from: minSweep, to: maxSweep });
+      if (maxSweep < far.c - 0.1) segs.push({ from: maxSweep, to: far.c });
+      return segs;
+    },
+  });
 }
 function _drawCableDimChainForRoomInner(room) {
   const cables = _cablesForRoom(room.id);
@@ -57567,182 +57863,13 @@ function _drawCableDimChainForRoomInner(room) {
   // dimension them in their own rotated frame.
   const skewCables = cables.filter(c => c.pathEls && c.pathEls.length && (!c.runs || !c.runs.length));
   if (skewCables.length) _drawCableSkewDimChain(room, skewCables);
-  // Axis-aligned cables use the run/direction chain below.
-  const axisCables = cables.filter(c => c.runs && c.runs.length);
-  if (!axisCables.length) return;
-  const xs = room.points.map(p => p.x), ys = room.points.map(p => p.y);
-  const wMinX = Math.min(...xs), wMaxX = Math.max(...xs);
-  const wMinY = Math.min(...ys), wMaxY = Math.max(...ys);
-
-  // Determine dominant cable direction
-  const dirs = axisCables.map(c => c.direction);
-  const dir = dirs.filter(d => d === 'v').length >= dirs.filter(d => d === 'h').length ? 'v' : 'h';
-  const dirCables = axisCables.filter(c => c.direction === dir);
-  if (!dirCables.length) return;
-
-  // Collect all run positions and sweep extents
-  const allRuns = [];
-  for (const cable of dirCables) {
-    if (!cable.runs || cable.runs.length === 0) continue;
-    for (const run of cable.runs) {
-      let sweepMin = Infinity, sweepMax = -Infinity;
-      for (const seg of run.segments) {
-        if (seg.start_cm < sweepMin) sweepMin = seg.start_cm;
-        if (seg.end_cm > sweepMax) sweepMax = seg.end_cm;
-      }
-      allRuns.push({ pos: run.pos_cm, sweepMin, sweepMax });
-    }
-  }
-  allRuns.sort((a, b) => a.pos - b.pos);
-  if (!allRuns.length) return;
-
-  ctx.save();
-  ctx.font = `10px ${CANVAS_NUM_FONT}`;
-  const COL = _lc('rgba(180,90,30,0.85)', 'rgba(255,150,60,0.75)');
-  const COL_BG = _lc('rgba(240,244,248,0.92)', 'rgba(13,14,16,0.8)');
-  const TICK = 8;
-  // World-cm offset — keeps the chain fixed relative to the room across zoom.
-  const BASE_OFF = 25 * S.view.zoom * BASE_SCALE;
-
-  // --- Helpers (identical to strip dim chain) ---
-  function _drawChainSeg(sx1, sy1, sx2, sy2, valueCm, perpNx, perpNy, isVertLabel) {
-    if (valueCm < 0.3) return;
-    const label = Math.round(valueCm * 10) / 10;
-    const labelStr = (label % 1 === 0 ? label.toFixed(0) : label.toFixed(1)) + ' cm';
-    ctx.strokeStyle = COL; ctx.lineWidth = 0.8; ctx.setLineDash([]);
-    ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(sx1 - perpNx * TICK / 2, sy1 - perpNy * TICK / 2);
-    ctx.lineTo(sx1 + perpNx * TICK / 2, sy1 + perpNy * TICK / 2);
-    ctx.moveTo(sx2 - perpNx * TICK / 2, sy2 - perpNy * TICK / 2);
-    ctx.lineTo(sx2 + perpNx * TICK / 2, sy2 + perpNy * TICK / 2);
-    ctx.stroke();
-    const mx = (sx1 + sx2) / 2, my = (sy1 + sy2) / 2;
-    const tw = ctx.measureText(labelStr).width;
-    ctx.save();
-    ctx.translate(mx, my);
-    if (isVertLabel) ctx.rotate(-Math.PI / 2);
-    ctx.translate(0, -12);
-    ctx.fillStyle = COL_BG;
-    ctx.fillRect(-tw / 2 - 3, -7, tw + 6, 14);
-    ctx.fillStyle = COL;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(labelStr, 0, 0);
-    ctx.restore();
-  }
-  function _drawExtLine(wallSx, wallSy, chainSx, chainSy) {
-    ctx.strokeStyle = COL; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
-    ctx.beginPath(); ctx.moveTo(wallSx, wallSy); ctx.lineTo(chainSx, chainSy); ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  // --- Across-chain: wall → run positions → wall (shows CC + wall margins) ---
-  // Build segments: wall-margin, CC between first two runs, CC between last two runs, wall-margin
-  // (skip identical middle CCs to avoid clutter)
-  const acrossSegs = [];
-  let nearWall, farWall;
-  if (dir === 'v') { nearWall = wMinX; farWall = wMaxX; }
-  else              { nearWall = wMinY; farWall = wMaxY; }
-
-  // First margin: wall → first run
-  if (allRuns[0].pos > nearWall + 0.1) {
-    acrossSegs.push({ from: nearWall, to: allRuns[0].pos });
-  }
-  // CC between first two runs
-  if (allRuns.length >= 2) {
-    acrossSegs.push({ from: allRuns[0].pos, to: allRuns[1].pos });
-  }
-  // CC between last two runs (only if different from above)
-  if (allRuns.length >= 3) {
-    acrossSegs.push({ from: allRuns[allRuns.length - 2].pos, to: allRuns[allRuns.length - 1].pos });
-  }
-  // Last margin: last run → wall
-  const lastRunPos = allRuns[allRuns.length - 1].pos;
-  if (lastRunPos < farWall - 0.1) {
-    acrossSegs.push({ from: lastRunPos, to: farWall });
-  }
-
-  // --- Along-chain: wall → cable extent → wall ---
-  const alongSegs = [];
-  let nearWallA, farWallA;
-  if (dir === 'v') { nearWallA = wMinY; farWallA = wMaxY; }
-  else              { nearWallA = wMinX; farWallA = wMaxX; }
-
-  // U-turn arcs extend uRadius beyond segment endpoints
-  const uRadius = (dirCables[0]?.spacing_cm || 10) / 2;
-  let minSweep = Infinity, maxSweep = -Infinity;
-  for (const r of allRuns) {
-    const arcMin = r.sweepMin - uRadius;
-    const arcMax = r.sweepMax + uRadius;
-    if (arcMin < minSweep) minSweep = arcMin;
-    if (arcMax > maxSweep) maxSweep = arcMax;
-  }
-  if (minSweep > nearWallA + 0.1) alongSegs.push({ from: nearWallA, to: minSweep });
-  alongSegs.push({ from: minSweep, to: maxSweep });
-  if (maxSweep < farWallA - 0.1) alongSegs.push({ from: maxSweep, to: farWallA });
-
-  // --- Render across-chain (bottom for 'v', right for 'h') ---
-  if (dir === 'v') {
-    const wallY = wMaxY;
-    const sWall = w2s(0, wallY);
-    const chainScreenY = sWall.y + BASE_OFF;
-    const boundaries = new Set();
-    for (const seg of acrossSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const bx of boundaries) {
-      const sw = w2s(bx, wallY);
-      _drawExtLine(sw.x, sw.y + 4, sw.x, chainScreenY);
-    }
-    for (const seg of acrossSegs) {
-      const s1 = w2s(seg.from, wallY), s2 = w2s(seg.to, wallY);
-      _drawChainSeg(s1.x, chainScreenY, s2.x, chainScreenY, seg.to - seg.from, 0, 1, false);
-    }
-  } else {
-    const wallX = wMaxX;
-    const sWall = w2s(wallX, 0);
-    const chainScreenX = sWall.x + BASE_OFF;
-    const boundaries = new Set();
-    for (const seg of acrossSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const by of boundaries) {
-      const sw = w2s(wallX, by);
-      _drawExtLine(sw.x + 4, sw.y, chainScreenX, sw.y);
-    }
-    for (const seg of acrossSegs) {
-      const s1 = w2s(wallX, seg.from), s2 = w2s(wallX, seg.to);
-      _drawChainSeg(chainScreenX, s1.y, chainScreenX, s2.y, seg.to - seg.from, 1, 0, true);
-    }
-  }
-
-  // --- Render along-chain (left for 'v', top for 'h') ---
-  if (dir === 'v') {
-    const wallX = wMinX;
-    const sWall = w2s(wallX, 0);
-    const chainScreenX = sWall.x - BASE_OFF;
-    const boundaries = new Set();
-    for (const seg of alongSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const by of boundaries) {
-      const sw = w2s(wallX, by);
-      _drawExtLine(sw.x - 4, sw.y, chainScreenX, sw.y);
-    }
-    for (const seg of alongSegs) {
-      const s1 = w2s(wallX, seg.from), s2 = w2s(wallX, seg.to);
-      _drawChainSeg(chainScreenX, s1.y, chainScreenX, s2.y, seg.to - seg.from, 1, 0, true);
-    }
-  } else {
-    const wallY = wMinY;
-    const sWall = w2s(0, wallY);
-    const chainScreenY = sWall.y - BASE_OFF;
-    const boundaries = new Set();
-    for (const seg of alongSegs) { boundaries.add(seg.from); boundaries.add(seg.to); }
-    for (const bx of boundaries) {
-      const sw = w2s(bx, wallY);
-      _drawExtLine(sw.x, sw.y - 4, sw.x, chainScreenY);
-    }
-    for (const seg of alongSegs) {
-      const s1 = w2s(seg.from, wallY), s2 = w2s(seg.to, wallY);
-      _drawChainSeg(s1.x, chainScreenY, s2.x, chainScreenY, seg.to - seg.from, 0, 1, false);
-    }
-  }
-  ctx.restore();
+  // Axis-aligned cables use the run/direction chain (164: felles kantmodell).
+  const layout = _dimLayoutsFor(room, 'cable')[0];
+  if (!layout) return;
+  _drawDimChainLayout(layout, {
+    col: _lc('rgba(180,90,30,0.85)', 'rgba(255,150,60,0.75)'), colRed: _lc('rgba(200,30,40,0.95)', 'rgba(248,113,113,0.95)'),
+    bg: _lc('rgba(240,244,248,0.92)', 'rgba(13,14,16,0.8)'), fmt: _dimFmtCmTenths,
+  });
 }
 
 // Cable dimension chain for SKEW cables (rotated rooms — pathEls, no axis runs).
@@ -57851,7 +57978,7 @@ function hitAnnotation(sx,sy) {
     const cyW=room.points.reduce((a,p)=>a+p.y,0)/room.points.length;
     for(const wl of room.walls){
       const _zps=S.view.zoom*BASE_SCALE;
-      const baseOff=((room.stripDimSnap?52:32)+(room.cableDimSnap?65:0)+(room.matDimSnap?65:0))*_zps+(room.annotOffsets[wl.id]||0);
+      const baseOff=_roomDimBaseOffCm(room,wl)*_zps+(room.annotOffsets[wl.id]||0);   // 164: samme kilde som tegningen (før: 52/65/65 — kabel/matte traff 45 cm utenfor streken)
       const s1=w2s(wl.x1,wl.y1),s2=w2s(wl.x2,wl.y2);
       const wAng=Math.atan2(s2.y-s1.y,s2.x-s1.x),pAng=wAng+Math.PI/2;
       const dotTest=((s1.x+s2.x)/2-w2s(cxW,cyW).x)*Math.cos(pAng)+((s1.y+s2.y)/2-w2s(cxW,cyW).y)*Math.sin(pAng);
@@ -57871,7 +57998,7 @@ function hitAnnotGizmo(sx,sy) {
   const cxW=room.points.reduce((a,p)=>a+p.x,0)/room.points.length;
   const cyW=room.points.reduce((a,p)=>a+p.y,0)/room.points.length;
   const _zps=S.view.zoom*BASE_SCALE;
-  const baseOff=((room.stripDimSnap?52:32)+(room.cableDimSnap?65:0)+(room.matDimSnap?65:0))*_zps+(room.annotOffsets[wl.id]||0);
+  const baseOff=_roomDimBaseOffCm(room,wl)*_zps+(room.annotOffsets[wl.id]||0);   // 164: samme kilde som tegningen (før: 52/65/65 — kabel/matte traff 45 cm utenfor streken)
   const s1=w2s(wl.x1,wl.y1),s2=w2s(wl.x2,wl.y2);
   const pAng=Math.atan2(s2.y-s1.y,s2.x-s1.x)+Math.PI/2;
   const dotTest=((s1.x+s2.x)/2-w2s(cxW,cyW).x)*Math.cos(pAng)+((s1.y+s2.y)/2-w2s(cxW,cyW).y)*Math.sin(pAng);
@@ -83408,6 +83535,22 @@ async function exportPDF(opts) {
 // 051: luft rundt rommet i rom-bildet. Maalkjedene stikker ut 32 cm (rom) + 65 (kabel/matte)
 // + 20 (folie), saa 150 cm daekker alle kombinasjoner.
 const PDF_ROOM_PAD_CM = 150;
+// 164: rom der langs-kjedene er stablet (T-/U-rom) trenger mer luft: romdimensjonens største
+// avstand (_roomDimBaseOffCm med PDF-ens brytere) + 58 cm til tekst. Rektangler: 92 + 58 = 150, som før.
+function _pdfRoomPadCm(room) {
+  let off = DIM_BASE_CM;
+  try {
+    const has = { strip: (S.strips || []).some(s => s.roomId === room.id), cable: (S.cables || []).some(c => c.roomId === room.id),
+      mat: (S.mats || []).some(m => m.roomId === room.id) || (S.matPaths || []).some(mp => mp.roomId === room.id) };
+    for (const kind of ['strip', 'cable', 'mat']) {
+      if (!has[kind]) continue;
+      let depth = 0;
+      for (const L of _dimLayoutsFor(room, kind)) for (const ch of [...L.across, ...L.along]) depth = Math.max(depth, ch.depth);
+      off += DIM_CHAIN_CLEARANCE_CM * (1 + depth);
+    }
+  } catch (e) {}
+  return Math.max(PDF_ROOM_PAD_CM, off + 58);
+}
 
 // ═══ 155 · UTSNITT PER ROM (Kenneth 28.10.2026) ═══════════════════════════════════════════
 // «Zoome inn/ut og flytte, da kan vi justere en best mulig visning av rommet.»
@@ -83450,7 +83593,8 @@ function _pdfRoomAspect(room) {
   const xs = room.points.map(p => p.x), ys = room.points.map(p => p.y);
   const rW = Math.max(1, Math.max(...xs) - Math.min(...xs));
   const rH = Math.max(1, Math.max(...ys) - Math.min(...ys));
-  return (rH + 2 * PDF_ROOM_PAD_CM) / (rW + 2 * PDF_ROOM_PAD_CM);
+  const pad = _pdfRoomPadCm(room);   // 164
+  return (rH + 2 * pad) / (rW + 2 * pad);
 }
 
 function _renderRoomToImage(room, opts) {
@@ -83491,7 +83635,7 @@ function _renderRoomToImage(room, opts) {
   // 32 cm (room-dim) + addons (cable +65, mat +65, strip +20), so 150 cm
   // total around the room is safe across all combinations (incl. the folie/
   // kabel/matte measurement chains we force on below).
-  const padCm = PDF_ROOM_PAD_CM;
+  const padCm = _pdfRoomPadCm(room);   // 164: mer luft når kjedene er stablet (rektangler: 150 som før)
   // SHARPNESS-FIRST capture. Instead of grabbing the (low-res) screen canvas
   // and upscaling, we temporarily resize the main canvas backing store to the
   // exact target pixel size and render the room 1:1 at ~300 DPI. No upscaling

@@ -11,6 +11,7 @@
 4. **Bbox-vegg:** kjeden måler mot rommets omsluttende rektangel (som foliekjeden). I et L-rom kan et tverrmål vise lang avstand
    til en vegg som ikke er der, mens matta ligger 2,5 cm fra den innvendige veggen. Merknaden måler mot faktisk kant. Skal kjeden
    også måle mot nærmeste faktiske vegg (gjelder da folie og kabel også)?
+   **Svar (Kenneth 30.10):** mål per faktisk vegg, se 164 (`docs/serie-163/RAPPORT.md` «## 164» — felles kantmodell for folie, kabel og matte).
 5. **Mellomrom:** mellomrom under produktets minste nett-til-nett-avstand (Regel 18) rødmerkes ikke — bare veggmålene. Ønskelig?
 6. **Sidepanelet:** romlista fikk også en linjalknapp for matte (folie og kabel hadde det fra før). Ikke bedt om — beholde?
 7. **Begge retninger i ett rom:** loddrette og vannrette matter gir hver sin kjede (under + venstre, og høyre + over).
