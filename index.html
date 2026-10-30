@@ -4668,8 +4668,18 @@ function _serializeBgFields(bg) {
     geo: bg.geo || null,
   };
 }
+// 162: nøkkelen for «aktiv etasjes bakgrunn» — '__global__' bare i et prosjekt uten etasjer.
+// Mangler aktiv etasje i et prosjekt MED etasjer, er svaret første etasje i aktiv del (samme valg
+// setActiveBgFloor(null) nå gjør), aldri en nøkkel som ville vist tegningen på alle etasjer.
+function _bgActiveKey() {
+  const af = S.ui.activeFloorId;
+  if (af != null && af !== '__global__' && S.floors.some(f => f.id === af)) return af;
+  if (!_bgProjectHasFloors()) return '__global__';
+  const fl = _bgFloorsInActivePart()[0] || S.floors[0];
+  return fl.id;
+}
 function activeBg() {
-  const k = S.ui.activeFloorId != null ? S.ui.activeFloorId : '__global__';
+  const k = _bgActiveKey();
   if (!S.bgs[k]) S.bgs[k] = _newBgObj();
   return S.bgs[k];
 }
@@ -6751,8 +6761,9 @@ function _planDevFixture(floorId) {
 // Fra fil til vegg-sjekk: samme underlags-vei som «Jeg tegner selv» (`_loadFileAsBackground`
 // — den eier PDF-rendering, DWG→SVG, sidevelger og kalibrering), og så inn i modusen når
 // underlaget faktisk er på plass. Venter på bildet, for `_planBg()` krever `img` og `widthCm`.
-async function _planStartFraFil(file) {
+async function _planStartFraFil(file, ctx) {
   _startMethod = null; _emptyStateDismissed = true;
+  ctx = ctx || _bgImportCtx(null);   // 162: etasjen bindes før motoren og underlaget starter
   // 049: motoren kalles PARALLELT med at underlaget legges inn — den bruker 2–10 s, og
   // underlaget har sin egen venting (PDF-render, sidevelger). Ingen grunn til å gjøre dem
   // etter hverandre.
@@ -6764,16 +6775,18 @@ async function _planStartFraFil(file) {
   // 35 rom (33 av 34). 600 ga 41 rom men bare 32 labels — da splittes rom som hører sammen.
   _planEngineLoad = _engineFetchPlan(file, { close_gaps_cm: 500 })
     .catch(e => { _planEngineFeil = e.message; return null; });
-  _loadFileAsBackground(file);
+  _loadFileAsBackground(file, ctx);
   // ⚠ `_loadFileAsBackground` er asynkron på flere nivåer (PDF-render, DWG→SVG, sidevelger som
   // VENTER på brukeren). Derfor pollet, ikke et fast timeout: modusen åpner i det øyeblikket
   // etasjen har et underlag, og gir opp etter 60 s i stedet for å henge.
+  // 162: det er KONTEKSTENS etasje som skal få underlag — ikke den som tilfeldigvis er aktiv.
+  const planFid = ctx.floorId;
   const start = Date.now();
   while (Date.now() - start < 60000) {
     await new Promise(r => setTimeout(r, 200));
-    if (_planBg()) break;
+    if (_planBg(planFid)) break;
   }
-  if (!_planBg()) {
+  if (!_planBg(planFid)) {
     _showToast && _showToast('Fikk ikke lagt inn plantegningen — prøv «Jeg tegner selv»', 'warn');
     return false;
   }
@@ -6789,7 +6802,7 @@ async function _planStartFraFil(file) {
     _planRenderBar();
     return true;
   }
-  const n = _planApplyResponse(res, _planFloorId());
+  const n = _planApplyResponse(res, planFid);
   _planRenderBar();
   render();
   _showToast && _showToast(n + ' vegger funnet — se at de ligger riktig før du lager rom', 'ok');
@@ -28062,7 +28075,7 @@ async function _planRegressionTest() {
       /bg-file-inp/.test(u(_addBgToFloor)) && /bg-file-inp/.test(u(_replaceFloorBg)), 'rutet feil');
     check('F: dialogen har et tredje valg', true, /_rasterChoose\('plan'\)/.test(skript), 'mangler');
     check('F: _rasterChoose(\'plan\') går til vegg-sjekken', true,
-      /if \(mode === 'plan'\) \{ _planStartFraFil\(file\); return; \}/.test(u(_rasterChoose)), 'feil ruting');
+      /if \(mode === 'plan'\) \{ _planStartFraFil\(file(, ctx)?\); return; \}/.test(u(_rasterChoose)), 'feil ruting');
 
     // ── 160: «Rett opp etter vegg» også i høyreklikkmenyen (to innganger, én funksjon) ──
     {
@@ -28326,7 +28339,7 @@ async function _planRegressionTest() {
       /origin_pt: res\.origin_pt \|\| \[0, 0\]/.test(skript)
       && /origin_pt: meta\.origin_pt \|\| \[0, 0\]/.test(skript), 'origo mistes');
     check('I: vektorveien (/import/dwg) er beholdt som eget valg', true,
-      /_rasterChoose\('auto'\)/.test(skript) && /_autoReadStart\(file\)/.test(skript), 'fjernet');
+      /_rasterChoose\('auto'\)/.test(skript) && /_autoReadStart\(file(, ctx)?\)/.test(skript), 'fjernet');
 
     // ── H (049) — rom fra planveggene ──
     // ⚠ STEG 0-funn som styrte hele prompten: gjennomgangsskjermen FINNES. `_reviewRenderList`
@@ -61346,8 +61359,13 @@ function hideDrawToolbar() { exitDrawing(); }
 // `activeFloor != null &&`-vakten gjorde nettopp det motsatte: uten en valgt etasje (f.eks. rett
 // etter at et prosjekt er åpnet, før noe har satt activeFloorId) matchet betingelsen aldri, og
 // ALLE etasjers bakgrunn ble tegnet oppå hverandre.
+// 162 (Fredrik 30.10.2026, «plan 1 vises også i plan 2»): '__global__' vises KUN når prosjektet
+// ikke har etasjer. Har det etasjer, hører hver plantegning til nøyaktig én av dem — en nøkkel som
+// ikke er den aktive etasjens, tegnes aldri. (Importveiene gir aldri '__global__' med etasjer, og
+// gamle prosjekter ryddes ved åpning — dette er sikringen bak begge, se _bgImportCtx.)
 function _bgKeyOnActiveFloor(key, activeFloor) {
-  return key === '__global__' || key === String(activeFloor);
+  if (key === '__global__') return !_bgProjectHasFloors();
+  return key === String(activeFloor);
 }
 // DEL C: referanse-tegninger på aktiv etasje, KUN til rendering — aldri brukt for hit-testing/
 // utvalg (det er hva som skiller en referanse fra den aktive; _bgsOnActiveFloor, som _hitBgLayer
@@ -61502,7 +61520,10 @@ function selectBgLayer(bg) {
   S.ui.selectedHindringWallIdx = null; S.ui.selectedWallId = null; S.ui.selectedVertexIdx = null;
   S.ui.selectedDimId = null; S.ui.selectedRoomId = null; S.ui.selectedAnnot = null;
   // Make this layer the active one for its floor so quick-controls target it.
-  const fk = S.ui.activeFloorId != null ? S.ui.activeFloorId : '__global__';
+  // 162: laget hører alt til en nøkkel — finn den, i stedet for å kopiere det inn under aktiv
+  // etasje (det ga samme bilde på to nøkler når man valgte en annen etasjes tegning).
+  const owner = Object.keys(S.bgs).find(k => S.bgs[k] === bg);
+  const fk = owner != null ? owner : _bgActiveKey();
   S.bgs[fk] = bg;
   renderSidebar(); updateCtxBar(); render();
 }
@@ -61768,6 +61789,10 @@ function _hitBgGizmo(sx, sy) {
 //
 // Ingen kodeendring i denne commiten.
 function setActiveBgFloor(id) {
+  // 162: null betydde «global» og ble strengen '__global__' — som er != null, så alle importveienes
+  // fallback traff den og la tegningen på alle etasjer. Har prosjektet etasjer, blir null nå første
+  // etasje i aktiv del. Uten etasjer: '__global__' som før.
+  if (id == null && _bgProjectHasFloors()) { const fl = _bgFloorsInActivePart()[0] || S.floors[0]; id = fl.id; }
   S.ui.activeFloorId = id != null ? id : '__global__';
   const fl = id != null ? S.floors.find(f => f.id === id) : null;
   const lbl = document.getElementById('bg-floor-lbl');
@@ -61802,6 +61827,7 @@ function _goToNextUncalibratedFloor() {
 function openBgImportPanel() {
   const bg = activeBg();
   if (!bg.img) {
+    _bgSetPendingImport(null);   // 162: målretasjen bindes NÅ (aktiv etasje), ikke når fila er lastet
     document.getElementById('bg-file-inp').click();
   } else {
     // BG already imported — ctxbar shows controls automatically
@@ -61812,31 +61838,38 @@ function openBgImportPanel() {
 function handleBgFile(e) {
   const file = e.target.files[0];
   e.target.value = '';
-  _loadFileAsBackground(file);
+  // 162: konteksten ble satt synkront av den som åpnet fildialogen (_addBgToFloor, _replaceFloorBg,
+  // openBgImportPanel, confirmAddFloorWithBg). Tas ut HER, i det øyeblikket fila er valgt — og
+  // følger så denne ene importen som parameter hele veien. Ingen lesing av aktiv etasje etterpå.
+  const ctx = _bgTakePendingImport() || _bgImportCtx(null);
+  _loadFileAsBackground(file, ctx);
 }
 // Manuell «tegn selv»-vei: last fil som bakgrunn (ingen auto-deteksjon). DWG/DXF er
 // vektor → motorens vektor-import. Gjenbrukt av startskjermens «Jeg tegner selv».
-function _loadFileAsBackground(file) {
+// 162: `ctx` (se _bgImportCtx) er målretasjen bundet ved start. Mangler den, bindes den HER — som
+// fortsatt er før første await i denne kjeden.
+function _loadFileAsBackground(file, ctx) {
   if (!file) return;
+  ctx = ctx || _bgImportCtx(null);
   const fileName = file.name;
   if (/\.(dxf|dwg)$/i.test(file.name)) {
     // 021: SNUDD. Sto før: «DXF/DWG er vektor (ingen rasterbar bakgrunn) → rut til motorens
     // vektor-import». Men en vektortegning kan tegnes til et bilde like godt som en PDF-side —
     // motoren leverer strekene som SVG (`/import/dwg/background`). Og den er BEDRE enn en PDF:
     // har fila entydige enheter ($INSUNITS), kommer underlaget ferdig kalibrert.
-    _loadBgDwg(file, fileName); return;
+    _loadBgDwg(file, fileName, ctx); return;
   }
   if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
-    _loadBgPdf(file, fileName); return;
+    _loadBgPdf(file, fileName, ctx); return;
   }
   // Kenneth 24.09.2026: raster i BYTT-modus går gjennom _installBgImage sin bevarings-gren
   // (samme flagg «Bytt bilde» alltid har brukt) — den avgjør selv om formatet tillater å beholde
-  // kalibreringen, og varsler hvis ikke.
-  if (_bgReplaceFloorId != null) { _bgReplaceKeepTransform = true; _bgReplaceFloorId = null; _bgImportTargetFloorId = null; }
+  // kalibreringen, og varsler hvis ikke. 162: flagget bor i konteksten, ikke i en global.
+  if (ctx.replace) ctx.keepTransform = true;
   const reader = new FileReader();
   reader.onload = ev => {
     const img = new Image();
-    img.onload = () => _installBgImage(img, ev.target.result, fileName);
+    img.onload = () => _installBgImage(img, ev.target.result, fileName, null, ctx);
     img.onerror = () => alert('Kunne ikke laste bildet.');
     img.src = ev.target.result;
   };
@@ -61850,7 +61883,8 @@ function _loadFileAsBackground(file) {
 // Målestokken er hele gevinsten: `units` fra $INSUNITS gir cm direkte, og da hoppes kalibreringen
 // over (`_needsCalibration = false`, samme grep kart-bakgrunnen bruker). Er enhetene IKKE
 // entydige, faller vi tilbake til nøyaktig samme kalibrering som en PDF — motoren gjetter aldri.
-async function _loadBgDwg(file, fileName) {
+async function _loadBgDwg(file, fileName, ctx) {
+  ctx = ctx || _bgImportCtx(null);
   let res;
   try {
     const eng = await _resolveEngineUrl();
@@ -61864,7 +61898,7 @@ async function _loadBgDwg(file, fileName) {
     }
     res = await r.json();
   } catch(err) {
-    _engineHandleImportError(err, () => _loadBgDwg(file, fileName)); return;
+    _engineHandleImportError(err, () => _loadBgDwg(file, fileName, ctx)); return;
   }
   // SVG → Image via blob-URL. `decode()` framfor onload: uten den er naturalWidth 0 i det
   // øyeblikket _installBgImage leser den, og hele plasseringen blir feil.
@@ -61875,11 +61909,11 @@ async function _loadBgDwg(file, fileName) {
   try { await img.decode(); }
   catch(e) { URL.revokeObjectURL(url); _showToast && _showToast('Klarte ikke å tegne DWG-underlaget', 'error'); return; }
 
-  const floorId = (_bgReplaceFloorId != null) ? _bgReplaceFloorId
-    : (_bgImportTargetFloorId != null ? _bgImportTargetFloorId
-      : (S.ui.activeFloorId != null ? S.ui.activeFloorId : '__global__'));
-  const oldBg = (_bgReplaceFloorId != null) ? S.bgs[_bgReplaceFloorId] : null;
-  _bgReplaceFloorId = null; _bgImportTargetFloorId = null;
+  // 162: målretasjen kommer fra konteksten bundet ved start — IKKE fra S.ui.activeFloorId her,
+  // etter to await (motoren + decode). Er etasjen slettet i mellomtiden, forkastes importen.
+  const floorId = _bgCtxResolveFloor(ctx);
+  if (floorId == null) { URL.revokeObjectURL(url); _bgCtxAbort(ctx); return; }
+  const oldBg = ctx.replace ? S.bgs[floorId] : null;
 
   const cm = res.mm_per_unit ? { w: res.width_units * res.mm_per_unit / 10,
                                  h: res.height_units * res.mm_per_unit / 10 } : null;
@@ -61901,11 +61935,13 @@ async function _loadBgDwg(file, fileName) {
   } else if (bg) {
     _showToast && _showToast('Plantegning lagt inn — fila mangler målestokk, sett den selv', 'warn');
   }
+  if (bg) _bgCtxFallbackToast(ctx);
   if (res.truncated) _showToast && _showToast('Tegningen var svært stor — bare de første strekene er med', 'warn');
 }
 
-function _loadBgPdf(file, fileName) {
-  const doRender = () => _pdfBgLoad(file, fileName);
+function _loadBgPdf(file, fileName, ctx) {
+  ctx = ctx || _bgImportCtx(null);   // 162: bundet FØR pdf.js-skriptet og fila lastes
+  const doRender = () => _pdfBgLoad(file, fileName, ctx);
   if (window.pdfjsLib) { doRender(); return; }
   const s = document.createElement('script');
   s.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
@@ -61922,27 +61958,30 @@ function _loadBgPdf(file, fileName) {
 // og grener på sidetall. Enkeltside-PDF: HELT uendret oppførsel — side 1 rett til aktiv etasje,
 // ingen modal (dagens sti, urørt bortsett fra at pageNumber=1 nå følger med for STEG 5/fallgruven).
 // Flerside-PDF: viser sidevelgeren (_pdfShowPagePicker) i stedet for stille å bruke side 1.
-async function _pdfBgLoad(file, fileName) {
+async function _pdfBgLoad(file, fileName, ctx) {
+  ctx = ctx || _bgImportCtx(null);
   try {
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({data: buf}).promise;
     // Kenneth 24.09.2026: i BYTT-modus erstatter siden plantegningen i den valgte etasjen —
     // plasseringen bæres over når formatet stemmer (_bgTransformCompatible avgjør).
-    const replaceFloorId = _bgReplaceFloorId;
+    // 162 (Fredrik, «plan 3 havner i plan 2 ved etasjebytte»): målretasjen sto FØR her, etter to
+    // await, med S.ui.activeFloorId som siste fallback — byttet man etasje mens en stor PDF ble
+    // lest, landet tegningen der man sto DA. Nå er den `ctx.floorId`, bundet da importen startet.
     if (pdf.numPages <= 1) {
-      const floorId = replaceFloorId != null ? replaceFloorId
-        : (_bgImportTargetFloorId != null ? _bgImportTargetFloorId
-          : (S.ui.activeFloorId != null ? S.ui.activeFloorId : '__global__'));
-      const oldBg = replaceFloorId != null ? S.bgs[replaceFloorId] : null;
+      const floorId = _bgCtxResolveFloor(ctx);
+      if (floorId == null) { _bgCtxAbort(ctx); return; }
+      const oldBg = ctx.replace ? S.bgs[floorId] : null;
       const hadTransform = !!(oldBg && oldBg.img);
-      _bgReplaceFloorId = null; _bgImportTargetFloorId = null;
-      await _pdfRenderPageToBg(pdf, 1, fileName, floorId, { showCalibration: true, replaceOf: oldBg });
+      const installed = await _pdfRenderPageToBg(pdf, 1, fileName, floorId, { showCalibration: true, replaceOf: oldBg });
+      if (!installed) { _bgCtxAbort(ctx); return; }
       if (hadTransform && S.bgs[floorId] && S.bgs[floorId]._needsCalibration && typeof _showToast === 'function') {
         _showToast('Ny tegning har annen størrelse — sett målestokk på nytt', 'warn');
       }
+      _bgCtxFallbackToast(ctx);
       return;
     }
-    await _pdfShowPagePicker(pdf, file, fileName, replaceFloorId);
+    await _pdfShowPagePicker(pdf, file, fileName, ctx);
   } catch(err) { alert('Kunne ikke lese PDF: ' + err.message); }
 }
 
@@ -61964,9 +62003,11 @@ async function _pdfRenderPageToBg(pdf, pageNum, fileName, floorId, opts) {
   // /Rotate — en liggende og en stående side i samme PDF får hver sin riktige bredde/høyde).
   const ptW = vp.width / RENDER_SCALE, ptH = vp.height / RENDER_SCALE;
   const meta = { paperWidthCm: ptW / 72 * 2.54, paperHeightCm: ptH / 72 * 2.54, pageNumber: pageNum };
+  // 162: løser med true når siden ble installert, false når etasjen forsvant mens siden ble rendret
+  // (_installBgImageForFloor skriver da ingenting — se vakten der).
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => { _installBgImageForFloor(img, dataUrl, fileName, meta, floorId, opts || {}); resolve(); };
+    img.onload = () => { const bg = _installBgImageForFloor(img, dataUrl, fileName, meta, floorId, opts || {}); resolve(!!bg); };
     img.onerror = () => reject(new Error('Kunne ikke laste rendret side ' + pageNum));
     img.src = dataUrl;
   });
@@ -62007,7 +62048,7 @@ function _pdfPaperLabel(wCm, hCm) {
 
 // STEG 1: sidevelger for flerside-PDF. Leser bokmerker/outline for sidetitler når PDF-en har dem
 // («har den ikke det, ikke dikt opp navn» — tittel utelates helt hvis ingen finnes).
-async function _pdfShowPagePicker(pdf, file, fileName, replaceFloorId) {
+async function _pdfShowPagePicker(pdf, file, fileName, ctx) {
   let outline = null;
   try { outline = await pdf.getOutline(); } catch (e) { outline = null; }
   const pageTitles = {};
@@ -62028,7 +62069,7 @@ async function _pdfShowPagePicker(pdf, file, fileName, replaceFloorId) {
     const thumb = await _pdfRenderThumbnail(pdf, i, THUMB_MAX_PX);
     pages.push({ num: i, ...thumb, title: pageTitles[i] || null });
   }
-  _pdfPagePickerShowModal(pdf, file, fileName, pages, replaceFloorId);
+  _pdfPagePickerShowModal(pdf, file, fileName, pages, ctx);
 }
 
 // Kenneth 18.09.2026 («PDF med flere sider: huk av sidene, gi hver sin etasje et navn»): «Alle
@@ -62043,18 +62084,24 @@ async function _pdfShowPagePicker(pdf, file, fileName, replaceFloorId) {
 // som nettopp mistet plantegningen). Etasjer som allerede har en aktiv plantegning tilbys ikke
 // (LÅST REGEL: én plantegning per etasje) — de må gå via «Bytt plantegning».
 // replaceFloorId != null → BYTT-modus: radioknapper, nøyaktig én side, ingen navn/etasjevalg.
-function _pdfPagePickerShowModal(pdf, file, fileName, pages, replaceFloorId) {
+// 162: `ctx` er importkonteksten bundet ved start. Målretasjen («(denne)»-merket) og BYTT-etasjen
+// leses fra den — ikke fra globale variabler som kunne vært overskrevet av en ny import, eller fra
+// S.ui.activeFloorId, som kan ha blitt byttet mens miniatyrene ble rendret.
+function _pdfPagePickerShowModal(pdf, file, fileName, pages, ctx) {
+  ctx = ctx || _bgImportCtx(null);
   const partId = S.ui.activePartId;
+  const replaceFloorId = ctx.replace ? ctx.floorId : null;
   const replacing = replaceFloorId != null;
   const replaceFloor = replacing ? S.floors.find(f => f.id === replaceFloorId) : null;
+  if (replacing && !replaceFloor) { _bgCtxAbort(ctx); return; }   // etasjen slettet mens miniatyrene lastet
   const reusable = replacing ? null : _findReusableEmptyFloor(partId);   // STEG 2c
   const totalFloors = S.floors.filter(f => f.partId === partId).length;
   const baseFloorCount = reusable ? totalFloors - 1 : totalFloors;
   // Kandidat-etasjer: i aktiv del, uten aktiv plantegning (vanntett-regelen står).
   const candidates = replacing ? [] : S.floors.filter(f =>
     f.partId === partId && !(S.bgs[f.id] && S.bgs[f.id].img));
-  const target = (!replacing && _bgImportTargetFloorId != null)
-    ? candidates.find(f => f.id === _bgImportTargetFloorId) : null;
+  const target = (!replacing && ctx.floorId !== '__global__')
+    ? candidates.find(f => f.id === ctx.floorId) : null;
   const floorOpts = (pageNum) => {
     const opts = candidates.map(f => {
       const isTarget = target && f.id === target.id;
@@ -62069,7 +62116,7 @@ function _pdfPagePickerShowModal(pdf, file, fileName, pages, replaceFloorId) {
       ? `<input type="radio" name="_pdf-page-pick" class="_pdf-page-chk" data-page="${p.num}" onclick="event.stopPropagation()" onchange="_pdfPageRowToggle(this)" style="width:16px;height:16px;flex-shrink:0;cursor:pointer">`
       : `<input type="checkbox" class="_pdf-page-chk" data-page="${p.num}" onclick="event.stopPropagation()" onchange="_pdfPageRowToggle(this)" style="width:16px;height:16px;flex-shrink:0;cursor:pointer">`;
     const tail = replacing ? '' : `
-      <select class="_pdf-page-floor" data-page="${p.num}" disabled onclick="event.stopPropagation()" onchange="_pdfPagePickerRefresh()" style="width:118px;padding:6px 4px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:12px;flex-shrink:0;opacity:0.5">${floorOpts(p.num)}</select>
+      <select class="_pdf-page-floor" data-page="${p.num}" disabled onclick="event.stopPropagation()" onchange="_pdfPagePickerRefresh(this)" style="width:118px;padding:6px 4px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:12px;flex-shrink:0;opacity:0.5">${floorOpts(p.num)}</select>
       <input type="text" class="_pdf-page-name" data-page="${p.num}" disabled placeholder="" onclick="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();const b=document.getElementById('_pdf-page-picker-go');if(!b.disabled)b.click();}" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:12px;flex-shrink:0;opacity:0.5">`;
     return `<div class="_pdf-page-row" data-page="${p.num}" onclick="_pdfPageRowClick(event,${p.num})" style="display:flex;gap:8px;align-items:center;padding:8px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer">
       ${chk}
@@ -62090,6 +62137,7 @@ function _pdfPagePickerShowModal(pdf, file, fileName, pages, replaceFloorId) {
   ov._pdfBaseFloorCount = baseFloorCount;
   ov._pdfReusableFloorId = reusable ? reusable.id : null;
   ov._pdfReplaceFloorId = replacing ? replaceFloorId : null;
+  ov._pdfCtx = ctx;   // 162
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:3000;display:flex;align-items:center;justify-content:center';
   const heading = replacing ? 'Velg siden som erstatter plantegningen' : 'Velg side(r) fra PDF';
   const intro = replacing
@@ -62148,7 +62196,7 @@ function _pdfPageRowToggle(cb) {
 // som PLACEHOLDER — så det som faktisk vises alltid er det som faktisk blir brukt hvis feltet
 // står tomt. Kjøres på nytt ved hver av/på-huking siden et endret valg lenger opp i lista
 // forskyver nummereringen på alt under.
-function _pdfPagePickerRefresh() {
+function _pdfPagePickerRefresh(changedSel) {
   const ov = document.getElementById('_pdf-page-picker-ov'); if (!ov) return;
   const replacing = ov._pdfReplaceFloorId != null;
   const btn = document.getElementById('_pdf-page-picker-go');
@@ -62159,10 +62207,16 @@ function _pdfPagePickerRefresh() {
   } else {
     // Samme etasje kan bare velges på ÉN rad — grå ut den som alt er tatt (LÅST REGEL: én
     // plantegning per etasje). «+ Ny etasje» kan velges av så mange rader man vil.
+    // 162 (målt i STEG 0, 3b-c): gråingen alene holdt ikke — valgte man Plan 3 på rad 2 FØRST og så
+    // Plan 3 på rad 1, sto begge med Plan 3 (egen verdi var unntatt fra gråingen). Nå vinner raden
+    // som nettopp ble endret (`changedSel`), og den andre settes tilbake til «+ Ny etasje».
     const taken = new Set();
+    const changedVal = (changedSel && changedSel.value !== '__new__') ? changedSel.value : null;
     for (const row of ov.querySelectorAll('._pdf-page-row')) {
       const cb = row.querySelector('._pdf-page-chk'), sel = row.querySelector('._pdf-page-floor');
-      if (cb.checked && sel && sel.value !== '__new__') taken.add(sel.value);
+      if (!(cb.checked && sel && sel.value !== '__new__')) continue;
+      if (sel !== changedSel && (sel.value === changedVal || taken.has(sel.value))) { sel.value = '__new__'; continue; }
+      taken.add(sel.value);
     }
     let newCount = 0;
     for (const row of ov.querySelectorAll('._pdf-page-row')) {
@@ -62196,9 +62250,7 @@ function _pdfPagePickerRefresh() {
 
 function _pdfPagePickerClose() {
   const ov = document.getElementById('_pdf-page-picker-ov'); if (ov) ov.remove();
-  // Kenneth 24.09.2026: nullstill importmålet ved avbryt — ellers ville neste import fra
-  // verktøylinja arvet etasjen en avbrutt import tilfeldigvis pekte på.
-  _bgImportTargetFloorId = null; _bgReplaceFloorId = null;
+  // 162: ingen globale importmål å nullstille lenger — konteksten døde med modalen (ov._pdfCtx).
 }
 
 // STEG 2: importerer alle avkryssede sider i ÉN operasjon. Kalibrering skjer aldri automatisk her
@@ -62210,12 +62262,15 @@ async function _pdfPagePickerRun(pdf, fileName, ov) {
   if (!checkedRows.length) { _bgAutoStartTwoPoint = false; ov.remove(); return; }
   // Kenneth 24.09.2026, BYTT-modus: nøyaktig én side erstatter plantegningen i den valgte etasjen.
   const replaceFloorId = ov._pdfReplaceFloorId;
+  const ctx = ov._pdfCtx || null;   // 162
   if (replaceFloorId != null) {
     const page = +checkedRows[0].dataset.page;
     ov.remove();
-    _bgAutoStartTwoPoint = false; _bgReplaceFloorId = null; _bgImportTargetFloorId = null;
+    _bgAutoStartTwoPoint = false;
+    if (!_bgFloorKeyAlive(replaceFloorId)) { if (ctx) _bgCtxAbort(ctx); return; }
     const oldBg = S.bgs[replaceFloorId];
-    await _pdfRenderPageToBg(pdf, page, fileName, replaceFloorId, { showCalibration: true, replaceOf: oldBg });
+    const installed = await _pdfRenderPageToBg(pdf, page, fileName, replaceFloorId, { showCalibration: true, replaceOf: oldBg });
+    if (!installed) { if (ctx) _bgCtxAbort(ctx); return; }
     const nowBg = S.bgs[replaceFloorId];
     setActiveBgFloor(replaceFloorId); updateCtxBar(); renderSidebar();
     if (nowBg && nowBg._needsCalibration) { _fitViewToBg(nowBg); }
@@ -62236,7 +62291,15 @@ async function _pdfPagePickerRun(pdf, fileName, ov) {
   });
   let reusableId = ov._pdfReusableFloorId;
   ov.remove();
-  _bgImportTargetFloorId = null;
+  // 162: lista over side→etasje er LÅST nå (lest ut av modalen i klikket over). To rader med samme
+  // etasje skal ikke kunne skje (se _pdfPagePickerRefresh), men vaktes likevel: den andre hoppes over.
+  const seenFloor = new Set();
+  const skipped = [];   // { page, why }
+  for (const a of assignments) {
+    if (a.floorId == null) continue;
+    if (seenFloor.has(String(a.floorId))) { a.skip = 'etasjen var alt valgt for en annen side'; skipped.push({ page: a.page, why: a.skip }); }
+    seenFloor.add(String(a.floorId));
+  }
   const singleTwoPoint = assignments.length === 1 && _bgAutoStartTwoPoint;
   if (!singleTwoPoint) _bgAutoStartTwoPoint = false;
   // STEG 3 (etasje-vanntett): hver avkrysset side oppretter én NY etasje i aktiv del — «tre sider
@@ -62246,13 +62309,16 @@ async function _pdfPagePickerRun(pdf, fileName, ov) {
   const partId = S.ui.activePartId;
   let firstFloorId = null;
   for (const a of assignments) {
+    if (a.skip) continue;
     let floorId;
     if (a.floorId != null) {
       // Kenneth 24.09.2026: brukeren pekte ut en EKSISTERENDE etasje (typisk den importen ble
       // startet fra). Navnet røres ikke — etasjen heter allerede det den skal hete.
-      floorId = S.floors.some(f => String(f.id) === String(a.floorId))
-        ? S.floors.find(f => String(f.id) === String(a.floorId)).id
-        : _addFloorToPart(partId, a.name || 'Ny etasje').id;
+      // 162: er etasjen slettet mens importen kjørte, hoppes SIDEN over (med toast til slutt) —
+      // før ble det stille opprettet en «Ny etasje» for den (målt i STEG 0, 3b-c).
+      const fl = S.floors.find(f => String(f.id) === String(a.floorId));
+      if (!fl) { skipped.push({ page: a.page, why: 'etasjen ble slettet underveis' }); continue; }
+      floorId = fl.id;
     } else if (reusableId != null) {
       const fl = S.floors.find(f => f.id === reusableId);
       fl.name = a.name;
@@ -62261,8 +62327,16 @@ async function _pdfPagePickerRun(pdf, fileName, ov) {
     } else {
       floorId = _addFloorToPart(partId, a.name).id;
     }
-    await _pdfRenderPageToBg(pdf, a.page, fileName, floorId, { showCalibration: singleTwoPoint });
+    const installed = await _pdfRenderPageToBg(pdf, a.page, fileName, floorId, { showCalibration: singleTwoPoint });
+    if (!installed) { skipped.push({ page: a.page, why: 'etasjen ble slettet underveis' }); continue; }
+    a._floorId = floorId;
     if (firstFloorId == null) firstFloorId = floorId;
+  }
+  const imported = assignments.filter(a => !a.skip && !skipped.some(s => s.page === a.page));
+  // 162: etasjen kan være slettet etter at siden landet der (delFloor rydder S.bgs selv) — da
+  // navigeres det ikke dit. Første FORTSATT EKSISTERENDE importerte etasje gjelder.
+  if (firstFloorId != null && !_bgFloorKeyAlive(firstFloorId)) {
+    firstFloorId = (imported.map(a => a._floorId).find(id => id != null && _bgFloorKeyAlive(id))) ?? null;
   }
   if (!singleTwoPoint && firstFloorId != null) {
     // Kenneth 18.09.2026: aktiv etasje = FØRSTE importerte (ikke siste som før) — «start med
@@ -62273,14 +62347,17 @@ async function _pdfPagePickerRun(pdf, fileName, ov) {
     render();
   }
   if (typeof _showToast === 'function') {
-    // Navnet på den første: enten det brukeren skrev (ny etasje) eller etasjens eget navn.
-    const firstFl = S.floors.find(f => f.id === firstFloorId);
-    const firstName = assignments[0].name || (firstFl ? firstFl.name : 'første plantegning');
-    const nNew = assignments.filter(a => a.floorId == null).length;
-    const head = nNew === assignments.length
-      ? `${assignments.length} etasje${assignments.length > 1 ? 'r' : ''} importert.`
-      : `${assignments.length} plantegning${assignments.length > 1 ? 'er' : ''} importert.`;
-    _showToast(`${head} Sett målestokk på hver plantegning — start med ${firstName}.`, 'ok');
+    for (const sk of skipped) _showToast(`Side ${sk.page} ble ikke importert — ${sk.why}`, 'warn');
+    if (imported.length) {
+      // Navnet på den første: enten det brukeren skrev (ny etasje) eller etasjens eget navn.
+      const firstFl = S.floors.find(f => f.id === firstFloorId);
+      const firstName = imported[0].name || (firstFl ? firstFl.name : 'første plantegning');
+      const nNew = imported.filter(a => a.floorId == null).length;
+      const head = nNew === imported.length
+        ? `${imported.length} etasje${imported.length > 1 ? 'r' : ''} importert.`
+        : `${imported.length} plantegning${imported.length > 1 ? 'er' : ''} importert.`;
+      _showToast(`${head} Sett målestokk på hver plantegning — start med ${firstName}.`, 'ok');
+    }
   }
 }
 
@@ -62322,10 +62399,14 @@ async function _pdfPagePickerRun(pdf, fileName, ov) {
 // med hvordan verden faktisk er orientert i denne appen.
 //
 // Ingen kodeendring i denne commiten.
-function _installBgImage(img, dataUrl, fileName, meta) {
-  const bg = activeBg();
+function _installBgImage(img, dataUrl, fileName, meta, ctx) {
+  // 162: raster-importen leste activeBg() HER — etter FileReader- og Image-await — så et etasjebytte
+  // underveis flyttet tegningen (målt i STEG 0, b2). Nå er slotten konteksten sin etasje.
+  let floorId = ctx ? _bgCtxResolveFloor(ctx) : _bgActiveKey();
+  if (floorId == null) { _bgCtxAbort(ctx); return; }
+  const bg = S.bgs[floorId] || (S.bgs[floorId] = _newBgObj());
   // "Bytt bilde" fra handlingsmenyen: behold scale/x/y/rotasjon, bare nytt bilde.
-  const keepTransform = _bgReplaceKeepTransform; _bgReplaceKeepTransform = false;
+  const keepTransform = !!(ctx && ctx.keepTransform);
   // STEG 0 (fallgruve, Kenneth 19.08.2026): «samme fil» avgjøres på FILNAVN ALENE — importer side 2
   // og side 3 fra samme PDF, og den andre importen arver kalibreringen fra en helt annen side (feil
   // selv når sidene tilfeldigvis er like store). Identiteten må være fil + sidenummer.
@@ -62396,6 +62477,8 @@ function _installBgImage(img, dataUrl, fileName, meta) {
   if (lb) lb.textContent = opVal + '%';
   const vc = document.getElementById('bg-vis-chk');
   if (vc) vc.checked = true;
+  // 162: vis etasjen tegningen faktisk landet på (samme grep som _installBgImageForFloor).
+  if (S.ui.activeFloorId !== floorId) setActiveBgFloor(floorId === '__global__' ? null : floorId);
   showBgPanel();   // triggers updateCtxBar()
   updateCtxBar();
   render();
@@ -62405,6 +62488,7 @@ function _installBgImage(img, dataUrl, fileName, meta) {
     if (_bgAutoStartTwoPoint) { _bgAutoStartTwoPoint = false; if (typeof startBgCalibrate === 'function') startBgCalibrate(); }
     else { const ov = document.getElementById('bg-calib-overlay'); if (ov) ov.style.display = 'flex'; }
   }
+  if (ctx) _bgCtxFallbackToast(ctx);
 }
 
 // Kenneth 24.09.2026 («Bytt plantegning»): DELT av _installBgImage og _installBgImageForFloor —
@@ -62446,6 +62530,13 @@ function _carryBgTransform(oldBg, bg) {
 // _addBgToFloor selv bruker), ellers fylles den eksisterende (tomme) slotten.
 function _installBgImageForFloor(img, dataUrl, fileName, meta, floorId, opts) {
   opts = opts || {};
+  // 162: etasjen kan være slettet mens fila ble lest/rendret (målt i STEG 0, 3b-c: siden ble
+  // skrevet til S.bgs[3] etter at etasje 3 var borte — en usynlig, evig 200–500 KB foreldreløs).
+  // Da skrives ingenting; kalleren får null og sier fra.
+  if (!_bgFloorKeyAlive(floorId)) {
+    console.warn('_installBgImageForFloor: etasje ' + floorId + ' finnes ikke lenger — importen av «' + fileName + '» er forkastet');
+    return null;
+  }
   // STEG 3 (LÅST REGEL «etasjen er vanntett», Kenneth 19.08.2026): én plantegning per etasje —
   // ingen «legg til som nytt lag»-gren lenger (det var bgLayers sin rolle, se fjerningen av den).
   // Kallerne (_addBgToFloor, _pdfPagePickerRun) garanterer nå at floorId enten er en HELT NY
@@ -63521,14 +63612,342 @@ function _findReusableEmptyFloor(partId) {
   if (S.bgs[f.id] && S.bgs[f.id].img) return null;
   return f;
 }
-// Kenneth 24.09.2026 («tegningen legger seg ikke i den etasjen jeg har opprettet»): hvilken etasje
-// importen ble startet FRA. _addBgToFloor satte riktig AKTIV etasje fra før, men flerside-velgeren
-// leste aldri den informasjonen og lagde alltid nye etasjer (regresjon fra 5e0d126). Nullstilles
-// når velgeren er ferdig/avbrutt, så en senere import fra menylinja ikke arver et gammelt mål.
-let _bgImportTargetFloorId = null;
-// Samme, men for «Bytt plantegning»: etasjen hvis plantegning skal ERSTATTES (gammel slettes,
-// plasseringen bæres over når formatet er likt).
-let _bgReplaceFloorId = null;
+// ─── 162 · IMPORT-KONTEKST: målretasjen bindes når importen STARTER, aldri etter en await ─────
+// Fredrik 30.10.2026: «plantegning plan 1 legger seg også i plan 2», «plan 3 blir med inn i plan 2
+// når han bytter etasje». Målt i STEG 0 (docs/162/RAPPORT.md): (1) alle importveier falt tilbake
+// til S.ui.activeFloorId ETTER await-ene — bytter man etasje mens en stor PDF leses, lander den der
+// man står da; (2) de to globale målene _bgImportTargetFloorId/_bgReplaceFloorId ble overskrevet av
+// en ny import før den forrige var ferdig (dobbeltimport: første fil FORSVANT); (3) uten aktiv
+// etasje (null, eller strengen '__global__' fra setActiveBgFloor(null)) landet tegningen på
+// '__global__' og ble tegnet på ALLE etasjer for alltid.
+//
+// Regelen nå: hver import bærer sin egen kontekst `{ floorId, replace, keepTransform, fallback }`
+// som PARAMETER gjennom hele kjeden (fildialog → lasting → _installBgImage*). Den lages synkront
+// i det øyeblikket brukeren velger fil/slipper fila. Ingen lesing av S.ui.activeFloorId etter en
+// await. '__global__' finnes bare i prosjekter uten etasjer. Slettes etasjen underveis, forkastes
+// importen med en toast (_bgCtxAbort). `_bgPendingImport` er det ENESTE som ligger mellom to steg:
+// fra bg-file-inp.click() til change-hendelsen — en OS-fildialog er modal, så to kan ikke flettes,
+// og avbrytes dialogen ('cancel'), nullstilles den.
+let _bgImportSeq = 0;
+let _bgPendingImport = null;
+function _bgProjectHasFloors() { return !!(S.floors && S.floors.length); }
+function _bgFloorsInActivePart() {
+  const pid = S.ui.activePartId;
+  const list = S.floors.filter(f => pid == null || f.partId === pid);
+  return (list.length ? list : S.floors.slice()).sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+// Målretasje NÅ (synkront): aktiv etasje hvis den finnes; ellers første etasje i aktiv del
+// (fallback=true → toast «Lagt på …» når importen er ferdig); '__global__' KUN uten etasjer.
+function _bgImportFloorNow() {
+  if (!_bgProjectHasFloors()) return { floorId: '__global__', fallback: false };
+  const af = S.ui.activeFloorId;
+  if (af != null && af !== '__global__' && S.floors.some(f => f.id === af)) return { floorId: af, fallback: false };
+  const fl = _bgFloorsInActivePart()[0] || S.floors[0];
+  return { floorId: fl.id, fallback: true };
+}
+function _bgImportCtx(floorId, opts) {
+  opts = opts || {};
+  let fallback = false;
+  if (floorId == null || (floorId === '__global__' && _bgProjectHasFloors())) {
+    const r = _bgImportFloorNow(); floorId = r.floorId; fallback = r.fallback;
+  }
+  return { id: ++_bgImportSeq, floorId, replace: !!opts.replace, keepTransform: false, fallback, startedAt: Date.now() };
+}
+function _bgSetPendingImport(floorId, opts) { _bgPendingImport = _bgImportCtx(floorId, opts); return _bgPendingImport; }
+function _bgTakePendingImport() { const c = _bgPendingImport; _bgPendingImport = null; return c; }
+(function () { const inp = document.getElementById('bg-file-inp'); if (inp) inp.addEventListener('cancel', () => { _bgPendingImport = null; }); })();
+// Finnes nøkkelen fortsatt? '__global__' lever bare så lenge prosjektet ikke har etasjer.
+function _bgFloorKeyAlive(key) {
+  if (key === '__global__') return !_bgProjectHasFloors();
+  return S.floors.some(f => String(f.id) === String(key));
+}
+// Etter en await: etasjen konteksten peker på — eller null hvis den er slettet i mellomtiden.
+function _bgCtxResolveFloor(ctx) {
+  if (!ctx) return _bgActiveKey();
+  return _bgFloorKeyAlive(ctx.floorId) ? ctx.floorId : null;
+}
+function _bgCtxFloorName(ctx) {
+  if (!ctx || ctx.floorId === '__global__') return 'Global';
+  const fl = S.floors.find(f => f.id === ctx.floorId);
+  return fl ? fl.name : ('etasje ' + ctx.floorId);
+}
+function _bgCtxAbort(ctx) {
+  console.warn('162: importen er forkastet — målretasjen finnes ikke lenger', ctx);
+  if (typeof _showToast === 'function') _showToast('Etasjen ble slettet mens plantegningen ble lastet — importen er forkastet', 'warn');
+}
+function _bgCtxFallbackToast(ctx) {
+  if (!ctx || !ctx.fallback || ctx._fallbackToasted) return;
+  ctx._fallbackToasted = true;
+  if (typeof _showToast === 'function') _showToast(`Ingen etasje var valgt — plantegningen er lagt på ${_bgCtxFloorName(ctx)}`, 'warn');
+}
+// Engangsopprydding (ved åpning, og brukt av regresjonstesten): har prosjektet etasjer og det ligger
+// bakgrunner/referanser på '__global__', flyttes de til ÉN etasje. Valget: etasjen hvis rom
+// overlapper tegningens boks, når det er entydig — ellers første etasje i aktiv del. Har den
+// etasjen alt en aktiv plantegning, blir den globale en REFERANSE der (DEL C-oppførselen). Virker på
+// både lagrede felt (_savedBgs i _restoreProject) og levende S.bgs — samme feltnavn. Returnerer
+// { n, floorId, floorName, why } eller null når det ikke var noe å rydde.
+function _bgMigrateGlobalKeys(bgs, refs, rooms) {
+  if (!_bgProjectHasFloors()) return null;
+  const g = bgs && bgs['__global__'];
+  const gRefs = (refs && Array.isArray(refs['__global__'])) ? refs['__global__'].filter(Boolean) : [];
+  const hasG = !!(g && (g.dataUrl || g.img));
+  if (!hasG && !gRefs.length) { if (bgs) delete bgs['__global__']; if (refs) delete refs['__global__']; return null; }
+  let target = null, why = 'første etasje i delen';
+  if (hasG && g.widthCm > 0 && g.heightCm > 0) {
+    const bx0 = g.originX || 0, by0 = g.originY || 0, bx1 = bx0 + g.widthCm, by1 = by0 + g.heightCm;
+    const hit = new Set();
+    for (const r of (rooms || [])) {
+      if (r.floorId == null || !r.points || r.points.length < 3) continue;
+      const xs = r.points.map(p => p.x), ys = r.points.map(p => p.y);
+      if (Math.max(...xs) > bx0 && Math.min(...xs) < bx1 && Math.max(...ys) > by0 && Math.min(...ys) < by1) hit.add(r.floorId);
+    }
+    if (hit.size === 1) { const fid = [...hit][0]; target = S.floors.find(f => f.id === fid) || null; if (target) why = 'rommene på etasjen ligger over tegningen'; }
+  }
+  if (!target) target = _bgFloorsInActivePart()[0] || S.floors[0];
+  const key = target.id;
+  let n = 0;
+  if (hasG) {
+    const existing = bgs[key];
+    if (existing && (existing.dataUrl || existing.img)) {
+      if (!refs[key]) refs[key] = [];
+      refs[key] = [g, ...refs[key]];
+    } else bgs[key] = g;
+    n++;
+  }
+  if (gRefs.length) { refs[key] = [...(refs[key] || []), ...gRefs]; n += gRefs.length; }
+  if (bgs) delete bgs['__global__'];
+  if (refs) delete refs['__global__'];
+  return { n, floorId: key, floorName: target.name, why };
+}
+// «Flytt til etasje …» (162): flytter S.bgs[fromKey] → S.bgs[toFloorId], referanser og planvegger
+// (046) med — kalibrering/plassering er uendret (samme objekt), så en feilplassert tegning rettes
+// uten ny import. Har målet alt en aktiv plantegning, blir den en referanse der (som «Legg til som
+// ny versjon»). Returnerer true når noe ble flyttet.
+function _bgMoveToFloor(fromKey, toFloorId) {
+  if (S.ui && S.ui.readOnly) { _lockToast(); return false; }
+  const to = S.floors.find(f => f.id === toFloorId); if (!to) return false;
+  if (String(fromKey) === String(toFloorId)) return false;
+  const bg = S.bgs[fromKey];
+  const refs = (S.bgRefs[fromKey] || []).filter(Boolean);
+  if (!(bg && bg.img) && !refs.length) return false;
+  pushUndo();
+  if (bg && bg.img) {
+    const existing = S.bgs[toFloorId];
+    if (existing && existing.img) {
+      if (!S.bgRefs[toFloorId]) S.bgRefs[toFloorId] = [];
+      S.bgRefs[toFloorId].unshift(existing);
+    }
+    S.bgs[toFloorId] = bg;
+  }
+  if (refs.length) S.bgRefs[toFloorId] = [...(S.bgRefs[toFloorId] || []), ...refs];
+  delete S.bgs[fromKey]; delete S.bgRefs[fromKey];
+  for (const map of [S.planWalls, S.planMeta, S.geo]) {
+    if (map && map[fromKey] !== undefined) { map[toFloorId] = map[fromKey]; delete map[fromKey]; }
+  }
+  if (S.ui.selectedBg && S.ui.selectedBg !== bg) S.ui.selectedBg = null;
+  setActiveBgFloor(toFloorId);
+  if (typeof _markProjectDirty === 'function') _markProjectDirty();
+  renderSidebar(); updateCtxBar(); render();
+  if (typeof _showToast === 'function') _showToast(`Plantegningen er flyttet til ${to.name}`, 'ok');
+  return true;
+}
+// Undermeny med etasjene det kan flyttes til (samme del som kilden; alle når kilden er global).
+function _bgMoveMenu(e, fromKey) {
+  if (e && e.stopPropagation) e.stopPropagation();
+  const src = S.floors.find(f => String(f.id) === String(fromKey));
+  const cands = S.floors.filter(f => String(f.id) !== String(fromKey) && (!src || f.partId === src.partId))
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+  if (!cands.length) { if (typeof _showToast === 'function') _showToast('Ingen annen etasje å flytte til', 'warn'); return; }
+  const fromArg = typeof fromKey === 'number' ? fromKey : JSON.stringify(String(fromKey));
+  let html = `<div class="ctx-sub-lbl">Flytt plantegningen til</div>`;
+  for (const f of cands) {
+    const has = S.bgs[f.id] && S.bgs[f.id].img ? ' <span style="color:var(--dim);font-size:11px">(har plantegning — den blir referanse)</span>' : '';
+    html += `<div class="ctx-item" onclick="hideProduktMenu();_bgMoveToFloor(${fromArg},${f.id})">${esc(f.name)}${has}</div>`;
+  }
+  const x = e && e.clientX != null ? e.clientX : window.innerWidth / 2, y = e && e.clientY != null ? e.clientY : window.innerHeight / 2;
+  showProduktDropdown(html, x, y);
+}
+// ─── 162 · REGRESJON: plantegning låst til etasjen ───────────────────────────────────────────
+// Kjør i konsollen: `await _bgFloorRegressionTest()`. Syntetiske etasjer (partId 901), stubbet
+// pdf.js (en side = 200×100 pt, rendringen holdes igjen med en utsatt promise så etasjebyttet kan
+// skje MENS fila «lastes») og ekte FileReader/Image for raster. Alt gjenopprettes etterpå.
+// Vaksine (dokumentert i docs/162/RAPPORT.md): sett `_bgCtxResolveFloor = () => S.ui.activeFloorId`
+// (fallbacken etter await) før kjøring — T1/T1b/T2 blir røde.
+async function _bgFloorRegressionTest() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got: typeof got === 'string' ? got : JSON.stringify(got) });
+  const saved = {
+    bgs: S.bgs, bgRefs: S.bgRefs, floors: S.floors, rooms: S.rooms, planWalls: S.planWalls, planMeta: S.planMeta, geo: S.geo,
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedBg: S.ui.selectedBg, readOnly: S.ui.readOnly,
+    counters: { ...S.counters }, view: { ...S.view }, pdfjs: window.pdfjsLib, toast: window._showToast,
+    autoSave: window._performAutoSave, sched: window._scheduleAutoSave, undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
+    pending: _bgPendingImport, twoPoint: _bgAutoStartTwoPoint, drawMode: S.ui.drawMode,
+  };
+  const toasts = [];
+  const PX = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const deferred = () => { let res; const p = new Promise(r => { res = r; }); return { p, res }; };
+  const fakePdf = (numPages, gate) => ({ numPages,
+    getPage: async () => ({ getViewport: ({ scale }) => ({ width: 200 * scale, height: 100 * scale }), render: () => ({ promise: gate ? gate.p : Promise.resolve() }) }),
+    getOutline: async () => null });
+  const pdfFile = (name) => new File([new Uint8Array([37, 80, 68, 70])], name, { type: 'application/pdf' });
+  const usePdf = (pdf) => { window.pdfjsLib = { getDocument: () => ({ promise: Promise.resolve(pdf) }) }; };
+  const wait = (cond, ms) => new Promise(res => { const t0 = Date.now(); const iv = setInterval(() => { let ok = false; try { ok = cond(); } catch (e) {} if (ok || Date.now() - t0 > (ms || 4000)) { clearInterval(iv); res(ok); } }, 20); });
+  const has = (k) => !!(S.bgs[k] && S.bgs[k].img);
+  const reset = (n) => {
+    S.floors = Array.from({ length: n == null ? 3 : n }, (_, i) => ({ id: i + 1, name: 'Plan ' + (i + 1), order: i, collapsed: false, partId: 901 }));
+    S.ui.activePartId = 901; S.bgs = {}; S.bgRefs = {}; S.rooms = []; S.planWalls = {}; S.planMeta = {}; S.geo = {};
+    S.ui.activeFloorId = S.floors.length ? 1 : null; S.ui.selectedBg = null; S.counters.nextFloorId = 50; toasts.length = 0;
+    _bgPendingImport = null; _bgAutoStartTwoPoint = false;
+  };
+  try {
+    window._showToast = (m, t) => toasts.push([t || 'ok', m]);
+    window._performAutoSave = () => Promise.resolve(); window._scheduleAutoSave = () => {};
+    S.ui.readOnly = false;
+    const img = new Image(); img.src = PX; await img.decode();
+
+    // T1 · PDF-import bundet til Plan 3, aktiv etasje byttes til Plan 2 FØR rendringen er ferdig
+    reset(); _activateFloor(3);
+    let gate = deferred(); usePdf(fakePdf(1, gate));
+    let ctx = _bgImportCtx(null);
+    let run = _pdfBgLoad(pdfFile('plan3.pdf'), 'plan3.pdf', ctx);
+    await new Promise(r => setTimeout(r, 0)); _activateFloor(2); gate.res(); await run;
+    check('T1 PDF bundet til Plan 3 lander på Plan 3 selv om aktiv etasje ble Plan 2 underveis', '3: plan3.pdf, 2: tom', has(3) && !has(2) && S.bgs[3].fileName === 'plan3.pdf', Object.keys(S.bgs).map(k => k + ':' + (has(k) ? S.bgs[k].fileName : 'tom')));
+    check('T1 aktiv etasje etter import = etasjen tegningen landet på', 3, S.ui.activeFloorId === 3, S.ui.activeFloorId);
+
+    // T1b · raster (FileReader + Image er to await) — samme
+    reset(); _activateFloor(3);
+    const c = document.createElement('canvas'); c.width = 40; c.height = 30; c.getContext('2d').fillRect(0, 0, 40, 30);
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    _loadFileAsBackground(new File([blob], 'plan3.png', { type: 'image/png' }), _bgImportCtx(null));
+    _activateFloor(2);
+    await wait(() => has(3) || has(2));
+    check('T1b raster bundet til Plan 3 lander på Plan 3 (etasje byttet under FileReader)', '3: plan3.png', has(3) && !has(2), Object.keys(S.bgs).filter(has));
+    const calOv = document.getElementById('bg-calib-overlay'); if (calOv) calOv.style.display = 'none';
+
+    // T1c · uten valgt etasje: første etasje i delen + toast
+    reset(); S.ui.activeFloorId = null;
+    usePdf(fakePdf(1, null)); ctx = _bgImportCtx(null);
+    check('T1c ingen aktiv etasje → kontekst peker på første etasje (fallback)', '1, fallback', ctx.floorId === 1 && ctx.fallback, ctx);
+    await _pdfBgLoad(pdfFile('u.pdf'), 'u.pdf', ctx);
+    check('T1c tegningen landet på Plan 1, aldri __global__, med toast «Ingen etasje var valgt»', '1 + toast', has(1) && !S.bgs['__global__'] && toasts.some(t => /Ingen etasje var valgt/.test(t[1])), { keys: Object.keys(S.bgs), toasts });
+
+    // T2 · dobbeltimport: A → Plan 1, B → Plan 2, B blir ferdig først
+    reset();
+    const gA = deferred(), gB = deferred();
+    usePdf(fakePdf(1, gA)); const rA = _pdfBgLoad(pdfFile('A.pdf'), 'A.pdf', _bgImportCtx(1));
+    await new Promise(r => setTimeout(r, 0));
+    usePdf(fakePdf(1, gB)); const rB = _pdfBgLoad(pdfFile('B.pdf'), 'B.pdf', _bgImportCtx(2));
+    gB.res(); await rB; gA.res(); await rA;
+    check('T2 dobbeltimport: A på Plan 1 og B på Plan 2 (før: A forsvant)', '1:A.pdf 2:B.pdf', has(1) && has(2) && S.bgs[1].fileName === 'A.pdf' && S.bgs[2].fileName === 'B.pdf', [1, 2].map(k => k + ':' + (has(k) ? S.bgs[k].fileName : 'tom')));
+
+    // T3 · etasjen slettes mens importen pågår → forkastet, toast, ingen foreldreløs nøkkel
+    reset(); gate = deferred(); usePdf(fakePdf(1, gate));
+    run = _pdfBgLoad(pdfFile('x.pdf'), 'x.pdf', _bgImportCtx(3));
+    await new Promise(r => setTimeout(r, 0)); S.floors = S.floors.filter(f => f.id !== 3); S.ui.activeFloorId = 1; gate.res(); await run;
+    check('T3 etasje slettet underveis → ingen S.bgs[3], toast «forkastet»', 'ingen 3 + toast', !S.bgs[3] && toasts.some(t => /forkastet/.test(t[1])), { keys: Object.keys(S.bgs), toasts });
+
+    // T4 · __global__ nektes når prosjektet har etasjer
+    reset(); S.ui.activeFloorId = '__global__';
+    check('T4 aktiv etasje er strengen __global__ → kontekst peker på en etasje', 1, _bgImportCtx(null).floorId === 1, _bgImportCtx(null).floorId);
+    check('T4 _bgImportCtx(\'__global__\') med etasjer → etasje', 1, _bgImportCtx('__global__').floorId === 1, _bgImportCtx('__global__').floorId);
+    setActiveBgFloor(null);
+    check('T4 setActiveBgFloor(null) med etasjer → første etasje, ikke strengen', 1, S.ui.activeFloorId === 1, S.ui.activeFloorId);
+    S.ui.activeFloorId = null;
+    check('T4 _bgActiveKey() uten aktiv etasje → etasje, ikke __global__', 1, _bgActiveKey() === 1, _bgActiveKey());
+    S.ui.activeFloorId = 1;
+    check('T4 tegnefilteret: __global__ vises ikke når prosjektet har etasjer', 'false,false,true', !_bgKeyOnActiveFloor('__global__', 1) && !_bgKeyOnActiveFloor('2', 1) && _bgKeyOnActiveFloor('1', 1),
+      [_bgKeyOnActiveFloor('__global__', 1), _bgKeyOnActiveFloor('2', 1), _bgKeyOnActiveFloor('1', 1)]);
+    S.bgs = { '__global__': { img, fileName: 'g.png', widthCm: 10, heightCm: 10 }, '1': { img, fileName: 'a.png', widthCm: 10, heightCm: 10 }, '2': { img, fileName: 'b.png', widthCm: 10, heightCm: 10 } };
+    S.ui.activeFloorId = 2;
+    check('T4 _bgsOnActiveFloor() på Plan 2 gir KUN Plan 2 sin tegning', ['b.png'], JSON.stringify(_bgsOnActiveFloor().map(b => b.fileName)) === '["b.png"]', _bgsOnActiveFloor().map(b => b.fileName));
+
+    // T5 · prosjekt UTEN etasjer: __global__ som før
+    reset(0);
+    check('T5 uten etasjer: kontekst → __global__', '__global__', _bgImportCtx(null).floorId === '__global__' && !_bgImportCtx(null).fallback, _bgImportCtx(null));
+    setActiveBgFloor(null);
+    check('T5 uten etasjer: setActiveBgFloor(null) → __global__ (uendret)', '__global__', S.ui.activeFloorId === '__global__', S.ui.activeFloorId);
+    check('T5 uten etasjer: filteret viser __global__', true, _bgKeyOnActiveFloor('__global__', '__global__') && _bgKeyOnActiveFloor('__global__', null), null);
+    const gb = { '__global__': { dataUrl: 'd', widthCm: 10, heightCm: 10 } }, gr = {};
+    check('T5 uten etasjer: oppryddingen gjør ingenting', 'null, nøkkel står', _bgMigrateGlobalKeys(gb, gr, []) === null && !!gb['__global__'], Object.keys(gb));
+
+    // T6 · opprydding ved åpning
+    reset();
+    let bgs = { '__global__': { dataUrl: 'g', fileName: 'g.pdf', widthCm: 1000, heightCm: 700, originX: 0, originY: -700 } }, refs = { '__global__': [{ dataUrl: 'r', fileName: 'r.pdf' }] };
+    let mig = _bgMigrateGlobalKeys(bgs, refs, []);
+    check('T6 ingen rom → første etasje i delen; aktiv + referanse flyttet, __global__ borte', '{n:2, floor 1}', mig && mig.n === 2 && mig.floorId === 1 && bgs[1] && bgs[1].fileName === 'g.pdf' && refs[1] && refs[1].length === 1 && !bgs['__global__'] && !refs['__global__'], { mig, bgs: Object.keys(bgs), refs: Object.keys(refs) });
+    bgs = { '__global__': { dataUrl: 'g', fileName: 'g.pdf', widthCm: 1000, heightCm: 700, originX: 0, originY: -700 } }; refs = {};
+    const rooms = [{ id: 1, floorId: 2, points: [{ x: 100, y: -600 }, { x: 400, y: -600 }, { x: 400, y: -300 }, { x: 100, y: -300 }] }];
+    mig = _bgMigrateGlobalKeys(bgs, refs, rooms);
+    check('T6 rom på Plan 2 ligger over tegningen → Plan 2', 'floor 2', mig && mig.floorId === 2 && bgs[2] && !bgs['__global__'], mig);
+    bgs = { '__global__': { dataUrl: 'g', fileName: 'g.pdf', widthCm: 1000, heightCm: 700 }, '1': { dataUrl: 'a', fileName: 'a.pdf' } }; refs = {};
+    mig = _bgMigrateGlobalKeys(bgs, refs, []);
+    check('T6 målet har alt en aktiv → den globale blir referanse der', 'bgs[1]=a.pdf, refs[1][0]=g.pdf', bgs[1].fileName === 'a.pdf' && refs[1] && refs[1][0].fileName === 'g.pdf' && !bgs['__global__'], { bg: bgs[1].fileName, refs: refs[1] && refs[1].map(r => r.fileName) });
+    check('T6 ingenting å rydde → null', null, _bgMigrateGlobalKeys({ '1': { dataUrl: 'a' } }, {}, []) === null, null);
+
+    // T7 · «Flytt til etasje»
+    reset();
+    const moved = _installBgImageForFloor(img, PX, 'feil.pdf', { paperWidthCm: 42, paperHeightCm: 29.7, pageNumber: 2 }, 3, {});
+    moved.widthCm = 1234; moved.heightCm = 567; moved.originX = 11; moved.originY = -22; moved._needsCalibration = false;
+    S.bgRefs[3] = [{ img, fileName: 'ref.pdf' }]; S.planWalls[3] = [{ id: 1 }];
+    const okMove = _bgMoveToFloor(3, 2);
+    check('T7 flyttet 3 → 2: samme objekt, kalibrering urørt, referanse og planvegger med, 3 tom', 'true', okMove && S.bgs[2] === moved && !S.bgs[3] && !S.bgRefs[3] && S.bgRefs[2] && S.bgRefs[2][0].fileName === 'ref.pdf' && S.planWalls[2] && !S.planWalls[3] && moved.widthCm === 1234 && moved.originX === 11 && moved._needsCalibration === false && S.ui.activeFloorId === 2,
+      { keys: Object.keys(S.bgs), refs: Object.keys(S.bgRefs), pw: Object.keys(S.planWalls), active: S.ui.activeFloorId });
+    const other = _installBgImageForFloor(img, PX, 'annen.pdf', null, 1, {});
+    _bgMoveToFloor(2, 1);
+    check('T7 flytt til etasje som alt har tegning: flyttet blir aktiv, den gamle blir referanse', 'bgs[1]=feil.pdf, refs[1] inneholder annen.pdf', S.bgs[1] === moved && S.bgRefs[1].includes(other), { bg: S.bgs[1] && S.bgs[1].fileName, refs: (S.bgRefs[1] || []).map(r => r.fileName) });
+    check('T7 flytt til seg selv / ukjent etasje → false', 'false,false', !_bgMoveToFloor(1, 1) && !_bgMoveToFloor(1, 99), null);
+    S.ui.readOnly = true; const lockedMove = _bgMoveToFloor(1, 2); S.ui.readOnly = false;
+    check('T7 skrivebeskyttet (060) → ingen flytting', false, lockedMove === false && S.bgs[1] === moved, lockedMove);
+
+    // T8 · sidevelgeren: «(denne)» fra konteksten, ikke aktiv etasje; samme etasje kan ikke stå på to rader
+    reset(); _activateFloor(2);
+    const pages = [1, 2, 3].map(i => ({ num: i, dataUrl: '', paperWidthCm: 84.1, paperHeightCm: 59.4, title: null }));
+    _pdfPagePickerShowModal(fakePdf(3, null), null, 'fler.pdf', pages, _bgImportCtx(1));
+    let ov = document.getElementById('_pdf-page-picker-ov');
+    const sel = (i) => ov.querySelector('._pdf-page-floor[data-page="' + i + '"]');
+    const chk = (i) => { const cb = ov.querySelector('._pdf-page-chk[data-page="' + i + '"]'); cb.checked = true; _pdfPageRowToggle(cb); };
+    const denne = [...sel(1).options].find(o => /\(denne\)/.test(o.textContent));
+    check('T8 «(denne)» markerer Plan 1 (konteksten) selv om aktiv etasje er Plan 2', 'Plan 1 (denne), forvalgt', denne && denne.value === '1' && sel(1).value === '1', { denne: denne && denne.textContent, forvalg: sel(1).value });
+    chk(1); chk(2);
+    sel(2).value = '3'; _pdfPagePickerRefresh(sel(2));
+    sel(1).value = '3'; _pdfPagePickerRefresh(sel(1));
+    check('T8 Plan 3 valgt på rad 2, så på rad 1 → rad 1 beholder, rad 2 tilbake til «+ Ny etasje»', '3 / __new__', sel(1).value === '3' && sel(2).value === '__new__', [sel(1).value, sel(2).value]);
+    check('T8 Plan 3 er grået ut i rad 2 sitt nedtrekk', true, [...sel(2).options].find(o => o.value === '3').disabled, null);
+    _pdfPagePickerClose();
+
+    // T9 · sidevelgeren kjører: side 1 → Plan 3 (slettes underveis), side 2 → ny «Kjeller»
+    reset(); gate = deferred(); const pdf9 = fakePdf(2, gate);
+    _pdfPagePickerShowModal(pdf9, null, 'fler.pdf', pages.slice(0, 2), _bgImportCtx(1));
+    ov = document.getElementById('_pdf-page-picker-ov');
+    chk(1); chk(2); sel(1).value = '3'; _pdfPagePickerRefresh(sel(1)); ov.querySelector('._pdf-page-name[data-page="2"]').value = 'Kjeller';
+    run = _pdfPagePickerRun(pdf9, 'fler.pdf', ov);
+    await new Promise(r => setTimeout(r, 0)); S.floors = S.floors.filter(f => f.id !== 3); _activateFloor(2); gate.res(); await run;
+    const kjeller = S.floors.find(f => f.name === 'Kjeller');
+    check('T9 side 1 hoppet over (etasjen slettet), side 2 på ny etasje «Kjeller», ingen S.bgs[3], aktiv etasje finnes', 'toast «Side 1», bgs[Kjeller]', !S.bgs[3] && kjeller && has(kjeller.id) && S.bgs[kjeller.id].pageNumber === 2 && toasts.some(t => /Side 1 ble ikke importert/.test(t[1])) && S.floors.some(f => f.id === S.ui.activeFloorId),
+      { keys: Object.keys(S.bgs), floors: S.floors.map(f => f.name), active: S.ui.activeFloorId, toasts });
+    check('T9 ingen «Ny etasje» opprettet stille for den slettede', 'false', !S.floors.some(f => f.name === 'Ny etasje'), S.floors.map(f => f.name));
+
+    // T10 · ingen globale importmål igjen i koden
+    const borte = (fn) => { try { fn(); return false; } catch (e) { return e instanceof ReferenceError; } };
+    check('T10 _bgImportTargetFloorId/_bgReplaceFloorId finnes ikke som variabler lenger', 'ReferenceError begge', borte(() => _bgImportTargetFloorId) && borte(() => _bgReplaceFloorId), null);
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '', got: String(e && e.stack || e) });
+  } finally {
+    const calOv = document.getElementById('bg-calib-overlay'); if (calOv) calOv.style.display = 'none';
+    document.getElementById('_pdf-page-picker-ov')?.remove();
+    S.bgs = saved.bgs; S.bgRefs = saved.bgRefs; S.floors = saved.floors; S.rooms = saved.rooms; S.planWalls = saved.planWalls; S.planMeta = saved.planMeta; S.geo = saved.geo;
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId; S.ui.selectedBg = saved.selectedBg; S.ui.readOnly = saved.readOnly; S.ui.drawMode = saved.drawMode;
+    Object.assign(S.counters, saved.counters); S.view = saved.view;
+    window.pdfjsLib = saved.pdfjs; window._showToast = saved.toast; window._performAutoSave = saved.autoSave; window._scheduleAutoSave = saved.sched;
+    _bgPendingImport = saved.pending; _bgAutoStartTwoPoint = saved.twoPoint;
+    if (saved.undoLen != null && typeof _undoStack !== 'undefined') _undoStack.length = saved.undoLen;
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console.table(results.map(r => ({ ok: r.ok ? '✓' : '✗', test: r.name, forventet: r.expected, fikk: r.got })));
+  console.log(allOk ? '✓ 162: ' + results.length + ' sjekker grønne' : '✗ 162: ' + results.filter(r => !r.ok).length + ' røde');
+  return { ok: allOk, results };
+}
 function _addBgToFloor(floorId) {
   // 060 regel 4: denne raden er en <div class="room-item"> med onclick, ikke en <button>,
   // saa «#sb-tree button»-regelen over naar den ikke. Gaten ma derfor staa her.
@@ -63547,7 +63966,7 @@ function _addBgToFloor(floorId) {
     delete S.bgs[floorId];                  // tom slot — neste import fyller den på nytt
   }
   setActiveBgFloor(floorId);
-  _bgImportTargetFloorId = floorId; _bgReplaceFloorId = null;
+  _bgSetPendingImport(floorId);   // 162: bundet nå — tas ut i handleBgFile
   renderSidebar();
   document.getElementById('bg-file-inp')?.click();
 }
@@ -63557,7 +63976,7 @@ function _replaceFloorBg(floorId) {
   const bg = S.bgs[floorId];
   if (!bg || !bg.img) { _addBgToFloor(floorId); return; }
   setActiveBgFloor(floorId);
-  _bgReplaceFloorId = floorId; _bgImportTargetFloorId = floorId;
+  _bgSetPendingImport(floorId, { replace: true });   // 162
   renderSidebar();
   document.getElementById('bg-file-inp')?.click();
 }
@@ -64684,6 +65103,7 @@ function floorCtxMenu(e, id) {
   const bgItems = hasBg
     ? `<div class="ctx-item" onclick="_replaceFloorBg(${id});hideCtx()">${IC('camera',14)} Bytt plantegning (erstatter)</div>
        <div class="ctx-item" onclick="_addBgToFloor(${id});hideCtx()">${IC('map',14)} Legg til som ny versjon (gammel blir referanse)</div>
+       <div class="ctx-item" onclick="hideCtx();_bgMoveMenu(event,${id})">${IC('move',14)} Flytt plantegningen til etasje …</div>
        <div class="ctx-sep"></div>`
     : `<div class="ctx-item" onclick="_addBgToFloor(${id});hideCtx()">${IC('map',14)} Legg til plantegning</div>
        <div class="ctx-sep"></div>`;
@@ -65658,6 +66078,7 @@ function _createFloor() {
 function confirmAddFloorWithBg() {
   const fl=_createFloor(); if(!fl) return;
   setActiveBgFloor(fl.id);
+  _bgSetPendingImport(fl.id);   // 162
   document.getElementById('bg-file-inp').click();
 }
 function confirmAddFloorFree() {
@@ -72674,7 +73095,7 @@ function _showCtxMore(e, ctx) {
 // ctxbaren). Har den aktive etasjen ingen bakgrunn, skal kontrollene ikke late som om den har
 // det via en annen etasjes.
 function _activeBgLayer() {
-  const k = S.ui.activeFloorId != null ? S.ui.activeFloorId : '__global__';
+  const k = _bgActiveKey();   // 162
   return (S.bgs[k] && S.bgs[k].img) ? S.bgs[k] : null;
 }
 
@@ -72735,13 +73156,14 @@ function _bgCtxMore(e) {
   items += I(`startBgCalibrate()`, '<svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> Sett målestokk på nytt');
   items += I(`startBgStraighten()`, IC('ruler',14)+' Rett opp etter vegg');
   items += I(`_replaceFloorBg(S.ui.activeFloorId)`, IC('camera',14)+' Bytt plantegning');
+  items += I(`_bgMoveMenu(event, _bgActiveKey())`, IC('move',14)+' Flytt til etasje …');   // 162
   items += `<div class="ctx-sep" style="height:1px;background:var(--border);margin:4px 6px"></div>`;
   items += I(`removeBgImage()`, '<svg class="ic ic-trash" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M18.5 6l-1 14a2 2 0 0 1-2 1.8H8.5a2 2 0 0 1-2-1.8L5.5 6"/></svg> Fjern bakgrunn', true);
   showProduktDropdown(items, e.clientX, e.clientY);
 }
 
 // "⋯ Mer" for a SELECTED background layer (transform-gizmo state).
-let _bgReplaceKeepTransform = false;
+// (162: `_bgReplaceKeepTransform` er fjernet — flagget bor i importkonteksten, ctx.keepTransform.)
 function _bgSelMore(e) {
   e.stopPropagation();
   const I = (onclick, label, danger) => `<div class="ctx-item${danger ? ' danger' : ''}" onclick="hideProduktMenu();${onclick}">${label}</div>`;
@@ -76728,8 +77150,10 @@ function _emptyQuickList(){ _startMethod = null; if (typeof addPart === 'functio
 function _startImportFile(file){
   if (!file) return;
   _engineWarmResolve();   // STEG 2: dekker slippsonen (filen er allerede valgt der, ingen tidligere «panel»-hendelse)
-  _pdfImportDrawFloorId = (S.ui.activeFloorId != null) ? S.ui.activeFloorId
-    : ((S.floors[0] && S.floors[0].id) ?? null);
+  // 162: målretasjen bindes HER — i det øyeblikket fila er valgt/sluppet — og følger med gjennom
+  // DWG-sjekken (asynkron), valgdialogene og lastingen. Aldri lest fra S.ui.activeFloorId igjen.
+  const ctx = _bgImportCtx(null);
+  _pdfImportDrawFloorId = ctx.floorId !== '__global__' ? ctx.floorId : ((S.floors[0] && S.floors[0].id) ?? null);
   // 021 (Kenneth 30.09.2026): «jeg ønsker å importere dwg filen som en vanlig plantegning, på lik
   // linje som en pdf plantegning». DWG gikk FØR rett i vektorveien («vektor → auto, ingen
   // spørsmål») — og romgjenkjenningen ga rot på hans tegning (590 «rom» med alle lag, 10
@@ -76738,20 +77162,21 @@ function _startImportFile(file){
   // Vektorveien er beholdt — den er nå et valg, ikke noe man tvinges gjennom.
   if (_importKind(file) === 'dwg') {
     // 020: spør motoren om den kan .dwg i det hele tatt før vi laster opp en stor fil.
-    _dwgBlockedBeforeUpload(file).then(blocked => { if (blocked) return; _startImportFileRaster(file); });
+    _dwgBlockedBeforeUpload(file).then(blocked => { if (blocked) return; _startImportFileRaster(file, ctx); });
     return;
   }
-  _startImportFileRaster(file);
+  _startImportFileRaster(file, ctx);
 }
 // Delen av `_startImportFile` som er FELLES for PDF/bilde og (etter 021) DWG. Skilt ut fordi
 // DWG må innom capabilities-sjekken først, og den er asynkron.
-function _startImportFileRaster(file){
+function _startImportFileRaster(file, ctx){
+  ctx = ctx || _bgImportCtx(null);
   // Kenneth 24.09.2026: har aktiv etasje ALLEREDE en plantegning, fylte slippet før samme slot og
   // nullstilte origin/størrelse — kalibreringen gikk tapt uten spørsmål (målt i STEG 0.2). Spør nå
-  // FØR noe skjer. Etasje uten plantegning: rett inn, som før.
-  const fl = S.floors.find(f => f.id === S.ui.activeFloorId);
+  // FØR noe skjer. Etasje uten plantegning: rett inn, som før. 162: «aktiv etasje» = ctx.floorId.
+  const fl = S.floors.find(f => f.id === ctx.floorId);
   if (fl && S.bgs[fl.id] && S.bgs[fl.id].img) { _dropTargetChoice(file, fl); return; }
-  _rasterMethodChoice(file);
+  _rasterMethodChoice(file, ctx);
 }
 // Slipp på en etasje som alt har plantegning: bytt / ny versjon / ny etasje / avbryt.
 let _dropChoiceFile = null, _dropChoiceFloorId = null;
@@ -76789,11 +77214,11 @@ function _dropTargetChoose(mode){
   const file = _dropChoiceFile, floorId = _dropChoiceFloorId;
   _dropChoiceFile = null; _dropChoiceFloorId = null;
   if (!file) return;
+  // 162: etasjen ble bundet da fila ble sluppet (_dropChoiceFloorId) — konteksten lages av den.
   if (mode === 'replace') {
     // Samme vei som menyens «Bytt plantegning», men filen er alt valgt — sett målet og last.
-    _bgReplaceFloorId = floorId; _bgImportTargetFloorId = floorId;
     _startMethod = null; _emptyStateDismissed = true;
-    _loadFileAsBackground(file);
+    _loadFileAsBackground(file, _bgImportCtx(floorId, { replace: true }));
   } else if (mode === 'version') {
     // DEL C-oppførselen, uendret: gammel degraderes til referanse, slot tømmes for den nye.
     const existing = S.bgs[floorId];
@@ -76802,20 +77227,18 @@ function _dropTargetChoose(mode){
       S.bgRefs[floorId].unshift(existing);
       delete S.bgs[floorId];
     }
-    _bgImportTargetFloorId = floorId; _bgReplaceFloorId = null;
     _startMethod = null; _emptyStateDismissed = true;
-    _loadFileAsBackground(file);
+    _loadFileAsBackground(file, _bgImportCtx(floorId));
   } else {
     const fl = _addFloorToPart(S.ui.activePartId, `${S.floors.filter(f => f.partId === S.ui.activePartId).length + 1}. etasje`);
     setActiveBgFloor(fl.id);
-    _bgImportTargetFloorId = fl.id; _bgReplaceFloorId = null;
     renderSidebar();
     _startMethod = null; _emptyStateDismissed = true;
-    _loadFileAsBackground(file);
+    _loadFileAsBackground(file, _bgImportCtx(fl.id));
   }
 }
 // Raster (PDF/bilde): utvetydig valg om HVEM som lager geometrien.
-let _rasterChoiceFile = null;
+let _rasterChoiceFile = null, _rasterChoiceCtx = null;   // 162: konteksten følger fila
 // 021-oppfølger (Kenneth 30.09.2026): for DWG/DXF er rekkefølgen SNUDD, og det er en MÅLT
 // beslutning, ikke en smakssak. På Kenneths AC1032-tegning finner romgjenkjenningen NULL rom
 // over 0,5 m² — de «10 rommene» den rapporterte var alle fragmenter under 0,3 m² (veggene er
@@ -76823,8 +77246,8 @@ let _rasterChoiceFile = null;
 // Å la «la appen finne rommene» stå som Anbefalt for DWG sender brukeren rett i det han kalte
 // «rot». Underlaget virker derimot, og med målestokk fra fila. Vektorveien er beholdt, ærlig
 // merket — den kan passe på renere DXF-er.
-function _rasterMethodChoice(file){
-  _rasterChoiceFile = file;
+function _rasterMethodChoice(file, ctx){
+  _rasterChoiceFile = file; _rasterChoiceCtx = ctx || _bgImportCtx(null);
   const _isVector = /\.(dxf|dwg)$/i.test((file && file.name) || '');
   document.getElementById('_raster-choice-ov')?.remove();
   const ov = document.createElement('div'); ov.id = '_raster-choice-ov';
@@ -76877,12 +77300,13 @@ function _rasterMethodChoice(file){
 function _rasterChoose(mode){
   document.getElementById('_raster-choice-ov')?.remove();
   const file = _rasterChoiceFile; _rasterChoiceFile = null;
+  const ctx = _rasterChoiceCtx || _bgImportCtx(null); _rasterChoiceCtx = null;   // 162
   if (!file) return;
   // 046: 'plan' legger tegningen som underlag (samme vei som 'manual') og går så inn i
   // vegg-sjekken. Motoren kalles i 047 — i 046 fylles veggene av `_planDevFixture`.
-  if (mode === 'plan') { _planStartFraFil(file); return; }
-  if (mode === 'auto') { _autoReadStart(file); }                       // bakgrunn+kalibrering → auto-deteksjon → gjennomgang
-  else { _startMethod = null; _emptyStateDismissed = true; _loadFileAsBackground(file); }   // underlag → bruker tegner selv
+  if (mode === 'plan') { _planStartFraFil(file, ctx); return; }
+  if (mode === 'auto') { _autoReadStart(file, ctx); }                       // bakgrunn+kalibrering → auto-deteksjon → gjennomgang
+  else { _startMethod = null; _emptyStateDismissed = true; _loadFileAsBackground(file, ctx); }   // underlag → bruker tegner selv
 }
 
 // ─── «SEND TIL MONTØR» og KUNDE-DIALOG ────────────────────────
@@ -77260,7 +77684,7 @@ function _spiPickCustomer() {
   _quickSetCustomer(_supabaseProjectId);
 }
 
-function _autoReadStart(file){
+function _autoReadStart(file, ctx){
   // DXF/DWG er vektor uten rasterbar bakgrunn → gå rett til motorens vektor-flyt
   // (lag-modal + fast målestokk) i stedet for bakgrunn+kalibrering.
   if(_importKind(file)==='dwg'){ _pdfImportTarget='draw';
@@ -77269,7 +77693,7 @@ function _autoReadStart(file){
   _autoReadPdf = { file };
   // Last som bakgrunn (rasteriserer + viser). _needsCalibration=true → ctxbar tilbyr
   // «Sett målestokk» (to-punkts) og «Fast målestokk» (1:50). Begge ender i _autoReadIfPending.
-  _loadBgPdf(file, file.name);
+  _loadBgPdf(file, file.name, ctx || _bgImportCtx(null));   // 162
   if(typeof _showToast==='function') _showToast('Sett målestokk på tegningen — så leser appen av rommene','info');
 }
 
@@ -77479,7 +77903,7 @@ function _listImportStartTwoPoint(file, layers, obstacleLayers){
   _pdfImportClose();
   if(typeof _hideListModule==='function') _hideListModule();   // vis lerretet så man kan klikke i tegningen
   _bgAutoStartTwoPoint = true;
-  _loadBgPdf(file, file.name);
+  _loadBgPdf(file, file.name, _bgImportCtx(null));   // 162: bundet nå
   if(typeof _showToast==='function') _showToast('Klikk to punkter med kjent avstand i tegningen','info');
 }
 
@@ -78679,6 +79103,18 @@ function _restoreProject(data) {
     }
   }
   const _savedBgs = { ...(data.bgs || (data.bg && data.bg.dataUrl ? { '__global__': data.bg } : {})), ..._extraBgEntries };
+  // 162: '__global__' er bare for prosjekter uten etasjer. Har prosjektet etasjer og det ligger
+  // bakgrunner/referanser på '__global__' (import uten valgt etasje før 162, eller den gamle
+  // enkelt-bakgrunnen `data.bg`), flyttes de til én etasje NÅ — i minnet, som 137/E: ingenting her
+  // kaller _scheduleAutoSave, skyen skrives først når brukeren selv gjør en endring.
+  const _savedRefs = {};
+  for (const [k, arr] of Object.entries(data.bgRefs || {})) if (Array.isArray(arr)) _savedRefs[k] = arr.slice();
+  const _gMig = _bgMigrateGlobalKeys(_savedBgs, _savedRefs, S.rooms);
+  if (_gMig) {
+    console.log(`_restoreProject (162): ${_gMig.n} plantegning(er) lå på '__global__' (vist på alle etasjer) — lagt på «${_gMig.floorName}» (${_gMig.why})`);
+    // Toasten er for den som redigerer — ikke for kunden i ?present=/?kunde= (flyttingen skjer der òg).
+    if (typeof _showToast === 'function' && !/[?&](present|kunde)=/.test(location.search)) _showToast(`${_gMig.n} plantegning${_gMig.n === 1 ? ' var' : 'er var'} ikke knyttet til en etasje — lagt på ${_gMig.floorName}, flytt den i sidepanelet om det er feil`, 'warn');
+  }
   let _bgCount = 0;
   for (const [k, bgData] of Object.entries(_savedBgs)) {
     if (!bgData || !bgData.dataUrl) continue;
@@ -78713,7 +79149,7 @@ function _restoreProject(data) {
   // den aktive over. Faste array-slotter (fylt ved indeks, ikke push) så rekkefølgen i lista blir
   // deterministisk uansett hvilket bilde som tilfeldigvis blir ferdig lastet først.
   S.bgRefs = {};
-  for (const [k, refArr] of Object.entries(data.bgRefs || {})) {
+  for (const [k, refArr] of Object.entries(_savedRefs)) {   // 162: etter opprydding av '__global__'
     if (!Array.isArray(refArr) || !refArr.length) continue;
     S.bgRefs[k] = new Array(refArr.length).fill(null);
     refArr.forEach((refData, idx) => {

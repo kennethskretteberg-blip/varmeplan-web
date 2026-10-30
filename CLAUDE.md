@@ -211,6 +211,14 @@ Rooms may use background drawings (PDF, JPG, PNG) as visual references.
 Background files are loaded per project.
 If a background file is replaced with the same filename, the system reloads it automatically, preserving scale and placement.
 
+**Plantegningen er låst til etasjen (162).** `S.bgs`/`S.bgRefs` er nøklet per etasje; `'__global__'` finnes
+**bare** i prosjekter uten etasjer (tegnefilteret `_bgKeyOnActiveFloor` håndhever det). Hver import bærer en
+import-kontekst (`_bgImportCtx`, blokken «162 · IMPORT-KONTEKST») som **parameter** gjennom hele kjeden —
+målretasjen bindes synkront når fila velges/slippes. **Ny importvei: aldri les `S.ui.activeFloorId` etter en
+await, og aldri en global «målretasje»-variabel** — lag en kontekst ved start og send den videre. Etter await:
+`_bgCtxResolveFloor(ctx)` (null = etasjen er slettet → `_bgCtxAbort`). Gamle `__global__`-nøkler ryddes ved
+åpning (`_bgMigrateGlobalKeys`). Regresjon: `_bgFloorRegressionTest()`.
+
 ---
 
 # Rendering Layers
