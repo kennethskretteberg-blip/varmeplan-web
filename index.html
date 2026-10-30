@@ -8303,25 +8303,20 @@ function _presentClearSelections() {
 }
 // 116 (Kenneth 21.10.2026): «Jeg ønsker at et rom allerede er valgt når presentasjonen åpner.
 // Det er ikke lett å forstå at man skal trykke på et rom for å få opp detaljer.»
-// Første rom MED produkter i romlistens rekkefølge (S.rooms, aktiv etasje); finnes ingen, det
-// første rommet. Returnerer id eller null. `_presentAutoValgt` holder hjelpelinja i kortet til
-// kunden selv har valgt et annet rom.
+// 166 (Kenneth 30.10.2026): «Den bør alltid åpnes som "viser hele planen" — da får man romlista
+// nedover i baren.» Forhåndsvalget fra 116/119 (`_presentForhaandsvalgtRom`: første rom med
+// produkter, over alle etasjer) er tatt bort — det 116 ville løse («ikke lett å forstå at man
+// skal trykke på et rom») løses nå av innledningen øverst på nivå 1 (`_presentPanelIntroHtml`).
+// `_presentAutoValgt` står igjen som flagg (ingen leser det etter 138; false fra åpning).
 let _presentAutoValgt = false;
-// 119 (Kenneth 21.10.2026, svar 116/5): forhåndsvalget ser på ALLE etasjer — etasjerekkefølge
-// (`S.floors`), så romrekkefølge — og `_presentEnter` bytter til rommets etasje. Før: bare
-// aktiv etasje, så et prosjekt med tom første etasje åpnet på et rom uten produkter.
+// 119: ALLE etasjer — etasjerekkefølge (`S.floors`), så romrekkefølge. Brukes av ‹ › og
+// piltastene på nivå 2 (138).
 function _presentRomIEtasjerekkefolge() {
   const alle = _presentDrawnRooms();
   const ut = [];
   for (const f of (S.floors || [])) for (const r of alle) if (r.floorId === f.id) ut.push(r);
   for (const r of alle) if (!ut.includes(r)) ut.push(r);   // rom uten etasje til slutt
   return ut;
-}
-function _presentForhaandsvalgtRom() {
-  const rom = _presentRomIEtasjerekkefolge();
-  const med = rom.find(r => _presentRoomProduct(r));
-  const valgt = med || rom[0] || null;
-  return valgt ? valgt.id : null;
 }
 // Rom i en annen etasje: bytt etasje, ellers er rommet usynlig på lerretet (117/4, nå delt
 // med forhåndsvalget). Returnerer true når etasjen ble byttet.
@@ -8349,16 +8344,14 @@ function _presentEnter(offentlig) {
   const det = document.getElementById('present-detail'); if (det) det.style.display = 'none';
   canvas.style.cursor = 'grab';
   resizeCanvas();   // canvas-wrap er nå full bredde (sidebar/topbar skjult)
-  // 116: et rom er valgt fra første sekund — hele planen vises fortsatt (fitAll under), med det
-  // valgte rommet uthevet og detaljene synlige. Gjelder ren presentasjon OG forslagslenke
-  // (`_forslagStart` tegner kortet på nytt når forslagslaget er lastet).
-  // 119: forhåndsvalget kan ligge i en annen etasje — bytt FØR fitAll, så planen som vises er
-  // den rommet ligger i.
-  S.ui.presentRoomId = _presentForhaandsvalgtRom();
-  _presentAutoValgt = S.ui.presentRoomId != null;
-  _presentByttTilRommetsEtasje(S.ui.presentRoomId);
-  fitAll();         // vis hele prosjektet
+  // 166: alltid nivå 1 — hele planen med romlista (og innledningen) i panelet. Panelet monteres
+  // FØR fitAll: det er 320 px bredt som flex-søsken til lerretet, og ⚠ MÅLT (STEG 0): med fitAll
+  // først lå første romkolonne bak panelet (panX 1150 på 8-romsfiksturen, Stue begynte i x = 320).
+  // `_kundeMonterBar` kaller resizeCanvas i en setTimeout — her trengs bredden synkront.
+  _presentAutoValgt = false;
   _presentRenderDetail();
+  resizeCanvas();
+  fitAll();         // vis hele prosjektet — ved siden av panelet
   render();
 }
 function _presentExit() {
@@ -8732,9 +8725,14 @@ async function _forslagStart(token) {
   };
   S.ui.kundeMode = 'forslag';
   document.body.classList.add('kunde-forslag');
+  // 166: lenka åpner på nivå 1 (romlista + innledning) — `_presentEnter` har alt satt null og
+  // kjørt fitAll med panelet montert; her gjentas bare nivået, så ingen senere endring i
+  // `_presentEnter` kan åpne forslagslenka i et rom. (Ingen ny fitAll: panelet har samme bredde
+  // med forslagslaget, bare foten kommer til.)
+  S.ui.presentRoomId = null; _ppIntroRomId = null;
   _presentRenderBar();
   _forslagRenderBunn();
-  _presentRenderDetail();   // 116: kortet ble tegnet FØR forslagslaget fantes — nå med «Hva synes du?»
+  _presentRenderDetail();   // 116: panelet tegnes på nytt med forslagslaget (innledning, fot)
   render();
   return true;
 }
@@ -9612,7 +9610,7 @@ function _presentPanelRomlisteHtml() {
         style="${r.id === valgtId && r.color ? 'border-left-color:' + r.color : ''}">
       <div style="flex:1;min-width:0">
         <div class="n">${esc(r.name || 'Rom')}</div>
-        <div class="s">${_presentArealTekst(r).netto} · ${prod ? esc(prod.name) : 'ingen varme planlagt'}</div>
+        <div class="s">${_presentArealTekst(r).netto} · ${prod ? esc(prod.name) : 'ingen varme planlagt'}${_forslagMaalRomEndret(r.id) ? '<span style="color:#f0b232"> · mål rettet</span>' : ''}</div>
       </div>${merke}</div>`;
   };
   const grupper = _presentPanelRom();
@@ -9663,21 +9661,72 @@ function _presentPanelNavHtml(smal) {
 function _presentPanelKroppHtml() {
   const room = _presentPanelRomValgt();
   const maalKan = _forslagAktiv() && _forslagMaalKan();
-  const maal = maalKan ? `<div class="pp-sec" id="_pp-maal">${_forslagMaalHtml(false)}</div>` : '<div class="pp-sec" id="_pp-maal" style="display:none"></div>';
   // Målmodus er det kunden holder på med: øverst på begge nivåer.
   const maalOverst = _forslagMaalModus();
+  const maal = maalOverst ? `<div class="pp-sec" id="_pp-maal">${_forslagMaalHtml(false)}</div>` : '';
   if (room) {
     if (_forslagAktiv() && _ppIntroRomId == null) _ppIntroRomId = room.id;
-    return `${maalOverst ? maal : ''}
+    // 166: rommets to handlinger samlet på nivå 2 — «Rett målene på dette rommet» (når lenka
+    // tillater det) rett under hodet, og forslaget («Hva synes du?») først i kortet som før.
+    // Ingen egen «Foreslå endring»-knapp her: kortet med OK/Foreslå ER det valget, og det står
+    // alt øverst i kortet (138) — en knapp til ville bare pekt 40 px lenger ned.
+    const romMaal = (maalKan && !maalOverst) ? `<div class="pp-sec" id="_pp-rommaal">${_forslagRomMaalHtml(room)}</div>` : '';
+    return `${maal}${romMaal}
     <div class="pp-sec" id="_pp-valgt">${_presentRoomDetailHtml(room, true)}</div>`;
   }
-  return `${maalOverst ? maal : ''}
+  // 166: nivå 1 — innledningen (`#_pp-intro`) først i forslagslenka (Kenneth: «det første som
+  // vises i venstrebaren bør være en god forklaring»); i ren presentasjon er den én linje og
+  // står over romlista, under prosjektet. `#_pp-maal` nederst er nå bare en oppsummering av
+  // rettede mål (hopp til rommet + Angre) — ingen «Endre mål»-knapp, inngangen er per rom.
+  const intro = `<div class="pp-sec" id="_pp-intro">${_presentPanelIntroHtml()}</div>`;
+  const oppsum = maalOverst ? '' : `<div class="pp-sec" id="_pp-maal"${maalKan && _forslagMaalHarEndringer() ? '' : ' style="display:none"'}>${maalKan ? _forslagMaalOppsumHtml() : ''}</div>`;
+  return `${maal}${_forslagAktiv() ? intro : ''}
     <div class="pp-sec" id="_pp-prosjekt">${_presentPanelProsjektHtml()}</div>
+    ${_forslagAktiv() ? '' : intro}
     <div class="pp-sec" id="_pp-romliste">
       <div class="pp-h">Rom <a onclick="_presentPanelVisAlt()">Vis hele planen</a></div>
       ${_presentPanelRomlisteHtml()}
     </div>
-    ${maalOverst ? '' : maal}`;
+    ${oppsum}`;
+}
+// 166: innledningen på nivå 1. Forslagslenka: hva kunden kan gjøre (si sin mening per rom, rette
+// mål når lenka tillater det, sende). Ren presentasjon: én linje. Vises alltid — kort, ingen
+// lukking å huske.
+function _presentPanelIntroHtml() {
+  if (!_forslagAktiv()) return '<div style="font-size:12px;color:var(--dim);line-height:1.45">Velg et rom i lista eller trykk i tegningen for detaljer.</div>';
+  const org = esc(_forslagState.orgName || 'avsenderen');
+  const maal = _forslagMaalKan()
+    ? ` <b>Stemmer ikke målene?</b> Du kan rette dem selv inne på rommet — da regner ${org} om utlegget etterpå.` : '';
+  return `<div style="font-size:12.5px;line-height:1.5"><b>Se gjennom planen og si din mening.</b> Velg et rom i lista under, eller trykk på rommet i tegningen. For hvert rom kan du si at det er greit, foreslå et annet produkt eller en annen effekt, og skrive en kommentar.${maal} Til slutt trykker du <b>Send forslag</b> nederst.</div>`;
+}
+// 166: rommets målhandling på nivå 2 — rettede mål i DETTE rommet (med Angre) og knappen som
+// starter 118-målmodusen for rommet (`_forslagMaalStart(roomId)`, samme maskineri).
+function _forslagRomMaalHtml(room) {
+  const smal = _kundeErSmal();
+  const endringer = _forslagMaalEndringer().filter(e => e.roomId === room.id);
+  const liste = endringer.length ? `<div style="margin-bottom:8px">${endringer.map(e => _forslagMaalRadHtml(e, false)).join('')}</div>` : '';
+  return `${liste}<button onclick="_forslagMaalStart(${room.id})" style="width:100%;min-height:${smal ? 44 : 36}px;padding:0 12px;border-radius:9px;font-size:12.5px;font-weight:600;cursor:pointer;
+      border:1px solid var(--border);background:var(--surface2);color:var(--text)">📐 Rett målene på dette rommet</button>`;
+}
+// 166: nivå 1 — oppsummering av rettede mål i alle rom («2 mål rettet · vis»), med hopp til
+// rommet og Angre. Ingen «Endre mål» her lenger.
+let _ppMaalOppsumApen = false;
+function _forslagMaalOppsumHtml() {
+  const endringer = _forslagMaalEndringer();
+  if (!endringer.length) return '';
+  const n = endringer.length;
+  return `<div class="pp-h">Mål</div>
+    <div style="font-size:12.5px"><b>${n}</b> mål rettet · <a href="#" onclick="event.preventDefault();_ppMaalOppsumApen=!_ppMaalOppsumApen;_presentRenderDetail()" style="color:var(--accent);font-weight:600;text-decoration:none">${_ppMaalOppsumApen ? 'skjul' : 'vis'}</a></div>
+    ${_ppMaalOppsumApen ? `<div style="margin-top:6px">${endringer.map(e => _forslagMaalRadHtml(e, true)).join('')}</div>` : ''}`;
+}
+// Én rad per rettet mål: [romnavn (lenke til rommet) ·] detalj … Angre. Delt av nivå 1, nivå 2 og
+// målmodus-seksjonen.
+function _forslagMaalRadHtml(e, medRom) {
+  const rom = medRom ? `<a href="#" onclick="event.preventDefault();_presentPanelVelgRom(${e.roomId})" style="color:var(--accent);font-weight:600;text-decoration:none">${esc(e.romNavn)}</a>: ` : '';
+  return `<div style="display:flex;align-items:center;gap:8px;min-height:30px;font-size:12px">
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rom}${esc(e.detalj)}</span>
+        <a href="#" onclick="event.preventDefault();${e.angre}" style="color:var(--accent);font-size:11.5px;font-weight:600;text-decoration:none">Angre</a>
+      </div>`;
 }
 
 // ═══ 118 · ENDRE MÅL / LÅS MÅL I FORSLAGSLENKA ══════════════════════════════════════════
@@ -9695,8 +9744,21 @@ function _presentPanelKroppHtml() {
 // `_kundeRenderBar` tegner panelet i stedet for #_kunde-bar. Ingen kopi av maskineriet.
 function _forslagMaalKan() { return !!(_forslagState && _forslagState.maal && _forslagState.maal.kan); }
 function _forslagMaalModus() { return !!(_forslagAktiv() && _forslagState.maal && _forslagState.maal.modus); }
-function _forslagMaalStart() {
+// 166: målmodusen startes fra romvisningen («Rett målene på dette rommet») og gjelder da bare
+// det åpne rommet: veggene i andre rom kan ikke velges. Gaten er avledet, ikke lagret — rommet
+// som er åpent på nivå 2 (`S.ui.presentRoomId`) ER rommet kunden retter; går kunden til nivå 1
+// (← Alle rom) mens modusen står på, gjelder alle rom som i 118. Mållenka (`?kunde=`, modus
+// maal) har aldri gate (`_forslagMaalModus` er false der).
+function _forslagMaalGateRom() { return (_forslagMaalModus() && S.ui.presentRoomId != null) ? S.ui.presentRoomId : null; }
+function _forslagMaalRomLov(roomId) { const g = _forslagMaalGateRom(); return g == null || roomId === g; }
+function _forslagMaalStart(roomId) {
   if (!_forslagAktiv() || !_forslagMaalKan()) return;
+  // 166: fra et rom — velg og zoom til det (samme vei som romlista), så gaten over gjelder det.
+  if (roomId != null && S.rooms.some(r => r.id === roomId)) {
+    _presentByttTilRommetsEtasje(roomId);
+    S.ui.presentRoomId = roomId; _presentAutoValgt = false;
+    fitRoom(roomId);
+  }
   if (!_kundeState) {
     _kundeState = { token: _forslagState.token, mode: 'forslag', note: '', orgName: _forslagState.orgName,
       askedWalls: [], edits: new Map(), vertexDelta: {}, fixedEnd: {}, name: '', comment: '' };
@@ -9741,7 +9803,8 @@ function _forslagMaalEndringer() {
     const var0 = o ? Math.round(Math.hypot(o.points[(i + 1) % n].x - o.points[i].x, o.points[(i + 1) % n].y - o.points[i].y)) : 0;
     // `_kundeGizmoSlipp` skriver naboenes lengder også når de ikke endret seg — ingen endring å vise.
     if (Math.round(cm) === var0) continue;
-    ut.push({ roomId: room.id, tekst: `${room.name || 'Rom'}: vegg ${i + 1} ${var0} → ${Math.round(cm)} cm`,
+    ut.push({ roomId: room.id, romNavn: room.name || 'Rom', detalj: `vegg ${i + 1} ${var0} → ${Math.round(cm)} cm`,
+              tekst: `${room.name || 'Rom'}: vegg ${i + 1} ${var0} → ${Math.round(cm)} cm`,
               angre: `_kundeTilbakestillVegg(${room.id},${i})` });
   }
   const vd = _kundeState.vertexDelta || {};
@@ -9750,7 +9813,8 @@ function _forslagMaalEndringer() {
     if (!d || (Math.abs(d.dx) < 0.01 && Math.abs(d.dy) < 0.01)) continue;
     const room = S.rooms.find(r => String(r.id) === rid);
     if (!room) continue;
-    ut.push({ roomId: room.id, tekst: `${room.name || 'Rom'}: hjørne ${parseInt(vi, 10) + 1} flyttet ${Math.round(d.dx)} / ${Math.round(d.dy)} cm`,
+    ut.push({ roomId: room.id, romNavn: room.name || 'Rom', detalj: `hjørne ${parseInt(vi, 10) + 1} flyttet ${Math.round(d.dx)} / ${Math.round(d.dy)} cm`,
+              tekst: `${room.name || 'Rom'}: hjørne ${parseInt(vi, 10) + 1} flyttet ${Math.round(d.dx)} / ${Math.round(d.dy)} cm`,
               angre: `_kundeTilbakestillHjorne(${room.id},${vi})` });
   }
   return ut;
@@ -9760,22 +9824,19 @@ function _forslagMaalRomEndret(roomId) { return _forslagAktiv() && _forslagMaalE
 // Seksjonen «Mål». `kompakt` = den lukkede skuffen på mobil.
 function _forslagMaalHtml(kompakt) {
   if (!_forslagAktiv() || !_forslagMaalKan()) return '';
+  // 166: utenfor målmodus tegnes ingenting her — nivå 1 har oppsummeringen
+  // (`_forslagMaalOppsumHtml`), nivå 2 rommets handling (`_forslagRomMaalHtml`). «Endre mål» finnes
+  // ikke lenger som global knapp.
+  if (!_forslagMaalModus()) return '';
   const smal = _kundeErSmal();
-  const endringer = _forslagMaalEndringer();
-  const liste = endringer.length ? `<div style="margin-top:8px">${endringer.map(e =>
-      `<div style="display:flex;align-items:center;gap:8px;min-height:30px;font-size:12px">
-        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.tekst)}</span>
-        <a href="#" onclick="event.preventDefault();${e.angre}" style="color:var(--accent);font-size:11.5px;font-weight:600;text-decoration:none">Angre</a>
-      </div>`).join('')}</div>` : '';
+  // 166: startet fra et rom → bare rommets egne endringer her (de andre står på nivå 1).
+  const gate = _forslagMaalGateRom();
+  const gateRom = gate != null ? S.rooms.find(r => r.id === gate) : null;
+  const endringer = _forslagMaalEndringer().filter(e => gate == null || e.roomId === gate);
+  const liste = endringer.length ? `<div style="margin-top:8px">${endringer.map(e => _forslagMaalRadHtml(e, gate == null)).join('')}</div>` : '';
   const knapp = (fn, tekst, primær) =>
     `<button onclick="${fn}" style="min-height:${smal ? 44 : 36}px;padding:0 16px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;
       border:${primær ? 'none' : '1px solid var(--border)'};background:${primær ? 'var(--info)' : 'var(--surface2)'};color:${primær ? '#fff' : 'var(--text)'}">${tekst}</button>`;
-  if (!_forslagMaalModus()) {
-    return `${kompakt ? '' : '<div class="pp-h">Mål</div>'}
-      <div style="font-size:12px;color:var(--dim);line-height:1.45">Stemmer målene? Du kan rette dem.</div>
-      ${liste}
-      <div style="margin-top:9px">${knapp('_forslagMaalStart()', 'Endre mål', false)}</div>`;
-  }
   // Målmodus: valgt vegg / hjørne + Lås mål. Tallfeltet har samme id som mållenkas
   // (`_kf-<rom>-<idx>`), så `_kundeVelgVegg` finner og fokuserer det.
   const v = _kundeValgtVegg();
@@ -9804,9 +9865,9 @@ function _forslagMaalHtml(kompakt) {
       <b style="color:#ffa726">${esc(h.room.name || 'Rom')} · hjørne ${h.idx + 1}</b> valgt — dra det dit det skal, eller bruk piltastene.
       <a href="#" onclick="event.preventDefault();_kundeTilbakestillHjorne(${h.room.id},${h.idx})" style="color:var(--accent);margin-left:6px">Tilbakestill</a></div>`;
   } else {
-    valgt = `<div style="margin-top:8px;font-size:12px;color:var(--text);line-height:1.45">Trykk på en vegg eller et hjørne i tegningen. Dra veggen inn eller ut, eller skriv inn riktig mål.</div>`;
+    valgt = `<div style="margin-top:8px;font-size:12px;color:var(--text);line-height:1.45">Trykk på en vegg eller et hjørne${gateRom ? ' i ' + esc(gateRom.name || 'rommet') : ''} i tegningen. Dra veggen inn eller ut, eller skriv inn riktig mål.</div>`;
   }
-  return `${kompakt ? '' : '<div class="pp-h">Mål · du retter nå</div>'}
+  return `${kompakt ? '' : `<div class="pp-h">Mål · du retter nå${gateRom ? ' · ' + esc(gateRom.name || 'Rom') : ''}</div>`}
     ${valgt}
     ${kompakt ? '' : liste}
     ${endringer.length ? `<div style="font-size:11px;color:var(--dim);margin-top:8px;line-height:1.4">Utlegget i rom du har endret oppdateres etter at målene er bekreftet.</div>` : ''}
@@ -11345,6 +11406,19 @@ function _kundeMaalAktiv() {
   if (!S.ui) return false;
   if (S.ui.kundeMode === 'maal') return true;
   return S.ui.kundeMode === 'forslag' && !!(_forslagState && _forslagState.maal && _forslagState.maal.modus);
+}
+// 166: vegg-treff i målmodus (mousedown og markør). Startet fra et rom (`_forslagMaalGateRom`)
+// ses rommets egne vegger FØRST — `hitTest` foretrekker valgt rom, og en vegg delt med
+// naborommet ville ellers truffet naboen — og treff i andre rom gir null. Uten gate (mållenka,
+// målmodus fra nivå 1) nøyaktig som `hitTest` før.
+function _kundeVeggTreff(wx, wy) {
+  const gate = _forslagMaalGateRom();
+  const forrige = S.ui.selectedRoomId;
+  if (gate != null) S.ui.selectedRoomId = gate;
+  let ht = null;
+  try { ht = hitTest(wx, wy); } finally { S.ui.selectedRoomId = forrige; }
+  if (!ht || ht.wallId == null || !_forslagMaalRomLov(ht.roomId)) return null;
+  return ht;
 }
 function _kundeLagreOriginal() {
   if (!_kundeState) return;
@@ -27377,14 +27451,19 @@ function _kundeforslagRegressionTest() {
         S.ui.kundeMode = 'forslag'; S.ui.presentPublic = true; S.ui.present = true; S.ui._pdfMode = false;
         S.ui.presentRoomId = null;
         S.cables = [{ id: 9, roomId: 2, productId: kab.id, runs: [], direction: 'v' }];
-        check('K: forhåndsvalget er første rom MED produkter (Bad), ikke første rom', 2,
-          _presentForhaandsvalgtRom() === 2, _presentForhaandsvalgtRom());
+        // 166 (Kenneth 30.10.2026): lenka åpner ALLTID på nivå 1 med hele planen — forhåndsvalget
+        // fra 116/119 («første rom med produkter») er tatt bort. Sjekkene under erstatter de to
+        // som låste forhåndsvalget («første rom MED produkter (Bad)», «uten produkter velges første rom»).
+        checkIkke('K/166: forhåndsvalget _presentForhaandsvalgtRom finnes ikke lenger (116/119 → 166)',
+          typeof _presentForhaandsvalgtRom === 'function', 'står igjen');
+        check('K/166: _presentEnter åpner på nivå 1 (bare «presentRoomId = null») og monterer panelet FØR fitAll', true,
+          !/_presentForhaandsvalgtRom|_presentByttTilRommetsEtasje/.test(uK(_presentEnter))
+          && (uK(_presentEnter).match(/S\.ui\.presentRoomId = /g) || []).length === 1 && /S\.ui\.presentRoomId = null;/.test(uK(_presentEnter))
+          && /_presentRenderDetail\(\)/.test(uK(_presentEnter)) && uK(_presentEnter).indexOf('_presentRenderDetail()') < uK(_presentEnter).indexOf('fitAll()'),
+          'ikke koblet');
         S.cables = [];
-        check('K: uten produkter velges første rom', 1, _presentForhaandsvalgtRom() === 1, _presentForhaandsvalgtRom());
-        check('K: _presentEnter bruker forhåndsvalget og tegner kortet', true,
-          /_presentForhaandsvalgtRom\(\)/.test(uK(_presentEnter)) && /_presentRenderDetail\(\)/.test(uK(_presentEnter)), 'ikke koblet');
-        check('K: forslagslaget tegner kortet på nytt når det er lastet', true,
-          /_presentRenderDetail\(\)/.test(uK(_forslagStart)), 'kortet mangler «Hva synes du?» ved åpning');
+        check('K: forslagslaget tegner panelet på nytt når det er lastet — 166: på nivå 1', true,
+          /_presentRenderDetail\(\)/.test(uK(_forslagStart)) && /S\.ui\.presentRoomId = null;/.test(uK(_forslagStart)), 'kortet mangler «Hva synes du?» ved åpning');
         checkIkke('K: hover utenfor rom nuller ikke lenger valget',
           /if \(id !== S\.ui\.presentRoomId\)/.test(uK(_presentHover)), 'nulles ved første musebevegelse');
         checkIkke('K: hjelpelinja «Trykk på et annet rom» er borte (138: «← Alle rom» står i hodet)',
@@ -27430,13 +27509,26 @@ function _kundeforslagRegressionTest() {
         S.ui.kundeMode = 'forslag';
         _forslagState = { token: 't', status: 'open', note: '', orgName: 'Testfirma', valg: new Map(), navn: '', kommentar: '', sendt: false };
         check('L: panelet er aktivt i forslagslenka', true, _presentPanelAktiv() === true, _presentPanelAktiv());
+        // 166: selve åpningen — nivå 1 med hele planen, innledning øverst, ingen #_pp-valgt.
+        _presentEnter(true); _ppIntroRomId = null;
+        check('L/166: _presentEnter åpner på nivå 1: romlista, innledning, ingen #_pp-valgt, fitAll etter panelet', true,
+          S.ui.presentRoomId == null && _presentAutoValgt === false && !!$('_pp-intro') && !!$('_pp-romliste') && !$('_pp-valgt'), String(S.ui.presentRoomId));
         S.ui.presentRoomId = null; _ppIntroRomId = null;   // 138: lista er nivå 1
         _presentRenderDetail();
         // 138: nivå 1 har lista og ikke rommet
         check('L/138: nivå 1 (ingen valgt rom) har romlista og IKKE #_pp-valgt', true,
           !!$('_pp-romliste') && !$('_pp-valgt') && !$('_pp-nav'), 'feil nivå');
-        check('L: plassen for «Endre mål» (118) finnes (nivå 1)', true, !!$('_pp-maal'), 'mangler');
+        // 166: «Endre mål» (118) bor ikke lenger på nivå 1 — #_pp-maal er en skjult oppsummering til
+        // det finnes rettede mål. (Før: «plassen for «Endre mål» (118) finnes (nivå 1)».)
+        check('L/166: #_pp-maal finnes på nivå 1, er skjult uten rettede mål og har ingen «Endre mål»', true,
+          !!$('_pp-maal') && $('_pp-maal').style.display === 'none' && !/Endre mål/.test($('_pp-kropp').innerHTML), 'mangler/vises');
+        check('L/166: innledningen står ØVERST på nivå 1 (før prosjektet) med lenkas orgnavn og «Send forslag»', true,
+          $('_pp-kropp').firstElementChild.id === '_pp-intro' && /Se gjennom planen og si din mening/.test($('_pp-intro').textContent)
+          && /Testfirma|Send forslag/.test($('_pp-intro').textContent) && $('_pp-intro').nextElementSibling.id === '_pp-prosjekt',
+          $('_pp-kropp').firstElementChild.id);
+        checkIkke('L/166: uten mål-lov nevner innledningen ikke målene', /Stemmer ikke målene/.test($('_pp-intro').textContent), 'nevner mål');
         S.ui.presentRoomId = 1; _presentRenderDetail();
+        checkIkke('L/166: uten mål-lov har nivå 2 ingen «Rett målene på dette rommet»', !!$('_pp-rommaal') || /Rett målene/.test($('_pp-kropp').innerHTML), 'knappen vises');
         // 119 (MÅLT): seksjon C (`_forslagPil` uten presentasjon) etterlater en fast #_fors-bunn i
         // DOM-en, og `_presentRenderDetail` rører den ikke — sjekken under gjaldt derfor hvor
         // testen ble kjørt (grønn i en levende forslagslenke, rød i editoren). Det som skal
@@ -27528,6 +27620,10 @@ function _kundeforslagRegressionTest() {
         checkIkke('L: ...men ingen Send og ingen «Hva synes du?»', !!$('_pp-send') || /Hva synes du/.test($('_pp-valgt').innerHTML), 'forslagsting i ren presentasjon');
         S.ui.presentRoomId = null; _presentRenderDetail();
         check('L: ren presentasjon har romlista (nivå 1)', true, !!$('_pp-rom-1'), 'mangler');
+        check('L/166: ren presentasjon har én intro-linje mellom prosjektet og romlista', true,
+          !!$('_pp-intro') && /Velg et rom i lista eller trykk i tegningen for detaljer/.test($('_pp-intro').textContent)
+          && $('_pp-intro').previousElementSibling.id === '_pp-prosjekt' && $('_pp-intro').nextElementSibling.id === '_pp-romliste'
+          && !/Se gjennom planen/.test($('_pp-intro').textContent), $('_pp-intro') ? $('_pp-intro').textContent.trim() : 'mangler');
         check('L: KPI-ene fra topplinja ligger i Prosjekt-seksjonen', true, /Installert effekt/.test($('_pp-prosjekt').textContent) && /Oppvarmet/.test($('_pp-prosjekt').textContent), 'borte');
         check('L: topplinja er skjult i panelmodus', true, (_presentRenderBar(), $('present-bar').style.display === 'none'), $('present-bar').style.display);
         // Mållenka er ikke rørt
@@ -27540,6 +27636,8 @@ function _kundeforslagRegressionTest() {
         S.ui.present = lagretL.present; S.view.zoom = lagretL.zoom; S.view.panX = lagretL.panX; S.view.panY = lagretL.panY;
         _ppApen = lagretL.apen; _ppTvingSmal = lagretL.tving; S.cables = lagretL.cables; _presentAutoValgt = lagretL.auto;
         const pb = document.getElementById('present-bar'); if (pb && !S.ui.present) pb.style.display = 'none';
+        // 166: testen kalte _presentEnter(true) — rydd klassen og markøren den satte.
+        if (!S.ui.present) { document.body.classList.remove('present-mode'); canvas.style.cursor = 'default'; resizeCanvas(); }
       }
     }
 
@@ -27560,20 +27658,29 @@ function _kundeforslagRegressionTest() {
         _forslagState = { token: 't', status: 'open', note: '', orgName: 'Testfirma', valg: new Map(), navn: '', kommentar: '', sendt: false,
           maal: { kan: true, modus: false } };
         _presentRenderDetail();
-        check('M: «Mål»-seksjonen finnes med Endre mål når lenka tillater det', true,
-          $('_pp-maal') && $('_pp-maal').style.display !== 'none' && /Endre mål/.test($('_pp-maal').innerHTML) && /Stemmer målene/.test($('_pp-maal').innerHTML), 'mangler');
-        checkIkke('M: målmaskineriet er AV før «Endre mål»', _kundeMaalAktiv(), 'veggene var valgbare fra start');
+        // 166: «Endre mål» (118, nivå 1) er erstattet av «Rett målene på dette rommet» på nivå 2;
+        // nivå 1 har innledningen («Stemmer ikke målene? …») og en skjult oppsummering.
+        // (Før: «Mål»-seksjonen finnes med Endre mål når lenka tillater det.)
+        check('M/166: nivå 1 har ingen «Endre mål»; innledningen nevner målene med orgnavnet', true,
+          $('_pp-maal') && $('_pp-maal').style.display === 'none' && !/Endre mål/.test($('_pp-kropp').innerHTML)
+          && /Stemmer ikke målene/.test($('_pp-intro').textContent) && /Testfirma om utlegget/.test($('_pp-intro').textContent), 'mangler');
+        checkIkke('M: målmaskineriet er AV før «Rett målene»', _kundeMaalAktiv(), 'veggene var valgbare fra start');
         S.ui.presentRoomId = 1; _presentRenderDetail();
-        checkIkke('M/138: på nivå 2 er «Endre mål» skjult (den bor på nivå 1)', $('_pp-maal') && $('_pp-maal').style.display !== 'none' && /Endre mål/.test($('_pp-maal').innerHTML), 'vises på nivå 2');
+        // (Før 138→166: «på nivå 2 er «Endre mål» skjult (den bor på nivå 1)».)
+        check('M/166: nivå 2 har «Rett målene på dette rommet» under hodet, FØR «Hva synes du?»', true,
+          !!$('_pp-rommaal') && /Rett målene på dette rommet/.test($('_pp-rommaal').innerHTML)
+          && $('_pp-kropp').firstElementChild.id === '_pp-rommaal' && $('_pp-rommaal').nextElementSibling.id === '_pp-valgt'
+          && /_forslagMaalStart\(1\)/.test($('_pp-rommaal').innerHTML), $('_pp-kropp').firstElementChild.id);
+        checkIkke('M/166: ingen «Endre mål» på nivå 2 heller', /Endre mål/.test($('_pp-kropp').innerHTML), 'vises på nivå 2');
         S.ui.presentRoomId = null; _presentRenderDetail();
-        _forslagMaalStart();
-        check('M: «Endre mål» slår på målmaskineriet (delt gate) og CSS-stengslene', true,
+        _forslagMaalStart();   // 118-veien uten rom (nivå 1): alle rom, ingen gate
+        check('M: målmodus slår på målmaskineriet (delt gate) og CSS-stengslene', true,
           _kundeMaalAktiv() && document.body.classList.contains('kunde-maal') && !!_kundeState && _kundeState.original.size === 2, 'ikke på');
         check('M: hintet «Dra veggen inn eller ut, eller skriv inn riktig mål» står i panelet', true,
           /skriv inn riktig mål/.test($('_pp-maal').innerHTML) && /Lås mål/.test($('_pp-maal').innerHTML), 'mangler');
         S.ui.presentRoomId = 1; _presentRenderDetail();
-        check('M/138: målmodus på nivå 2: Mål-seksjonen med Lås mål står ØVERST i kroppen, før rommet', true,
-          !!$('_pp-maal') && /Lås mål/.test($('_pp-maal').innerHTML) && $('_pp-kropp').firstElementChild.id === '_pp-maal' && !!$('_pp-valgt'),
+        check('M/138: målmodus på nivå 2: Mål-seksjonen med Lås mål står ØVERST i kroppen, før rommet (166: uten #_pp-rommaal)', true,
+          !!$('_pp-maal') && /Lås mål/.test($('_pp-maal').innerHTML) && $('_pp-kropp').firstElementChild.id === '_pp-maal' && !!$('_pp-valgt') && !$('_pp-rommaal'),
           $('_pp-kropp').firstElementChild && $('_pp-kropp').firstElementChild.id);
         S.ui.presentRoomId = null; _presentRenderDetail();
         check('M/138: målmodus på nivå 1: Mål-seksjonen øverst', true, $('_pp-kropp').firstElementChild.id === '_pp-maal', $('_pp-kropp').firstElementChild.id);
@@ -27584,8 +27691,9 @@ function _kundeforslagRegressionTest() {
         check('M: valgt vegg får tallfelt med mållenkas id (_kf-1-0)', true, !!$('_kf-1-0') && $('_kf-1-0').value === '500', $('_kf-1-0') && $('_kf-1-0').value);
         _kundeSetWall(1, 0, 512);
         check('M: tastet mål bygger rommet om (vegg 1: 500 → 512)', 512, lenM(S.rooms[0], 0) === 512, lenM(S.rooms[0], 0));
-        check('M: endringen listes med rom, vegg, før og etter', 'Stue: vegg 1 500 → 512 cm',
-          _forslagMaalEndringer().length === 1 && _forslagMaalEndringer()[0].tekst === 'Stue: vegg 1 500 → 512 cm', JSON.stringify(_forslagMaalEndringer()));
+        check('M: endringen listes med rom, vegg, før og etter (166: også romNavn + detalj hver for seg)', 'Stue: vegg 1 500 → 512 cm',
+          _forslagMaalEndringer().length === 1 && _forslagMaalEndringer()[0].tekst === 'Stue: vegg 1 500 → 512 cm'
+          && _forslagMaalEndringer()[0].romNavn === 'Stue' && _forslagMaalEndringer()[0].detalj === 'vegg 1 500 → 512 cm', JSON.stringify(_forslagMaalEndringer()));
         check('M: rommet regnes som endret, Bad ikke', true, _forslagMaalRomEndret(1) && !_forslagMaalRomEndret(2), 'feil rom');
         check('M: detaljkortet sier «før endring» og at utlegget oppdateres', true,
           /før endring/.test(_presentRoomDetailHtml(S.rooms[0])) && /Utlegget oppdateres/.test(_presentRoomDetailHtml(S.rooms[0])), 'umerket');
@@ -27594,8 +27702,26 @@ function _kundeforslagRegressionTest() {
           /drawStairs\(\);\s*drawForslagMaalDemping\(\);/.test(String(render)) && String(render).indexOf('drawForslagMaalDemping') < String(render).indexOf('drawAllDimAnnotations'), 'feil lag');
         check('M: «Lås mål» slår maskineriet av og fjerner valget', true,
           (_forslagMaalLaas(), !_kundeMaalAktiv() && !document.body.classList.contains('kunde-maal') && S.ui.selectedWallId == null), 'fortsatt på');
-        check('M: etter låsing står endringen i panelet med Angre, og «Endre mål» kan åpnes igjen', true,
-          /500 → 512 cm/.test($('_pp-maal').innerHTML) && /Angre/.test($('_pp-maal').innerHTML) && /Endre mål/.test($('_pp-maal').innerHTML), $('_pp-maal').innerHTML.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 120));
+        // 166: nivå 1 viser bare oppsummeringen («1 mål rettet · vis»), ingen «Endre mål»; rommet
+        // (nivå 2) lister sin egen endring med Angre og «Rett målene» igjen.
+        // (Før: «etter låsing står endringen i panelet med Angre, og «Endre mål» kan åpnes igjen».)
+        check('M/166: etter låsing viser nivå 1 «1 mål rettet · vis» uten «Endre mål»', true,
+          $('_pp-maal').style.display !== 'none' && /<b>1<\/b> mål rettet/.test($('_pp-maal').innerHTML) && />vis</.test($('_pp-maal').innerHTML)
+          && !/Endre mål/.test($('_pp-kropp').innerHTML) && !/500 → 512/.test($('_pp-maal').innerHTML), $('_pp-maal').innerHTML.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 120));
+        _ppMaalOppsumApen = true; _presentRenderDetail();
+        check('M/166: «vis» lister endringen med hopp til rommet og Angre', true,
+          /_presentPanelVelgRom\(1\)/.test($('_pp-maal').innerHTML) && /Stue/.test($('_pp-maal').textContent) && /vegg 1 500 → 512 cm/.test($('_pp-maal').textContent)
+          && /Angre/.test($('_pp-maal').innerHTML) && />skjul</.test($('_pp-maal').innerHTML), $('_pp-maal').textContent.replace(/\s+/g, ' ').trim().slice(0, 120));
+        _ppMaalOppsumApen = false;
+        check('M/166: raden i romlista er merket «mål rettet» (Stue, ikke Bad)', true,
+          /mål rettet/.test($('_pp-rom-1').textContent) && !/mål rettet/.test($('_pp-rom-2').textContent), $('_pp-rom-1').textContent.trim());
+        S.ui.presentRoomId = 1; _presentRenderDetail();
+        check('M/166: rommet lister sin egen endring med Angre, og «Rett målene» kan trykkes igjen', true,
+          !!$('_pp-rommaal') && /vegg 1 500 → 512 cm/.test($('_pp-rommaal').textContent) && !/Stue:/.test($('_pp-rommaal').textContent)
+          && /Angre/.test($('_pp-rommaal').innerHTML) && /Rett målene på dette rommet/.test($('_pp-rommaal').innerHTML), $('_pp-rommaal') ? $('_pp-rommaal').textContent.trim() : 'mangler');
+        S.ui.presentRoomId = 2; _presentRenderDetail();
+        checkIkke('M/166: Bad lister ikke Stues endring', /500 → 512/.test($('_pp-rommaal').textContent), 'feil rom');
+        S.ui.presentRoomId = null; _presentRenderDetail();
         check('M: Send er mulig med bare mål rettet (foten sier «mål rettet»)', true,
           /mål rettet/.test($('_pp-fot').innerHTML) && !$('_pp-send').disabled, $('_pp-fot').textContent.trim());
         const pl = _forslagPayload();
@@ -27610,9 +27736,62 @@ function _kundeforslagRegressionTest() {
         // Angre tar rommet tilbake nøyaktig
         _kundeTilbakestillVegg(1, 0);
         check('M: Angre gir originalen tilbake (500) og tømmer lista', true, lenM(S.rooms[0], 0) === 500 && _forslagMaalEndringer().length === 0, lenM(S.rooms[0], 0));
+        // 166: målmodus FRA ET ROM («Rett målene på dette rommet»): rommet velges og zoomes, og
+        // bare det rommets vegger/hjørner kan velges. Gaten følger det åpne rommet.
+        _presentRenderDetail();
+        _forslagMaalStart(2);
+        check('M/166: «Rett målene på dette rommet» starter målmodus med rommet valgt og zoomet (fitRoom: pan = Bads midtpunkt)', true,
+          _forslagMaalModus() && _kundeMaalAktiv() && S.ui.presentRoomId === 2 && Math.round(S.view.panX) === 710 && Math.round(S.view.panY) === 120 && _forslagMaalGateRom() === 2,
+          [S.ui.presentRoomId, Math.round(S.view.panX), Math.round(S.view.panY), _forslagMaalGateRom()].join('/'));
+        check('M/166: gaten: Stue nei, Bad ja', true, !_forslagMaalRomLov(1) && _forslagMaalRomLov(2), _forslagMaalRomLov(1) + '/' + _forslagMaalRomLov(2));
+        {
+          // mousedown/mousemove på lerretet er anonyme lyttere — sveip kildeteksten som I-blokka i _kundelenkeRegressionTest.
+          const _kildeM = [...document.scripts].filter(sc => !sc.src).map(sc => sc.textContent).join('\n');
+          check('M/166: vegg-treffet i lerretet gir null på Stues vegg og Bads vegg på Bads (samme funksjon i mousedown og markør, hjørner gatet begge steder)', true,
+            _kundeVeggTreff(0, 160) === null && (_kundeVeggTreff(560, 120) || {}).roomId === 2
+            && /_kundeVeggTreff\(_kw\.x, _kw\.y\)/.test(_kildeM) && /_kundeVeggTreff\(_mw\.x, _mw\.y\)/.test(_kildeM)
+            && (_kildeM.match(/_forslagMaalRomLov\(r\.id\) && r\.points/g) || []).length === 2,
+            JSON.stringify([_kundeVeggTreff(0, 160), _kundeVeggTreff(560, 120), (_kildeM.match(/_forslagMaalRomLov\(r\.id\) && r\.points/g) || []).length]));
+        }
+        check('M/166: panelet sier hvilket rom som rettes', true,
+          $('_pp-kropp').firstElementChild.id === '_pp-maal' && /du retter nå · Bad/.test($('_pp-maal').textContent) && /hjørne i Bad/.test($('_pp-maal').textContent) && !$('_pp-rommaal'),
+          $('_pp-maal').textContent.replace(/\s+/g, ' ').trim().slice(0, 100));
+        _presentPanelNabo(-1);
+        check('M/166: ‹ flytter gaten med rommet (Stue)', 1, S.ui.presentRoomId === 1 && _forslagMaalGateRom() === 1 && _forslagMaalRomLov(1) && !_forslagMaalRomLov(2), _forslagMaalGateRom());
+        {
+          // ⚠ MÅLT: et tomt trykk i lerretet (ved siden av veggen, eller på en vegg i et annet rom) gikk
+          // present-veien i mouseup og satte presentRoomId = null → nivå 1 → gaten borte. Stubbet som i N.
+          const lagretRoomAt = _presentRoomAt;
+          try {
+            _presentRoomAt = () => null;
+            _panning = true; _presentPressPt = { x: 0, y: 0 };
+            _canvasMouseUp({ clientX: 0, clientY: 0 });
+            check('M/166: tomt trykk i lerretet i målmodus beholder rommet (gaten står)', 1, S.ui.presentRoomId === 1 && _forslagMaalGateRom() === 1, String(S.ui.presentRoomId));
+            _presentRoomAt = () => S.rooms[1];
+            _panning = true; _presentPressPt = { x: 0, y: 0 };
+            _canvasMouseUp({ clientX: 0, clientY: 0 });
+            check('M/166: trykk INNE i et annet rom bytter rom, og gaten følger (Bad)', 2, S.ui.presentRoomId === 2 && _forslagMaalGateRom() === 2, String(S.ui.presentRoomId));
+            _presentPanelNabo(-1);
+          } finally { _presentRoomAt = lagretRoomAt; _panning = false; _presentPressPt = null; }
+        }
+        _forslagMaalLaas();
+        check('M/166: «Lås mål» går tilbake til romvisningen (nivå 2, Stue, «Rett målene» igjen)', true,
+          !_kundeMaalAktiv() && S.ui.presentRoomId === 1 && !!$('_pp-valgt') && !!$('_pp-rommaal') && !$('_pp-maal'), String(S.ui.presentRoomId));
+        _forslagMaalStart(2); _presentPanelTilbake();
+        check('M/166: ← Alle rom i målmodus gir alle rom (ingen gate), Mål-seksjonen øverst på nivå 1', true,
+          _forslagMaalModus() && _forslagMaalGateRom() == null && _forslagMaalRomLov(1) && _forslagMaalRomLov(2) && $('_pp-kropp').firstElementChild.id === '_pp-maal',
+          String(_forslagMaalGateRom()));
+        _forslagMaalLaas();
+        check('M/166: mållenka har aldri gate (gaten er bare forslagslenkas målmodus)', true,
+          (S.ui.kundeMode = 'maal', S.ui.presentRoomId = 1, _forslagMaalGateRom() == null && _forslagMaalRomLov(2)), String(_forslagMaalGateRom()));
+        S.ui.kundeMode = 'forslag'; S.ui.presentRoomId = null; _presentRenderDetail();
         // Lenke med «Kunden kan rette mål» av
         _forslagState.maal.kan = false; _presentRenderDetail();
         checkIkke('M: lenke uten innstillingen viser ingen «Endre mål»', /Endre mål/.test(($('_pp-maal') || {}).innerHTML || ''), 'knappen vises');
+        checkIkke('M/166: ...ingen «Stemmer ikke målene» i innledningen', /Stemmer ikke målene/.test(($('_pp-intro') || {}).textContent || ''), 'nevner mål');
+        S.ui.presentRoomId = 1; _presentRenderDetail();
+        checkIkke('M/166: ...og ingen «Rett målene på dette rommet» på nivå 2', !!$('_pp-rommaal') || /Rett målene/.test($('_pp-kropp').innerHTML), 'knappen vises');
+        S.ui.presentRoomId = null;
         check('M: innstillingen leses fra note (innstilling:maal=av) i _forslagStart', true,
           /innstilling:maal=av/.test(String(_forslagStart)) && /innstilling:maal=av/.test(String(_delMaalEndret)) && /_del-maal/.test(String(_presentShareModal)), 'ikke koblet');
         // Kenneths side: Arbeid inn målene med den eksisterende innarbeidingen
@@ -27701,20 +27880,24 @@ function _kundeforslagRegressionTest() {
         _presentRoomAt = lagretN.roomAt;
         check('N: klikk (tap uten drag) i tegningen velger fortsatt rom i _canvasMouseUp', true,
           /S\.ui\.presentRoomId = r \? r\.id : null;/.test(uK(_canvasMouseUp)) && /_presentRoomAt\(e\)/.test(uK(_canvasMouseUp)), 'klikkveien borte');
-        // 3. Forhåndsvalg over etasjer: første etasje uten produkter, andre med.
+        // 3. 166: forhåndsvalget over etasjer (119) er borte — lenka åpner på nivå 1 uten etasjebytte.
+        //    Etasjerekkefølgen (`_presentRomIEtasjerekkefolge`) lever videre for ‹ › og piltastene,
+        //    etasjebyttet (`_presentByttTilRommetsEtasje`) for romlista og «Rett målene på dette rommet».
+        //    (Før: «forhåndsvalget finner rommet med produkter i 2. etasje», «_presentEnter bytter til
+        //    rommets etasje FØR fitAll», «uten produkter noe sted: første rom i første etasje».)
         S.floors = [{ id: 1, name: '1. etasje', order: 0, partId: 1 }, { id: 2, name: '2. etasje', order: 1, partId: 1 }];
         S.rooms[1].floorId = 2;
         S.ui.activeFloorId = 1;
         S.cables = [{ id: 9, roomId: 2, productId: kab.id, runs: [], direction: 'v' }];
-        check('N: forhåndsvalget finner rommet med produkter i 2. etasje', 2, _presentForhaandsvalgtRom() === 2, _presentForhaandsvalgtRom());
-        check('N: ...og _presentEnter bytter til rommets etasje FØR fitAll', true,
-          _presentByttTilRommetsEtasje(2) === true && S.ui.activeFloorId === 2
-          && uK(_presentEnter).indexOf('_presentByttTilRommetsEtasje(S.ui.presentRoomId)') < uK(_presentEnter).indexOf('fitAll()'), S.ui.activeFloorId);
+        checkIkke('N/166: forhåndsvalget finnes ikke, og _presentEnter bytter ikke etasje (119 → 166)',
+          typeof _presentForhaandsvalgtRom === 'function' || /_presentForhaandsvalgtRom|_presentByttTilRommetsEtasje/.test(uK(_presentEnter)), 'står igjen');
+        check('N/166: etasjerekkefølgen er etasje, så rom (Stue i 1., Bad i 2.)', '1,2', _presentRomIEtasjerekkefolge().map(r => r.id).join() === '1,2', _presentRomIEtasjerekkefolge().map(r => r.id).join());
+        check('N: etasjebyttet virker fortsatt (rom 2 → 2. etasje)', true, _presentByttTilRommetsEtasje(2) === true && S.ui.activeFloorId === 2, S.ui.activeFloorId);
         S.ui.activeFloorId = 1; S.cables = [];
-        check('N: uten produkter noe sted: første rom i første etasje', 1, _presentForhaandsvalgtRom() === 1, _presentForhaandsvalgtRom());
         S.rooms[1].floorId = 2; S.rooms[0].floorId = 2;   // begge i 2. etasje, 1. etasje tom
-        check('N: tom første etasje: første rom i etasjerekkefølge', 1, _presentForhaandsvalgtRom() === 1 && _presentRomIEtasjerekkefolge()[0].id === 1, _presentForhaandsvalgtRom());
-        check('N: romlista bruker samme etasjebytte (117/4 delt med forhåndsvalget)', true, /_presentByttTilRommetsEtasje\(id\)/.test(uK(_presentPanelVelgRom)), 'egen kopi');
+        check('N: tom første etasje: etasjerekkefølgen starter med rom 1', 1, _presentRomIEtasjerekkefolge()[0].id === 1, _presentRomIEtasjerekkefolge()[0].id);
+        check('N: romlista bruker samme etasjebytte (117/4) — og «Rett målene på dette rommet» (166)', true,
+          /_presentByttTilRommetsEtasje\(id\)/.test(uK(_presentPanelVelgRom)) && /_presentByttTilRommetsEtasje\(roomId\)/.test(uK(_forslagMaalStart)), 'egen kopi');
         S.rooms[0].floorId = 1; S.rooms[1].floorId = 1; S.floors = [S.floors[0]]; S.ui.activeFloorId = 1;
         // 4. Vegg-tabell per vegg i forslagssvar: tre endrede vegger, to krysses av.
         S.ui.present = false; S.ui.kundeMode = null; _forslagState = null;
@@ -68999,8 +69182,9 @@ canvas.addEventListener('mousedown', e=>{
     // rommet under markøren først — der er alle rom «valgbare».
     {
       const _kw0 = s2w(_kp.x, _kp.y);
-      const _kRom0 = S.rooms.find(r => r.points && r.points.length >= 3 && ptInPoly(_kw0.x, _kw0.y, r.points))
-        || S.rooms.find(r => (r.points || []).some(q => {
+      // 166: i målmodus for ett rom (forslagslenka) kan bare det rommets hjørner velges.
+      const _kRom0 = S.rooms.find(r => _forslagMaalRomLov(r.id) && r.points && r.points.length >= 3 && ptInPoly(_kw0.x, _kw0.y, r.points))
+        || S.rooms.find(r => _forslagMaalRomLov(r.id) && (r.points || []).some(q => {
              const sp = w2s(q.x, q.y); return Math.hypot(_kp.x - sp.x, _kp.y - sp.y) < _kTol + 12; }));
       if (_kRom0) {
         const _forrige = S.ui.selectedRoomId;
@@ -69024,7 +69208,7 @@ canvas.addEventListener('mousedown', e=>{
       return;
     }
     const _kw = s2w(_kp.x, _kp.y);
-    const _kHit = hitTest(_kw.x, _kw.y);
+    const _kHit = _kundeVeggTreff(_kw.x, _kw.y);   // 166: gatet på rommet i målmodus for ett rom
     if (_kHit && _kHit.wallId != null) {
       const _kRoom = S.rooms.find(r => (r.walls || []).some(w => w.id === _kHit.wallId));
       const _kIdx = _kRoom ? _kRoom.walls.findIndex(w => w.id === _kHit.wallId) : -1;
@@ -70764,14 +70948,14 @@ canvas.addEventListener('mousemove', e=>{
     else if (S.ui.selectedVertexIdx != null && hitYArrow(_mp.x, _mp.y)) _cur = 'ns-resize';
     else if (nearMoveArrow(_mp.x, _mp.y, _mTol)) _cur = _wallMoveCursor();
     else {
-      const _hitRom = S.rooms.find(r => r.points && r.points.length >= 3 && ptInPoly(_mw.x, _mw.y, r.points));
+      const _hitRom = S.rooms.find(r => _forslagMaalRomLov(r.id) && r.points && r.points.length >= 3 && ptInPoly(_mw.x, _mw.y, r.points));   // 166: gate
       const _forrige = S.ui.selectedRoomId;
       if (_hitRom) S.ui.selectedRoomId = _hitRom.id;
       const _hv = hitVertex(_mp.x, _mp.y);
       S.ui.selectedRoomId = _forrige;
       if (_hv) _cur = 'pointer';
       else {
-        const _ht = hitTest(_mw.x, _mw.y);
+        const _ht = _kundeVeggTreff(_mw.x, _mw.y);   // 166: gatet på rommet i målmodus for ett rom
         // Samme konstant som hovedmodulen, ikke en egen variant.
         if (_ht && _ht.wallId != null) { _cur = WALL_CURSOR; _nyHov = _ht.wallId; }
       }
@@ -71875,7 +72059,11 @@ function _canvasMouseUp(e){
       canvas.style.cursor = _hvile;
       if (_presentPressPt && Math.hypot(e.clientX - _presentPressPt.x, e.clientY - _presentPressPt.y) < 5) {
         const r = _presentRoomAt(e);
-        S.ui.presentRoomId = r ? r.id : null;
+        // 166: i målmodus beholdes rommet ved tomt trykk — ⚠ MÅLT: et trykk like ved en vegg som
+        // ikke traff (eller på en vegg i et annet rom) landet her med r = null og kastet kunden
+        // til nivå 1, der gaten («Rett målene på dette rommet») ikke gjelder. Trykk INNE i et
+        // annet rom bytter rom som før (gaten følger rommet, som ‹ ›).
+        if (r || !_forslagMaalModus()) S.ui.presentRoomId = r ? r.id : null;
         if (r) _presentAutoValgt = false;   // 116: kunden har funnet ut av det
         canvas.style.cursor = r ? 'pointer' : _hvile;
         _presentRenderDetail();

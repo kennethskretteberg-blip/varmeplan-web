@@ -1,0 +1,8 @@
+# 166 · Spørsmål
+
+1. **Intro-plassering i forslagslenka: før prosjektnavnet.** Jeg tok «det første som vises» bokstavelig, så «Se gjennom planen …» står over «Vestre Hals 43 / Prosjektert av …». Ren presentasjon har prosjektet først og én linje over romlista. Vil du ha prosjektnavnet først i forslagslenka også?
+2. **Ingen egen «Foreslå endring»-knapp på nivå 2.** Kortet «Hva synes du?» (OK som det er / Foreslå endring) står rett under «Rett målene på dette rommet», så en knapp til ville vært dobbel. Kostnaden er at kortet begynner 101 px ned (før 40). Greit, eller vil du ha de to valgene som én knapperad («Foreslå endring» · «Rett målene») og kortet først når man trykker?
+3. **Gaten følger rommet.** Trykk inne i et annet rom (eller ‹ ›) i målmodus bytter rom, og da kan det rommets vegger velges. Alternativet er å sperre rombytte til «Lås mål» er trykket. Hvilket?
+4. **Mållenka (`?kunde=`) mister et detaljkort.** 116 satte forhåndsvalgt rom også der, og `#present-detail` (areal/produkt for første rom) lå synlig til høyre fra åpning. Nå er det borte — jeg leser det som en rettelse (ingen har bedt om kortet der), men lenka står som «urørt» i prompten. OK?
+5. **Pre-eksisterende testlekkasje:** `_pdfExportSmokeTest` feiler når den kjøres rett etter `_kundelenkeRegressionTest` i samme fane (også på HEAD). Skal jeg finne hva kundelenke-testen etterlater (eget lite oppdrag), eller holder det at den er grønn alene?
+6. **Rader i romlista** får «· mål rettet» bakerst, men raden er én linje med ellipse — på 320 px blir det «… 47m · mål rett…». Heller et lite 📐-merke ved raden (som ✓/!)?
