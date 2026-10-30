@@ -79787,8 +79787,10 @@ function _showExportDialog() {
 // ═══ 155 · LEVENDE FORHÅNDSVISNING AV ROM I PDF-DIALOGEN (Kenneth 28.10.2026) ═══════════════
 // «Kunne zoome inn/ut og flytte … i tillegg flytte på labels.» Rommet tegnes på et eget lerret i
 // dialogen med SAMME mekanisme som PDF-en (`_renderRoomToImage`: midlertidig view på hovedlerretet,
-// `_pdfMode`, gjenoppretting) — bare i lerretets egen oppløsning (`opts.outW`), kopiert rett inn
-// (`opts.toCanvas`). Ingen kopi av tegnelogikken.
+// `_pdfMode`, gjenoppretting) — 165: i PDF-ens egen oppløsning og papirbredde (`targetWidthMm` fra
+// _pdfRoomImgLayout/_pdfFloorImgLayout, som exportPDF), tegnet i et skjult lerret (`opts.toCanvas`) og
+// skalert ned til dialoglerretet (_pdfPrevFit). Ingen kopi av tegnelogikken. Før 165 tegnet vi i
+// dialoglerretets egne piksler (`opts.outW`), og alt px-basert i kjedene fikk en annen cm-størrelse.
 //   • Hjul = zoom rundt pekeren, dra på tomt område = flytt → `room.pdfView` (lagres i prosjektet,
 //     neste PDF og kollegaer får det samme). Ett angresteg per bevegelse, autolagring etterpå.
 //   • Dra på en label = flytt labelen — samme `labelPos` (verdens-cm) som hovedlerretet skriver,
@@ -79799,7 +79801,7 @@ function _showExportDialog() {
 // Bare labels som hører til rommet kan dras herfra; naborom som stikker inn i utsnittet røres ikke.
 // 158: samme komponent (_expPreviewLive + _pdfPrev*) viser også plantegningen per etasje — se
 // _expPreviewFloor; `_pdfPrev.kind` skiller rom fra etasje, utsnittet skrives via _pdfPrevSetView.
-let _pdfPrev = null;   // { kind:'room'|'floor', roomId, floorId, roomIds:Set, cv, cur:{cx,cy,scale}, autoW, res, drag, undoTaken, wheelTimer, raf }
+let _pdfPrev = null;   // { kind:'room'|'floor', roomId, floorId, roomIds:Set, cv, hi (165: PDF-oppløsning), cur:{cx,cy,scale}, autoW, res, drag, undoTaken, wheelTimer, raf }
 
 function _expPreviewRooms() { return (S.rooms || []).filter(r => !r.listDraft); }
 // 158: dialogens avkryssede rom (Set) eller null = alle — samme filter som PDF-en (opts.rooms).
@@ -79891,8 +79893,9 @@ function _expPreviewLive(cfg) {
 
 // Tegn forhåndsvisningen nå (synkront). Lerretet får bredden dialogen har plass til (maks 50 vh
 // høyt, som <img>-en før 155), i enhetens pikseltetthet; aspektet er `_pdfRoomAspect` (rom) /
-// `_pdfFloorBox(...).aspect` (etasje, 158) — det samme sideoppsettet som PDF-en. Målt 3 ms for
-// det største rommet (STEG 0.3).
+// `_pdfFloorBox(...).aspect` (etasje, 158) — det samme sideoppsettet som PDF-en. 165: bildet tegnes
+// først i PDF-ens piksler (opptil 2126 px bredt — målt 17 ms for det største rommet i 155 STEG 0.3)
+// og skaleres så ned til lerretet.
 function _pdfPrevDraw() {
   const p = _pdfPrev;
   if (!p) return;
@@ -79910,13 +79913,20 @@ function _pdfPrevDraw() {
     if (!box) { _pdfPrev = null; return; }
     cssW = cssWFor(box.aspect);
     p.roomIds = new Set(box.rooms.map(r => r.id));
-    p.res = _renderFloorToImage(floor, { box, selIds: _expPreviewSelIds(), outW: Math.round(cssW * dpr), toCanvas: p.cv, noUrl: true, captureLabels: true });
+    // 165: tegn i PDF-ens oppløsning og papirbredde (samme kall som exportPDF, bare uten JPEG), så alt
+    // som er px-basert (kjedetekst, haker, etikettbokser) lander på samme sted i verden som i PDF-en;
+    // skaler så ned til dialoglerretet (_pdfPrevFit). Før 165 tegnet vi i lerretets egne piksler.
+    p.hi = p.hi || document.createElement('canvas');
+    const resF = _renderFloorToImage(floor, { box, selIds: _expPreviewSelIds(), targetWidthMm: _pdfFloorImgLayout(box).imgW2, toCanvas: p.hi, noUrl: true, captureLabels: true });
+    p.res = _pdfPrevFit(resF, p.hi, p.cv, Math.round(cssW * dpr));
   } else {
     const room = _pdfPrevRoom();
     if (!room) { _pdfPrev = null; return; }
     cssW = cssWFor(_pdfRoomAspect(room));
     p.roomIds = new Set([room.id]);
-    p.res = _renderRoomToImage(room, { focusRoom: true, outW: Math.round(cssW * dpr), toCanvas: p.cv, noUrl: true, captureLabels: true });
+    p.hi = p.hi || document.createElement('canvas');
+    const resR = _renderRoomToImage(room, { focusRoom: true, targetWidthMm: _pdfRoomImgLayout(room).imgW2, toCanvas: p.hi, noUrl: true, captureLabels: true });
+    p.res = _pdfPrevFit(resR, p.hi, p.cv, Math.round(cssW * dpr));
   }
   const v = p.res.view;
   p.cv.style.width = cssW + 'px';
@@ -79927,6 +79937,22 @@ function _pdfPrevDraw() {
   if (z) z.textContent = _labelScaleNum(v.scale) + '×';
   const rb = document.getElementById('exp-pv-reset');
   if (rb) rb.disabled = !_pdfPrevHasView();
+}
+// 165: PDF-bildet (tegnet i `hi`, PDF-ens piksler) skaleres ned til dialoglerretet `cv` med bredde
+// `w`. Resultatet beskriver DIALOGLERRETET: `view.outW/outH` er dets piksler (så _pdfPrevSc/_pdfPrevS2W
+// og label-treffene regner i det brukeren peker på), label-boksene er skalert med samme faktor, og
+// `view.renderW/renderH` er PDF-pikslene bildet faktisk ble tegnet i (regresjonstesten leser dem).
+function _pdfPrevFit(res, hi, cv, w) {
+  const k = w / res.view.outW;
+  const h = Math.max(1, Math.round(res.view.outH * k));
+  cv.width = w; cv.height = h;
+  const c = cv.getContext('2d');
+  c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+  c.fillStyle = '#ffffff'; c.fillRect(0, 0, w, h);
+  c.drawImage(hi, 0, 0, hi.width, hi.height, 0, 0, w, h);
+  const scaleBounds = B => { const o = {}; for (const [id, b] of Object.entries(B || {})) o[id] = { ...b, sx: b.sx * k, sy: b.sy * k, w: b.w * k, h: b.h * k }; return o; };
+  const labels = res.labels ? { cable: scaleBounds(res.labels.cable), matRect: scaleBounds(res.labels.matRect), mat: scaleBounds(res.labels.mat), strip: scaleBounds(res.labels.strip) } : null;
+  return { ...res, w, h, labels, view: { ...res.view, outW: w, outH: h, renderW: res.view.outW, renderH: res.view.outH, fit: k } };
 }
 function _pdfPrevSchedule() {
   const p = _pdfPrev;
@@ -81155,6 +81181,7 @@ function _pdfPreviewRegressionTest() {
     readOnly: S.ui.readOnly, prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
     autoSave: window._performAutoSave, sched: window._scheduleAutoSave, toast: window._showToast,
     confirm: window.confirm, lockToast: window._lockToast, viewOf: window._pdfViewOf,
+    layout: window._pdfRoomImgLayout, documentation: S.documentation,   // 165
     undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
     dialogDisplay: (document.getElementById('export-dialog') || {}).style ? document.getElementById('export-dialog').style.display : null,
   };
@@ -81424,6 +81451,77 @@ function _pdfPreviewRegressionTest() {
     delete cable.labelPos;
     _expPreviewRoom(RID);
 
+    // ─── D (165) · forhåndsvisningen tegner med PDF-ens piksler → samme verdensgeometri ───
+    // Fanger fillText/fillRect (14 px høye etikettbokser) mens _pdfMode er på (gjenopprettings-
+    // renderen av hovedlerretet har den av) og regner til verdens-cm med det viewet som gjelder idet
+    // det tegnes — likt for dialogen og PDF-veien. Før 165 tegnet dialogen i sine egne (få) piksler,
+    // så 12 px over kjedelinjen var 24 cm her mot 8 cm i PDF-en: boksene lå inne i rommet (D3 rød).
+    const captureD = fn => {
+      const texts = [], boxes = []; const oT = ctx.fillText, oR = ctx.fillRect;
+      const toW = (x, y) => { const m = ctx.getTransform(); const sx = m.a * x + m.c * y + m.e, sy = m.b * x + m.d * y + m.f; const sc = S.view.zoom * BASE_SCALE;
+        return { x: Math.round(((sx - canvas.width / 2) / sc + S.view.panX) * 100) / 100, y: Math.round(((sy - canvas.height / 2) / sc + S.view.panY) * 100) / 100 }; };
+      ctx.fillText = function (s, x, y, ...r) { if (S.ui._pdfMode) { const w = toW(x, y); texts.push(`${s}@${w.x},${w.y}`); } return oT.call(this, s, x, y, ...r); };
+      ctx.fillRect = function (x, y, w, h, ...r) { if (S.ui._pdfMode && h === 14) { const a = toW(x, y), b = toW(x + w, y + h); boxes.push({ x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x), y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) }); } return oR.call(this, x, y, w, h, ...r); };
+      try { fn(); } finally { ctx.fillText = oT; ctx.fillRect = oR; }
+      return { texts, boxes };
+    };
+    const firstDiff = (a, b) => { for (let i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) return [i, a[i], b[i]]; return null; };
+    const layD = _pdfRoomImgLayout(room);
+    const pdfPx = _pdfRenderPx(layD.imgW2);
+    const prevCap = captureD(() => _pdfPrevDraw());
+    const pdfResD = _renderRoomToImage(room, { focusRoom: true, targetWidthMm: layD.imgW2, noUrl: true, captureLabels: true });
+    const pdfCap = captureD(() => _renderRoomToImage(room, { focusRoom: true, targetWidthMm: layD.imgW2, noUrl: true }));
+    const cvD = document.getElementById('exp-pv-canvas');
+    check('D1: Stue 5×4 får full bredde (180 mm → 2126 px) på romsiden', '180 / 2126', near(layD.imgW2, 180, 1e-9) && pdfPx === 2126, [layD.imgW2, pdfPx]);
+    check('D1: dialogen tegner i PDF-ens piksler (renderW) og viser dem i et mindre lerret (outW = lerretet)', `${pdfPx} / <${pdfPx}`,
+      _pdfPrev.res.view.renderW === pdfPx && _pdfPrev.res.view.outW === cvD.width && cvD.width < pdfPx && pdfResD.w === pdfPx, [_pdfPrev.res.view.renderW, _pdfPrev.res.view.outW, cvD.width]);
+    check('D2: alle tekster (kjedetall, romdimensjoner, labels) står på samme verdenspunkt i dialog og PDF', `identisk (${pdfCap.texts.length} tekster)`,
+      prevCap.texts.length > 20 && JSON.stringify(prevCap.texts) === JSON.stringify(pdfCap.texts), [prevCap.texts.length, pdfCap.texts.length, firstDiff(prevCap.texts, pdfCap.texts)]);
+    check('D2: etikettboksene (14 px) dekker samme verdens-cm', `identisk (${pdfCap.boxes.length} bokser)`,
+      prevCap.boxes.length > 5 && JSON.stringify(prevCap.boxes) === JSON.stringify(pdfCap.boxes), [prevCap.boxes.length, pdfCap.boxes.length]);
+    // D3: bunnkjedene (folie/kabel/matte, linje y = 425) har boksene sine UNDER veggen y = 400 — ikke oppå rommet
+    const bunn = prevCap.boxes.filter(b => b.x0 > 0 && b.x1 < 500 && b.y0 > 400 - 80 && b.y1 < 400 + 60);   // bare boksene under rommet (sidekjedene står ved x ≈ −25 / 525)
+    check('D3: ingen etikettboks ved bunnkjeden krysser veggen (alle y0 > 400)', 'alle > 400', bunn.length >= 3 && bunn.every(b => b.y0 > 400), bunn.map(b => b.y0));
+    const boksCm = bunn[0] ? Math.round((bunn[0].y1 - bunn[0].y0) * 10) / 10 : null;
+    check('D3: boksen er PDF-ens 14 px = 14 / (2126/800) ≈ 5,3 cm høy (ikke lerretets)', '5.3', boksCm != null && near(boksCm, 14 / (pdfPx / 800), 0.1), boksCm);
+    // D4: label-treff i dialogen peker på samme verdenspunkt som PDF-ens label-boks
+    const bPrev = _pdfPrev.res.labels.cable[cable.id], bPdf = pdfResD.labels.cable[cable.id];
+    const wPrev = bPrev && _pdfPrevS2W(bPrev.sx + bPrev.w / 2, bPrev.sy + bPrev.h / 2);
+    const scPdf = pdfResD.view.outW / pdfResD.view.worldW;
+    const wPdf = bPdf && { x: (bPdf.sx + bPdf.w / 2 - pdfResD.view.outW / 2) / scPdf + pdfResD.view.panX, y: (bPdf.sy + bPdf.h / 2 - pdfResD.view.outH / 2) / scPdf + pdfResD.view.panY };
+    check('D4: kabel-labelens boks i dialogen → samme verdenssenter som i PDF-bildet', 'avvik < 0,5 cm', wPrev && wPdf && near(wPrev.x, wPdf.x) && near(wPrev.y, wPdf.y), [wPrev, wPdf]);
+    check('D4: boksen i dialogen er skalert med lerret/PDF-piksler', (cvD.width / pdfPx).toFixed(3), bPrev && bPdf && near(bPrev.w / bPdf.w, cvD.width / pdfPx, 1e-6), bPrev && bPdf && bPrev.w / bPdf.w);
+    // D5: zoom 1,5× — aspekt og papirbredde uendret, geometrien fortsatt identisk
+    room.pdfView = { cx: 250, cy: 200, scale: 1.5 };
+    const prevCap5 = captureD(() => _pdfPrevDraw());
+    const pdfCap5 = captureD(() => _renderRoomToImage(room, { focusRoom: true, targetWidthMm: _pdfRoomImgLayout(room).imgW2, noUrl: true }));
+    check('D5: 1,5× — samme papirbredde, tekster og bokser identiske', 'identisk', near(_pdfRoomImgLayout(room).imgW2, layD.imgW2, 1e-9) && _pdfPrev.res.view.renderW === pdfPx
+      && JSON.stringify(prevCap5.texts) === JSON.stringify(pdfCap5.texts) && JSON.stringify(prevCap5.boxes) === JSON.stringify(pdfCap5.boxes) && prevCap5.texts.length > 10,
+      [_pdfPrev.res.view.renderW, prevCap5.texts.length, firstDiff(prevCap5.texts, pdfCap5.texts)]);
+    delete room.pdfView;
+    // D6: sidebudsjettet er delt: notater krymper bildet i PDF-en → dialogen følger
+    const savedDoc = S.documentation;
+    S.documentation = { [RID]: { notes: 'Notat. '.repeat(400) } };
+    const layN = _pdfRoomImgLayout(room);
+    _pdfPrevDraw();
+    check('D6: lange notater → plassert bredde < 180 mm, og dialogen tegner i den bredden', '< 180 / lik', layN.imgW2 < 170 && layN.budget.noteH > 50 && _pdfPrev.res.view.renderW === _pdfRenderPx(layN.imgW2) && _pdfRenderPx(layN.imgW2) < pdfPx,
+      [layN.imgW2, layN.budget.noteH, _pdfPrev.res.view.renderW]);
+    S.documentation = savedDoc;
+    // D7: plantegningen (158) tegnes også i PDF-ens piksler
+    _expPreviewSection('floorplan');
+    const boxD = _pdfFloorBox(null);
+    check('D7: plantegningen: renderW = PDF-ens piksler for etasjesidens plasserte bredde', boxD && _pdfRenderPx(_pdfFloorImgLayout(boxD).imgW2),
+      _pdfPrev && _pdfPrev.kind === 'floor' && boxD && _pdfPrev.res.view.renderW === _pdfRenderPx(_pdfFloorImgLayout(boxD).imgW2) && _pdfPrev.res.view.outW === document.getElementById('exp-pv-canvas').width,
+      _pdfPrev && [_pdfPrev.kind, _pdfPrev.res.view.renderW, _pdfPrev.res.view.outW]);
+    _expPreviewRoom(RID);
+    // VAKSINE 165: tegner dialogen med en annen papirbredde enn exportPDF, skal D1 bli rød
+    const okLayout = window._pdfRoomImgLayout;
+    window._pdfRoomImgLayout = () => ({ imgW2: 40 });
+    _pdfPrevDraw();
+    check('VAKSINE 165: annen papirbredde i dialogen → renderW ≠ PDF-ens (D1 ville blitt rød)', `≠ ${pdfPx}`, _pdfPrev.res.view.renderW !== pdfPx, _pdfPrev.res.view.renderW);
+    window._pdfRoomImgLayout = okLayout;
+    _pdfPrevDraw();
+
     // ─── VAKSINE: uten _pdfViewOf-lesing skal A2 bli rød ───
     window._pdfViewOf = () => null;
     room.pdfView = { cx: 300, cy: 150, scale: 2 };
@@ -81435,6 +81533,7 @@ function _pdfPreviewRegressionTest() {
     results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
   } finally {
     window._pdfViewOf = saved.viewOf;
+    window._pdfRoomImgLayout = saved.layout; S.documentation = saved.documentation;   // 165
     window.confirm = saved.confirm;
     const ov = document.getElementById('export-dialog');
     if (ov) ov.style.display = saved.dialogDisplay || 'none';
@@ -82117,10 +82216,8 @@ async function exportPDF(opts) {
 
       // 158: bildet får hele resten av siden (bevart aspekt — bredden begrenser på stående side,
       // høyden på liggende). Kartattribusjonen (3 mm) står under bildet som før.
-      const availImgH = (pageH_f - M) - y - 6;
-      let imgW2 = pw_f, imgH = imgW2 * box.aspect;
-      if (imgH > availImgH) { imgH = Math.max(40, availImgH); imgW2 = imgH / box.aspect; }
-      const imgX = M + (pw_f - imgW2) / 2;
+      // 165: plasseringen regnes i _pdfFloorImgLayout (delt med forhåndsvisningen, samme tall som før).
+      const { imgW2, imgH, imgX } = _pdfFloorImgLayout(box);
       try {
         const imgRes = _renderFloorToImage(grp.floor, { box, selIds: _fpSel, targetWidthMm: imgW2 });
         if (imgRes && imgRes.url) doc.addImage(imgRes.url, 'JPEG', imgX, y, imgW2, imgH);
@@ -82178,43 +82275,14 @@ async function exportPDF(opts) {
     y += 18;
     _line(y); y += 5;
 
-    // Count distinct spec rows up-front (one row per product group, min 1) so
-    // we can budget the page height and keep EVERYTHING about this room on ONE
-    // A4 page: image + «Areal, effekt og dekning» + «Spesifikasjon».
-    const _specRowCount = (() => {
-      const ids = new Set();
-      for (const s of _foilCountItemsForRoom(room.id)) ids.add('s' + s.productId);  // F4d: inkl. fri folie
-      for (const c of _cablesForRoom(room.id)) ids.add('c' + c.productId);
-      for (const m of _matsForRoom(room.id)) ids.add('m' + m.productId);
-      for (const pl of _platesForRoom(room.id)) ids.add('p' + pl.productId);
-      return Math.max(1, ids.size);
-    })();
-
-    // Pre-compute every below-image block so the WHOLE room fits on ONE page:
-    // hindringer/soner, the cable CC line, and any documentation notes are all
-    // budgeted here so the room image shrinks instead of overflowing to page 2.
-    const _roomHinds = (S.hindrings || []).filter(h => h.roomId === room.id);
-    const _roomZones = (S.zones || []).filter(z => z.roomId === room.id);
-    const _hindZoneRows = (_roomHinds.length || _roomZones.length)
-      ? Math.max(_roomHinds.length, _roomZones.length, 1) : 0;
-    const _hindZoneH = _hindZoneRows ? (6 + _hindZoneRows * 4) : 0;
-    // Senteravstand (CC) values for this room — shown explicitly for InFloor cable.
-    const _roomCablesCC = [...new Set(
-      _cablesForRoom(room.id).filter(c => c.spacing_cm).map(c => Math.round(c.spacing_cm * 10) / 10)
-    )].sort((a, b) => a - b);
-    const _ccLineH = _roomCablesCC.length ? 5 : 0;
-    const _docNotes = ((S.documentation || {})[room.id] || {}).notes;
-    const _noteLines = (_docNotes && _docNotes.trim())
-      ? doc.splitTextToSize(_docNotes.trim(), pw - 4) : null;
-    const _noteH = _noteLines ? (8 + Math.max(10, _noteLines.length * 4 + 4)) : 0;
-    // 067: fryseromsblokken (avvik + varmetap + montasje) budsjetteres sammen med de andre
-    // blokkene, slik at HELE rommet fortsatt får plass på én A4-side — bildet krymper i stedet
-    // for at blokken havner på side 2. Tom for alle andre romtyper.
-    const _frysAvvik = (typeof _fryseromAvvik === 'function') ? _fryseromAvvik(room.id) : [];
-    const _frysMont  = _isFryserom(room) ? _fryseromMontasjeLinjer() : [];
-    const _frysH = _frysMont.length
-      ? (8 + (_frysAvvik.length * 4) + _frysMont.length * 3.6 + 4)
-      : 0;
+    // 165: sidebudsjettet (spesifikasjonsrader, hindringer/soner, CC-linje, notater, fryserom) og
+    // bildets plassering regnes i _pdfRoomPageBudget/_pdfRoomImgLayout — ÉN kilde, delt med
+    // forhåndsvisningen i dialogen (155/158), som derfor tegner med nøyaktig samme papirbredde.
+    // Tallene og rekkefølgen er de samme som før 165 (bit-identisk PDF, målt).
+    const _lay = _pdfRoomImgLayout(room, doc, y);
+    const { specRowCount: _specRowCount, roomHinds: _roomHinds, roomZones: _roomZones, hindZoneRows: _hindZoneRows,
+      hindZoneH: _hindZoneH, roomCablesCC: _roomCablesCC, ccLineH: _ccLineH, docNotes: _docNotes, noteLines: _noteLines,
+      noteH: _noteH, frysAvvik: _frysAvvik, frysMont: _frysMont, frysH: _frysH } = _lay.budget;
 
     // Room drawing — height budgeted so key figures + spec fit on the SAME page.
     try {
@@ -82223,22 +82291,8 @@ async function exportPDF(opts) {
       // ble bildet rendret med `pw` og kunne så bli plassert smalere — målt 139 mm i stedet
       // for 180 på et kvadratisk rom, altså 23 % for små labels på nettopp de rommene som er
       // høyere enn brede. Aspektet er bare geometri, så det kan regnes uten å rendre:
-      // `_pdfRoomAspect` er den delte kilden.
-      const aspect = _pdfRoomAspect(room);
-      const imgW = pw;
-      const pageH = doc.internal.pageSize.getHeight();
-      const bottom = M;                          // bottom margin
-      // Height budget for the blocks that must share this page below the image:
-      const metricsH = 30;                       // header + 2 rows + divider
-      const specH = 5 + 5 + _specRowCount * 5 + 4; // header + colrow/line + rows + pad
-      const gaps = 12;                           // air between blocks
-      const availImgH = (pageH - bottom) - y - metricsH - specH - _hindZoneH - _ccLineH - _noteH - _frysH - gaps;
-      let imgH = Math.min(imgW * aspect, Math.max(40, availImgH)); // floor 40 mm
-      let imgW2 = imgW, imgX = M;
-      if (imgH < imgW * aspect) {                // height-constrained → keep aspect
-        imgW2 = imgH / aspect;
-        imgX = M + (pw - imgW2) / 2;             // center horizontally
-      }
+      // `_pdfRoomAspect` er den delte kilden (165: via _pdfRoomImgLayout).
+      const imgH = _lay.imgH, imgW2 = _lay.imgW2, imgX = _lay.imgX;
       const imgRes = _renderRoomToImage(room, { focusRoom: true, targetWidthMm: imgW2 });
       if (imgRes && imgRes.url) {
         doc.addImage(imgRes.url, 'JPEG', imgX, y, imgW2, imgH);
@@ -83595,6 +83649,103 @@ function _pdfRoomAspect(room) {
   const rH = Math.max(1, Math.max(...ys) - Math.min(...ys));
   const pad = _pdfRoomPadCm(room);   // 164
   return (rH + 2 * pad) / (rW + 2 * pad);
+}
+
+// ═══ 165 · ÉN KILDE FOR BILDEBREDDEN PÅ PAPIRET (Kenneth 30.10.2026) ═════════════════════
+// «Bunnen av tegningen overdekkes av målelinje — bare på visningen, det vises bra på selve PDF-en.»
+// STEG 0 (P0378 «Rom 2», docs/serie-163/RAPPORT.md «165»): kjedeLINJENE ligger i cm (25 cm utenfor
+// kanten, 164), men alt rundt dem er faste PIKSLER — 10 px font, 14 px etikettboks 12 px over linjen,
+// 8 px haker, 4 px luft på hjelpelinjene, 157-merknaden 14 px under, romdimensjonenes tekst og
+// `annotOffsets`, hindringsmålenes 20 px. PDF-en tegnes i 300 DPI (1559 px for P0378 → 1,39 px/cm:
+// boksen er 10 cm høy og står 9 cm under veggen), forhåndsvisningen tegnet i dialoglerretets egne
+// piksler (364 px → 0,32 px/cm: boksen er 43 cm høy og står 37 cm OVER veggen — inne i rommet).
+// Samme kode, samme cm-geometri, men pikslene betyr forskjellige cm.
+//
+// Valgt vei: forhåndsvisningen tegner i NØYAKTIG PDF-ens pikselbredde og papirbredde (så også
+// `_pdfScaleMmPerCm` og dermed etikettstørrelsen er PDF-ens) og skaleres ned til dialoglerretet
+// (`_pdfPrevFit`). Alternativet — gjøre px-leddene cm-baserte — hadde endret PDF-ens utseende for
+// alle rom unntatt ett kalibreringsrom (skalaen varierer med romstørrelsen) og hovedlerretets
+// skjermtegning med. PDF-veien er urørt; den er fasiten.
+//
+// Papirbredden avhenger av sidebudsjettet (bildet krymper når nøkkeltall + spesifikasjon + hindringer
+// + CC-linje + notater + fryserom må få plass på ÉN side), så budsjettet bor her og exportPDF leser
+// det — ikke omvendt. `doc` = jsPDF-dokumentet (notatene brytes med dets font); forhåndsvisningen har
+// ikke noe dokument og lager et midlertidig bare når rommet har notater.
+const PDF_PAGE_M = 15;   // marg (mm), samme som exportPDF
+// A4-høyden slik jsPDF selv regner den (841,89 pt ÷ (72/25,4) = 297,00008 mm — IKKE 297): exportPDF leste
+// `doc.internal.pageSize.getHeight()`, og 0,00008 mm flytter bildets bredde i 4. desimal og dermed tallene i
+// PDF-ens innholdsstrøm. Målt: med 297 ble PDF-en 10 byte kortere (bildene like, plasseringen ikke).
+const PDF_A4_H_MM = 841.89 / (72 / 25.4);
+let _pdfBudgetDoc = null;
+function _pdfRoomPageBudget(room, doc) {
+  const specRowCount = (() => {
+    const ids = new Set();
+    for (const s of _foilCountItemsForRoom(room.id)) ids.add('s' + s.productId);  // F4d: inkl. fri folie
+    for (const c of _cablesForRoom(room.id)) ids.add('c' + c.productId);
+    for (const m of _matsForRoom(room.id)) ids.add('m' + m.productId);
+    for (const pl of _platesForRoom(room.id)) ids.add('p' + pl.productId);
+    return Math.max(1, ids.size);
+  })();
+  const roomHinds = (S.hindrings || []).filter(h => h.roomId === room.id);
+  const roomZones = (S.zones || []).filter(z => z.roomId === room.id);
+  const hindZoneRows = (roomHinds.length || roomZones.length) ? Math.max(roomHinds.length, roomZones.length, 1) : 0;
+  const hindZoneH = hindZoneRows ? (6 + hindZoneRows * 4) : 0;
+  const roomCablesCC = [...new Set(_cablesForRoom(room.id).filter(c => c.spacing_cm).map(c => Math.round(c.spacing_cm * 10) / 10))].sort((a, b) => a - b);
+  const ccLineH = roomCablesCC.length ? 5 : 0;
+  const docNotes = ((S.documentation || {})[room.id] || {}).notes;
+  let noteLines = null;
+  if (docNotes && docNotes.trim()) {
+    if (!doc) {
+      if (!_pdfBudgetDoc && window.jspdf && window.jspdf.jsPDF) _pdfBudgetDoc = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      doc = _pdfBudgetDoc;
+    }
+    if (doc) {
+      // Samme font som exportPDF har stående idet notatene brytes (undertittelen: helvetica normal 9).
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+      noteLines = doc.splitTextToSize(docNotes.trim(), (210 - 2 * PDF_PAGE_M) - 4);
+    } else noteLines = docNotes.trim().split(/\r?\n/);
+  }
+  const noteH = noteLines ? (8 + Math.max(10, noteLines.length * 4 + 4)) : 0;
+  const frysAvvik = (typeof _fryseromAvvik === 'function') ? _fryseromAvvik(room.id) : [];
+  const frysMont = _isFryserom(room) ? _fryseromMontasjeLinjer() : [];
+  const frysH = frysMont.length ? (8 + (frysAvvik.length * 4) + frysMont.length * 3.6 + 4) : 0;
+  return { specRowCount, roomHinds, roomZones, hindZoneRows, hindZoneH, roomCablesCC, ccLineH, docNotes, noteLines, noteH, frysAvvik, frysMont, frysH };
+}
+// Romtegningens plassering på romsiden: bredde (mm) den FAKTISK får, høyde og x. `yTop` = y-posisjonen
+// bildet starter på (exportPDF: etter tittel + linje = M + 23). Tallene er exportPDF-blokkens, flyttet.
+function _pdfRoomImgLayout(room, doc, yTop, budget) {
+  const M = PDF_PAGE_M, pw = 210 - 2 * M, pageH = PDF_A4_H_MM;
+  const y = yTop == null ? M + 23 : yTop;
+  const b = budget || _pdfRoomPageBudget(room, doc);
+  const aspect = _pdfRoomAspect(room);
+  const imgW = pw;
+  const bottom = M;                          // bottom margin
+  const metricsH = 30;                       // header + 2 rows + divider
+  const specH = 5 + 5 + b.specRowCount * 5 + 4; // header + colrow/line + rows + pad
+  const gaps = 12;                           // air between blocks
+  const availImgH = (pageH - bottom) - y - metricsH - specH - b.hindZoneH - b.ccLineH - b.noteH - b.frysH - gaps;
+  let imgH = Math.min(imgW * aspect, Math.max(40, availImgH)); // floor 40 mm
+  let imgW2 = imgW, imgX = M;
+  if (imgH < imgW * aspect) {                // height-constrained → keep aspect
+    imgW2 = imgH / aspect;
+    imgX = M + (pw - imgW2) / 2;             // center horizontally
+  }
+  return { aspect, imgW2, imgH, imgX, budget: b };
+}
+// Plantegningens plassering på etasjesiden (158: bildet får hele resten av siden, bevart aspekt).
+function _pdfFloorImgLayout(box) {
+  const M = PDF_PAGE_M, land = box.landscape;
+  const pageW = land ? 297 : 210, pageH = land ? 210 : 297, pw = pageW - 2 * M;
+  const y = M + 16 + 5;                      // tittel + undertittel + linje
+  const availImgH = (pageH - M) - y - 6;
+  let imgW2 = pw, imgH = imgW2 * box.aspect;
+  if (imgH > availImgH) { imgH = Math.max(40, availImgH); imgW2 = imgH / box.aspect; }
+  return { imgW2, imgH, imgX: M + (pw - imgW2) / 2, pw, pageW, pageH, y };
+}
+// Pikselbredden `_renderRoomToImage`/`_renderFloorToImage` tegner med for en papirbredde (PDF-veien
+// uten opts.outW): 300 DPI, minst 600, maks 2600 px.
+function _pdfRenderPx(targetWidthMm) {
+  return Math.max(600, Math.min(2600, Math.round((targetWidthMm / 25.4) * 300)));
 }
 
 function _renderRoomToImage(room, opts) {

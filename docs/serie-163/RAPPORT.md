@@ -239,3 +239,78 @@ også på gammel kode uten innlogging (katalogen er tom), ikke 164.
 
 Commit: «164: målekjeder per faktisk veggkant i L-/T-/U-rom (delt kantmodell for folie/kabel/matte), rektangler
 bit-identiske; lukker serie-157 spm 4». Ikke pushet.
+
+## 165
+
+Kenneth 30.10.2026: «Dialogboks for utskrift PDF: bunnen av tegningen overdekkes av målelinje — bare på visningen, det
+vises bra på selve PDF-en.» (P0378 «Rom 2» i 155-forhåndsvisningen, 1,0×.)
+
+Alt er målt uten innlogging på 164-fiksturen (`/tmp/cdp165`, `fx.mjs` = P0378 «Rom 2» gjenskapt fra PDF-en + rektangler
++ L-/U-rom). Harness: `steg0.mjs` (dialog og PDF-rombilde av samme rom, alle tekster og 14-px-etikettbokser regnet
+om til verdens-cm), `sammenlign.mjs` (ekte `exportPDF` på gammel kode, port 4001, og ny, port 4000: hash av hvert
+rom-/etasjebilde og av hele PDF-en uten dato/ID, dialogbilder ved 1,0× og 1,5×, plantegning, tidsbruk), `tests.mjs`.
+
+### STEG 0 — hvilket ledd som skilte
+
+Kjede**linjene** ligger i cm (25 cm utenfor kanten, 164) og lander likt i dialog og PDF. Alt rundt dem er faste
+**piksler**: fonten 10 px, etikettboksen 14 px høy og 12 px over linjen, hakene 8 px, 4 px luft på hjelpelinjene,
+157-merknaden 14 px under, romdimensjonenes tekst (og `annotOffsets`, i px), hindringsmålenes 20 px. Dialogen tegnet
+i sitt eget lerrets piksler (`opts.outW` = 364 px i det hodeløse vinduet), PDF-en i 300 DPI for den *plasserte*
+bredden (P0378: 132 mm → 1559 px). Samme kode, men én piksel er 3,09 cm i dialogen mot 0,72 cm i PDF-en:
+
+| | Dialog før | PDF | Dialog etter |
+|---|---|---|---|
+| px per cm | 0,324 | 1,387 | tegnet med 1,387, vist med 0,324 |
+| 10 px font i verden | 30,9 cm | 7,2 cm | 7,2 cm |
+| Boksen «99 cm» under V12 (vegg y = 360) | y 326–370 — **34 cm inn i armen** | y 371–381 — 11 cm under veggen | y 371–381 |
+| «0,8 cm» ved x = 310 (stammen begynner ved x = 323) | 109 cm bred, 205–314 | 25 cm bred | 25 cm bred |
+
+Så det var ikke bunnkjeden spesielt: **alle** kjedene, romdimensjonene, 157-merknaden og plantegningens
+tekster hadde samme feil, mest synlig der en kjede ligger inntil en annen del av rommet (T-/L-rom). I tillegg
+leste dialogen `targetWidthMm` = 180 (standard), mens romsiden plasserer bildet smalere når siden er høydebegrenset
+(P0378: 132 mm) — derfor hadde også produktetikettene (051, `_pdfScaleMmPerCm`) en annen størrelse og plassering
+i dialogen enn på papiret (FlexFoil-labelen i venstre arm: 48,9/82 i dialogen mot 45,7/96,8 i PDF-en).
+
+### Valgt vei og hvorfor
+
+Dialogen tegner nå i **nøyaktig PDF-ens piksler og papirbredde** og skaleres ned til lerretet (`_pdfPrevFit`):
+`_renderRoomToImage`/`_renderFloorToImage` kalles med samme `targetWidthMm` som `exportPDF` (uten `outW`), inn i
+et skjult lerret, og `drawImage` krymper det til dialogen; label-boksene og `view.outW/outH` skaleres med samme
+faktor, så hjul/dra/label-drag (155) regner i det brukeren ser. Alternativet — gjøre px-leddene cm-baserte — hadde
+endret PDF-en for alle rom unntatt ett kalibreringsrom (skalaen varierer med romstørrelsen) og hovedlerretet med.
+PDF-veien er urørt.
+
+For at papirbredden skal være *den samme* som eksportens, er sidebudsjettet (spesifikasjonsrader, hindringer/soner,
+CC-linje, notater, fryserom) og plasseringen flyttet ut av `exportPDF` til `_pdfRoomPageBudget` /
+`_pdfRoomImgLayout` (romside) og `_pdfFloorImgLayout` (plantegning); `exportPDF` leser dem. Notatene brytes med
+jsPDF-fonten som før — dialogen lager et midlertidig jsPDF-dokument bare når rommet har notater. En felle på veien:
+eksporten leste `doc.internal.pageSize.getHeight()` = 297,00008 mm (841,89 pt), ikke 297 — med 297 ble PDF-en
+10 byte kortere (bildene like, plasseringstallene ikke). `PDF_A4_H_MM` = jsPDFs eget tall.
+
+### Resultat
+
+- **P0378 i dialogen** (`165-dialog-foer-P0378.png` → `165-dialog-etter-P0378.png`): kjeden under V12 ligger under
+  veggen, ikke oppå; stammen er ren. 1,5× (`165-dialog-etter-P0378-1,5x.png`): følger med. Rektangel
+  (`165-dialog-*-rekt.png`) og plantegning (`165-plan-*.png`): samme bilde som før, bare med PDF-ens tekststørrelser.
+- **Alle tekster på samme verdenspunkt** i dialog og PDF (steg0 etter: romdimensjoner, kjedetall, etiketter,
+  157-merknaden — identiske lister, 0,1 cm-oppløsning); bokser identiske.
+- **PDF bit-identisk:** hvert rom-/etasjebilde (10 stk) har samme hash på gammel og ny kode, plassert bredde lik i
+  4. desimal (131,9972 / 178,0001 / 125,8126 / 159,6522), og hele PDF-en (1 464 414 byte, uten dato/ID) har samme hash.
+- **Tid:** `_pdfPrevDraw` P0378 2,3 ms (før 1,8), plantegning 4,1 ms (før 4,1) i det hodeløse vinduet; største
+  romsiden tegnes nå i opptil 2126 px bredde (155 målte 17 ms for det største rommet).
+
+**Funn underveis:** dialogen viser nå sannheten om papiret — kjedetallene er 10 px i et 1559 px bredt bilde, altså
+≈ 1,2 mm høye på A4 (P0378), og blir små i dialogen akkurat som på papiret. Før 165 så de store ut i dialogen fordi
+dialogen tegnet dem feil. Det er samme sak som serie-154 spm 11 / serie-157 («tekststørrelse på papir»), se spørsmål.
+
+### Tester
+
+`_pdfPreviewRegressionTest` 84 → **96/96**: ny seksjon D — D1 dialogen tegner i PDF-ens piksler (renderW = 2126 for
+Stue, lerretet mindre), D2 alle tekster og 14-px-bokser på samme verdens-cm i dialog og PDF, D3 ingen boks ved
+bunnkjeden krysser veggen og boksen er PDF-ens 5,3 cm (før: 24 cm over linjen → inne i rommet), D4 kabel-labelens
+boks i dialogen → samme verdenssenter som PDF-bildets, D5 1,5×, D6 lange notater krymper bildet i PDF-en og dialogen
+følger, D7 plantegningen; **vaksine**: annen papirbredde i dialogen → renderW ≠ PDF-ens. `_pdfExportSmokeTest`
+55/55, `_matDimChainRegressionTest` 43/43, `_dimChainEdgeRegressionTest` 31/31. Ingen unntak ved lasting.
+
+Commit: «165: PDF-forhåndsvisningen tegner kjedene med samme verdensgeometri som PDF-en — ingen overlapp i dialogen;
+PDF uendret». Ikke pushet.
