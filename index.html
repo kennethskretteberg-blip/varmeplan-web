@@ -5532,8 +5532,12 @@ function _cableWorldSegments(cab) {
           segs.push({ x1: el.pts[i].x, y1: el.pts[i].y, x2: el.pts[i + 1].x, y2: el.pts[i + 1].y });
         else if (el.from && el.to) segs.push({ x1: el.from.x, y1: el.from.y, x2: el.to.x, y2: el.to.y });
       } else if (el.kind === 'connector' && el.from && el.to) {
-        segs.push({ x1: el.from.x, y1: el.from.y, x2: el.from.x, y2: el.to.y });
-        segs.push({ x1: el.from.x, y1: el.to.y, x2: el.to.x, y2: el.to.y });
+        if (el.pts && el.pts.length > 1) for (let i = 0; i + 1 < el.pts.length; i++)   // 167: rutet polylinje
+          segs.push({ x1: el.pts[i].x, y1: el.pts[i].y, x2: el.pts[i + 1].x, y2: el.pts[i + 1].y });
+        else {
+          segs.push({ x1: el.from.x, y1: el.from.y, x2: el.from.x, y2: el.to.y });
+          segs.push({ x1: el.from.x, y1: el.to.y, x2: el.to.x, y2: el.to.y });
+        }
       }
     }
     return segs;
@@ -24914,7 +24918,12 @@ function _cablePreviewFooterHtml(roomId, familyName, categoryId, targetWm2) {
     ? `<div style="font-size:11px;color:#f59e0b;font-weight:600">⚠ Ba om ${m.nCables}, fikk ${nAct}</div>` : '';
   // Motoren klarte ikke å tegne sonene — si det rett ut, og si hva brukeren kan gjøre.
   const dirHint = m.splitDir ? '' : ' eller prøv Horisontalt/Vertikalt';
-  const fallbackMsg = m.labelFallback ? `<div style="font-size:11px;color:#f59e0b;line-height:1.35">
+  const fallbackMsg = (m.labelFallback === 1 && !(m.nCables > 1))
+    // 167: én kabel, kaskaden ga opp — grunnen står her, ikke bare «må tegnes manuelt».
+    ? `<div style="font-size:11px;color:#f59e0b;line-height:1.35">
+      ⚠ Fikk ikke lagt kabelen automatisk i dette rommet${m.labelReason ? ' — ' + esc(m.labelReason) : ''}.
+      Produktet er notert som label (tallene er riktige, utlegget må tegnes manuelt).</div>`
+    : m.labelFallback ? `<div style="font-size:11px;color:#f59e0b;line-height:1.35">
       ⚠ Klarte ikke å tegne ${m.labelFallback} soner i dette rommet. Lagt inn som
       ${m.labelFallback} × label uten tegning — tallene er riktige, men utlegget må tegnes manuelt,
       eller del rommet i to${dirHint}.</div>` : '';
@@ -25016,7 +25025,7 @@ function _cablePreviewPlaceNow(productId, nCables, familyName, categoryId, split
   // som legges adopteres tilbake med `zoneId`. `_tid` brukes overalt der `roomId` sto.
   const _zPV = _placeTarget().zone;
   const _run = fn => _zPV ? _withSoneAsRoom(_zPV, productId, tmp => fn(tmp.id)) : fn(roomId);
-  let labelFallback = 0;
+  let labelFallback = 0, labelReason = null;   // 167: labelReason = kaskadens egen grunn
   _run(_tid => {
   if (nCables > 1) {
     const cables = autoFillMultiCable(_tid, productId, nCables, splitDir || undefined);
@@ -25042,7 +25051,22 @@ function _cablePreviewPlaceNow(productId, nCables, familyName, categoryId, split
       }
     }
   } else {
-    const c = autoFillCable(_tid, productId); if (c) { S.cables.push(c); newIds.push(c.id); S.ui.selectedCableId = c.id; }
+    const c = autoFillCable(_tid, productId);
+    if (c) { S.cables.push(c); newIds.push(c.id); S.ui.selectedCableId = c.id; }
+    else {
+      // 167: kaskaden ga opp. Aldri stille (Kenneths ringhusveien-rom sto som «kun label» uten
+      // forklaring): produktet noteres som label — samme ærlighet som N-kabel-grenen over — og
+      // grunnen (`room._cableNoSolution`) følger med til panelet, toasten og romlista.
+      const st = _cableLabelOnlyStats(_tid, productId, 1);
+      if (st) {
+        const c2 = { id: S.counters.nextCableId++, roomId: _tid, productId, labelOnly: true,
+          spacing_cm: st.spacing_cm, cc_mm: Math.round(st.spacing_cm * 10), totalLength_cm: st.totalLength_cm, runs: [] };
+        S.cables.push(c2); newIds.push(c2.id); S.ui.selectedCableId = c2.id;
+        labelFallback = 1;
+      }
+      const _r = S.rooms.find(r => r.id === _tid);
+      labelReason = ((_r && _r._cableNoSolution && _r._cableNoSolution.reason) || "").replace(/\.\s*$/, "") || null;   // uten sluttpunktum — setningen fortsetter
+    }
   }
   });
   // Adopter alt forhåndsvisningen la på sonens midlertidige rom tilbake til det ekte rommet.
@@ -25050,12 +25074,16 @@ function _cablePreviewPlaceNow(productId, nCables, familyName, categoryId, split
   _invalidateCableCache();
   room._cablePreviewIds = newIds;
   room._cablePreviewMeta = { productId, nCables: nCables > 1 ? nCables : 1, familyName, categoryId,
-    splitDir: splitDir || null, labelFallback,
+    splitDir: splitDir || null, labelFallback, labelReason,
     // 010: hvilken sone forhåndsvisningen gjelder — så «Angre» og en retningsendring kan kjøre
     // den på nytt i SAMME sone, også om sonen i mellomtiden ikke lenger er valgt.
     _previewZoneId: _zPV ? _zPV.id : null };
   renderSidebar(); updateCtxBar(); render();
   _refreshCablePanel(familyName, categoryId);   // re-render with confirm footer
+  // 167: én kort, ærlig beskjed når én kabel ikke fikk utlegg. (N-kabel-grenen har sin egen
+  // tekst i panelets fot.) Utenfor kandidatsøket, så den er ikke stilnet av 074.
+  if (labelFallback === 1 && !(nCables > 1) && typeof _showToast === 'function' && !_cableStille())
+    _showToast('Fikk ikke lagt kabelen automatisk i dette rommet' + (labelReason ? ' — ' + labelReason : '') + '. Produktet er notert som label.', 'warn');
 }
 function _confirmCablePreview(familyName, categoryId) {
   const room = S.rooms.find(r => r.id === S.ui.selectedRoomId);
@@ -32908,6 +32936,62 @@ function _skClipVertical(xv, poly) {
   for (let i = 0; i + 1 < ys.length; i += 2) iv.push([ys[i], ys[i + 1]]);
   return iv;
 }
+// ─── 167 · LØPETS LOVLIGE INTERVALL I DET ROTERTE PLANET ─────────────────────────────────
+// Kenneths gang/trapp-rom (ringhusveien, 30.10.2026): skew-motoren la løpene 1,1–1,5 cm UTENFOR
+// kantavstanden, og geometrikontrollen avviste alle de skrå vinklene — bare den rette (0°)
+// slapp gjennom, med dårligere dekning. MÅLT årsak, to deler:
+//   (a) på TVERS av løpene ble kantavstanden bare holdt mot den roterte boksens ytterkanter
+//       («bb.minX + margin»). En vegg eller en hindringsside som løper LANGS løpet inne i
+//       boksen (innerhjørnet i en L, trappa) ble aldri sett — løpet kunne ligge 3,9 cm fra den.
+//   (b) i løpets ENDE ble kantavstanden målt langs løpet. Mot en vegg som står skrått på løpet
+//       er den vinkelrette avstanden margin·cos θ — for lite.
+// Dette er det samme prinsippet 164 ga målekjedene: regn mot rommets FAKTISKE kanter.
+// Rektangler og roterte rektangler i sitt eget plan er bit for bit som før: der er cos θ = 1
+// på endene, og sidevakten ligger innenfor boksen. Hindringer trekkes fra som før (steg 1),
+// og i tillegg der løpet passerer dem på siden (steg 3).
+function _skClipVerticalAng(xv, poly) {
+  const hits = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    if ((a.x <= xv && b.x > xv) || (b.x <= xv && a.x > xv)) {
+      const t = (xv - a.x) / (b.x - a.x);
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      hits.push({ y: a.y + t * (b.y - a.y), c: Math.abs(b.x - a.x) / len });   // c = |cos| av veggens vinkel mot tverraksen
+    }
+  }
+  hits.sort((p, q) => p.y - q.y);
+  const iv = [];
+  for (let i = 0; i + 1 < hits.length; i += 2) iv.push([hits[i].y, hits[i + 1].y, hits[i].c, hits[i + 1].c]);
+  return iv;
+}
+function _skIntersect(A, B) {
+  const out = [];
+  for (const [alo, ahi] of A) for (const [blo, bhi] of B) {
+    const lo = Math.max(alo, blo), hi = Math.min(ahi, bhi);
+    if (hi - lo > _SK_EPS) out.push([lo, hi]);
+  }
+  return out;
+}
+function _skLaneIntervals(x, roomR, holesR, CC, margin) {
+  const sweepMargin = margin + CC / 2, cMin = 0.2;
+  // (1) som før 167: rommet klippet på løpets linje, hindringer trukket fra med kantavstand,
+  //     så svingemargen (kantavstand + CC/2) i begge ender.
+  let iv = _skClipVertical(x, roomR);
+  for (const h of holesR) iv = _skSubtract(iv, _skClipVertical(x, h).map(([lo, hi]) => [lo - margin, hi + margin]));
+  iv = iv.map(([lo, hi]) => [lo + sweepMargin, hi - sweepMargin]);
+  // (2) 167 (b): skrå vegg i enden — kantavstanden holdes VINKELRETT på veggen (margin / cos θ),
+  //     begrenset til 5 × margin for vegger som nesten løper langs løpet (dem tar (3)).
+  iv = _skIntersect(iv, _skClipVerticalAng(x, roomR).map(([lo, hi, cLo, cHi]) =>
+    [lo + margin / Math.max(cMin, cLo) + CC / 2, hi - margin / Math.max(cMin, cHi) - CC / 2]));
+  // (3) 167 (a): sidevakt — løpet (og svingen, CC/2) må også ligge innenfor rommet og utenfor
+  //     hindringene én kantavstand til hver SIDE av seg.
+  for (const dx of [-margin, margin]) {
+    let side = _skClipVertical(x + dx, roomR);
+    for (const h of holesR) side = _skSubtract(side, _skClipVertical(x + dx, h).map(([lo, hi]) => [lo - margin, hi + margin]));
+    iv = _skIntersect(iv, side.map(([lo, hi]) => [lo + CC / 2, hi - CC / 2]));
+  }
+  return iv.filter(([lo, hi]) => hi - lo > _SK_EPS);
+}
 function _skSubtract(A, B) {
   let out = A.map(iv => [iv[0], iv[1]]);
   for (const [blo, bhi] of B) {
@@ -32937,12 +33021,7 @@ function _skGenerateRotated(roomR, holesR, CC, margin) {
   const runs = [];
   for (let i = 0; i < N; i++) {
     const x = x0 + i * CC;
-    let iv = _skClipVertical(x, roomR);
-    for (const h of holesR) {
-      const hi = _skClipVertical(x, h).map(([lo, hh]) => [lo - margin, hh + margin]);
-      iv = _skSubtract(iv, hi);
-    }
-    iv = iv.map(([lo, hi]) => [lo + sweepMargin, hi - sweepMargin]).filter(([lo, hi]) => hi - lo > _SK_EPS);
+    const iv = _skLaneIntervals(x, roomR, holesR, CC, margin);   // 167: faktiske kanter, ikke boksen
     runs.push({ x, lanes: iv });
   }
   const laneNodes = [];
@@ -33108,7 +33187,39 @@ function _skAngleForDir(room, dir) {
 }
 
 // Core engine for one fixed CC. Returns world-space ordered elements or null.
-function _skEngineCore(room, holes, CC, margin, angleDeg) {
+// ─── 167 · KOBLINGSSTYKKET MELLOM TO CELLER RUTES INNENFOR LOVLIG OMRÅDE ─────────────────
+// Koblingsstykket («connector») var bare {from, to}; rendereren, lengden og senterlinjen tegnet
+// alle den samme L-en i VERDENSAKSENE (fra → (fra.x, til.y) → til). I et rotert rom med en
+// trapp som hindring går den L-en rett gjennom trappas kantavstand — MÅLT 12,4 cm utenfor i
+// D1-102 (ringhusveien), og hele utlegget ble ugyldig. Nå prøves fem ruter i rekkefølge, og den
+// første som ligger innenfor lovlig område får en eksplisitt polylinje («pts», samme mønster
+// som svingene): L i verdensaksene (som før), speilvendt L, L langs løpene (rotert plan),
+// speilvendt L langs løpene, rett linje. Uten lovlig område (clipper ikke lastet) eller når den
+// gamle L-en holder, settes ingen `pts` — bit for bit som før.
+function _skRouteConnector(elR, fromW, toW, inv, legal, roomW) {
+  if (!legal || !legal.paths || !legal.paths.length) return null;
+  const roomObj = { points: roomW };
+  const maxOut = pts => {
+    let w = 0;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1], L = Math.hypot(b.x - a.x, b.y - a.y), n = Math.max(1, Math.ceil(L / 2));
+      for (let t = 0; t <= n; t++) { const u = t / n; const o = _cblOutsideBy(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u, legal, roomObj); if (o > w) w = o; }
+    }
+    return w;
+  };
+  const kand = [
+    [fromW, { x: fromW.x, y: toW.y }, toW],
+    [fromW, { x: toW.x, y: fromW.y }, toW],
+    _skRotate([elR.from, { x: elR.from.x, y: elR.to.y }, elR.to], inv),
+    _skRotate([elR.from, { x: elR.to.x, y: elR.from.y }, elR.to], inv),
+    [fromW, toW]
+  ];
+  const ut = kand.map(maxOut);
+  if (ut[0] <= 0.5) return null;                       // den gamle L-en holder → uendret
+  let best = 0; for (let i = 1; i < kand.length; i++) if (ut[i] < ut[best]) best = i;
+  return (ut[best] < ut[0] - 1) ? kand[best] : null;   // bare bytt når det faktisk hjelper
+}
+function _skEngineCore(room, holes, CC, margin, angleDeg, legal) {
   const cand = new Set([0, 90]);
   if (angleDeg != null) { cand.clear(); cand.add(angleDeg); }
   else for (let i = 0; i < room.length; i++) {
@@ -33144,6 +33255,10 @@ function _skEngineCore(room, holes, CC, margin, angleDeg) {
     // strokes a tangent-smooth polyline (no cusp).
     if (el.kind === 'uturn' && Math.abs(el.from.y - el.to.y) < 1e-6)
       out.pts = _skRotate(_skUturnPolyline(el.from, el.to, el.high, 24), inv);
+    else if (el.kind === 'connector') {
+      const r = _skRouteConnector(el, w[0], w[1], inv, legal, room);   // 167
+      if (r) out.pts = r;
+    }
     return out;
   });
   const start = _skRotate([best.path.start], inv)[0];
@@ -33152,6 +33267,7 @@ function _skEngineCore(room, holes, CC, margin, angleDeg) {
   let len = 0;
   for (const el of els) {
     if (el.kind === 'run') len += Math.hypot(el.b.x - el.a.x, el.b.y - el.a.y);
+    else if (el.kind === 'connector' && el.pts && el.pts.length > 1) { for (let i = 0; i + 1 < el.pts.length; i++) len += Math.hypot(el.pts[i + 1].x - el.pts[i].x, el.pts[i + 1].y - el.pts[i].y); }   // 167
     else { const d = Math.hypot(el.to.x - el.from.x, el.to.y - el.from.y); len += el.kind === 'uturn' ? Math.PI * d / 2 : (Math.abs(el.to.x - el.from.x) + Math.abs(el.to.y - el.from.y)); }
   }
   return { els, start, end, angleDeg: best.deg, coverage: best.coverage, openLen: best.path.openLen, totalLength_cm: len, nCells: best.model.cells.length };
@@ -33186,8 +33302,12 @@ function generateCableSkew(roomId, productId, angleDeg) {
   for (const z of (S.zones || []).filter(z => z.roomId === roomId && z.type === 'forbidden' && z.points && z.points.length >= 3))
     holes.push(z.points.map(p => ({ x: p.x, y: p.y })));
 
+  // 167: lovlig område (clipper) til koblingsstykkene — fail-open: uten biblioteket er det null,
+  // og motoren oppfører seg som før.
+  let _legal = null;
+  try { if (typeof _cblClipperReady === 'function' && _cblClipperReady() && typeof _cableLegalRegion === 'function') _legal = _cableLegalRegion(roomId, productId); } catch (e) { _legal = null; }
   const _run = (sp) => {
-    const core = _skEngineCore(roomPts, holes, sp, margin, angleDeg != null ? angleDeg : null);
+    const core = _skEngineCore(roomPts, holes, sp, margin, angleDeg != null ? angleDeg : null, _legal);
     if (!core) return null;
     return {
       _engine: 'skew',
@@ -34462,8 +34582,10 @@ function _cableCenterlinePaths(cable) {
         if (el.pts && el.pts.length > 1) for (const p of el.pts) cur.push({ x: p.x, y: p.y });
         else if (el.from && el.to) cur.push({ x: el.from.x, y: el.from.y }, { x: el.to.x, y: el.to.y });
       } else if (el.kind === 'connector' && el.from && el.to) {
-        // Samme L-form _cableWorldSegments og _drawCableSkewPath bruker.
-        cur.push({ x: el.from.x, y: el.from.y }, { x: el.from.x, y: el.to.y }, { x: el.to.x, y: el.to.y });
+        // Samme L-form _cableWorldSegments og _drawCableSkewPath bruker — eller den rutede
+        // polylinja (167) når motoren har satt en.
+        if (el.pts && el.pts.length > 1) for (const p of el.pts) cur.push({ x: p.x, y: p.y });
+        else cur.push({ x: el.from.x, y: el.from.y }, { x: el.from.x, y: el.to.y }, { x: el.to.x, y: el.to.y });
       }
     }
     push(cur);
@@ -35068,12 +35190,28 @@ function _cableEndeKort(cable, room) {
 // samme bånd går mer enn én CC lenger ut. Krav (3) skiller «bølgete ender» fra en JEVN
 // inntrekking: trekkes alle svinger like mye inn (extraSweep), er ingen ende løs — det måles
 // av `_cableKantGap` under i stedet. Returnerer antall løse ender, null uten geometri.
+// ─── 167 · 161-MÅLENE PÅ EN SKEW-KABEL ──────────────────────────────────────────────────────
+// En skew-kabel har pathEls, ikke centerline, og løpene står skrått i verden — begge 161-målene
+// ga null og rommet kunne ikke låses i porten. Nå måles de i MOTORENS EGET PLAN: senterlinja,
+// det lovlige området og rommet roteres med samme vinkel som `_skEngineCore` bruker
+// ((90 − vinkel)°, løpene loddrette), og algoritmene under kjører uendret med retning 'v'.
+// Akseparallelle kabler (centerline, ingen angleDeg) går nøyaktig som før.
+function _cable161Frame(cable, room, legal) {
+  if (!(cable && cable.pathEls && cable.pathEls.length && cable.angleDeg != null && room && room.points)) return null;
+  const rot = (90 - cable.angleDeg) * Math.PI / 180;
+  const R = pts => _skRotate(pts, rot);
+  return { cl: R(_cableCenterlinePaths(cable)[0] || []),
+    legal: legal ? { paths: (legal.paths || []).map(R), blockers: (legal.blockers || []).map(R), margin: legal.margin, approx: legal.approx } : null,
+    room: { points: R(room.points) } };
+}
 function _cableLoseEnder(cable, room, legal) {
   try {
-    const cl = (cable && cable.centerline) || [];
+    const fr = _cable161Frame(cable, room, legal);   // 167: skew-kabel → motorens plan
+    const cl = fr ? fr.cl : ((cable && cable.centerline) || []);
+    if (fr) legal = fr.legal;
     const cc = cable && cable.spacing_cm || 0;
     if (cl.length < 4 || !(cc > 0) || !legal || !legal.paths || !legal.paths.length) return null;
-    const dir = cable.direction === 'h' ? 'h' : 'v';
+    const dir = fr ? 'v' : (cable.direction === 'h' ? 'h' : 'v');
     const pk = dir === 'v' ? 'x' : 'y';          // på tvers av løpene
     const sk = dir === 'v' ? 'y' : 'x';          // langs løpene
     const runs = [];
@@ -35109,6 +35247,13 @@ function _cableLoseEnder(cable, room, legal) {
         const rest = side < 0 ? e - L : L - e;                       // lovlig område som står igjen
         if (rest <= cc) continue;                                    // inntil vegg/hindring (± sving)
         if (vedHindring(r.p, e)) continue;                           // omvei/transitt rundt hindringen
+        // 167: svingen er en halvsirkel (LÅST), så to naboløp må slutte i SAMME høyde. Står
+        // partnerløpet ved sin egen kant (skråvegg, hindring), er denne enden klippet til den —
+        // ikke løs. Målt mot det lovlige områdets FAKTISKE kant på partnerens bane.
+        const partnerVedKant = runs.some(o => o !== r && Math.abs(o.p - r.p) > cc * 0.3 && Math.abs(o.p - r.p) < cc * 1.6
+          && _geoClipScanline(legal, sk, o.p).some(([lo, hi]) => Math.min(hi, o.hi) - Math.max(lo, o.lo) > 0
+             && Math.abs((side < 0 ? lo + cc / 2 : hi - cc / 2) - e) <= cc));
+        if (partnerVedKant) continue;
         const naboUt = runs.some(o => o !== r && Math.abs(o.p - r.p) > cc * 0.3 && Math.abs(o.p - r.p) < cc * 1.6
           && Math.min(o.hi, r.hi) - Math.max(o.lo, r.lo) > krav
           && (side < 0 ? o.lo < r.lo - cc : o.hi > r.hi + cc));
@@ -35133,15 +35278,20 @@ function _cableLoseEnder(cable, room, legal) {
 // Returnerer { maks, sider:{venstre,hoyre,topp,bunn} } i cm, eller null uten geometri.
 function _cableKantGap(cable, room, legal) {
   try {
-    const cl = (cable && cable.centerline) || [];
+    const fr = _cable161Frame(cable, room, legal);   // 167: skew-kabel → motorens plan
+    const cl = fr ? fr.cl : ((cable && cable.centerline) || []);
     if (cl.length < 4 || !room || !room.points || room.points.length < 3) return null;
     const marg = (legal && legal.margin) || 0;
-    const pts = room.points;
+    const pts = fr ? fr.room.points : room.points;
+    // 167: en hindring (trapp, skap) inntil veggen er også en kant. Strålen stopper på den
+    // første kanten den treffer — rommets kontur ELLER en hindringskant — så et felt som slutter
+    // ved trappa ikke leses som «stopper 100 cm fra veggen». Rom uten hindring: som før.
+    const polys = [pts].concat(((fr ? fr.legal : legal) || {}).blockers || []);
     const ray = (p, ax, sgn) => {
       const ok = ax === 'x' ? 'y' : 'x';
       let best = Infinity;
-      for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-        const a = pts[j], b = pts[i];
+      for (const poly of polys) for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[j], b = poly[i];
         if ((a[ok] <= p[ok]) === (b[ok] <= p[ok])) continue;          // kanten spenner ikke over punktet
         const t = (p[ok] - a[ok]) / ((b[ok] - a[ok]) || 1e-9);
         const d = (a[ax] + t * (b[ax] - a[ax]) - p[ax]) * sgn;
@@ -35220,6 +35370,25 @@ const _cableFixtures = {
   umuligStartHjorne: { name: 'Rektangel med forbudt sone i bl-hjørnet', klasse: 'grensetilfelle', productId: 31,
     points: [{x:0,y:0},{x:400,y:0},{x:400,y:300},{x:0,y:300}],
     zones: [{ type: 'forbidden', points: [{x:0,y:220},{x:110,y:220},{x:110,y:300},{x:0,y:300}] }] },
+
+  // ─── 167 · RINGHUSVEIEN — Kenneths to gang/trapp-rom med skrå seksjon (30.10.2026) ─────────
+  // Rekonstruert fra vegglengdene i skjermbildet (D2-100: V1 780 · V2 331 · V3 221 · V4 101 ·
+  // V5 107 · V6 244 · V7 395 · V8 109), ikke fra piksler. Polygonet lukker med V6 = 244,8 cm;
+  // skråseksjonen ligger 19–26° fra aksen. Etikettene «CC 15,4» og «CC 15,3» tilsier netto
+  // ≈ 14,8 og ≈ 10,8 m² — altså en TRAPP i hvert rom (≈ 4,8 og ≈ 2,3 m²), lagt inn som hindring
+  // rotert med seksjonen. D1-102 har ingen vegglengder i skjermbildet og er konstruert i samme
+  // ånd (én skrå vegg, 13,2 m² brutto). Kenneth kan lime inn eksakt geometri (docs/167/SPØRSMÅL.md).
+  // `kaskade: true` → porten kjører HELE kaskaden (geo står over, skew tar rommet), to rader (v/h).
+  'ringhus-d2100': { name: 'D2-100 Gang/trapp 19,2 m² med trapp (ringhusveien 167)', klasse: 'skrå L-form med trapp', productId: 31, kaskade: true,
+    note: 'Rekonstruert fra skjermbildet 30.10.2026. Målt FØR 167: auto OK (0°, 92 %); eksplisitt loddrett ga ingen kandidat (v6 kastet av 083).',
+    points: [{x:0,y:0},{x:780,y:0},{x:887.8,y:-313},{x:678.8,y:-384.9},{x:577.8,y:-384.9},{x:481.6,y:-338},{x:395,y:-109},{x:0,y:-109}],
+    hindrings: [[{x:887.8,y:-313},{x:679.7,y:-384.6},{x:608.1,y:-176.5},{x:816.2,y:-105}]],
+    laas: { dekMin: 90, devMax: 1, loseMax: 0 } },
+  'ringhus-d1102': { name: 'D1-102 Gang/trapp 13,2 m² med trapp (ringhusveien 167)', klasse: 'skrå L-form med trapp', productId: 28, kaskade: true,
+    note: 'Konstruert (ingen vegglengder i skjermbildet). Målt FØR 167: auto og vannrett ga INGEN kandidat → «kun label».',
+    points: [{x:0,y:0},{x:620,y:0},{x:690,y:-280},{x:300,y:-280},{x:300,y:-109},{x:0,y:-109}],
+    hindrings: [[{x:620,y:0},{x:683.1,y:-252.3},{x:595.8,y:-274.1},{x:532.7,y:-21.8}]],
+    laas: { dekMin: 93, devMax: 1, loseMax: 0 } },
 
   skraa: { name: 'Rotert rektangel 380x260 (18 grader)', klasse: 'skrå - utenfor ny motor (spec §0.5)', productId: 29,
     points: (() => { const a = 18 * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
@@ -37942,6 +38111,61 @@ function _cableCandidatesForDirectionImpl(roomId, productId, opts, dir, room, ou
       }
     }
   } catch (e) { if (S.ui && S.ui.debugCableEngine) console.warn('[cable-070] kaskade feilet', e); }
+  // ─── 167 · SKRÅ ROM: SKEW PRØVES PER VINKEL, OG GEOMETRIKONTROLLEN DØMMER ───────────────
+  // Kenneths to gang/trapp-rom (ringhusveien, 30.10.2026) sto som «kun label». MÅLT: geo står
+  // over (spec §0.5), og den gamle kaskaden lar skew velge ÉN vinkel selv (høyest dekning minus
+  // åpne hopp) og godtar den bare når dekningen er ≥ 70 % og hoppene korte. I D1-102 valgte den
+  // 0° — to celler med et koblingsstykke tvers over trappas kantavstand (12 cm utenfor, og for
+  // langt hopp) — og falt til boustrophedon, som 083 tok ut av konkurransen. Kandidatlista ble
+  // TOM, utlegget null, og rommet fikk ingen beskjed. 90° var gyldig hele tiden (94 % dekning).
+  // Nå: i et rom geo avviser som skrått, og der kaskaden IKKE ga et gyldig skew-utlegg, kjøres
+  // skew én gang PER kantvinkel i rommet (auto) eller for valgt retning (eksplisitt), og hver
+  // kandidat måles av `_cableGeometryCheck` som alt annet. Vinnerregelen (`_cablePickWinner`)
+  // er uendret. ⚠ REDNING, ikke konkurranse — og bare rommets EGNE kantvinkler: første utgave
+  // la 0° og 90° til ubetinget, og i et rotert rektangel vant den akseparallelle trappa over
+  // rommets egen vinkel (`_cableSkewRegressionTest` A–C falt fra 12°/20° til 0°). Ga kaskaden
+  // et gyldig skew-utlegg, er alt som før 167. Akseparallelle rom berøres ikke: grenen krever
+  // geo-avvisningen «ikke akseparallelt».
+  if (geoNo && geoNo.reason === 'ikke akseparallelt' && typeof generateCableSkew === 'function'
+      && !out.some(c => c.source === 'skew' && c.chk && c.chk.ok)) {
+    try {
+      const vinkler = [];
+      if (dir) vinkler.push(_skAngleForDir(room.points, dir));
+      else {
+        const sett = new Set();
+        for (let i = 0; i < room.points.length; i++) {
+          const a = room.points[i], b = room.points[(i + 1) % room.points.length];
+          let d = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI; d = ((d % 180) + 180) % 180;
+          sett.add(Math.round(d * 10) / 10);
+        }
+        vinkler.push(...sett);
+      }
+      const prodS = HEATING_PRODUCTS.find(p => p.id === productId);
+      const harVinkel = a => out.some(c => c.source === 'skew' && c.cable.angleDeg != null
+        && Math.min(Math.abs(((c.cable.angleDeg - a) % 180 + 180) % 180), 180 - Math.abs(((c.cable.angleDeg - a) % 180 + 180) % 180)) < 0.05);
+      // Har kaskaden alt et (ugyldig) skew-utlegg, får bare GYLDIGE redningskandidater være med —
+      // ellers ville en annen ugyldig vinkel fortrengt kaskadens eget valg (målt: A–C i
+      // `_cableSkewRegressionTest` har synthetiske produkter der ALT er ugyldig på lengde, og
+      // 12°/20° ble til 0°/136,6°). Ga kaskaden ingenting, legges det beste ut, merket, som i 070.
+      const harKaskadeSkew = out.some(c => c.source === 'skew');
+      let forsok = 0;
+      for (const a of vinkler) {
+        if (harVinkel(a)) continue;
+        forsok++;
+        const r = generateCableSkew(roomId, productId, a);
+        if (!r || !r.pathEls || !r.pathEls.length) continue;
+        const cab = { id: S.counters.nextCableId++, roomId, productId, _engine: 'skew',
+          pathEls: r.pathEls, start: r.start, end: r.end, angleDeg: r.angleDeg, direction: dir || null,
+          spacing_cm: r.spacing_cm, cc_mm: r.cc_mm, totalLength_cm: r.totalLength_cm,
+          coverage: r.coverage, openLen: r.openLen, nCells: r.nCells, runs: [], connections: [],
+          lockedEnd: !!(prodS && prodS.cable_length_m), lockedStart: false, _skewVinkelsok: true };
+        const chk = _cableGeometryCheck(cab, room);
+        if (!chk.ok && harKaskadeSkew) continue;
+        out.push({ cable: cab, chk, score: _cableCandidateScore(chk), source: 'skew', dir });
+      }
+      geoNo._skewForsok = (geoNo._skewForsok || 0) + forsok + (out.some(c => c.source === 'skew' && !c.cable._skewVinkelsok) ? 1 : 0);
+    } catch (e) { if (S.ui && S.ui.debugCableEngine) console.warn('[cable-167] skew per vinkel feilet', e); }
+  }
   out.sort((a, b) => b.score - a.score);
   return { cands: out, geoNo };
 }
@@ -38122,7 +38346,14 @@ function _autoFillCableImpl(roomId, productId, opts) {
       }
     }
     // Ingen motor ga i det hele tatt geometri. Ny motors begrunnelse er det eneste vi har.
-    if (geoNo) { room._cableNoSolution = geoNo; }
+    // 167: i et skrått rom er «ikke akseparallelt» bare grunnen til at geo sto over — det
+    // brukeren trenger å vite er at skrå-motoren prøvde og ikke fant noe.
+    if (geoNo) {
+      room._cableNoSolution = (geoNo.reason === 'ikke akseparallelt')
+        ? Object.assign({}, geoNo, { reason: 'rommet har skrå vegger, og skrå-motoren fant ikke et utlegg innenfor kantavstanden'
+            + (geoNo._skewForsok ? ' (prøvde ' + geoNo._skewForsok + (geoNo._skewForsok === 1 ? ' vinkel)' : ' vinkler)') : '') })
+        : geoNo;
+    }
     return null;
   }
   const cable = chosen.cable;
@@ -39897,6 +40128,47 @@ function _cableGeoSuiteRow(key, fx, dir, corner) {
   } catch (e) { return { status: 'FEIL', feil: String(e && e.message || e) }; }
 }
 
+// 167 · Rad for et rom porten kjører gjennom HELE kaskaden (skrå rom: geo står over, skew tar
+// det). Samme låste mål som geo-radene; N er antall rette løp i pathEls, lengden er senterlinjas.
+// Hjørnet er ikke en parameter for skew — to rader (v/h), som flerkabelradene.
+function _cableGeoSuiteKaskadeRow(key, fx, dir) {
+  try {
+    _cableGalleryActiveKey = key;
+    const room = _cableGalleryBuildScene(fx);
+    S.ui.selectedRoomId = 1;
+    S.varmefolie = Object.assign({}, S.varmefolie,
+      { direction: dir, dirExplicit: true, startCorner: 'bl', wallMarginCm: null });
+    const cab = _cableGalleryRunEngine('kaskade', 1, fx.productId, dir, 'bl');
+    if (!cab || cab._noSolution || cab._error || cab.labelOnly)
+      return { status: 'ingen', grunn: (room._cableNoSolution && room._cableNoSolution.reason) || (cab && cab._error) || null };
+    const chk = _cableGeometryCheck(cab, room, { lengthTolPct: 1 });
+    const m = chk.metrics || {};
+    let L = 0;
+    for (const path of _cableCenterlinePaths(cab))
+      for (let i = 0; i + 1 < path.length; i++) L += Math.hypot(path[i + 1].x - path[i].x, path[i + 1].y - path[i].y);
+    return {
+      status: 'ok',
+      motor: cab._geomEngine || cab._engine || null,
+      vinkel: cab.angleDeg != null ? +(+cab.angleDeg).toFixed(1) : null,
+      brukt: cab._dirFallback ? cab._dirFallback.used : dir,
+      n: (cab.pathEls || []).filter(e => e.kind === 'run').length || (cab.runs || []).length,
+      cc: +(cab.spacing_cm || 0).toFixed(2),
+      m: +(L / 100).toFixed(2),
+      dek: m.coveragePct == null ? null : +m.coveragePct,
+      stripe: null, ende: null, start: null,
+      hull: cab._geoHoles || 0,
+      gyldig: !!chk.ok,
+      lose: m.loseEnder == null ? null : +m.loseEnder,
+      kantGapCC: m.kantGapCC == null ? null : +m.kantGapCC,
+      dev: m.lenDevPct == null ? null : +m.lenDevPct,
+      laas: fx.laas || null,
+      celler: cab.nCells != null ? cab.nCells : null,
+      transitt: (cab.pathEls || []).some(e => e.kind === 'connector'),
+      strGrense: null
+    };
+  } catch (e) { return { status: 'FEIL', feil: String(e && e.message || e) }; }
+}
+
 // Sammenligningen. ⚠ Bare LÅSTE mål feiler. CC og N RAPPORTERES, de feiler ikke: CC velges av
 // lengdesøket, og et annet trinn er ikke i seg selv dårligere. Det er dekning, gyldighet, hull,
 // R-START, R-VEGG og R-ENDE som er løftene.
@@ -40000,6 +40272,9 @@ async function _cableGeoSuite(opts) {
         // 096: et flerkabelrom har ikke starthjørne per sone i denne runden (sonene arver
         // rommets regel), så radene er `nøkkel|retning` — to rader, ikke åtte.
         for (const dir of ['v', 'h']) rader[`${key}|${dir}|soner`] = _cableGeoSuiteZoneRow(key, fx, dir);
+      } else if (fx.kaskade) {
+        // 167: skrå rom gjennom hele kaskaden — to rader (v/h)
+        for (const dir of ['v', 'h']) rader[`${key}|${dir}|kaskade`] = _cableGeoSuiteKaskadeRow(key, fx, dir);
       } else
       for (const dir of ['v', 'h'])
         for (const corner of _GEO_SUITE_CORNERS)
@@ -45972,12 +46247,15 @@ function _drawCableSkewPath(cable) {
         const a = w2s(f.x, f.y), b = w2s(t.x, t.y);
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
       }
-    } else { // connector — wall-hug L (dashed)
+    } else { // connector — wall-hug L (dashed), eller den rutede polylinja (167)
       const f = el.from, t = el.to;
-      const p0 = w2s(f.x, f.y), corner = w2s(f.x, t.y), p1 = w2s(t.x, t.y);
+      const pts = (el.pts && el.pts.length > 1) ? el.pts : [f, { x: f.x, y: t.y }, t];
       ctx.save();
       ctx.setLineDash([5, 4]);
-      ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(corner.x, corner.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+      const p0 = w2s(pts[0].x, pts[0].y);
+      ctx.beginPath(); ctx.moveTo(p0.x, p0.y);
+      for (let i = 1; i < pts.length; i++) { const q = w2s(pts[i].x, pts[i].y); ctx.lineTo(q.x, q.y); }
+      ctx.stroke();
       ctx.restore();
     }
   }
@@ -75902,7 +76180,7 @@ function _listDrawLayout(roomId){
       _cablePreviewPlace(pid, count, fam, cat);
       // `labelFallback` er motorens egen ærlighet: antallet er riktig, men tegningen mangler.
       const meta=room._cablePreviewMeta;
-      if(meta && meta.labelFallback) failed='motoren fikk ikke plass til ' + count + (count>1?' kabler':' kabel') + ' i rommet';
+      if(meta && meta.labelFallback) failed='motoren fikk ikke lagt ' + count + (count>1?' kabler':' kabelen') + ' i rommet' + (meta.labelReason ? ' — ' + meta.labelReason : '');   // 167: grunnen følger med
       _confirmCablePreview(fam, cat);
     } else if(_isSnowRoom(room)){
       // Snø: `_packSnowMats` er fasiten og kan velge en ANNEN variant i samme familie enn raden
