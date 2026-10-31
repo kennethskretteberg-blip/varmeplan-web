@@ -28784,13 +28784,85 @@ function _geoRegressionTest() {
   console[ok ? 'log' : 'error']('_geoRegressionTest (synkron del): ' + (ok ? 'BESTÅTT' : 'FEILET'), results);
   // 139: adresseliste/tjenestestatus/nøkkel er asynkrone (stubbet fetch, 250 ms-debounce) — de
   // logges når de er ferdige. `await _geoRegressionTest().async` gir alt samlet.
-  const async = _geoAddrRegressionTest(results).then(() => _geoCenterRegressionTest(results)).then(() => _geoOneStepRegressionTest(results)).then(() => {
+  const async = _geoAddrRegressionTest(results).then(() => _geoCenterRegressionTest(results)).then(() => _geoOneStepRegressionTest(results)).then(() => _geoScaleRegressionTest(results)).then(() => {
     const alle = results.every(r => r.ok);
     console[alle ? 'log' : 'error']('_geoRegressionTest (alt, inkl. 139): ' + (alle ? 'BESTÅTT' : 'FEILET') +
       ' (' + results.filter(r => r.ok).length + '/' + results.length + ')', results.filter(r => !r.ok));
     return { ok: alle, results };
   });
   return { ok, results, async };
+}
+
+// 168: MÅLESTOKK for alle tre utsnitt (80/120/200 m). Kenneth målte «ca. 1 m» på noe som var ≥ 5 m, og
+// hypotesen var at 142 (200 m som standard) hadde ødelagt målestokken. Målt i STEG 0 (docs/168/RAPPORT.md):
+// kjeden var riktig, men INGEN av de eldre testene fanget det som ble spurt om — de sjekker at geo-FELTENE
+// er satt, ikke at to punkter med kjente koordinater får riktig avstand i verdens-cm. Denne gjør det, via
+// hele _roofFetchBackground (stubbet fetch, ingen nettkall) og med utsnittet bestemt av det KLIENTEN ber om
+// (size_m i spørringen), ikke av testen. Det testen IKKE kan se er om BILDET dekker det geo påstår — det er
+// tjenestesiden, og sjekkes av docs/168/maalestokk-live.py mot ekte tjeneste.
+async function _geoScaleRegressionTest(results) {
+  const check = (name, expected, cond, got) => results.push({ name: '168: ' + name, expected, got, ok: !!cond });
+  const FID = 9903;
+  const px1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const lagret = { fetch: window.fetch, toast: window._showToast, save: window._scheduleAutoSave, url: window.VARMEPLAN_ROOF_URL,
+                   bgs: S.bgs, geo: S.geo, view: { ...S.view }, dlg: _roofDlg, floors: S.floors, aktiv: S.ui.activeFloorId };
+  let sendt = null;
+  window.VARMEPLAN_ROOF_URL = 'http://roof.test';
+  window._showToast = () => {}; window._scheduleAutoSave = () => {};
+  window.fetch = async (url) => {
+    const u = String(url);
+    if (!u.startsWith('http://roof.test/roof/background.json')) throw new TypeError('uventet kall i test: ' + u);
+    const q = new URL(u).searchParams; sendt = { east: +q.get('east'), north: +q.get('north'), size: +q.get('size_m'), px: +q.get('px') };
+    // Tjenesten sentrerer på (east, north) og svarer med utstrekningen den ble bedt om (som app/api/background.py).
+    return new Response(JSON.stringify({ geo: { epsg: 25833, east0: sendt.east - sendt.size / 2, north0: sendt.north - sendt.size / 2,
+      width_m: sendt.size, height_m: sendt.size, px: sendt.px, m_per_px: sendt.size / sendt.px, layers: ['topo'],
+      attribution: '©', fetched_at: '2026-10-31T00:00:00Z' }, png_base64: px1 }), { status: 200 });
+  };
+  try {
+    S.floors = [{ id: FID, name: 'Test' }];
+    const E = 233598.159, N = 6682393.678;   // Steinliveien 1 — STEG 0-adressen
+    // Samme to punkter for alle størrelser: 50 m øst og 35 m nord → 61,03 m, alltid innenfor minste utsnitt (80 m).
+    const A = { east: E - 20, north: N - 10 }, B = { east: E + 30, north: N + 25 };
+    const sann = Math.hypot(B.east - A.east, B.north - A.north);
+    for (const size of ROOF_SIZES_M) {
+      S.bgs = {}; S.geo = {}; sendt = null;
+      _roofDlg = _roofNewDlg(FID, 'Testveien 1'); _roofDlg.sizeM = size;
+      _roofDlg.candidates = []; _roofDlg.chosen = null; _roofDlg.query = { point: { east: E, north: N } };
+      await _roofFetchBackground();
+      const bg = S.bgs[FID];
+      check(`${size} m: bakgrunn installert`, 'ja', !!bg && !!bg.geo, _roofDlg && _roofDlg.error);
+      if (!bg) continue;
+      check(`${size} m: klienten ber om ${size} m`, size, sendt && sendt.size === size, sendt && sendt.size);
+      const a = _geoToWorld(bg, A.east, A.north), b = _geoToWorld(bg, B.east, B.north);
+      const wm = Math.hypot(b.x - a.x, b.y - a.y) / 100;
+      check(`${size} m: avstand mellom to kjente punkter i verdens-cm = sann avstand (±1 %)`, sann.toFixed(2) + ' m',
+            Math.abs(wm / sann - 1) < 0.01, wm.toFixed(3) + ' m (forhold ' + (wm / sann).toFixed(4) + ')');
+      // Bildets utstrekning i verden = georeferansens utstrekning (ellers tegnes bildet i en annen målestokk enn koordinatene).
+      const sv = _geoToWorld(bg, bg.geo.east0, bg.geo.north0), nø = _geoToWorld(bg, bg.geo.east0 + bg.geo.widthM, bg.geo.north0 + bg.geo.heightM);
+      check(`${size} m: bildet spenner SV→NØ i verden (bildekant = geo-kant)`, 'ja',
+            Math.abs(bg.originX - sv.x) < 1e-6 && Math.abs(bg.originY - nø.y) < 1e-6 &&
+            Math.abs(bg.originX + bg.widthCm - nø.x) < 1e-6 && Math.abs(bg.originY + bg.heightCm - sv.y) < 1e-6,
+            `x ${bg.originX}…${bg.originX + bg.widthCm}, y ${bg.originY}…${bg.originY + bg.heightCm}`);
+      check(`${size} m: meter per bildepunkt × px = bredde`, size, Math.abs(bg.geo.mPerPx * bg._srcW - size) < 1e-6, bg.geo.mPerPx * bg._srcW);
+      // Skjermen: 1 m i verden = 100 × zoom × BASE_SCALE piksler, uansett utsnitt.
+      const sa = w2s(a.x, a.y), sb = w2s(b.x, b.y);
+      const pxPerM = Math.hypot(sb.x - sa.x, sb.y - sa.y) / sann, forventet = 100 * S.view.zoom * BASE_SCALE;
+      check(`${size} m: skjermmålestokk = zoom × BASE_SCALE`, forventet.toFixed(4) + ' px/m', Math.abs(pxPerM / forventet - 1) < 0.001, pxPerM.toFixed(4));
+      // Lagring → gjenåpning må gi samme mål.
+      const ser = JSON.parse(JSON.stringify(_serializeBgFields(bg)));
+      const rund = Object.assign(_newBgObj(), ser);
+      const ra = _geoToWorld(rund, A.east, A.north), rb = _geoToWorld(rund, B.east, B.north);
+      check(`${size} m: samme avstand etter lagring/gjenåpning`, sann.toFixed(2) + ' m',
+            Math.abs(Math.hypot(rb.x - ra.x, rb.y - ra.y) / 100 / sann - 1) < 0.01 && rund.widthCm === size * 100, rund.widthCm);
+    }
+  } catch (e) {
+    results.push({ name: '168: UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    _roofClose();
+    window.fetch = lagret.fetch; window._showToast = lagret.toast; window._scheduleAutoSave = lagret.save;
+    if (lagret.url === undefined) delete window.VARMEPLAN_ROOF_URL; else window.VARMEPLAN_ROOF_URL = lagret.url;
+    S.bgs = lagret.bgs; S.geo = lagret.geo; S.view = lagret.view; _roofDlg = lagret.dlg; S.floors = lagret.floors; S.ui.activeFloorId = lagret.aktiv;
+  }
 }
 
 // 141: utsnittet sentreres på bygget. Stubbet fetch — ingen ekte nettkall. Måler hva som faktisk
