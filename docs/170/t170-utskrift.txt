@@ -1,0 +1,140 @@
+sidefeil ved lasting: 0 []
+1 kunde dashbord {
+ "fliser": [
+  "Manuelt",
+  "Fra tegning",
+  "Gulvvarme",
+  "Trapper 🔒",
+  "Utendørs 🔒",
+  "Effektbehov 🔒",
+  "Frostsikring 🔒"
+ ],
+ "trappDialog": {
+  "tekst": "Snøsmelting i trapper prosjekteres av Cenika. Send forespørsel, så får du et ferdig prosjekt tilbake.",
+  "knapp": "Be Cenika om prosjektering",
+  "href": "mailto:post@cenika.no?subject=Forespørsel om prosjektering: Snøsmelting i trapper&body=Hei Cenika,\r\n\r\nVi ønsker at dere prosjekterer snøsmelting i trapper for oss.\r\n\r\nProsjekt: (ikke opprettet ennå)\r\nAdresse: —\r\nLenke: (prosjektet er ikke lagret ennå)\r\n\r\nHilsen\r\nOla Welhaven\r\nWelhaven Elektro AS"
+ },
+ "snoDialog": {
+  "tekst": "Snøsmelting prosjekteres av Cenika. Send forespørsel, så får du et ferdig prosjekt tilbake.",
+  "knapp": "Be Cenika om prosjektering",
+  "href": "mailto:post@cenika.no?subject=Forespørsel om prosjektering: Snøsmelting&body=Hei Cenika,\r\n\r\nVi ønsker at dere prosjekterer snøsmelting for oss.\r\n\r\nProsjekt: (ikke opprettet ennå)\r\nAdresse: —\r\nLenke: (prosjektet er ikke lagret ennå)\r\n\r\nHilsen\r\nOla Welhaven\r\nWelhaven Elektro AS"
+ },
+ "snoStartetIkke": true,
+ "frostModalÅpnet": false,
+ "frostDialog": true,
+ "snowcalcModalÅpnet": false
+}
+2 nytt prosjekt {
+ "modulvalg": [
+  "Innendørs gulvvarme",
+  "Utendørs snøsmelting 🔒",
+  "Snøsmelting i trapper 🔒",
+  "Hurtig prosjektering"
+ ],
+ "snoDelLaget": 0,
+ "dialogMedProsjekt": {
+  "tekst": "Snøsmelting prosjekteres av Cenika. Send forespørsel, så får du et ferdig prosjekt tilbake.",
+  "knapp": "Be Cenika om prosjektering",
+  "href": "mailto:post@cenika.no?subject=Forespørsel om prosjektering: Snøsmelting — Hytta&body=Hei Cenika,\r\n\r\nVi ønsker at dere prosjekterer snøsmelting for oss.\r\n\r\nProsjekt: Hytta\r\nAdresse: Fjellvegen 1\r\nLenke: https://varmeplan.no/?project=abc-123\r\n\r\nHilsen\r\nOla Welhaven\r\nWelhaven Elektro AS"
+ },
+ "inneDel": [
+  "indoor"
+ ],
+ "romLaget": true,
+ "fryseromSvar": false,
+ "romtypeEtterFryserom": null,
+ "fryseromDialog": true,
+ "romtypeBad": "bathroom",
+ "sidepanelFryseromMerket": true,
+ "produktpanelÅpent": true,
+ "upcFryseromMerket": [
+  "fryserom"
+ ],
+ "upcEtter": "bathroom / select=bathroom",
+ "varmetypeUteSperret": "indoor / dialog=true",
+ "dupeUte": true,
+ "dupeInne": true,
+ "modulNav": [
+  "Inne",
+  "Liste",
+  "Ute 🔒",
+  "Trapp 🔒"
+ ]
+}
+3 hurtigprosjektering {
+ "utkast": true,
+ "env": "indoor",
+ "uteMerket": [
+  "Innendørs",
+  "Utendørs 🔒"
+ ],
+ "etterUte": "indoor / select=indoor / dialog=true",
+ "arvSnoBlirInne": "indoor"
+}
+4 delt snøprosjekt {
+ "åpnet": true,
+ "rom": 1,
+ "modulNav": [
+  "Inne",
+  "Liste",
+  "Ute",
+  "Trapp 🔒"
+ ],
+ "byttTilSnoOk": true,
+ "nyttSnoRom": null,
+ "nyttSnoRomDialog": true,
+ "utleggSperret": true,
+ "romFortsatt": 1
+}
+5 superadmin / vis som {
+ "superadmin": [
+  "Manuelt",
+  "Fra tegning",
+  "Gulvvarme",
+  "Trapper",
+  "Utendørs",
+  "Effektbehov",
+  "Frostsikring"
+ ],
+ "visSomKunde": [
+  "Manuelt",
+  "Fra tegning",
+  "Gulvvarme",
+  "Trapper 🔒",
+  "Utendørs 🔒",
+  "Effektbehov 🔒",
+  "Frostsikring 🔒"
+ ],
+ "hentetModuler": 1,
+ "etterVisSom": 0,
+ "utenMigrasjon": true
+}
+6 uten adresse/migrasjon {
+ "utenAdresse": "Snøsmelting i trapper Snøsmelting i trapper prosjekteres av Cenika. Send forespørsel, så får du et ferdig prosjekt tilbake. Vi har ingen e-postadresse til Cenika i Varmeplan ennå. Ta kontakt med dem direkte. Lukk",
+ "utenFunksjon": "Fryserom og kjølerom Fryserom og kjølerom prosjekteres av leverandøren. Send forespørsel, så får du et ferdig prosjekt tilbake. Vi har ingen e-postadresse til leverandøren i Varmeplan ennå. Ta kontakt med dem direkte. Lukk"
+}
+7 Cenika moduler {
+ "knapp": true,
+ "rader": [
+  "Welhaven Elektro AS org.nr 123456785",
+  "Gammel Elektro AS org.nr — · alle moduler"
+ ],
+ "avkrysset": [
+  "indoor",
+  "list"
+ ],
+ "setKall": [
+  {
+   "p_org_id": "k1",
+   "p_modules": [
+    "indoor",
+    "list",
+    "snow"
+   ]
+  }
+ ],
+ "melding": "✓ Lagret",
+ "feilmelding": "Dere kan bare endre moduler for kundebedrifter dere har opprettet eller godkjent."
+}
+8 {"kundeSerKnapp":false}
+sidefeil totalt: 0 []

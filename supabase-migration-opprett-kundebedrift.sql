@@ -52,6 +52,12 @@
 alter table organizations
   add column if not exists erp_customer_no text;
 
+-- 170: hvilke moduler orgen kan prosjektere selv. null = alle (Cenika og alle eksisterende
+-- orger). Kundebedrifter faar array['indoor','list'] i _activate_customer_org under.
+-- Samme kolonne legges ogsaa (idempotent) i supabase-migration-kundemoduler.sql.
+alter table organizations
+  add column if not exists allowed_modules text[];
+
 -- ------------------------------------------------------------
 -- 169: FELLES INTERNE FUNKSJONER. Reglene som gjelder BAADE naar Cenika oppretter en
 -- kundebedrift (create_customer_org, under) og naar Cenika godkjenner en bedrift som har
@@ -95,7 +101,8 @@ $$;
 --   * erp_customer_no settes naar den er oppgitt (Visma-kundenummeret)
 --   * EN rad i organization_supplier_access for denne leverandoeren
 -- Kalleren blir IKKE medlem -- funksjonen roerer ikke organization_members.
--- 170 (moduler for kundebedrifter): allowed_modules settes HER, saa begge veiene faar det.
+-- 170 (moduler for kundebedrifter): allowed_modules settes HER, saa begge veiene faar det
+--   (create_customer_org og approve_customer_org i 169).
 create or replace function public._activate_customer_org(
   p_org_id       uuid,
   p_supplier_org uuid,
@@ -131,10 +138,13 @@ begin
       coalesce(v_sup_name, 'null') using errcode = '22023';
   end if;
 
+  -- 170: allowed_modules = kabel, folie og matte innendoers ('indoor' + hurtigprosjektering
+  -- 'list'). Har leverandoeren alt satt en liste (set_customer_modules), beholdes den.
   update organizations
      set subscription_status = 'active',
          trial_ends_at       = null,
-         erp_customer_no     = coalesce(nullif(btrim(coalesce(p_erp, '')), ''), erp_customer_no)
+         erp_customer_no     = coalesce(nullif(btrim(coalesce(p_erp, '')), ''), erp_customer_no),
+         allowed_modules     = coalesce(allowed_modules, array['indoor', 'list']::text[])
    where id = p_org_id;
 
   insert into organization_supplier_access (org_id, supplier_id, enabled, granted_by)

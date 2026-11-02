@@ -1787,9 +1787,11 @@ body.kunde-maal #minimap-widget{display:none !important}
           <button class="dash-create-btn btn-gbao10" style="white-space:nowrap;display:none" onclick="_openCustNoImport()">Importer kundenumre</button>
           <button class="dash-create-btn" id="cust-grant-access-btn" onclick="_coOpen()" style="white-space:nowrap;display:none" title="Opprett elektrobedriften i Varmeplan og inviter kontaktpersonen">Gi kunden tilgang til Varmeplan</button>
           <button class="dash-create-btn" id="cust-req-btn" onclick="_creqToggle()" style="white-space:nowrap;display:none" title="Bedrifter som har registrert seg selv og valgt dere som leverandør">Søknader om tilgang <span id="cust-req-count" style="display:none;margin-left:4px;padding:1px 7px;border-radius:10px;background:#e8742c;color:#fff;font-size:11px;font-weight:700"></span></button>
+          <button class="dash-create-btn" id="cust-mod-btn" onclick="_cmodToggle()" style="white-space:nowrap;display:none" title="Hva hver kundebedrift kan prosjektere selv">Moduler for kunder</button>
           <button class="dash-create-btn" onclick="_showNewCustomerPopup()" style="white-space:nowrap">＋ Ny kunde</button>
         </div>
         <div id="cust-req-section" style="display:none;margin-bottom:16px"></div>
+        <div id="cust-mod-section" style="display:none;margin-bottom:16px"></div>
         <div class="pl-table-wrap">
           <table class="pl-table">
             <thead>
@@ -3456,7 +3458,10 @@ async function _savePersonalModTypeOverride(typeId, modType) {
 function _setCableRoomType(typeId, familyName, categoryId) {
   const room = S.rooms.find(r => r.id === S.ui.selectedRoomId);
   if (!room) return;
-  setRoomType(room.id, typeId);
+  if (setRoomType(room.id, typeId) === false) {   // 170: låst romtype — sett velgeren tilbake
+    const sel = document.getElementById('cable-room-type'); if (sel) sel.value = room.roomType || '';
+    return;
+  }
   // Update W/m² input to match room type default
   const defaults = _roomTypeDefaults(typeId);
   const wm2Input = document.getElementById('cable-target-wm2');
@@ -3721,6 +3726,7 @@ let _snowSel = null;      // valgt produktfamilie { family, kind, watt, unit, vo
 let _snowState = null;    // siste beregning + valgt produkt (for lagring/dokumentasjon)
 
 function _openSnowCalc() {
+  if (!_moduleAvailable('snowcalc')) { _moduleLockDialog('snowcalc'); return; }   // 170
   const existing = document.getElementById('snow-modal-bg'); if (existing) existing.remove();
   _snowLayers = JSON.parse(JSON.stringify(SNOW_DEFAULT_LAYERS));
   const cat = _snowCatalogProducts();
@@ -3963,6 +3969,7 @@ async function _snowLookupPostcode() {
 
 // ─── Frostsikring rør: beregnings-modal (Del B) ───
 function _openFrostModule() {
+  if (!_moduleAvailable('frost')) { _moduleLockDialog('frost'); return; }   // 170
   const existing = document.getElementById('frost-modal-bg'); if (existing) existing.remove();
   const diamOpts = FROST_DIAM.map((d,i) => `<option value="${i}"${i===5?' selected':''}>${d[0]}  (${d[1]} mm)</option>`).join('');
   const isoOpts = FROST_ISO.map(v => `<option value="${v}"${v===30?' selected':''}>${v} mm</option>`).join('');
@@ -6589,7 +6596,7 @@ function _planAapneKort(roomId) {
       onkeydown="if(event.key==='Enter'){event.preventDefault();_planKortBekreft(${room.id});}">
     <label style="font-size:11px;color:var(--dim)">Romtype</label>
     <select id="_pk-type" class="modal-inp" style="width:100%;margin:3px 0 10px">
-      ${typer.map(t => `<option value="${t.id}"${room.roomType === t.id ? ' selected' : ''}>${esc(t.label)}</option>`).join('')}
+      ${typer.map(t => `<option value="${t.id}"${room.roomType === t.id ? ' selected' : ''}>${esc(t.label)}${_roomTypeLocked(t.id) ? ' 🔒' : ''}</option>`).join('')}
     </select>
     <!-- 052: varmen er en EGEN akse fra romtypen. Et «Lager» er navngitt og skal finnes på
          tegningen, men uten varme (spec regel 4) — derfor en egen avkryssing, ikke en romtype. -->
@@ -6622,6 +6629,7 @@ function _planKortBekreft(roomId) {
   if (!room) return;
   const navn = (document.getElementById('_pk-navn')?.value || '').trim();
   const type = document.getElementById('_pk-type')?.value || room.roomType;
+  if (type !== room.roomType && _roomTypeLocked(type)) { _moduleLockDialog('fryserom'); return; }   // 170: kortet blir stående
   pushUndo();
   _undoSuppress++;
   try {
@@ -8073,6 +8081,10 @@ function showUnifiedProductPanel() {
   const room = S.rooms.find(r => r.id === roomId);
   if (!room) return;
   hideProduktMenu();
+  // 170: nye utlegg i et rom i en låst modul (delt snøprosjekt, fryserom) lages ikke. Rommet og
+  // det som alt ligger der, kan fortsatt åpnes og leses.
+  const _lk = _roomLockKey(room);
+  if (_lk) { _moduleLockDialog(_lk); return; }
 
   // Detect what's currently placed in the room to pre-select
   const hasCables = S.cables.some(c => c.roomId === roomId);
@@ -8138,7 +8150,7 @@ function showUnifiedProductPanel() {
   const _wm2Mc = _moduleContext(_roomModuleType(roomId));
 
   const rtOptions = ROOM_TYPES.map(t =>
-    `<option value="${t.id}"${curType === t.id ? ' selected' : ''}>${t.icon} ${t.label} (${t.targetWm2} W/m²)</option>`
+    `<option value="${t.id}"${curType === t.id ? ' selected' : ''}>${t.icon} ${t.label} (${t.targetWm2} W/m²)${_roomTypeLocked(t.id) ? ' 🔒' : ''}</option>`
   ).join('');
 
   const ftOptions = FLOOR_TYPES.map(f =>
@@ -8221,6 +8233,11 @@ function showUnifiedProductPanel() {
 function _upcRoomTypeChanged(typeId) {
   const room = S.rooms.find(r => r.id === S.ui.selectedRoomId);
   if (!room) return;
+  if (room.roomType !== typeId && _roomTypeLocked(typeId)) {   // 170
+    _moduleLockDialog('fryserom');
+    const sel = document.getElementById('upc-room-type'); if (sel) sel.value = room.roomType || '';
+    return;
+  }
   pushUndo();
   room.roomType = typeId || null;
   // Set W/m² from room type defaults
@@ -24531,6 +24548,7 @@ function _autoFillPlates(productId) {
 }
 
 function showCablePlacePanel(familyName, categoryId) {
+  { const _lk = _roomLockKey(S.rooms.find(r => r.id === S.ui.selectedRoomId)); if (_lk) { hideProduktMenu(); _moduleLockDialog(_lk); return; } }   // 170
   S.ui.manualFamilyName = familyName;
   S.ui.manualCategoryId = categoryId;
   hideProduktMenu();
@@ -24622,7 +24640,7 @@ function showCablePlacePanel(familyName, categoryId) {
     const room = S.rooms.find(r => r.id === S.ui.selectedRoomId);
     const curType = room?.roomType || '';
     const rtOptions = ROOM_TYPES.map(t =>
-      `<option value="${t.id}"${curType === t.id ? ' selected' : ''}>${t.icon} ${t.label} (${t.targetWm2} W/m²)</option>`
+      `<option value="${t.id}"${curType === t.id ? ' selected' : ''}>${t.icon} ${t.label} (${t.targetWm2} W/m²)${_roomTypeLocked(t.id) ? ' 🔒' : ''}</option>`
     ).join('');
     section.innerHTML = `
       <div class="rwp-section-label"><svg class="ic ic-plug" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M12 22v-5M9 8V2M15 8V2M6 8h12v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4z"/></svg> ${esc(familyName)}</div>
@@ -61506,6 +61524,10 @@ function clampHindringToRoom(h,room) {
 // ser ALDRI navneboksen med mindre de eksplisitt ber om den.
 function createRoom(pts, shape, name, floorId, keepPosition=false, wallConfigs=null, promptName=false) {
   if (!pts || pts.length < 3) return null;
+  // 170: et NYTT rom i en låst modul (f.eks. et delt snøprosjekt åpnet av en kundebedrift) lages
+  // ikke. Alle tegneverktøyene og hurtigtastene R/M/P/L/W ender her. Eksisterende rom står urørt.
+  const _cmPart = S.project.parts.find(p => p.id === S.ui.activePartId);
+  if (_cmPart && !_moduleAvailable(_cmPart.moduleType)) { _moduleLockDialog(_cmPart.moduleType); return null; }
   pushUndo();
   // Auto-assign to first floor if none specified
   if (floorId === null && S.floors.length > 0) floorId = S.floors[0].id;
@@ -63582,6 +63604,8 @@ function confirmFixedScale() {
 function setRoomType(roomId, typeId) {
   const room = S.rooms.find(r => r.id === roomId);
   if (!room) return;
+  // 170: fryserom er låst for kundebedrifter. Returnerer false så kallere kan stoppe.
+  if (room.roomType !== typeId && _roomTypeLocked(typeId)) { _moduleLockDialog('fryserom'); renderSidebar(); return false; }
   pushUndo();
   room.roomType = typeId || null;
   const defaults = _roomTypeDefaults(typeId);
@@ -63939,6 +63963,7 @@ function setRoomModuleType(roomId, v) {
   const room = S.rooms.find(r => r.id === roomId); if (!room) return;
   const newType = (v === 'snow') ? 'snow' : 'indoor';
   if ((room.moduleType || 'indoor') === newType) return;
+  if (!_moduleAvailable(newType)) { _moduleLockDialog(newType); return; }   // 170
   const hasProducts = _roomProductCount(roomId) > 0;
   const customWm2Note = room.targetWm2 != null ? ` (egen ønsket effekt ${room.targetWm2} W/m² beholdes)` : '';
   if (hasProducts) {
@@ -63968,7 +63993,7 @@ function _varmetypeCtxItems(id, room) {
   const isSnow = !!room && room.moduleType === 'snow';
   return `<div class="ctx-sub-lbl">Varmetype</div>
     <div class="ctx-item${!isSnow?' sel':''}" onclick="setRoomModuleType(${id},'indoor');hideCtx()">${!isSnow?'● ':''}Innendørs</div>
-    <div class="ctx-item${isSnow?' sel':''}" onclick="setRoomModuleType(${id},'snow');hideCtx()">${isSnow?'● ':''}Utendørs</div>`;
+    <div class="ctx-item${isSnow?' sel':''}" onclick="setRoomModuleType(${id},'snow');hideCtx()">${isSnow?'● ':''}Utendørs${!isSnow && !_moduleAvailable('snow') ? ' ' + _lockIcon(12) : ''}</div>`;
 }
 
 // spec-varmeplan-bytt-produkt.md, Rettelsen (Kenneth 02.09.2026): «Bytt mattetype i et snøområde
@@ -64141,6 +64166,10 @@ function _dupeRoomCloneItem(key, item) {
 function dupeRoom(id, opts) {
   const r = S.rooms.find(r => r.id === id); if (!r) return null;
   const withProducts = !opts || opts.withProducts !== false;
+  // 170: kopien er et NYTT rom — i en låst modul (eller et låst fryserom med produkter) lages den ikke.
+  const _dupMt = withProducts ? _roomModuleType(id) : (opts.moduleType || _roomModuleType(id));
+  if (!_moduleAvailable(_dupMt)) { _moduleLockDialog(_dupMt); return null; }
+  if (withProducts && _roomTypeLocked(r.roomType)) { _moduleLockDialog('fryserom'); return null; }
   // createRoom always normalizes to BL=(0,0), so just copy points
   const copy = createRoom(r.points.map(p=>({x:p.x,y:p.y})), r.shape, r.name+' (kopi)', r.floorId);
   if (!copy) return null;
@@ -64181,7 +64210,7 @@ function _showDupeRoomMenu(e, id) {
   const html = `
     <div class="ctx-item" onclick="dupeRoom(${id},{withProducts:true});hideProduktMenu()">⧉ Dupliser med produkter</div>
     <div class="ctx-item" onclick="dupeRoom(${id},{withProducts:false,moduleType:'indoor'});hideProduktMenu()">⧉ Dupliser rom, innendørs (uten produkter)</div>
-    <div class="ctx-item" onclick="dupeRoom(${id},{withProducts:false,moduleType:'snow'});hideProduktMenu()">⧉ Dupliser rom, utendørs (uten produkter)</div>`;
+    <div class="ctx-item" onclick="dupeRoom(${id},{withProducts:false,moduleType:'snow'});hideProduktMenu()">⧉ Dupliser rom, utendørs (uten produkter)${!_moduleAvailable('snow') ? ' ' + _lockIcon(12) : ''}</div>`;
   showProduktDropdown(html, e.clientX, e.clientY);
 }
 
@@ -65506,7 +65535,7 @@ function _renderDetailPanel(roomId) {
   }
 
   // Room actions
-  const _rtOpts = ROOM_TYPES.map(t => `<option value="${t.id}"${room.roomType===t.id?' selected':''}>${t.icon} ${t.label}</option>`).join('');
+  const _rtOpts = ROOM_TYPES.map(t => `<option value="${t.id}"${room.roomType===t.id?' selected':''}>${t.icon} ${t.label}${_roomTypeLocked(t.id) ? ' 🔒' : ''}</option>`).join('');
   const _twVal = room.targetWm2 != null ? room.targetWm2 : '';
   // DEL A (14.09.2026): min/max fra rommets EGEN modul (_roomModuleType — samme mønster
   // _roomTargetWm2 allerede bruker), ikke et literalt 30/300.
@@ -65780,7 +65809,7 @@ function roomCtxMenu(e, id) {
     <div class="ctx-sep"></div>
     <div class="ctx-item" onclick="dupeRoom(${id},{withProducts:true});hideCtx()">⧉ Dupliser med produkter</div>
     <div class="ctx-item" onclick="dupeRoom(${id},{withProducts:false,moduleType:'indoor'});hideCtx()">⧉ Dupliser rom, innendørs</div>
-    <div class="ctx-item" onclick="dupeRoom(${id},{withProducts:false,moduleType:'snow'});hideCtx()">⧉ Dupliser rom, utendørs</div>
+    <div class="ctx-item" onclick="dupeRoom(${id},{withProducts:false,moduleType:'snow'});hideCtx()">⧉ Dupliser rom, utendørs${!_moduleAvailable('snow') ? ' ' + _lockIcon(12) : ''}</div>
     <div class="ctx-item" onclick="showHindringModal(${id});hideCtx()">⬛ Lag hindring</div>
     <div class="ctx-item" onclick="toggleRoomCard(${id});hideCtx()"><svg class="ic ic-clipboard" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2.5" width="6" height="3.5" rx="1"/></svg> ${room?.cardVisible?'Skjul':'Vis'} infokort</div>
     <div class="ctx-item" onclick="_docFromRoom(${id});hideCtx()"><svg class="ic ic-shield" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6z"/><path d="m9 12 2 2 4-4"/></svg> Dokumentér (garantibevis)</div>
@@ -72852,7 +72881,7 @@ function canvasRoomCtxMenu(e, roomId) {
   // 075: to kolonner (ikon + navn, samme klikk som før), gjeldende romtype uthevet. Rekkefølgen er
   // ROOM_TYPES sin — radvis, så Bad · Kjøkken står øverst som før.
   const rtOpts = '<div class="ctx-grid">' + ROOM_TYPES.map(t =>
-    `<div class="ctx-item${room && room.roomType === t.id ? ' sel' : ''}" title="${esc(t.label)}" onclick="setRoomType(${roomId},'${t.id}');hideCtx();renderSidebar();render()">${t.icon} ${t.label}</div>`
+    `<div class="ctx-item${room && room.roomType === t.id ? ' sel' : ''}" title="${esc(t.label)}" onclick="setRoomType(${roomId},'${t.id}');hideCtx();renderSidebar();render()">${t.icon} ${t.label}${_roomTypeLocked(t.id) ? ' ' + _lockIcon(12) : ''}</div>`
   ).join('') + '</div>';
   document.getElementById('ctx-menu').innerHTML = `
     ${_angreItem()}
@@ -74564,11 +74593,14 @@ function _renderModuleScreen() {
   for (const id of MODULE_SCREEN_ORDER) {
     const mt = MODULE_TYPES.find(m => m.id === id);
     if (!mt) continue;
-    grid += `<div class="module-tile${mt.available?'':' disabled'}" onclick="${mt.available?`addPart('${mt.id}')`:''}" title="${mt.available?'':'Kommer snart'}">
-      <div class="module-tile-ico">${IC(_MODSCREEN_ICON[mt.id]||_MOD_ICON[mt.id]||'home',32)}</div>
+    // 170: låst for kundebedriften → vises med hengelås, klikk gir forespørselsdialogen.
+    const locked = mt.available && !_moduleAvailable(mt.id);
+    const act = !mt.available ? '' : (locked ? `_moduleLockDialog('${mt.id}')` : `addPart('${mt.id}')`);
+    grid += `<div class="module-tile${mt.available?'':' disabled'}${locked?' locked':''}" onclick="${act}" title="${mt.available?(locked?'Be leverandøren om prosjektering':''):'Kommer snart'}"${locked?' style="opacity:.6"':''}>
+      <div class="module-tile-ico">${IC(locked?'lock':(_MODSCREEN_ICON[mt.id]||_MOD_ICON[mt.id]||'home'),32)}</div>
       <div class="module-tile-name">${mt.name}</div>
       <div class="module-tile-desc">${mt.desc}</div>
-      ${mt.available?'':`<span class="coming-badge">Kommer snart</span>`}
+      ${mt.available?(locked?`<span class="coming-badge">Be om prosjektering</span>`:''):`<span class="coming-badge">Kommer snart</span>`}
     </div>`;
   }
   document.getElementById('module-grid').innerHTML=grid;
@@ -74592,6 +74624,8 @@ function _renderModuleScreen() {
 }
 
 function addPart(moduleType) {
+  // 170: en NY del i en låst modul lages ikke (eksisterende deler åpnes via switchActivePart).
+  if (!_moduleAvailable(moduleType)) { _moduleLockDialog(moduleType); return; }
   const mt=MODULE_TYPES.find(m=>m.id===moduleType);
   const existingCount=S.project.parts.filter(p=>p.moduleType===moduleType).length;
   const defaultName=mt?mt.name:'Del';
@@ -75254,7 +75288,8 @@ function _listEnsureFloor(part,building){
 // envType (3. arg): DEL A Krav 3 — arves fra forrige rad av _listDraftRoom, standard 'indoor' for
 // alle andre kallere (PDF-romgjennomgang osv.), samme som før.
 function _listCreateRoomObj(part, floor, envType){
-  const mt = envType || 'indoor';
+  // 170: arver en ny rad «Utendørs» fra forrige rad (delt prosjekt) og er det låst, blir den innendørs.
+  const mt = (envType && _moduleAvailable(envType)) ? envType : 'indoor';
   return { id:S.counters.nextRoomId++, name:'Rom '+(S.rooms.filter(r=>r.partId===part.id && r.listMode && !r.listDraft).length+1),
     floorId:floor.id, partId:part.id, listMode:true, shape:'list', points:[], walls:[],
     area:0, listHindCm2:0, targetWm2:null, roomType:null, floorType:null, dims:[], annotOffsets:{}, color:'#888', cardVisible:false,
@@ -75392,7 +75427,11 @@ function _listOnType(roomId,v){ const r=S.rooms.find(r=>r.id===roomId); if(!r) r
 // 061: Varmetype-bytte forkaster blandingen — radenes produkter finnes ikke i den andre
 // varmetypens klasser i det hele tatt (InFloor inne / InSnow ute), så et nytt friskt forslag er
 // den eneste ærlige tilstanden. Samme regel som Type → Matte.
-function _listOnEnv(roomId,v){ const r=S.rooms.find(r=>r.id===roomId); if(!r) return; r.moduleType=(v==='snow')?'snow':'indoor'; r.listFamily=null; r.listFamilyBy='user'; r.listMix=null; _listAutoSuggest(roomId); _listUpdateRowSelects(roomId,false); _listRefreshComputed(roomId); }
+function _listOnEnv(roomId,v){ const r=S.rooms.find(r=>r.id===roomId); if(!r) return;
+  // 170: Utendørs er låst for kundebedrifter → dialog, og velgeren settes tilbake.
+  const _env=(v==='snow')?'snow':'indoor';
+  if(_env!==(r.moduleType||'indoor') && !_moduleAvailable(_env)){ _moduleLockDialog(_env); const s=document.getElementById('li-env-'+roomId); if(s) s.value=r.moduleType||'indoor'; return; }
+  r.moduleType=(v==='snow')?'snow':'indoor'; r.listFamily=null; r.listFamilyBy='user'; r.listMix=null; _listAutoSuggest(roomId); _listUpdateRowSelects(roomId,false); _listRefreshComputed(roomId); }
 // Klasse-bytte (10T/17T el. 60/100/150T): behold fokus på Klasse → TAB videre til Produkt.
 function _listOnClass(roomId,v){ const r=S.rooms.find(r=>r.id===roomId); if(!r) return;
   // 061: i blandet modus TØMMES radene ved klassebytte — produktene i radene finnes ikke i den
@@ -75845,7 +75884,7 @@ function _listDraftCardHtml(room){
       ${field('Toppgulv', sel('ftype', `<option value="">— Ikke angitt —</option>${ftOpts}`, 150))}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:14px 18px;margin-bottom:16px">
-      ${field('Varmetype', sel('env',`<option value="indoor"${envType==='indoor'?' selected':''}>Innendørs</option><option value="snow"${envType==='snow'?' selected':''}>Utendørs</option>`,110))}
+      ${field('Varmetype', sel('env',`<option value="indoor"${envType==='indoor'?' selected':''}>Innendørs</option><option value="snow"${envType==='snow'?' selected':''}>Utendørs${envType!=='snow' && !_moduleAvailable('snow')?' 🔒':''}</option>`,110))}
       ${field('Type', sel('type',`<option value="cable"${modType==='cable'?' selected':''}>Kabel</option><option value="mat"${modType==='mat'?' selected':''}>Matte</option>`,92))}
       ${field('Klasse', sel('class',_listClassOptionsHtml(room),160))}
       ${mixRows
@@ -79225,7 +79264,9 @@ function renderModuleNav() {
     let cls = 'tb-mod-btn';
     if (isActive) cls += ' active';
     const shortName = _MOD_SHORT[mt.id] || mt.name;
-    html += `<button class="${cls}" onclick="_navToModule('${mt.id}')" title="${mt.name}"><span class="mod-ico">${IC(_MOD_ICON[mt.id]||'home',16)}</span><span class="mod-lbl">${shortName}</span></button>`;
+    // 170: låst modul uten eksisterende del → hengelås. Finnes delen (delt prosjekt), åpnes den.
+    const locked = !_moduleAvailable(mt.id) && !S.project.parts.some(p => p.moduleType === mt.id);
+    html += `<button class="${cls}" onclick="_navToModule('${mt.id}')" title="${mt.name}${locked ? ' — be leverandøren om prosjektering' : ''}"${locked ? ' style="opacity:.6"' : ''}><span class="mod-ico">${IC(locked ? 'lock' : (_MOD_ICON[mt.id]||'home'),16)}</span><span class="mod-lbl">${shortName}</span></button>`;
   }
   html += '</div>';
   container.innerHTML = html;
@@ -88768,14 +88809,21 @@ function _viewAsRefresh() {
   if (typeof _upcRefreshResults === 'function') _upcRefreshResults();
   if (typeof renderSidebar === 'function') renderSidebar();
   if (typeof updateCtxBar === 'function') updateCtxBar();
+  // 170: modul-låsene følger «vis som» (dashbord-fliser, verktøy og modul-nav).
+  if (typeof _renderDashModules === 'function') _renderDashModules();
+  if (typeof _renderDashTools === 'function') _renderDashTools();
+  if (typeof renderModuleNav === 'function') renderModuleNav();
 }
-function _viewAsSet(orgId) {
+async function _viewAsSet(orgId) {
   const org = (_viewAsOrgs || []).find(o => String(o.id) === String(orgId));
   if (!org) return;
   _viewAsOrg = org;
   const m = document.getElementById('viewas-modal'); if (m) m.style.display = 'none';
   document.querySelectorAll('.user-avatar-menu').forEach(mm => mm.classList.remove('open'));
   _viewAsRefresh();
+  // 170: hent kundens modul-lås (tolerant) og tegn på nytt — da ser superadmin kundens låser.
+  await _loadOrgModules(org);
+  if (_viewAsOrg === org) _viewAsRefresh();
 }
 function _viewAsEnd() {
   _viewAsOrg = null;
@@ -94781,6 +94829,9 @@ async function _loadUserOrg() {
     try { _activeOrgId = localStorage.getItem(_ACTIVE_ORG_KEY) || null; } catch(e) {}
     _resolveActiveOrg();
     if (_userOrg && _userOrg.id) _loadOrgBranding(_userOrg.id);   // henter logo-kolonnene separat (tolerant)
+    // 170: modul-låsen hentes separat og tolerant (kolonnen finnes ikke før migrasjonen) — ventes
+    // på, så dashbordet tegnes med riktige låser første gang.
+    if (_userOrg) await _loadOrgModules(_userOrg);
   } catch(e) { /* org lookup failed, products stay unfiltered */ }
 }
 
@@ -94802,6 +94853,7 @@ async function _switchActiveOrg(orgId) {
   _activeOrgId = orgId;
   try { localStorage.setItem(_ACTIVE_ORG_KEY, orgId); } catch(e) {}
   _resolveActiveOrg();
+  try { await _loadOrgModules(_userOrg); } catch(e) {}   // 170
   // Clear org-scoped caches so the new org's data loads fresh.
   _cachedCustomers = null;
   _cachedProjects = null;
@@ -96819,6 +96871,10 @@ function _showProjectListScreen() {
   if (reqBtn) reqBtn.style.display = _isSupplier ? '' : 'none';
   if (_isSupplier) _creqRefresh().catch(() => {});
   else { _creqState.rows = []; _creqUpdateBadge(); }
+  // 170: «Moduler for kundebedrifter» — bare leverandør. Grensen er set_customer_modules() selv.
+  const cmodBtn = document.getElementById('cust-mod-btn');
+  if (cmodBtn) cmodBtn.style.display = _isSupplier ? '' : 'none';
+  if (!_isSupplier && _cmodState.open) { _cmodState.open = false; _cmodRender(); }
   // Render module buttons, tools, stats, and project list
   _renderDashModules();
   _renderDashTools();
@@ -96855,9 +96911,322 @@ const _DASH_TOOL_CARDS = [
 // available-flagget her, det var nettopp den kopien som driftet og ga «Tak og takrenner»-feilen.
 // Kort uten treff i MODULE_TYPES (i dag kun 'fromdrawing', en startmetode uten egen oppføring —
 // se Åpne punkt 3 i runde 4-prompten) vises alltid.
-function _moduleAvailable(id) {
+// 170: _moduleAvailable er også DEN ENE porten for modul-låsen per org. Alle steder som lar
+// brukeren starte noe nytt i en modul spør her (se lista i blokka «170 · MODULER FOR
+// KUNDEBEDRIFTER» rett under). `ignoreLock` = «finnes modulen i det hele tatt» — brukes bare for
+// å avgjøre om en flis skal VISES (låst flis vises med hengelås, globalt utilgjengelig vises ikke).
+function _moduleAvailable(id, ignoreLock) {
   const mt = MODULE_TYPES.find(m => m.id === id);
-  return mt ? mt.available : true;
+  const globalOk = mt ? mt.available : true;
+  if (!globalOk || ignoreLock) return globalOk;
+  return _moduleAllowed(id);
+}
+
+// ═══ 170 · MODULER FOR KUNDEBEDRIFTER ═══════════════════════════════════════════════════════
+// Kenneth 02.11.2026: kundebedrifter (elektrobedrifter/grossister) bruker Varmeplan selv, men bare
+// kabel, folie og matte innendørs. Snø, trapp, tak, fryserom og verktøyene effektbehov/frostsikring
+// prosjekteres av leverandøren — de VISES med hengelås og «Be Cenika om prosjektering».
+//
+// Data: organizations.allowed_modules (text[]). null = alle moduler (Cenika og alle eksisterende
+// orger — ingenting endres for dem). Kundebedrifter får ['indoor','list'] ved oppretting og
+// godkjenning (_activate_customer_org). Leverandøren endrer det per kunde (set_customer_modules).
+//
+// ⚠ DETTE ER EN GRENSE I GRENSESNITTET, IKKE EN SIKKERHETSGRENSE. En teknisk kyndig bruker kan
+// lage et snøprosjekt ved å endre data direkte. Det er greit: modulene beskytter ikke data, bare
+// arbeidsflyt. Ingen RLS for dette (bevisst).
+//
+// Delte prosjekter åpnes og leses alltid, uansett modul. Låsen gjelder bare å LAGE nye deler,
+// rom eller utlegg i en låst modul. Steder som spør _moduleAvailable (STEG 0, 170):
+//   dashbord-fliser (_renderDashModules/_renderDashTools) · _quickStartModule/_quickStartFromDrawing
+//   · addPart (modulvalget, «+ Del», sidepanelets modul-nav, tom hurtigliste) · _renderModuleScreen
+//   · renderModuleNav · _openSnowCalc/_openFrostModule · createRoom (tegneverktøy og hurtigtaster
+//   R/M/P/L/W ender alle der) · dupeRoom (høyreklikk «Dupliser rom, utendørs») · produktpanelene
+//   (showUnifiedProductPanel/showCablePlacePanel) · hurtigprosjekteringens Innendørs/Utendørs
+//   (_listOnEnv, _listCreateRoomObj) · romtypevelgerne (setRoomType, _upcRoomTypeChanged,
+//   _setCableRoomType, _planKortBekreft) for fryserom.
+// Nøklene er de eksisterende modul-id-ene i MODULE_TYPES, pluss romtype-id-en 'fryserom'
+// (fryserom er en romtype, ikke en modul — målt i 168). Intet nytt navnesystem.
+const _MODULE_LOCK_KEYS = ['indoor', 'list', 'stair', 'snow', 'snowcalc', 'frost', 'roof', 'fryserom'];
+// Startmetoder uten egen oppføring i MODULE_TYPES, og hvilken modul de egentlig er.
+const _MODULE_LOCK_ALIAS = { fromdrawing: 'indoor' };
+// Standard for kundebedrifter. Samme liste som _activate_customer_org i SQL.
+const _CUSTOMER_DEFAULT_MODULES = ['indoor', 'list'];
+const _MODULE_LOCK_LABEL = {
+  indoor: 'Innendørs gulvvarme', list: 'Hurtig prosjektering', stair: 'Snøsmelting i trapper',
+  snow: 'Snøsmelting', snowcalc: 'Effektbehov for snøsmelting', frost: 'Frostsikring av rør',
+  roof: 'Tak og takrenner', fryserom: 'Fryserom og kjølerom',
+};
+
+// Ren regel: er modulen tillatt for orgen? `org` utelatt = brukerens effektive org (_effectiveOrg,
+// så superadmin «vis som» viser kundens låser). Superadmin uten «vis som» ser alt (samme som
+// _productVisibleToOrg). null/manglende allowed_modules = alt. Ukjent modulnavn = false.
+function _moduleAllowed(moduleKey, org) {
+  const key = _MODULE_LOCK_ALIAS[moduleKey] || moduleKey;
+  if (!_MODULE_LOCK_KEYS.includes(key)) return false;
+  if (org === undefined) {
+    const viewAs = (typeof _viewAsOrg !== 'undefined') ? _viewAsOrg : null;
+    if (!viewAs && typeof _currentUser !== 'undefined' && _currentUser?.app_metadata?.is_superadmin) return true;
+    org = (typeof _effectiveOrg === 'function') ? _effectiveOrg() : null;
+  }
+  const list = org ? org.allowed_modules : null;
+  if (!Array.isArray(list)) return true;
+  return list.includes(key);
+}
+// Romtypen sin låsenøkkel (i dag bare fryserom) og om den er låst.
+function _roomTypeLocked(typeId) {
+  return typeId === 'fryserom' && !_moduleAvailable('fryserom');
+}
+// Hvilken låst modul et EKSISTERENDE rom hører til (null = ikke låst). Brukes der det legges nye
+// utlegg i rommet. Rommet kan åpnes og leses uansett.
+function _roomLockKey(room) {
+  if (!room) return null;
+  const mt = _roomModuleType(room.id);
+  if (!_moduleAvailable(mt)) return mt;
+  if (_roomTypeLocked(room.roomType)) return 'fryserom';
+  return null;
+}
+function _lockIcon(size) { return `<span class="mod-lock" title="Be leverandøren om prosjektering" style="display:inline-flex;vertical-align:middle;opacity:.8">${IC('lock', size || 12)}</span>`; }
+
+// Henter allowed_modules for en org, tolerant (samme mønster som _loadOrgBranding): mangler
+// kolonnen (migrasjonen ikke kjørt), står orgen uten felt = alle moduler. Fail-open.
+async function _loadOrgModules(org) {
+  if (!_db || !org || !org.id) return;
+  try {
+    const { data, error } = await _db.from('organizations').select('allowed_modules').eq('id', org.id).maybeSingle();
+    if (!error && data) org.allowed_modules = Array.isArray(data.allowed_modules) ? data.allowed_modules : null;
+  } catch (_) { /* kolonnen mangler → alle moduler */ }
+}
+
+// Leverandørens kontakt for forespørselen. Kundebedriften kan ikke lese leverandørens org-rad
+// (RLS), derfor en security definer-funksjon (supabase-migration-kundemoduler.sql). Fail-open:
+// finnes ikke funksjonen, vises dialogen uten e-postknapp.
+const _modContactCache = {};
+async function _moduleRequestContact(org) {
+  if (!org || !org.id) return null;
+  if (_modContactCache[org.id] !== undefined) return _modContactCache[org.id];
+  let c = null;
+  try {
+    const { data, error } = await _db.rpc('module_request_contact', { p_org_id: org.id });
+    if (!error && data && typeof data === 'object') c = { name: data.supplier_name || null, email: data.contact_email || null };
+  } catch (_) {}
+  _modContactCache[org.id] = c;
+  return c;
+}
+
+// Ren: ferdig utfylt e-post (mailto). Prosjektfeltene er tomme når forespørselen kommer fra
+// dashbordet, før noe prosjekt finnes.
+function _moduleRequestMailto(o) {
+  const label = _MODULE_LOCK_LABEL[o.moduleKey] || o.moduleKey;
+  const p = o.project || {};
+  const subject = 'Forespørsel om prosjektering: ' + label + (p.name ? ' — ' + p.name : '');
+  const body = [
+    'Hei' + (o.supplierName ? ' ' + o.supplierName : '') + ',',
+    '',
+    'Vi ønsker at dere prosjekterer ' + label.toLowerCase() + ' for oss.',
+    '',
+    'Prosjekt: ' + (p.name || '(ikke opprettet ennå)'),
+    'Adresse: ' + (p.address || '—'),
+    'Lenke: ' + (p.url || '(prosjektet er ikke lagret ennå)'),
+    '',
+    'Hilsen',
+    o.userName || '',
+    o.orgName || '',
+  ].join('\r\n');
+  return 'mailto:' + encodeURIComponent(o.email || '').replace(/%40/g, '@')
+    + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+}
+function _moduleLockText(moduleKey, supplierName) {
+  const label = _MODULE_LOCK_LABEL[moduleKey] || moduleKey;
+  return label + ' prosjekteres av ' + (supplierName || 'leverandøren') + '. Send forespørsel, så får du et ferdig prosjekt tilbake.';
+}
+// Prosjektet forespørselen gjelder: bare når et prosjekt faktisk er åpent (ikke fra dashbordet,
+// der S kan holde et gammelt prosjekt).
+function _moduleRequestProject() {
+  const pls = document.getElementById('project-list-screen');
+  if (pls && getComputedStyle(pls).display !== 'none') return {};
+  const addr = (S.project && S.project.address && S.project.address.text) || (S.project && S.project.description) || '';
+  return {
+    name: (S.project && S.project.name) || '',
+    address: addr,
+    // Utsendt lenke → _PUBLIC_BASE_URL (027 regel 8), aldri location.origin.
+    url: _supabaseProjectId ? (_PUBLIC_BASE_URL + '/?project=' + encodeURIComponent(_supabaseProjectId)) : '',
+  };
+}
+
+async function _moduleLockDialog(moduleKey) {
+  const key = _MODULE_LOCK_ALIAS[moduleKey] || moduleKey;
+  document.getElementById('_modlock-ov')?.remove();
+  const ov = document.createElement('div');
+  ov.id = '_modlock-ov';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:3100;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  const render = (c, loading) => {
+    const sup = (c && c.name) || null;
+    const supShort = sup ? sup.replace(/\s+AS$/i, '') : 'leverandøren';
+    const org = _effectiveOrg();
+    const href = (c && c.email) ? _moduleRequestMailto({
+      moduleKey: key, email: c.email, supplierName: supShort, project: _moduleRequestProject(),
+      userName: (typeof _myDisplayName === 'function' ? _myDisplayName() : ''), orgName: org && org.name,
+    }) : null;
+    const btnTxt = 'Be ' + supShort + ' om prosjektering';
+    ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(420px,92vw);padding:22px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:16px;font-weight:700;color:var(--text)">${IC('lock', 18)} ${esc(_MODULE_LOCK_LABEL[key] || key)}</div>
+      <div id="_modlock-txt" style="font-size:13px;line-height:1.55;color:var(--text);margin-bottom:16px">${esc(_moduleLockText(key, supShort === 'leverandøren' ? null : supShort))}</div>
+      ${loading ? '<div style="font-size:12px;color:var(--dim);margin-bottom:12px">Henter kontaktadresse …</div>'
+        : (href ? '' : `<div style="font-size:12px;color:var(--dim);margin-bottom:12px">Vi har ingen e-postadresse til ${esc(supShort)} i Varmeplan ennå. Ta kontakt med dem direkte.</div>`)}
+      <div style="display:flex;justify-content:flex-end;gap:9px">
+        <button onclick="document.getElementById('_modlock-ov').remove()" style="padding:8px 15px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer">Lukk</button>
+        ${href ? `<a id="_modlock-mail" href="${esc(href)}" onclick="setTimeout(()=>document.getElementById('_modlock-ov')?.remove(),50)" style="padding:8px 15px;background:var(--accent,#4fa2b8);border-radius:8px;font-size:13px;font-weight:700;color:#0d0e10;text-decoration:none">${esc(btnTxt)}</a>` : ''}
+      </div></div>`;
+  };
+  render(null, true);
+  document.body.appendChild(ov);
+  const c = await _moduleRequestContact(_effectiveOrg());
+  if (document.getElementById('_modlock-ov') === ov) render(c, false);
+}
+
+// ── Oppgave C: leverandøren endrer modulene per kunde ──────────────────────────────────────────
+// Kunder-fanen → «Moduler for kundebedrifter». Leser list_customer_modules() og skriver med
+// set_customer_modules() — begge security definer, reglene bor der (bare leverandøren som opprettet
+// eller godkjente kundebedriften; kundebedriften selv kan ikke endre sine egne).
+let _cmodState = { open: false, rows: null, err: null, busy: {}, msg: {} };
+const _CMOD_CHOICES = ['indoor', 'list', 'stair', 'snow', 'snowcalc', 'frost', 'fryserom'];
+function _cmodErrText(e) {
+  const m = String((e && (e.message || e.details)) || e || '');
+  const code = e && e.code;
+  if (code === 'PGRST202' || code === '42883' || (/not find|does not exist/i.test(m) && /function/i.test(m)))
+    return 'Funksjonen finnes ikke i databasen ennå. Migrasjonen supabase-migration-kundemoduler.sql må kjøres i Supabase.';
+  if (/NOT_ALLOWED/.test(m)) return 'Dere kan bare endre moduler for kundebedrifter dere har opprettet eller godkjent.';
+  if (/NOT_SUPPLIER/.test(m)) return 'Bare ansatte hos en leverandør kan endre kundenes moduler.';
+  if (/UNKNOWN_MODULE/.test(m)) return 'Ukjent modul.';
+  return 'Feil: ' + m;
+}
+function _cmodToggle() {
+  _cmodState.open = !_cmodState.open;
+  _cmodRender();
+  if (_cmodState.open) _cmodLoad();
+}
+async function _cmodLoad() {
+  try {
+    const { data, error } = await _db.rpc('list_customer_modules');
+    if (error) throw error;
+    _cmodState.rows = Array.isArray(data) ? data : []; _cmodState.err = null;
+  } catch (e) { _cmodState.rows = null; _cmodState.err = _cmodErrText(e); }
+  _cmodRender();
+}
+// Ren: neste liste når én avkrysning endres. null (alle) regnes som alle valgene.
+function _cmodNext(current, key, on) {
+  const cur = Array.isArray(current) ? current.slice() : _CMOD_CHOICES.slice();
+  const s = new Set(cur);
+  if (on) s.add(key); else s.delete(key);
+  return _MODULE_LOCK_KEYS.filter(k => s.has(k));
+}
+async function _cmodSet(orgId, key, on) {
+  const row = (_cmodState.rows || []).find(r => r.org_id === orgId);
+  if (!row || _cmodState.busy[orgId]) return;
+  const next = _cmodNext(row.allowed_modules, key, on);
+  _cmodState.busy[orgId] = true; _cmodState.msg[orgId] = 'Lagrer …'; _cmodRender();
+  try {
+    const { data, error } = await _db.rpc('set_customer_modules', { p_org_id: orgId, p_modules: next });
+    if (error) throw error;
+    row.allowed_modules = (data && Array.isArray(data.allowed_modules)) ? data.allowed_modules : next;
+    _cmodState.msg[orgId] = '✓ Lagret';
+  } catch (e) { _cmodState.msg[orgId] = _cmodErrText(e); }
+  delete _cmodState.busy[orgId];
+  _cmodRender();
+}
+function _cmodRender() {
+  const box = document.getElementById('cust-mod-section');
+  if (!box) return;
+  if (!_cmodState.open) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  const head = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="font-size:14px;font-weight:600;color:var(--text)">Moduler for kundebedrifter</div>
+      <button onclick="_cmodToggle()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">Lukk</button></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">Hva kundebedriften kan prosjektere selv. Det som ikke er krysset av, vises med hengelås og «Be oss om prosjektering». Standard er innendørs gulvvarme og hurtig prosjektering (kabel, folie og matte). Delte prosjekter kan alltid åpnes.</div>`;
+  if (_cmodState.err) { box.innerHTML = head + `<div style="font-size:13px;color:#ff6b6b">${_esc(_cmodState.err)}</div>`; return; }
+  if (_cmodState.rows === null) { box.innerHTML = head + `<div style="font-size:13px;color:var(--muted)">Henter …</div>`; return; }
+  if (!_cmodState.rows.length) { box.innerHTML = head + `<div style="font-size:13px;color:var(--muted)">Ingen kundebedrifter ennå.</div>`; return; }
+  box.innerHTML = head + _cmodState.rows.map(r => {
+    const id = _esc(r.org_id);
+    const all = !Array.isArray(r.allowed_modules);
+    const busy = !!_cmodState.busy[r.org_id];
+    const boxes = _CMOD_CHOICES.map(k => {
+      const on = all || r.allowed_modules.includes(k);
+      return `<label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text);margin:3px 14px 3px 0;cursor:pointer">
+        <input type="checkbox" class="cmod-cb" data-key="${k}" ${on ? 'checked' : ''} ${busy ? 'disabled' : ''} onchange="_cmodSet('${id}','${k}',this.checked)">${_esc(_MODULE_LOCK_LABEL[k])}</label>`;
+    }).join('');
+    const msg = _cmodState.msg[r.org_id];
+    return `<div class="cmod-row" data-org="${id}" style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);margin-bottom:8px">
+      <div style="font-size:14px;font-weight:600;color:var(--text)">${_esc(r.name || '')} <span style="font-weight:400;color:var(--muted);font-size:12px">org.nr ${_esc(r.org_nr || '—')}${all ? ' · alle moduler' : ''}</span></div>
+      <div style="margin-top:6px">${boxes}</div>
+      ${msg ? `<div style="font-size:12px;margin-top:4px;color:${/^✓/.test(msg) ? '#22c55e' : (/…$/.test(msg) ? 'var(--muted)' : '#ff6b6b')}">${_esc(msg)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// Regresjonstest 170. Ren (ingen database).
+function _moduleAllowedRegressionTest() {
+  const results = [];
+  const check = (name, cond, got) => results.push({ name, ok: !!cond, got });
+  try {
+    const alle = { allowed_modules: null }, kunde = { allowed_modules: ['indoor', 'list'] };
+    check('A1: null gir alle kjente moduler', _MODULE_LOCK_KEYS.every(k => _moduleAllowed(k, alle)));
+    check('A2: manglende felt gir alle', _MODULE_LOCK_KEYS.every(k => _moduleAllowed(k, {})) && _moduleAllowed('snow', null));
+    check('A3: kundens liste gir bare de to (kabel, folie og matte innendørs)',
+      _moduleAllowed('indoor', kunde) && _moduleAllowed('list', kunde)
+      && ['stair', 'snow', 'snowcalc', 'frost', 'roof', 'fryserom'].every(k => !_moduleAllowed(k, kunde)));
+    check('A4: ukjent modulnavn gir false', !_moduleAllowed('plasma', alle) && !_moduleAllowed('plasma', kunde) && !_moduleAllowed('', alle) && !_moduleAllowed(undefined, alle));
+    check('A5: «Fra tegning» er innendørs', _moduleAllowed('fromdrawing', kunde) && !_moduleAllowed('fromdrawing', { allowed_modules: ['list'] }));
+    check('A6: standardlista er den samme som i SQL', JSON.stringify(_CUSTOMER_DEFAULT_MODULES) === '["indoor","list"]');
+    check('A7: alle MODULE_TYPES-id-er er låsenøkler', MODULE_TYPES.every(m => _MODULE_LOCK_KEYS.includes(m.id)));
+
+    // _moduleAvailable bruker låsen, med «vis som» som effektiv org
+    const keepView = _viewAsOrg;
+    try {
+      _viewAsOrg = { id: 'x', name: 'Kunde AS', org_type: 'installer', allowed_modules: ['indoor', 'list'] };
+      check('B1: _moduleAvailable(snow) = false for kunden', _moduleAvailable('snow') === false);
+      check('B2: _moduleAvailable(snow, true) = true (flisa vises)', _moduleAvailable('snow', true) === true);
+      check('B3: roof er fortsatt skjult for alle', _moduleAvailable('roof', true) === false);
+      check('B4: fryserom-romtypen er låst', _roomTypeLocked('fryserom') && !_roomTypeLocked('bathroom'));
+      check('B5: frost og snowcalc låst', !_moduleAvailable('frost') && !_moduleAvailable('snowcalc'));
+      _viewAsOrg = { id: 'y', name: 'Cenika AS', org_type: 'supplier', allowed_modules: null };
+      check('B6: null-org (Cenika) har alt', ['indoor', 'list', 'stair', 'snow', 'snowcalc', 'frost'].every(k => _moduleAvailable(k)) && !_roomTypeLocked('fryserom'));
+    } finally { _viewAsOrg = keepView; }
+
+    const mt = _moduleRequestMailto({ moduleKey: 'snow', email: 'post@cenika.no', supplierName: 'Cenika',
+      project: { name: 'Hytta', address: 'Fjellvegen 1', url: 'https://varmeplan.no/?project=abc' }, userName: 'Ola', orgName: 'Welhaven Elektro AS' });
+    const dec = decodeURIComponent(mt);
+    check('C1: mailto til kontaktadressen', mt.startsWith('mailto:post@cenika.no?subject='), mt.slice(0, 40));
+    check('C2: emne og innhold har prosjektnavn, adresse og lenke', /Snøsmelting — Hytta/.test(dec) && /Adresse: Fjellvegen 1/.test(dec) && /\?project=abc/.test(dec));
+    check('C3: dialogteksten', _moduleLockText('snow', 'Cenika') === 'Snøsmelting prosjekteres av Cenika. Send forespørsel, så får du et ferdig prosjekt tilbake.', _moduleLockText('snow', 'Cenika'));
+    check('C4: uten prosjekt', /ikke opprettet ennå/.test(decodeURIComponent(_moduleRequestMailto({ moduleKey: 'stair', email: 'a@b.no', project: {} }))));
+
+    check('D1: avkrysning fra null (alle) → alt unntatt den ene', JSON.stringify(_cmodNext(null, 'snow', false)) === JSON.stringify(_CMOD_CHOICES.filter(k => k !== 'snow')));
+    check('D2: legg til snø på kunde', JSON.stringify(_cmodNext(['indoor', 'list'], 'snow', true)) === '["indoor","list","snow"]');
+
+    // Kilde: hvert inngangspunkt spør porten
+    const src = f => _kildeUtenKommentarer(f.toString());
+    const gates = { addPart, _quickStartModule, _quickStartFromDrawing, _openSnowCalc, _openFrostModule, createRoom, dupeRoom,
+      showUnifiedProductPanel, showCablePlacePanel, _listOnEnv, _listCreateRoomObj, _renderModuleScreen, renderModuleNav,
+      _renderDashModules, _renderDashTools };
+    for (const [n, f] of Object.entries(gates)) check('E: ' + n + ' spør _moduleAvailable/_roomLockKey', /_moduleAvailable\(|_roomLockKey\(/.test(src(f)));
+    for (const [n, f] of Object.entries({ setRoomType, _upcRoomTypeChanged, _planKortBekreft }))
+      check('E: ' + n + ' spør _roomTypeLocked', /_roomTypeLocked\(/.test(src(f)));
+    check('E: _setCableRoomType respekterer setRoomType sitt nei', /setRoomType\([^)]*\)\s*===\s*false/.test(src(_setCableRoomType)));
+    check('E: _moduleAllowed er den eneste som leser allowed_modules', (() => {
+      const kode = _kildeUtenKommentarer([...document.scripts].filter(sc => !sc.src).map(sc => sc.textContent).join('\n'))
+        .replace(/function _moduleAllowedRegressionTest\(\)[\s\S]*?\n\}/, '');
+      const reads = (kode.match(/\.allowed_modules\b/g) || []).length;
+      const ok = [_moduleAllowed, _loadOrgModules, _cmodSet, _cmodRender].map(f => (src(f).match(/\.allowed_modules\b/g) || []).length).reduce((a, b) => a + b, 0);
+      return reads === ok;
+    })());
+  } catch (e) {
+    results.push({ name: 'KASTET', ok: false, got: String(e && e.message || e) });
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_moduleAllowedRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return results;
 }
 function _renderDashModules() {
   const container = document.getElementById('dash-modules');
@@ -96867,14 +97236,17 @@ function _renderDashModules() {
   // DEL B runde 4: «Tak & renner» faller nå HELT ut når utilgjengelig (filtrert bort under, ikke
   // vist som en disabled/«kommer snart»-flis) og kommer tilbake som en helt vanlig, klikkbar flis
   // idet MODULE_TYPES.roof.available snus — ikke hardkodet bort, filteret gjør jobben.
-  const tile = (c, act) =>
-    `<button class="dash-tile" onclick="${act}" title="${c.name}">
-      <span class="dt-ico">${IC(c.ico,22)}</span>
+  // 170: en låst modul (kundebedrift) VISES med hengelås; klikk åpner forespørselsdialogen.
+  const tile = (c, act) => {
+    const locked = !_moduleAvailable(c.id);
+    return `<button class="dash-tile${locked ? ' locked' : ''}" onclick="${locked ? `_moduleLockDialog('${c.id}')` : act}" title="${c.name}${locked ? ' — be leverandøren om prosjektering' : ''}"${locked ? ' style="opacity:.6"' : ''}>
+      <span class="dt-ico">${IC(locked ? 'lock' : c.ico,22)}</span>
       <span class="dt-lbl">${c.short}</span>
     </button>`;
+  };
   const projAct = c => `_quickStartModule('${c.id}')`;
-  const calcCards = _DASH_CALC_CARDS.filter(c => _moduleAvailable(c.id));
-  const projCards = _DASH_PROJ_CARDS.filter(c => _moduleAvailable(c.id));
+  const calcCards = _DASH_CALC_CARDS.filter(c => _moduleAvailable(c.id, true));
+  const projCards = _DASH_PROJ_CARDS.filter(c => _moduleAvailable(c.id, true));
   container.innerHTML =
     `<div class="dash-intent">
       <div class="dash-col dash-col-calc">
@@ -96893,12 +97265,13 @@ function _renderDashModules() {
 function _renderDashTools() {
   const container = document.getElementById('dash-tools');
   if (!container) return;
-  const toolCards = _DASH_TOOL_CARDS.filter(c => _moduleAvailable(c.id));
-  container.innerHTML = `<div class="dash-tiles">${toolCards.map(c =>
-    `<button class="dash-tile" onclick="${c.act}" title="${c.name}">
-      <span class="dt-ico">${IC(c.ico,22)}</span>
+  const toolCards = _DASH_TOOL_CARDS.filter(c => _moduleAvailable(c.id, true));
+  container.innerHTML = `<div class="dash-tiles">${toolCards.map(c => {
+    const locked = !_moduleAvailable(c.id);   // 170
+    return `<button class="dash-tile${locked ? ' locked' : ''}" onclick="${locked ? `_moduleLockDialog('${c.id}')` : c.act}" title="${c.name}${locked ? ' — be leverandøren om prosjektering' : ''}"${locked ? ' style="opacity:.6"' : ''}>
+      <span class="dt-ico">${IC(locked ? 'lock' : c.ico,22)}</span>
       <span class="dt-lbl">${c.short}</span>
-    </button>`).join('')}</div>`;
+    </button>`; }).join('')}</div>`;
 }
 
 // DEL C (Kenneth 28.08.2026): inngangspunkt for det nye «Opprett prosjekt»-knappen over fane-
@@ -97002,12 +97375,15 @@ async function _createProjectInline() {
 // startskjerm (context-aware) — ingen native fil-dialog spretter opp; brukeren
 // kan dra inn en fil eller klikke slipp-sonen. Gjenbruker samme import-dispatcher.
 function _quickStartFromDrawing() {
+  if (!_moduleAvailable('fromdrawing')) { _moduleLockDialog('fromdrawing'); return; }   // 170
   _quickStartModule('indoor');
   _startMethod = 'import';
   _updateEmptyState();   // bytt startskjermen til dropzone-fokusert modus
 }
 
 function _quickStartModule(moduleType) {
+  // 170: låst modul for kundebedriften → forespørselsdialog, ingen prosjektstart.
+  if (!_moduleAvailable(moduleType)) { _moduleLockDialog(moduleType); return; }
   // Frostsikring rør er en kalkulator (ikke canvas-geometri) — åpne modalen direkte.
   if (moduleType === 'frost') { _openFrostModule(); return; }
   if (moduleType === 'snowcalc') { _openSnowCalc(); return; }
