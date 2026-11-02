@@ -1,0 +1,172 @@
+sidefeil ved lasting: 0 []
+1 Prosjektert {
+ "faner": [
+  "▶ Prosjektert 3 venter svar",
+  "Til montering 1 vi fikk jobben",
+  "Ferdig 1 dokumentert"
+ ],
+ "filter": "stage",
+ "valg": [
+  "Etter fane",
+  "Alle statuser",
+  "Vis tapte",
+  "Papirkurv"
+ ],
+ "rader": [
+  "Bad og vaskerom | Tilbud sendt [Vi fikk jobben]",
+  "Kjeller Nordby | Under arbeid [Vi fikk jobben]",
+  "Enebolig Berg (fra Cenika) | Under arbeid [Vi fikk jobben]"
+ ],
+ "tom": null
+}
+2 etter «Vi fikk jobben» {
+ "toast": "Flyttet til Til montering Angre",
+ "orgRad": [
+  {
+   "sales_status": "vunnet",
+   "delivery_status": null,
+   "lost_reason": null,
+   "project_id": "p3",
+   "org_id": "org-elektro"
+  }
+ ],
+ "cenikaRad": "tilbud_sendt",
+ "faner": [
+  "▶ Prosjektert 2 venter svar",
+  "Til montering 2 vi fikk jobben",
+  "Ferdig 1 dokumentert"
+ ],
+ "filter": "stage",
+ "valg": [
+  "Etter fane",
+  "Alle statuser",
+  "Vis tapte",
+  "Papirkurv"
+ ],
+ "rader": [
+  "Bad og vaskerom | Tilbud sendt [Vi fikk jobben]",
+  "Kjeller Nordby | Under arbeid [Vi fikk jobben]"
+ ],
+ "tom": null
+}
+3 Til montering {
+ "faner": [
+  "Prosjektert 2 venter svar",
+  "▶ Til montering 2 vi fikk jobben",
+  "Ferdig 1 dokumentert"
+ ],
+ "filter": "stage",
+ "valg": [
+  "Etter fane",
+  "Alle statuser",
+  "Vis tapte",
+  "Papirkurv"
+ ],
+ "rader": [
+  "Enebolig Berg (fra Cenika) | Vunnet",
+  "Hytte Fjellro | Vunnet"
+ ],
+ "tom": null
+}
+3m ⋯-meny ["Tapt …","Angre"]
+4 Angre {
+ "montering": [
+  "Hytte Fjellro | Vunnet"
+ ],
+ "prosjektert": [
+  "Bad og vaskerom | Tilbud sendt [Vi fikk jobben]",
+  "Kjeller Nordby | Under arbeid [Vi fikk jobben]",
+  "Enebolig Berg (fra Cenika) | Under arbeid [Vi fikk jobben]"
+ ],
+ "orgRad": [
+  {
+   "sales_status": "under_arbeid",
+   "delivery_status": null,
+   "lost_reason": null,
+   "project_id": "p3",
+   "org_id": "org-elektro"
+  }
+ ]
+}
+5 Ferdig / Vis tapte / Alle {
+ "ferdig": {
+  "faner": [
+   "Prosjektert 3 venter svar",
+   "Til montering 1 vi fikk jobben",
+   "▶ Ferdig 1 dokumentert"
+  ],
+  "filter": "stage",
+  "valg": [
+   "Etter fane",
+   "Alle statuser",
+   "Vis tapte",
+   "Papirkurv"
+  ],
+  "rader": [
+   "Leilighet Sentrum | Vunnet"
+  ],
+  "tom": null
+ },
+ "visTapte": {
+  "faner": [
+   "Prosjektert 3 venter svar",
+   "Til montering 1 vi fikk jobben",
+   "Ferdig 1 dokumentert"
+  ],
+  "filter": "tapt",
+  "valg": [
+   "Etter fane",
+   "Alle statuser",
+   "Vis tapte",
+   "Papirkurv"
+  ],
+  "rader": [
+   "Garasje Lie | Tapt"
+  ],
+  "tom": null
+ },
+ "alle": 6,
+ "tilbakeTilFane": "stage"
+}
+6 Dokumentasjon {
+ "docs": [
+  "Enebolig Berg (fra Cenika)",
+  "Hytte Fjellro",
+  "Leilighet Sentrum"
+ ],
+ "docsKnapp": true
+}
+7 Cenika {
+ "faner": [],
+ "filter": "active",
+ "valg": [
+  "Aktive",
+  "Alle statuser",
+  "Under arbeid",
+  "Tilbud sendt",
+  "Vunnet",
+  "Tapt",
+  "Ferdige leveranser",
+  "Papirkurv"
+ ],
+ "rader": [
+  "Enebolig Berg (fra Cenika) | Tilbud sendt [Kunden fikk jobben]"
+ ],
+ "tom": null,
+ "fanerSynlig": false,
+ "docsKnapp": false
+}
+8 uten migrasjon {
+ "rader": [
+  "Bad og vaskerom | Tilbud sendt [Vi fikk jobben]",
+  "Kjeller Nordby | Under arbeid [Vi fikk jobben]",
+  "Enebolig Berg (fra Cenika) | Under arbeid [Vi fikk jobben]"
+ ],
+ "skriv": {
+  "ok": false,
+  "reason": "no-table"
+ },
+ "avskrudd": true,
+ "tekst": "Kunne ikke lagre status på delt prosjekt — databasen er ikke oppdatert ennå (171)."
+}
+sidefeil totalt: 0 []

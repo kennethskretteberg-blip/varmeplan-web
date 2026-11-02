@@ -304,6 +304,27 @@ input,textarea{font-family:var(--font-ui);color:var(--text)}
 .pl-act-btn{background:none;border:none;cursor:pointer;font-size:11px;color:var(--dim);padding:4px 6px;border-radius:4px;transition:background .1s, color .1s;white-space:nowrap}
 .pl-act-btn:hover{background:var(--surface2);color:var(--text)}
 .pl-act-btn.danger:hover{background:rgba(255,80,80,.12);color:#ff6b6b}
+/* 171: faner Prosjektert / Til montering / Ferdig (installatør) + «Vi fikk jobben» */
+.pl-stage-tabs{display:flex;gap:6px;margin:4px 0 10px;flex-wrap:wrap}
+.pl-stage-tab{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:8px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);cursor:pointer;min-width:150px;text-align:left;transition:border-color .15s,background .15s}
+.pl-stage-tab:hover{border-color:var(--accent)}
+.pl-stage-tab.active{border-color:var(--accent);background:var(--surface2);box-shadow:inset 0 -2px 0 var(--accent)}
+.pl-stage-lbl{font-size:13px;font-weight:600}
+.pl-stage-sub{font-size:11px;color:var(--dim)}
+.pl-stage-n{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:9px;background:var(--surface2);color:var(--muted);font-size:11px;font-weight:600;text-align:center}
+.pl-stage-mont .pl-stage-n{background:#22c55e22;color:#22c55e}
+.pl-row-acts{display:flex;align-items:center;gap:4px;margin-top:4px}
+.pl-won-btn{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 10px;border-radius:10px;border:1px solid #22c55e66;background:#22c55e1a;color:#22c55e;cursor:pointer;white-space:nowrap;font-weight:600}
+.pl-won-btn:hover{background:#22c55e33}
+.pl-more-btn{background:none;border:1px solid transparent;color:var(--dim);cursor:pointer;font-size:14px;line-height:1;padding:2px 6px;border-radius:6px}
+.pl-more-btn:hover{border-color:var(--border);color:var(--text)}
+.pl-status-menu{position:absolute;z-index:1100;min-width:150px;background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.3);padding:4px;display:flex;flex-direction:column}
+.pl-status-menu button{background:none;border:none;text-align:left;padding:7px 10px;border-radius:6px;color:var(--text);font-size:12px;cursor:pointer}
+.pl-status-menu button:hover:not([disabled]){background:var(--surface2)}
+.pl-status-menu button[disabled]{color:var(--dim);cursor:default}
+.pl-action-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:14px;background:#22c55e;color:#fff;padding:8px 10px 8px 18px;border-radius:8px;font-size:13px;font-weight:600;transition:opacity .3s;max-width:90vw}
+.pl-action-toast button{background:rgba(255,255,255,.2);border:none;color:#fff;font-weight:600;font-size:12px;padding:4px 10px;border-radius:6px;cursor:pointer}
+.pl-cust-won{display:inline-block;white-space:nowrap;vertical-align:middle;background:#22c55e22;color:#22c55e;border:1px solid #22c55e55;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:600}
 /* spec-topbar-logo-arbeidsflyt-prosjektinfo.md DEL E: dot+klokkeslett i stedet for ord —
    selve teksten («Lagrer…» osv.) flytter til title (hover). Fargene er de SAMME fire
    tilstandene som før (kun .saving byttet fra accent-cyan til gult, per Kenneths uttrykte
@@ -1733,6 +1754,9 @@ body.kunde-maal #minimap-widget{display:none !important}
     <!-- Prosjekttabell -->
     <div class="dash-section">
       <div class="dash-section-title">Lagrede prosjekter</div>
+      <!-- 171: faner for installatør-orgs (Prosjektert / Til montering / Ferdig). Tegnes av
+           _plRenderStageTabs; skjult for leverandør. -->
+      <div id="pl-stage-tabs" class="pl-stage-tabs" style="display:none"></div>
       <!-- Batch toolbar -->
       <div id="batch-toolbar" class="batch-toolbar">
         <span id="batch-count" class="batch-count">0 valgt</span>
@@ -95395,9 +95419,12 @@ async function _fetchProjectList() {
     // er en fallback-stige — en kolonne som ikke finnes, velter hele kandidaten, og da faller
     // vi ned paa neste. Sta de i alle tolv, ville lista blitt tom for et skjema uten
     // migrasjonen; staar de bare oeverst, forsvinner 🔒-merket og ingenting annet.
+    // 171: org_id + user_id i de to øverste rungene — _projectIsShared trenger dem for å vite om
+    // statusen skal leses fra prosjektraden (eget) eller fra project_org_status (delt, 046).
+    // Mangler de (lavere rung), behandles prosjektet som eget — nøyaktig som før 171.
     const candidates = [
-      'id, name, description, created_at, updated_at, status, deleted_at, sales_status, delivery_status, lost_reason, status_changed_at, project_no, locked_by, locked_by_name, locked_at, lock_seen_at, proj:data->project',
-      'id, name, description, created_at, updated_at, status, deleted_at, sales_status, delivery_status, lost_reason, status_changed_at, project_no, proj:data->project',
+      'id, name, description, created_at, updated_at, status, deleted_at, sales_status, delivery_status, lost_reason, status_changed_at, project_no, org_id, user_id, locked_by, locked_by_name, locked_at, lock_seen_at, proj:data->project',
+      'id, name, description, created_at, updated_at, status, deleted_at, sales_status, delivery_status, lost_reason, status_changed_at, project_no, org_id, user_id, proj:data->project',
       'id, name, description, created_at, updated_at, status, deleted_at, project_no, proj:data->project',
       'id, name, description, created_at, updated_at, status, deleted_at, sales_status, delivery_status, lost_reason, status_changed_at, proj:data->project',
       'id, name, description, created_at, updated_at, status, deleted_at, proj:data->project',
@@ -95415,18 +95442,23 @@ async function _fetchProjectList() {
     // aller første side, kastes det videre og neste kandidat forsøkes — samme fallback som før,
     // bare at et vellykket forsøk nå henter ALLE sidene, ikke bare de første tusen.
     let data = null, lastErrMsg = null;
+    // 171: statusradene for delte prosjekter hentes i SAMME runde (eget, lite spørsmål — ikke en
+    // join i kandidatstigen). Feiler det, står forrige svar; mangler tabellen, er det fail-open.
+    const orgStatusP = _fetchOrgStatusRows();
     for (const cols of candidates) {
       try {
         data = await _selectAll(() => _db.from('romtegner_projects').select(cols).order('updated_at', { ascending: false }).order('id'));
         break;
       } catch (e) { lastErrMsg = e.message; data = null; }
     }
+    _orgStatusIndex(await orgStatusP);
     // Return null (not []) on error so the caller can keep showing the last good
     // list instead of blanking it out.
     if (data === null) { console.warn('Fetch projects failed:', lastErrMsg); return null; }
     return data.map(p => {
       const proj = p.proj || p.data?.project || {};
-      return {
+      if ('org_id' in p) _projectOwnerMeta.set(p.id, { org_id: p.org_id || null, user_id: p.user_id || null });
+      return _projectApplyStatus({
         ...p,
         parts: proj.parts || [],
         _customer: proj.customer || '',
@@ -95456,7 +95488,7 @@ async function _fetchProjectList() {
         _savedAt: (proj.savedAt != null ? proj.savedAt : null),
         proj: undefined,
         data: undefined,
-      };
+      });
     });
   } catch(e) { console.warn('Fetch projects error:', e.message); return null; }
 }
@@ -96845,7 +96877,9 @@ function _showProjectListScreen() {
   // Reset search/filters
   const se = document.getElementById('dash-search'); if (se) se.value = '';
   const sec = document.getElementById('dash-search-customer'); if (sec) sec.value = '';
-  const fs = document.getElementById('dash-filter-status'); if (fs) fs.value = 'active';
+  // 171: installatør → 'stage' (følg fanen), leverandør → 'active' som før.
+  _plSyncStatusSelect();
+  const fs = document.getElementById('dash-filter-status'); if (fs) fs.value = _plDefaultStatusValue();
   const ft = document.getElementById('dash-filter-type'); if (ft) ft.value = '';
   // Clear batch selection
   _selectedProjectIds.clear();
@@ -97523,6 +97557,10 @@ function _filterProjectsList(projects, f = {}) {
         if (ss === 'vunnet' && p._deliveryStatus === 'ferdig') return false; // skjul ferdige
         return true;
       });
+    } else if (status.startsWith('stage:')) {
+      // 171: installatør-fanene (Prosjektert / Til montering / Ferdig). Tapt hører ikke til noen.
+      const want = status.slice(6);
+      out = out.filter(p => _projectStage({ sales: p._salesStatus || 'under_arbeid', delivery: p._deliveryStatus || null }) === want);
     } else if (status === 'ferdig') {
       out = out.filter(p => p._deliveryStatus === 'ferdig');
     } else if (SALES.includes(status)) {
@@ -97655,18 +97693,30 @@ async function _renderProjectList() {
   _renderDashStats(projects);
   _renderDashGreet();
 
+  // 171: installatør får fanene Prosjektert / Til montering / Ferdig i stedet for «Aktive».
+  _plSyncStatusSelect();
+  _plRenderStageTabs(projects);
+
   // Søk/kunde/status/type-filter + sortering via delt hjelper (samme som kundekortet).
   const statusFilter = document.getElementById('dash-filter-status')?.value || '';
   const inTrash = (statusFilter === 'trash');
   projects = _filterProjectsList(projects, {
     search: document.getElementById('dash-search')?.value || '',
     customer: document.getElementById('dash-search-customer')?.value || '',
-    status: statusFilter,
+    status: statusFilter === 'stage' ? 'stage:' + _plStage : statusFilter,
     type: document.getElementById('dash-filter-type')?.value || ''
   });
 
   if (!projects.length) {
     tbody.innerHTML = '';
+    if (empty.dataset.orig == null) empty.dataset.orig = empty.textContent;
+    const EMPTY_STAGE = {
+      prosjektert: 'Ingen prosjekter venter svar.',
+      montering: 'Ingen prosjekter til montering. Trykk «Vi fikk jobben» på et prosjekt i Prosjektert.',
+      ferdig: 'Ingen ferdige prosjekter ennå. Et prosjekt blir ferdig når garantibeviset er signert.',
+    };
+    empty.textContent = (statusFilter === 'stage' && !document.getElementById('dash-search')?.value)
+      ? EMPTY_STAGE[_plStage] : (statusFilter === 'stage' ? 'Ingen treff.' : empty.dataset.orig);
     empty.style.display = '';
     return;
   }
@@ -97711,10 +97761,10 @@ async function _renderProjectList() {
     return `<tr class="pl-tr" onclick="_openCloudProject('${p.id}')">
       <td class="pl-td pl-td-check" onclick="event.stopPropagation()"><input type="checkbox" class="pl-check pl-row-check" data-pid="${p.id}"${checked} onchange="_toggleProjectSelect('${p.id}',this.checked)"></td>
       <td class="pl-td pl-td-firma" title="${esc(custName)}">${firmaCell}</td>
-      <td class="pl-td pl-td-proj" title="${esc(p.name)}"><div class="pl-proj-line"><span class="pl-proj-name pl-proj-name-project">${esc(p.name)}</span>${_plKundeBadge(p.id)}${_plLaasBadge(p)}</div>${subLine ? '<span class="pl-td-sub">'+subLine+'</span>' : ''}</td>
+      <td class="pl-td pl-td-proj" title="${esc(p.name)}"><div class="pl-proj-line"><span class="pl-proj-name pl-proj-name-project">${esc(p.name)}</span>${_plKundeBadge(p.id)}${_plLaasBadge(p)}${_plCustomerWonBadge(p)}</div>${subLine ? '<span class="pl-td-sub">'+subLine+'</span>' : ''}</td>
       <td class="pl-td pl-td-resp" title="${esc(_responsibleDisplayName(p._responsible, p._responsibleUserId))}">${responsible}</td>
       <td class="pl-td pl-td-type" title="${esc(typeObj.label)}"><span class="pl-type-ico">${IC(_PL_TYPE_ICON[type]||_MOD_ICON[type]||'home',18)}</span></td>
-      <td class="pl-td" onclick="event.stopPropagation()"><select class="pl-status-sel" style="background:${statusObj.color}22;color:${statusObj.color};border:1px solid ${statusObj.color}44;border-radius:12px;padding:2px 8px;font-size:11px;font-weight:600;cursor:pointer;appearance:none;-webkit-appearance:none;outline:none" onchange="_quickSetStatus('${p.id}',this.value,this)">${SALES_STATUSES.map(s=>`<option value="${s.id}"${s.id===status?' selected':''}>${s.label}</option>`).join('')}</select>${_prosjekteringBridgeHtml(p) || _deliveryCellHtml(p)}</td>
+      <td class="pl-td" onclick="event.stopPropagation()"><select class="pl-status-sel" style="background:${statusObj.color}22;color:${statusObj.color};border:1px solid ${statusObj.color}44;border-radius:12px;padding:2px 8px;font-size:11px;font-weight:600;cursor:pointer;appearance:none;-webkit-appearance:none;outline:none" onchange="_quickSetStatus('${p.id}',this.value,this)">${SALES_STATUSES.map(s=>`<option value="${s.id}"${s.id===status?' selected':''}>${s.label}</option>`).join('')}</select>${_plRowActionsHtml(p, inTrash)}${_prosjekteringBridgeHtml(p) || _deliveryCellHtml(p)}</td>
       <td class="pl-td pl-td-date">${date}</td>
       <td class="pl-td pl-td-actions" onclick="event.stopPropagation()"><div class="pl-actions">${inTrash ? `
         <button class="pl-act-btn" onclick="_restoreProjectUI('${p.id}')" title="Gjenopprett">♻️</button>${_isOrgAdmin() ? `
@@ -97777,8 +97827,14 @@ function _inlineRenameProject(projectId, spanEl) {
 // side) skilles fra en ekte feil, nøyaktig samme mønster _deleteFromSupabase sin egen delete-gren
 // allerede bruker. Kallerne (_applySalesTransition → _applyBatchStatus/_quickSetStatus) leser dette
 // nå — se der.
+// 171: ruter nå på eierskap. Eget prosjekt → kolonnene på romtegner_projects (koden under, uendret).
+// Delt prosjekt (046) → én rad per (prosjekt, min org) i project_org_status (_setOrgProjectStatus).
+// Samme {ok,reason}-form begge veier, så kallerne (PDF → tilbud_sendt, garanti → vunnet+ferdig,
+// chip, batch, «Vi fikk jobben», Angre, Tapt-årsak) virker for delte prosjekter uten endring.
 async function _setProjectStatus(projectId, patch, cond) {
   if (!_db || !projectId) return { ok:false, reason:'no-db' };
+  const meta = await _projectOwnerMetaFor(projectId);
+  if (meta && _projectIsShared(meta)) return _setOrgProjectStatus(projectId, patch, cond);
   try {
     let q = _db.from('romtegner_projects')
       .update({ ...patch, status_changed_at: new Date().toISOString() })
@@ -97875,10 +97931,18 @@ async function _convertToProsjektering(projectId) {
 // allerede bruker), i stedet for å la den valgte-men-aldri-lagrede verdien stå igjen i selecten.
 async function _quickSetStatus(projectId, newStatus, selectEl) {
   const statusObj = SALES_STATUSES.find(s => s.id === newStatus) || SALES_STATUSES[0];
+  _plRememberUndo(projectId);   // 171: «Angre» i ⋯-menyen gjelder også chip-endringer
   const r = await _applySalesTransition(projectId, newStatus);
   if (!r || !r.ok) {
+    _plUndo.delete(projectId);
     console.warn('Status update failed:', r && r.reason, r && r.message);
-    _showToast('Kunne ikke endre status' + (r && r.reason === 'no-permission' ? ' — du har ikke tilgang.' : '.'), 'warn');
+    _showToast(_plStatusErrText(r), 'warn');
+    _renderProjectList();
+    return;
+  }
+  // 171: i fanevisningen flytter en statusendring prosjektet til en annen fane — tegn lista på nytt.
+  if (newStatus !== 'tapt' && _plUseStages()) {
+    if (newStatus === 'vunnet') _plActionToast('Flyttet til Til montering', projectId);
     _renderProjectList();
     return;
   }
@@ -97914,6 +97978,474 @@ function _promptLostReason(projectId) {
 async function _applyLostReason(projectId, reasonId) {
   document.getElementById('lost-reason-overlay')?.remove();
   if (reasonId) await _setProjectStatus(projectId, { lost_reason: reasonId });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  171 · PROSJEKTSTATUS PER BEDRIFT + «VI FIKK JOBBEN»
+// ════════════════════════════════════════════════════════════════════════════
+// Statusen hører til BEDRIFTEN, ikke prosjektet. To kilder, én leser, én skriver:
+//   • Eget prosjekt (org_id = min org, user_id = meg, org_id null, eller superadmin):
+//     kolonnene sales_status/delivery_status/lost_reason på romtegner_projects — som før 171.
+//   • Delt prosjekt (046 — Cenika eier, jeg har lesetilgang): raden (project_id, min org) i
+//     project_org_status. Mangler raden → 'under_arbeid'. Cenikas egne kolonner vises ALDRI som
+//     elektrikerens status (to elektrikere på samme prosjekt har hver sin).
+// _projectStatus(p) er eneste leser (fetch-mappingen legger svaret i p._salesStatus/_deliveryStatus,
+// så alle eksisterende lister, chips, tellere og Dokumentasjon-fanen følger med). _setProjectStatus
+// er eneste skriver. Fail-open: finnes ikke tabellen (migrasjonen ikke kjørt), er delte prosjekter
+// 'under_arbeid' og en skriving gir reason 'no-table' — egne prosjekter er helt urørt.
+// «Til montering» = vunnet og ikke ferdig (Kenneth 21.08.2026: vunnet er sluttstasjon for salg —
+// ingen nye leveransetrinn for brukeren; _applySalesTransition nuller delivery_status, og det er riktig).
+let _orgStatusMine = new Map();     // project_id → min orgs rad
+let _orgStatusOthers = new Map();   // project_id → [andre orgers rader] (Cenika: kundenes status)
+let _orgStatusDisabled = false;     // true = tabellen finnes ikke
+const _projectOwnerMeta = new Map(); // project_id → { org_id, user_id } — overlever cache-tømming
+const _plUndo = new Map();          // project_id → forrige { sales, delivery, lost } (denne økta)
+let _plStage = 'prosjektert';       // aktiv fane for installatør: prosjektert | montering | ferdig
+
+function _orgStatusMissingTable(err) {
+  if (!err) return false;
+  const m = String(err.message || err || '');
+  return err.code === 'PGRST205' || err.code === '42P01' || /project_org_status/.test(m) && /does not exist|schema cache|Could not find/i.test(m);
+}
+
+// Alle rader RLS lar meg se: mine egne + (som prosjekteier) kundenes rader på mine delte prosjekter.
+// [] = ingen / fail-open, null = feil (behold forrige indeks).
+async function _fetchOrgStatusRows() {
+  if (!_db || _orgStatusDisabled) return [];
+  try {
+    return await _selectAll(() => _db.from('project_org_status')
+      .select('project_id, org_id, sales_status, delivery_status, lost_reason, updated_at')
+      .order('project_id').order('org_id'));
+  } catch (e) {
+    if (_orgStatusMissingTable(e)) { _orgStatusDisabled = true; return []; }
+    console.warn('project_org_status:', e && e.message);
+    return null;
+  }
+}
+
+// Fordeler radene på «min org» og «andre». Ikke en sikkerhetsgrense — RLS har allerede bestemt
+// hvilke rader jeg ser; dette velger bare hvilken av dem som er MIN status.
+function _orgStatusIndex(rows) {
+  if (rows === null) return;               // feil: behold forrige
+  const mine = new Map(), others = new Map();
+  const myOrg = _userOrg && _userOrg.id;
+  for (const r of rows || []) {
+    if (myOrg && r.org_id === myOrg) mine.set(r.project_id, r);
+    else { if (!others.has(r.project_id)) others.set(r.project_id, []); others.get(r.project_id).push(r); }
+  }
+  _orgStatusMine = mine; _orgStatusOthers = others;
+}
+
+// Delt = prosjektet tilhører en ANNEN org enn min, er ikke mitt personlige, og jeg er ikke
+// superadmin (superadmin skriver kolonnene direkte via sin ALL-policy). Uten org_id (lavere rung
+// i fetch-stigen, eller org-løst personlig prosjekt) → eget, som før 171.
+function _projectIsShared(p) {
+  if (!p || !p.org_id || !_userOrg || !_userOrg.id) return false;
+  if (p.org_id === _userOrg.id) return false;
+  if (_currentUser && p.user_id && p.user_id === _currentUser.id) return false;
+  if (_currentUser && _currentUser.app_metadata && _currentUser.app_metadata.is_superadmin) return false;
+  return true;
+}
+
+// ÉN leser. { sales, delivery, lost, shared, source }.
+function _projectStatus(p) {
+  if (_projectIsShared(p)) {
+    const r = _orgStatusMine.get(p.id);
+    return { sales: (r && r.sales_status) || 'under_arbeid', delivery: (r && r.delivery_status) || null,
+             lost: (r && r.lost_reason) || null, shared: true, source: 'org' };
+  }
+  const raw = ('sales_status' in (p || {})) ? p.sales_status : p && p._salesStatus;
+  const rawD = ('delivery_status' in (p || {})) ? p.delivery_status : p && p._deliveryStatus;
+  const rawL = ('lost_reason' in (p || {})) ? p.lost_reason : p && p._lostReason;
+  return { sales: raw || 'under_arbeid', delivery: rawD || null, lost: rawL || null, shared: false, source: 'project' };
+}
+
+// Fanen et prosjekt hører til (installatør-visning). null = tapt (vises bare via «Vis tapte»).
+function _projectStage(st) {
+  if (st.sales === 'tapt') return null;
+  if (st.delivery === 'ferdig') return 'ferdig';
+  if (st.sales === 'vunnet') return 'montering';
+  return 'prosjektert';
+}
+
+// Legger _projectStatus sitt svar på listeobjektet (fetch-mappingen). Alle eksisterende lesere
+// (filter, tellere, chip, kundekort, Dokumentasjon-fanen) bruker disse feltene.
+function _projectApplyStatus(o) {
+  const st = _projectStatus(o);
+  o._salesStatus = st.sales; o._deliveryStatus = st.delivery; o._lostReason = st.lost;
+  o._sharedIn = st.shared;
+  o._customerWon = (_orgStatusOthers.get(o.id) || []).filter(r => r.sales_status === 'vunnet').length;
+  return o;
+}
+
+async function _projectOwnerMetaFor(projectId) {
+  if (_projectOwnerMeta.has(projectId)) return _projectOwnerMeta.get(projectId);
+  try {
+    const { data, error } = await _db.from('romtegner_projects').select('id, org_id, user_id').eq('id', projectId).maybeSingle();
+    if (error || !data) return null;   // ukjent → kolonnestien, som før 171
+    const m = { org_id: data.org_id || null, user_id: data.user_id || null };
+    _projectOwnerMeta.set(projectId, m);
+    return m;
+  } catch (e) { return null; }
+}
+
+// Skriver min orgs rad for et delt prosjekt. `cond` som på kolonnestien: manglende rad teller som
+// under_arbeid (så PDF → tilbud_sendt slår til første gang, men aldri nedgraderer vunnet).
+async function _setOrgProjectStatus(projectId, patch, cond) {
+  if (_orgStatusDisabled) return { ok:false, reason:'no-table' };
+  if (!_userOrg || !_userOrg.id) return { ok:false, reason:'no-org' };
+  const KEYS = ['sales_status', 'delivery_status', 'lost_reason'];
+  try {
+    let cur = _orgStatusMine.get(projectId) || null;
+    if (cond) {
+      const r0 = await _db.from('project_org_status').select('sales_status, delivery_status, lost_reason')
+        .eq('project_id', projectId).eq('org_id', _userOrg.id).maybeSingle();
+      if (r0.error) {
+        if (_orgStatusMissingTable(r0.error)) { _orgStatusDisabled = true; return { ok:false, reason:'no-table' }; }
+        return { ok:false, reason:'error', message:r0.error.message };
+      }
+      cur = r0.data || null;
+      const now = { sales_status: (cur && cur.sales_status) || 'under_arbeid',
+                    delivery_status: (cur && cur.delivery_status) || null, lost_reason: (cur && cur.lost_reason) || null };
+      for (const [k, v] of Object.entries(cond)) if ((now[k] ?? null) !== v) return { ok:false, reason:'cond-not-met' };
+    }
+    const row = { project_id: projectId, org_id: _userOrg.id };
+    for (const k of KEYS) if (k in patch) row[k] = patch[k];
+    const { data, error } = await _db.from('project_org_status').upsert(row, { onConflict: 'project_id,org_id' }).select('project_id');
+    if (error) {
+      if (_orgStatusMissingTable(error)) { _orgStatusDisabled = true; return { ok:false, reason:'no-table' }; }
+      const rls = error.code === '42501' || /row-level security/i.test(error.message || '');
+      console.error('Org-status feilet:', error.message, error.code);
+      return { ok:false, reason: rls ? 'no-permission' : 'error', message:error.message };
+    }
+    if (!data || !data.length) return { ok:false, reason:'no-permission' };
+    _orgStatusMine.set(projectId, { sales_status: 'under_arbeid', delivery_status: null, lost_reason: null, ...(cur || {}), ...row });
+    _invalidateProjectCache();
+    return { ok:true };
+  } catch (e) { console.error('Org-status error:', e.message); return { ok:false, reason:'error', message:e.message }; }
+}
+
+// Fanene gjelder installatør-orgs (alt som ikke er leverandør). «Vis som» viser kundens visning.
+function _plUseStages() {
+  const org = (typeof _effectiveOrg === 'function') ? _effectiveOrg() : _userOrg;
+  return !!(org && org.org_type !== 'supplier');
+}
+
+const _PL_STAGES = [
+  { id:'prosjektert', label:'Prosjektert', sub:'venter svar' },
+  { id:'montering',   label:'Til montering', sub:'vi fikk jobben' },
+  { id:'ferdig',      label:'Ferdig', sub:'dokumentert' },
+];
+
+// Statusnedtrekket: for installatør erstatter fanene «Aktive» (verdien 'stage' = «følg fanen»);
+// «Alle statuser», «Vis tapte» og Papirkurv står igjen. Leverandør: dagens liste, uendret.
+const _PL_STATUS_OPTS_SUPPLIER = [['active','Aktive'],['','Alle statuser'],['under_arbeid','Under arbeid'],
+  ['tilbud_sendt','Tilbud sendt'],['vunnet','Vunnet'],['tapt','Tapt'],['ferdig','Ferdige leveranser'],['trash','Papirkurv']];
+const _PL_STATUS_OPTS_STAGES = [['stage','Etter fane'],['','Alle statuser'],['tapt','Vis tapte'],['trash','Papirkurv']];
+function _plSyncStatusSelect() {
+  const sel = document.getElementById('dash-filter-status');
+  if (!sel) return;
+  const mode = _plUseStages() ? 'stages' : 'supplier';
+  if (sel.dataset.mode === mode) return;
+  const opts = mode === 'stages' ? _PL_STATUS_OPTS_STAGES : _PL_STATUS_OPTS_SUPPLIER;
+  sel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  sel.value = mode === 'stages' ? 'stage' : 'active';
+  sel.dataset.mode = mode;
+}
+function _plDefaultStatusValue() { return _plUseStages() ? 'stage' : 'active'; }
+
+function _plRenderStageTabs(all) {
+  const box = document.getElementById('pl-stage-tabs');
+  if (!box) return;
+  if (!_plUseStages()) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const sel = document.getElementById('dash-filter-status');
+  const following = !sel || sel.value === 'stage';
+  const counts = { prosjektert:0, montering:0, ferdig:0 };
+  (all || []).forEach(p => { if (p._deletedAt) return; const s = _projectStage({ sales: p._salesStatus || 'under_arbeid', delivery: p._deliveryStatus || null }); if (s) counts[s]++; });
+  box.style.display = '';
+  box.innerHTML = _PL_STAGES.map(s => {
+    const on = following && _plStage === s.id;
+    return `<button type="button" class="pl-stage-tab${on ? ' active' : ''}${s.id === 'montering' ? ' pl-stage-mont' : ''}" data-stage="${s.id}" onclick="_plSetStage('${s.id}')">
+      <span class="pl-stage-lbl">${s.label} <span class="pl-stage-n">${counts[s.id]}</span></span>
+      <span class="pl-stage-sub">${s.sub}</span></button>`;
+  }).join('');
+}
+function _plSetStage(stage) {
+  _plStage = stage;
+  const sel = document.getElementById('dash-filter-status');
+  if (sel && sel.value !== 'stage') sel.value = 'stage';
+  _renderProjectList();
+}
+
+// Radens knapper (installatør, ikke papirkurv): «Vi fikk jobben» i Prosjektert, og «⋯» med
+// Tapt og Angre på alle rader.
+function _plRowActionsHtml(p, inTrash) {
+  if (inTrash || !_plUseStages()) return '';
+  const stage = _projectStage({ sales: p._salesStatus || 'under_arbeid', delivery: p._deliveryStatus || null });
+  const won = stage === 'prosjektert'
+    ? `<button class="pl-won-btn" onclick="event.stopPropagation();_plWeGotTheJob('${p.id}')" title="Flytt til Til montering">${IC('check', 11)} Vi fikk jobben</button>` : '';
+  return `<div class="pl-row-acts">${won}<button class="pl-more-btn" onclick="event.stopPropagation();_plStatusMenu('${p.id}', this)" title="Mer: Tapt / Angre" aria-label="Mer">⋯</button></div>`;
+}
+
+// Leverandør: «Kunden fikk jobben» på delte prosjekter når en kundebedrift har satt vunnet.
+function _plCustomerWonBadge(p) {
+  if (_plUseStages() || !p._customerWon) return '';
+  const tit = p._customerWon > 1 ? p._customerWon + ' kundebedrifter har satt «Vi fikk jobben»' : 'Kundebedriften har satt «Vi fikk jobben»';
+  return ' <span class="pl-cust-won" title="' + esc(tit) + '">✓ Kunden fikk jobben</span>';
+}
+
+function _plRememberUndo(projectId) {
+  const p = (_cachedProjects || []).find(x => x.id === projectId);
+  if (!p) return;
+  _plUndo.set(projectId, { sales: p._salesStatus || 'under_arbeid', delivery: p._deliveryStatus || null, lost: p._lostReason || null });
+}
+
+async function _plWeGotTheJob(projectId) {
+  _plRememberUndo(projectId);
+  const r = await _applySalesTransition(projectId, 'vunnet');
+  if (!r || !r.ok) {
+    _plUndo.delete(projectId);
+    _showToast(_plStatusErrText(r), 'warn');
+    return r;
+  }
+  _plActionToast('Flyttet til Til montering', projectId);
+  await _renderProjectList();
+  return r;
+}
+
+async function _plMarkLost(projectId) {
+  document.getElementById('pl-status-menu')?.remove();
+  _plRememberUndo(projectId);
+  const r = await _applySalesTransition(projectId, 'tapt');
+  if (!r || !r.ok) { _plUndo.delete(projectId); _showToast(_plStatusErrText(r), 'warn'); return r; }
+  _promptLostReason(projectId);
+  _plActionToast('Markert som tapt', projectId);
+  await _renderProjectList();
+  return r;
+}
+
+async function _plUndoStatus(projectId) {
+  document.getElementById('pl-status-menu')?.remove();
+  document.getElementById('pl-action-toast')?.remove();
+  const prev = _plUndo.get(projectId);
+  if (!prev) return { ok:false, reason:'nothing' };
+  const r = await _setProjectStatus(projectId, { sales_status: prev.sales, delivery_status: prev.delivery, lost_reason: prev.lost });
+  if (!r || !r.ok) { _showToast(_plStatusErrText(r), 'warn'); return r; }
+  _plUndo.delete(projectId);
+  _showToast('Angret');
+  await _renderProjectList();
+  return r;
+}
+
+function _plStatusErrText(r) {
+  if (r && r.reason === 'no-table') return 'Kunne ikke lagre status på delt prosjekt — databasen er ikke oppdatert ennå (171).';
+  if (r && r.reason === 'no-permission') return 'Kunne ikke endre status — du har ikke tilgang.';
+  return 'Kunne ikke endre status.';
+}
+
+function _plStatusMenu(projectId, anchor) {
+  const old = document.getElementById('pl-status-menu');
+  if (old) { const same = old.dataset.pid === projectId; old.remove(); if (same) return; }
+  const p = (_cachedProjects || []).find(x => x.id === projectId);
+  const isLost = p && p._salesStatus === 'tapt';
+  const canUndo = _plUndo.has(projectId);
+  const m = document.createElement('div');
+  m.id = 'pl-status-menu'; m.className = 'pl-status-menu'; m.dataset.pid = projectId;
+  m.innerHTML = (isLost ? '' : `<button onclick="_plMarkLost('${projectId}')">Tapt …</button>`)
+    + `<button onclick="_plUndoStatus('${projectId}')"${canUndo ? '' : ' disabled title="Ingen statusendring å angre i denne økta"'}>Angre</button>`;
+  document.body.appendChild(m);
+  const b = anchor.getBoundingClientRect();
+  m.style.top = (b.bottom + 4 + window.scrollY) + 'px';
+  m.style.left = Math.max(8, b.right - 150 + window.scrollX) + 'px';
+  setTimeout(() => document.addEventListener('click', function off(e) {
+    if (!m.contains(e.target)) { m.remove(); document.removeEventListener('click', off); }
+  }), 0);
+}
+
+// Kort bekreftelse med «Angre» (6 s).
+function _plActionToast(msg, projectId) {
+  document.getElementById('pl-action-toast')?.remove();
+  const el = document.createElement('div');
+  el.id = 'pl-action-toast'; el.className = 'pl-action-toast';
+  el.innerHTML = `<span>${esc(msg)}</span><button onclick="_plUndoStatus('${projectId}')">Angre</button>`;
+  document.body.appendChild(el);
+  setTimeout(() => { if (el.isConnected) { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); } }, 6000);
+}
+
+// 171-regresjon. Minne-mock av _db (romtegner_projects + project_org_status) — ingen database.
+// Kjør i konsollen: await _projectStatusRegressionTest()
+async function _projectStatusRegressionTest() {
+  const results = [];
+  const t = (name, ok, info) => results.push({ name, ok: !!ok, info });
+  const saved = { db: _db, org: _userOrg, user: _currentUser, view: (typeof _viewAsOrg !== 'undefined') ? _viewAsOrg : null,
+    cache: _cachedProjects, dirty: _projectListDirty, mine: _orgStatusMine, others: _orgStatusOthers,
+    dis: _orgStatusDisabled, stage: _plStage, meta: new Map(_projectOwnerMeta), undo: new Map(_plUndo),
+    toast: window._showToast, render: window._renderProjectList, sel: document.getElementById('dash-filter-status')?.innerHTML,
+    selMode: document.getElementById('dash-filter-status')?.dataset.mode };
+  const ME = 'org-elektro', CEN = 'org-cenika', OTHER = 'org-annen';
+  const mk = (tables, opts = {}) => {
+    const calls = [];
+    const builder = (table) => {
+      const st = { table, op: 'select', filters: [], payload: null };
+      const rows = () => tables[table] || null;
+      const match = r => st.filters.every(([k, v, is]) => is ? (r[k] ?? null) === null : r[k] === v);
+      const exec = async () => {
+        calls.push({ table, op: st.op, payload: st.payload, filters: st.filters.slice() });
+        if (!rows()) return { data: null, error: { code: 'PGRST205', message: `Could not find the table 'public.${table}' in the schema cache` } };
+        if (opts.denyUpsert && st.op === 'upsert') return { data: null, error: { code: '42501', message: 'new row violates row-level security policy' } };
+        if (st.op === 'update') {
+          const hit = rows().filter(match);
+          hit.forEach(r => Object.assign(r, st.payload));
+          return { data: hit.map(r => ({ id: r.id })), error: null };
+        }
+        if (st.op === 'upsert') {
+          const p = st.payload;
+          let r = rows().find(x => x.project_id === p.project_id && x.org_id === p.org_id);
+          if (!r) { r = { sales_status: 'under_arbeid', delivery_status: null, lost_reason: null, ...p }; rows().push(r); }
+          else Object.assign(r, p);
+          return { data: [{ project_id: r.project_id }], error: null };
+        }
+        return { data: rows().filter(match).map(r => ({ ...r })), error: null };
+      };
+      const q = {
+        select() { return q; }, order() { return q; }, range() { return q; },
+        eq(k, v) { st.filters.push([k, v, false]); return q; }, is(k) { st.filters.push([k, null, true]); return q; },
+        update(p) { st.op = 'update'; st.payload = p; return q; },
+        upsert(p) { st.op = 'upsert'; st.payload = p; return q; },
+        maybeSingle: async () => { const r = await exec(); return r.error ? r : { data: (r.data || [])[0] || null, error: null }; },
+        then(res, rej) { return exec().then(res, rej); },
+      };
+      return q;
+    };
+    return { from: builder, calls };
+  };
+  try {
+    window._showToast = () => {};
+    _viewAsOrg = null;
+    _currentUser = { id: 'u-elektro', app_metadata: {} };
+    _userOrg = { id: ME, name: 'Welhaven Elektro AS', org_type: 'installer' };
+    const projects = [
+      { id: 'p-egen',  name: 'Eget', org_id: ME,  user_id: 'u-elektro', sales_status: 'tilbud_sendt', delivery_status: null, lost_reason: null, updated_at: '2026-11-01' },
+      { id: 'p-delt',  name: 'Delt', org_id: CEN, user_id: 'u-cenika',  sales_status: 'vunnet',       delivery_status: 'ferdig', lost_reason: null, updated_at: '2026-11-01' },
+      { id: 'p-delt2', name: 'Delt 2', org_id: CEN, user_id: 'u-cenika', sales_status: 'under_arbeid', delivery_status: null, lost_reason: null, updated_at: '2026-11-01' },
+      { id: 'p-legacy', name: 'Gammel', org_id: null, user_id: 'u-elektro', sales_status: null, delivery_status: null, lost_reason: null, updated_at: '2026-11-01' },
+    ];
+    const pos = [];
+    let db = mk({ romtegner_projects: projects, project_org_status: pos });
+    _db = db; _orgStatusDisabled = false; _projectOwnerMeta.clear(); _plUndo.clear();
+    window._renderProjectList = async () => {};
+
+    // A. Lesing
+    let list = await _fetchProjectList();
+    const by = id => list.find(p => p.id === id);
+    t('A1 fetch ber om org_id/user_id i øverste rung', /org_id, user_id/.test(_fetchProjectList.toString()));
+    t('A2 eget prosjekt leser kolonnene (tilbud_sendt)', by('p-egen')._salesStatus === 'tilbud_sendt' && !by('p-egen')._sharedIn);
+    t('A3 delt prosjekt uten rad = under_arbeid (Cenikas «vunnet/ferdig» lekker ikke)', by('p-delt')._salesStatus === 'under_arbeid' && by('p-delt')._deliveryStatus === null && by('p-delt')._sharedIn);
+    t('A4 prosjekt uten org_id = eget, null-status = under_arbeid', by('p-legacy')._salesStatus === 'under_arbeid' && !by('p-legacy')._sharedIn);
+    t('A5 _projectStatus direkte på rå rad', _projectStatus(projects[1]).sales === 'under_arbeid' && _projectStatus(projects[0]).sales === 'tilbud_sendt');
+
+    // B. «Vi fikk jobben» på DELT prosjekt → project_org_status, min org
+    _cachedProjects = list;
+    let r = await _plWeGotTheJob('p-delt');
+    const row = pos.find(x => x.project_id === 'p-delt');
+    t('B1 «Vi fikk jobben» ok', r && r.ok, r);
+    t('B2 skrev rad i project_org_status for MIN org', row && row.org_id === ME && row.sales_status === 'vunnet' && row.delivery_status === null);
+    t('B3 Cenikas prosjektrad ikke rørt', projects[1].sales_status === 'vunnet' && projects[1].delivery_status === 'ferdig' && !db.calls.some(c => c.table === 'romtegner_projects' && c.op === 'update'));
+    list = await _fetchProjectList(); _cachedProjects = list;
+    t('B4 status etterpå: vunnet, ikke ferdig → Til montering', _projectStage(_projectStatus(by('p-delt'))) === 'montering' && list.find(p => p.id === 'p-delt')._salesStatus === 'vunnet');
+    t('B5 vises i fanen Til montering', _filterProjectsList(list, { status: 'stage:montering' }).map(p => p.id).join() === 'p-delt');
+
+    // C. Angre → forrige verdi (under_arbeid, ingen rad før)
+    r = await _plUndoStatus('p-delt');
+    t('C1 Angre ok', r && r.ok, r);
+    t('C2 Angre gir forrige verdi under_arbeid', pos.find(x => x.project_id === 'p-delt').sales_status === 'under_arbeid');
+    t('C3 Angre-minnet tømt', !_plUndo.has('p-delt'));
+
+    // D. «Vi fikk jobben» på EGET prosjekt → kolonnene, angre → tilbud_sendt
+    list = await _fetchProjectList(); _cachedProjects = list;
+    r = await _plWeGotTheJob('p-egen');
+    t('D1 eget: kolonnen satt vunnet, delivery null', r.ok && projects[0].sales_status === 'vunnet' && projects[0].delivery_status === null && !!projects[0].status_changed_at);
+    t('D2 eget: ingen rad i project_org_status', !pos.some(x => x.project_id === 'p-egen'));
+    await _plUndoStatus('p-egen');
+    t('D3 eget: Angre gir tilbake tilbud_sendt', projects[0].sales_status === 'tilbud_sendt');
+
+    // E. Auto-overganger gjennom hjelperen (delt prosjekt)
+    r = await _setProjectStatus('p-delt2', { sales_status: 'tilbud_sendt' }, { sales_status: 'under_arbeid' });
+    t('E1 PDF → tilbud_sendt på delt uten rad (manglende rad = under_arbeid)', r.ok && pos.find(x => x.project_id === 'p-delt2').sales_status === 'tilbud_sendt');
+    pos.find(x => x.project_id === 'p-delt2').sales_status = 'vunnet';
+    r = await _setProjectStatus('p-delt2', { sales_status: 'tilbud_sendt' }, { sales_status: 'under_arbeid' });
+    t('E2 PDF nedgraderer ikke vunnet (cond-not-met)', !r.ok && r.reason === 'cond-not-met' && pos.find(x => x.project_id === 'p-delt2').sales_status === 'vunnet');
+    r = await _setProjectStatus('p-delt2', { sales_status: 'vunnet', delivery_status: 'ferdig' });
+    t('E3 signert garanti → vunnet + ferdig i min rad', r.ok && pos.find(x => x.project_id === 'p-delt2').delivery_status === 'ferdig' && projects[2].delivery_status === null);
+    list = await _fetchProjectList();
+    t('E4 ferdig-fanen', _filterProjectsList(list, { status: 'stage:ferdig' }).map(p => p.id).join() === 'p-delt2');
+
+    // F. Fanene
+    const fake = [
+      { id: 'a', _salesStatus: 'under_arbeid', updated_at: '2026-01-01' }, { id: 'b', _salesStatus: 'tilbud_sendt', updated_at: '2026-01-01' },
+      { id: 'c', _salesStatus: 'vunnet', _deliveryStatus: null, updated_at: '2026-01-01' }, { id: 'd', _salesStatus: 'vunnet', _deliveryStatus: 'klar_for_montering', updated_at: '2026-01-01' },
+      { id: 'e', _salesStatus: 'vunnet', _deliveryStatus: 'ferdig', updated_at: '2026-01-01' }, { id: 'f', _salesStatus: 'tapt', updated_at: '2026-01-01' },
+      { id: 'g', _salesStatus: 'under_arbeid', _deletedAt: '2026-01-02', updated_at: '2026-01-01' } ];
+    const ids = s => _filterProjectsList(fake, { status: s }).map(p => p.id).sort().join('');
+    t('F1 Prosjektert = under_arbeid + tilbud_sendt', ids('stage:prosjektert') === 'ab', ids('stage:prosjektert'));
+    t('F2 Til montering = vunnet og ikke ferdig', ids('stage:montering') === 'cd', ids('stage:montering'));
+    t('F3 Ferdig = delivery ferdig', ids('stage:ferdig') === 'e');
+    t('F4 tapt i ingen fane, men i «Vis tapte»', !/f/.test(ids('stage:prosjektert') + ids('stage:montering') + ids('stage:ferdig')) && ids('tapt') === 'f');
+    t('F5 papirkurv urørt', ids('trash') === 'g' && ids('') === 'abcdef');
+
+    // G. Fail-open: tabellen finnes ikke
+    const projects2 = projects.map(p => ({ ...p }));
+    db = mk({ romtegner_projects: projects2 }); _db = db; _orgStatusDisabled = false; _projectOwnerMeta.clear();
+    list = await _fetchProjectList();
+    t('G1 lista laster uten tabellen', Array.isArray(list) && list.length === 4 && _orgStatusDisabled === true);
+    t('G2 delt = under_arbeid uten tabellen', list.find(p => p.id === 'p-delt')._salesStatus === 'under_arbeid');
+    r = await _setProjectStatus('p-delt', { sales_status: 'vunnet', delivery_status: null });
+    t('G3 skriving på delt gir no-table, rører ikke prosjektraden', !r.ok && r.reason === 'no-table' && projects2[1].sales_status === 'vunnet' && projects2[1].delivery_status === 'ferdig');
+    r = await _setProjectStatus('p-egen', { sales_status: 'vunnet', delivery_status: null });
+    t('G4 eget prosjekt virker som før uten tabellen', r.ok && projects2[0].sales_status === 'vunnet');
+
+    // H. RLS-avvisning gir no-permission
+    db = mk({ romtegner_projects: projects.map(p => ({ ...p })), project_org_status: [] }, { denyUpsert: true }); _db = db; _orgStatusDisabled = false;
+    r = await _setProjectStatus('p-delt', { sales_status: 'vunnet' });
+    t('H1 RLS-avvisning → no-permission', !r.ok && r.reason === 'no-permission', r);
+
+    // I. Leverandør: ingen faner, «Kunden fikk jobben»
+    _currentUser = { id: 'u-cenika', app_metadata: {} };
+    _userOrg = { id: CEN, name: 'Cenika AS', org_type: 'supplier' };
+    const cenRows = [{ project_id: 'p-delt', org_id: ME, sales_status: 'vunnet', delivery_status: null, lost_reason: null },
+                     { project_id: 'p-delt2', org_id: OTHER, sales_status: 'tilbud_sendt', delivery_status: null, lost_reason: null }];
+    const cenProjects = projects.filter(p => p.org_id === CEN).map(p => ({ ...p, sales_status: 'under_arbeid', delivery_status: null }));
+    db = mk({ romtegner_projects: cenProjects, project_org_status: cenRows }); _db = db; _orgStatusDisabled = false; _projectOwnerMeta.clear();
+    list = await _fetchProjectList();
+    const d1 = list.find(p => p.id === 'p-delt'), d2 = list.find(p => p.id === 'p-delt2');
+    t('I1 Cenika: egen status fra kolonnene, ikke fra kundens rad', d1._salesStatus === 'under_arbeid' && !d1._sharedIn);
+    t('I2 Cenika: «Kunden fikk jobben» når kunden har vunnet', /Kunden fikk jobben/.test(_plCustomerWonBadge(d1)) && _plCustomerWonBadge(d2) === '');
+    t('I3 Cenika: ingen faner, ingen «Vi fikk jobben»', !_plUseStages() && _plRowActionsHtml(d1, false) === '');
+    _userOrg = { id: ME, name: 'Welhaven Elektro AS', org_type: 'installer' };
+    t('I4 installatør: ingen «Kunden fikk jobben»-merke', _plCustomerWonBadge({ _customerWon: 1 }) === '');
+    t('I5 installatør: «Vi fikk jobben» bare i Prosjektert', /Vi fikk jobben/.test(_plRowActionsHtml({ id: 'x', _salesStatus: 'tilbud_sendt' }, false))
+      && !/Vi fikk jobben/.test(_plRowActionsHtml({ id: 'x', _salesStatus: 'vunnet' }, false)) && _plRowActionsHtml({ id: 'x' }, true) === '');
+
+    // J. Superadmin skriver kolonnene direkte (ALL-policyen), også på andre orgers prosjekter
+    _currentUser = { id: 'u-adm', app_metadata: { is_superadmin: true } };
+    t('J1 superadmin: aldri «delt»', !_projectIsShared({ org_id: CEN, user_id: 'u-cenika' }));
+  } catch (e) {
+    t('UNNTAK ' + e.message, false);
+  } finally {
+    _db = saved.db; _userOrg = saved.org; _currentUser = saved.user; _viewAsOrg = saved.view;
+    _cachedProjects = saved.cache; _projectListDirty = saved.dirty; _orgStatusMine = saved.mine; _orgStatusOthers = saved.others;
+    _orgStatusDisabled = saved.dis; _plStage = saved.stage;
+    _projectOwnerMeta.clear(); saved.meta.forEach((v, k) => _projectOwnerMeta.set(k, v));
+    _plUndo.clear(); saved.undo.forEach((v, k) => _plUndo.set(k, v));
+    window._showToast = saved.toast; window._renderProjectList = saved.render;
+    const sel = document.getElementById('dash-filter-status');
+    if (sel && saved.sel != null) { sel.innerHTML = saved.sel; if (saved.selMode) sel.dataset.mode = saved.selMode; else delete sel.dataset.mode; }
+    document.getElementById('pl-action-toast')?.remove();
+  }
+  const pass = results.filter(r => r.ok).length;
+  console.log(`_projectStatusRegressionTest: ${pass}/${results.length}`);
+  results.filter(r => !r.ok).forEach(r => console.warn('  ✗', r.name, r.info || ''));
+  return results;
 }
 
 /** Quick customer assignment from project list */
