@@ -4,6 +4,49 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## Løp 168 — Varmeplan klar for demo hos Cenika (02.11.2026, `main`, ikke pushet)
+
+Hele løpet i én oppføring (KJOR regel 12). Prompter, regler og spørsmål i Cowork-mappa
+`prompter/lop-168-demo-cenika/` (`KJOR.md`, `STATUS-MALING.md`, `SPØRSMÅL.md` 1–71, `TIL-KENNETH.md`).
+Rapport per prompt i `docs/<nr>/RAPPORT.md`. **Ingen migrasjon kjørt, ingen Edge Function deployet.**
+Loggen hopper fra 134 hit; 135–168 er dokumentert i `docs/<nr>/RAPPORT.md` og `docs/serie-*/`.
+
+| Prompt | Commit | Hva |
+|---|---|---|
+| 042 | `6c71f64` | `organizations.org_nr`/`parent_org_nr`/`created_by_*` + unik indeks på ni siffer; `_validOrgNr` (MOD11); admin-panelet viser duplikat og «ingen norsk org.nr» |
+| 044v2 | `81195f9` | `create_customer_org()` (security definer, bare leverandør-medlem, kalleren blir ikke medlem); «Gi kunden tilgang til Varmeplan» fra Visma-lista (`erp_customers`) |
+| 045 | `3c6e746` | Edge Function `opprett-kundebruker` (invitasjonstoken → konto, `inviteUserByEmail`, service-role bare server-side) |
+| 046 | `62ee2fb` | `project_shares` + OR-gren på live SELECT-policyen «Org-medlemmer ser prosjekter» via `alter policy`; security definer-hjelpere mot RLS-rekursjon |
+| 047 | `32fa650` | «Del med elektriker» (velg bedrift / inviter på e-post i ett klikk / ærlig status); `list_customer_orgs`, `list_project_shares` |
+| 049 | `7f8a86f` | Garantiportalen: «Byttet», «Prosjektert: X · Montert: Y», filter og KPI «Avvik fra prosjektering» (fail-open før app-migrasjonen doc-avvik) |
+| 169 | `38cc464` | Selvregistrering med «Kunde hos» og org.nr; «Søknader om tilgang» med Godkjenn/Avslå; vakt-trigger mot egen statusendring; «Velkommen — velg passord»; Edge Function `kundesoknad-svar` |
+| 170 | `31139e8` | `organizations.allowed_modules` (kunder: `['indoor','list']`), 13 inngangspunkter gatet i `_moduleAvailable`, «Be Cenika om prosjektering» (mailto, `contact_email`) |
+| 171 | `644bfdd` | Fanene Prosjektert / Til montering / Ferdig, «Vi fikk jobben» med Angre; `project_org_status` for delte prosjekter; «✓ Kunden fikk jobben» for Cenika |
+
+App-siden (038, 041, 048, 172, 173) står i `varmeplan-app/docs/WORKLOG.md`.
+
+**Migrasjoner, i rekkefølge** (174 sjekket at ingen fil viser til noe som kommer senere):
+app `supabase-migration-doc-avvik.sql` → `supabase-migration-org-orgnr.sql` →
+`supabase-migration-opprett-kundebedrift.sql` → `supabase-migration-project-shares.sql` →
+`supabase-migration-del-med-elektriker.sql` → `supabase-migration-kundesoknad.sql` →
+`supabase-migration-kundemoduler.sql` → `supabase-migration-prosjektstatus-per-org.sql`.
+`del-med-elektriker` må aldri kjøres på nytt etter `kundesoknad` (den overskriver `list_customer_orgs`).
+
+**174 · gjennomgang:**
+- Regresjon (`docs/168/cdp/rtall.mjs`): 49 → 56 tester, 2 286/2 288 sjekker. Røde, og like før løpet:
+  `_prosjektlaasRegressionTest` 66/67 (krever innlogging), `_kundeforslagRegressionTest` 270/271; fire
+  `_geo*` krasjer alene (del av `_geoRegressionTest` 24/24); fire mattetester har 0 sjekker.
+- `grep service_role index.html admin.html`: 0.
+- Statusverdier og delt-regel er like i web (`_projectStatus`/`_projectStage`/`_projectIsShared`) og app
+  (`src/lib/projectStatus.ts`). Appens romformat åpnet i web uten feil (`docs/173/web-sjekk.mjs`, kjørt på nytt).
+- Ingen kode rettet i 174.
+
+**Funn som ikke er rettet:** INSERT-policyen på `romtegner_projects` sjekker bare innlogging (SPØRSMÅL 65);
+modul-låsen er bare i grensesnittet (170); folie fra appens hurtigrom vises ikke i web (66); samme firmanavn
+to ganger feller registreringen (42, eldre feil); bruker i to orger kan havne i feil org (21).
+
+---
+
 ## 134 — Matte: Kenneths svar på serie-128, motor (24.10.2026, `main`, ikke pushet)
 
 Rapport «## 134» i `docs/serie-133/RAPPORT.md`, svar i `docs/serie-128/SPØRSMÅL.md`, skjermbilder `docs/serie-133/skjermbilder/134-*`.
