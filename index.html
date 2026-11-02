@@ -1812,6 +1812,11 @@ body.kunde-maal #minimap-widget{display:none !important}
             <option value="avvik">Avvik</option>
             <option value="venter">Venter</option>
           </select>
+          <!-- 049: avvik fra prosjekteringen (produkt byttet på beviset) — eget filter, ikke en status -->
+          <select class="dash-filter-select" id="portal-filter-design" onchange="_portalApplyAndRender()">
+            <option value="">Alle bevis</option>
+            <option value="byttet">Bare avvik fra prosjektering</option>
+          </select>
           <select class="dash-filter-select" id="portal-filter-firm" onchange="_portalApplyAndRender()">
             <option value="">Alle elektrofirma</option>
           </select>
@@ -90999,6 +91004,7 @@ async function _renderPortal() {
   const certs = await _portalLoad();
   if (certs === null) { tbody.innerHTML = '<tr><td colspan="6" style="color:#ff6b6b;padding:12px">Kunne ikke laste garantibevis.</td></tr>'; return; }
   _portalCerts = certs;
+  await _portalLoadDesignedNames(certs);
   // Fyll firma-filter
   const firmSel = document.getElementById('portal-filter-firm');
   if (firmSel) {
@@ -91021,6 +91027,88 @@ async function _portalLoad() {
 function _portalDeviation(cert) {
   return (cert.certificate_products || []).some(p => (p.measurements || []).some(m => m.ok === false));
 }
+
+// ─── 049 · AVVIK FRA PROSJEKTERINGEN ──────────────────────────────────────────
+// Elektrikeren kan bytte produkt på beviset (app 041). Raden i certificate_products får da
+// designed_product_id (det prosjekterte, settes ved første bytte) og deviates_from_design
+// (true når montert ≠ prosjektert). Dette er IKKE det samme som måleavvik (_portalDeviation):
+// et byttet produkt kan være helt riktig montert. Derfor eget merke, eget filter, egen KPI.
+// Kolonnene finnes først når supabase-migration-doc-avvik.sql (app-repoet) er kjørt — før det
+// har radene ikke nøklene, og portalen viser «—» i stedet for et falskt 0 %.
+let _portalDesignedNames = {};   // heating_products.id → navn, for prosjekterte produkter
+function _portalSwappedProducts(cert) {
+  return (cert.certificate_products || []).filter(p => p.deviates_from_design === true && p.designed_product_id != null);
+}
+function _portalDesignDeviation(cert) { return _portalSwappedProducts(cert).length > 0; }
+// Er migrasjonen kjørt? Ja hvis minst én produktrad har kolonnen (også false/null teller).
+function _portalDesignColumnsKnown(certs) {
+  return (certs || []).some(c => (c.certificate_products || []).some(p => Object.prototype.hasOwnProperty.call(p, 'deviates_from_design')));
+}
+// KPI: andel bevis med minst ett byttet produkt. null = kan ikke regnes (ingen bevis, eller
+// kolonnene finnes ikke ennå).
+function _portalDesignShare(certs) {
+  certs = certs || [];
+  if (!certs.length || !_portalDesignColumnsKnown(certs)) return null;
+  const n = certs.filter(_portalDesignDeviation).length;
+  return { n, total: certs.length, pct: Math.round(100 * n / certs.length) };
+}
+function _portalDesignedName(id) {
+  if (id == null) return '';
+  const p = (typeof HEATING_PRODUCTS !== 'undefined' ? HEATING_PRODUCTS : []).find(x => x.id === id);
+  return (p && p.name) || _portalDesignedNames[id] || ('Produkt #' + id);
+}
+// HEATING_PRODUCTS er filtrert til leverandørens egne produkter (_filterProductsByOrg). Var det
+// prosjekterte produktet fra en annen leverandør, hentes navnet med ett oppslag. Feiler det,
+// vises «Produkt #id» — aldri en gjetning.
+async function _portalLoadDesignedNames(certs) {
+  const ids = [...new Set((certs || []).flatMap(_portalSwappedProducts).map(p => p.designed_product_id))]
+    .filter(id => !_portalDesignedNames[id] && !(HEATING_PRODUCTS || []).some(x => x.id === id));
+  if (!ids.length) return;
+  try {
+    const { data, error } = await _db.from('heating_products').select('id, name').in('id', ids);
+    if (error) { console.warn('Portal prosjekterte navn:', error); return; }
+    (data || []).forEach(r => { _portalDesignedNames[r.id] = r.name; });
+  } catch (e) { console.warn(e); }
+}
+// Regresjon 049 (konsoll / docs/168/cdp/t049.mjs). Rene funksjoner, ingen database.
+function _portalDesignRegressionTest() {
+  const out = [];
+  const check = (name, ok, got) => out.push({ name, ok: !!ok, got });
+  const prod = (o) => Object.assign({ product_name: 'InFloor 17T 600 W', designed_product_id: null, deviates_from_design: false, measurements: [] }, o);
+  const byttet = { id: 'a', certificate_products: [prod({ designed_product_id: 990001, deviates_from_design: true })] };
+  const tilbake = { id: 'b', certificate_products: [prod({ designed_product_id: 990001, deviates_from_design: false })] };
+  const vanlig = { id: 'c', certificate_products: [prod({}), prod({})] };
+  const blandet = { id: 'd', certificate_products: [prod({}), prod({ designed_product_id: 990002, deviates_from_design: true })] };
+  const gammel = { id: 'e', certificate_products: [{ product_name: 'X', measurements: [] }] };   // før migrasjonen
+  check('byttet produkt → avvik', _portalDesignDeviation(byttet), null);
+  check('byttet tilbake → ikke avvik', !_portalDesignDeviation(tilbake), null);
+  check('aldri byttet → ikke avvik', !_portalDesignDeviation(vanlig), null);
+  check('ett av to byttet → avvik', _portalDesignDeviation(blandet), null);
+  check('true uten designed_product_id → ikke avvik', !_portalDesignDeviation({ certificate_products: [prod({ deviates_from_design: true })] }), null);
+  check('streng «true» teller ikke (bare boolean)', !_portalDesignDeviation({ certificate_products: [prod({ designed_product_id: 1, deviates_from_design: 'true' })] }), null);
+  check('måleavvik og prosjekteringsavvik er uavhengige', !_portalDeviation(byttet), null);
+  const s = _portalDesignShare([byttet, tilbake, vanlig, blandet]);
+  check('KPI 2 av 4 = 50 %', s && s.n === 2 && s.total === 4 && s.pct === 50, s);
+  check('KPI før migrasjonen → null («—»), ikke 0 %', _portalDesignShare([gammel]) === null, null);
+  check('KPI uten bevis → null', _portalDesignShare([]) === null, null);
+  check('KPI blandet gammel/ny → regnes', !!_portalDesignShare([gammel, byttet]), null);
+  _portalDesignedNames[990001] = 'InFloor 17T 700 W';
+  const linje = _portalDesignLine(byttet.certificate_products[0]);
+  check('detaljlinje ordrett', /Prosjektert: InFloor 17T 700 W · Montert: InFloor 17T 600 W/.test(linje), linje);
+  check('ingen detaljlinje uten avvik', _portalDesignLine(tilbake.certificate_products[0]) === '', null);
+  check('ukjent navn → «Produkt #id», ikke gjetning', _portalDesignedName(990002) === 'Produkt #990002', _portalDesignedName(990002));
+  check('navn escapes', !/<b>/.test(_portalDesignLine(prod({ product_name: '<b>x', designed_product_id: 990001, deviates_from_design: true }))), null);
+  delete _portalDesignedNames[990001];
+  return out;
+}
+function _portalDesignChip() {
+  return `<span class="doc-pill" title="Elektrikeren byttet produkt — montert avviker fra prosjekteringen" style="background:transparent;border:1px solid rgba(230,160,30,.55);color:#e6a01e;margin-left:6px;font-size:10px;padding:1px 6px">Byttet</span>`;
+}
+// «Prosjektert: X · Montert: Y» — én linje per byttet produktrad i detaljvisningen.
+function _portalDesignLine(p) {
+  if (!(p.deviates_from_design === true && p.designed_product_id != null)) return '';
+  return `<div style="font-size:12px;color:#e6a01e;margin:2px 0 6px">Prosjektert: ${_esc(_portalDesignedName(p.designed_product_id))} · Montert: ${_esc(p.product_name || '—')}</div>`;
+}
 function _portalStatus(cert) {
   if (_portalDeviation(cert)) return { key:'avvik', label:'Avvik', color:'background:rgba(229,72,77,.16);color:#e5484d' };
   if (cert.status === 'signed') return { key:'godkjent', label:'Godkjent', color:'background:rgba(40,180,110,.16);color:#28b46e' };
@@ -91034,10 +91122,12 @@ function _portalApplyAndRender() {
   const fStatus = document.getElementById('portal-filter-status')?.value || '';
   const fFirm = document.getElementById('portal-filter-firm')?.value || '';
   const fPeriod = document.getElementById('portal-filter-period')?.value || '';
+  const fDesign = document.getElementById('portal-filter-design')?.value || '';
   const now = new Date();
   const filtered = certs.filter(c => {
     const st = _portalStatus(c);
     if (fStatus && st.key !== fStatus) return false;
+    if (fDesign === 'byttet' && !_portalDesignDeviation(c)) return false;
     if (fFirm && c.installer_company !== fFirm) return false;
     if (fPeriod) {
       const d = new Date(c.created_at);
@@ -91068,7 +91158,7 @@ function _portalApplyAndRender() {
       <td class="pl-td">${date ? new Date(date).toLocaleDateString('nb-NO') : '—'}</td>
       <td class="pl-td">${_esc(c.installer_company||'—')}</td>
       <td class="pl-td">${_esc(c.project_name||'—')}<span style="color:var(--dim)"> · ${_esc(c.room_name||'')}</span></td>
-      <td class="pl-td">${_esc(prodLabel)}</td>
+      <td class="pl-td">${_esc(prodLabel)}${_portalDesignDeviation(c) ? _portalDesignChip() : ''}</td>
       <td class="pl-td">${_portalPill(st)}</td>
     </tr>`;
   }).join('');
@@ -91082,10 +91172,14 @@ function _portalRenderStats(certs) {
   const withDev = certs.filter(_portalDeviation).length;
   const firms = new Set(certs.map(c => c.installer_company).filter(Boolean)).size;
   const stat = (val, lbl, sub) => `<div class="dash-stat"><div class="dash-stat-num">${val}</div><div class="dash-stat-label">${lbl}</div>${sub?`<div style="font-size:11px;color:var(--dim);margin-top:2px">${sub}</div>`:''}</div>`;
+  // 049: andel bevis der montert produkt avviker fra prosjektert. Alltid på alle bevis i
+  // portalen (som de andre KPI-ene), ikke på det filtrerte utvalget.
+  const ds = _portalDesignShare(certs);
   el.innerHTML =
     stat(certs.length, 'Totalt arkivert', '') +
     stat(thisMonth, 'Denne måneden', '') +
-    stat(withDev, 'Med avvik', withDev ? 'Krever oppfølging' : '') +
+    stat(withDev, 'Med måleavvik', withDev ? 'Krever oppfølging' : '') +
+    stat(ds ? ds.pct + ' %' : '—', 'Avvik fra prosjektering', ds ? `${ds.n} av ${ds.total} bevis` : (certs.length ? 'Ikke registrert ennå' : '')) +
     stat(firms, 'Aktive firma', '');
 }
 
@@ -91123,6 +91217,7 @@ async function _portalDetail(certId) {
     });
     prodHtml += `<div style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;font-weight:600;font-size:14px;margin-bottom:4px"><span>${_esc(p.product_name)}</span><span style="font-weight:400;color:var(--dim);font-size:12px">${dim} · ${p.effect_w??'–'} W · nominell ${p.nominal_ohm??'–'} Ω${lo!=null?` (${lo}–${hi})`:''}</span></div>
+      ${_portalDesignLine(p)}
       ${rows ? `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--dim);font-size:11px;text-align:left"><th style="padding:4px 8px;font-weight:500"></th><th style="padding:4px 8px;font-weight:500">Resistans Ω</th><th style="padding:4px 8px;font-weight:500">Isolasjon MΩ</th></tr></thead><tbody>${rows}</tbody></table>` : '<div style="color:var(--dim);font-size:12px">Ingen måleverdier registrert.</div>'}
     </div>`;
   }
