@@ -87375,13 +87375,158 @@ async function _admDeleteUser(userId) {
   } catch(e) { alert('Feil: '+e.message); }
 }
 
+// ─── 042 · ORGANISASJONSNUMMER ───
+// organizations.org_nr er duplikatnøkkelen: uten den får vi to «Bravida Drammen», prosjekter
+// spredt på begge, og ingen feil. Databasen har en unik indeks på de ni sifrene
+// (supabase-migration-org-orgnr.sql); skjemaet under viser den eksisterende bedriften FØR
+// noen prøver å lage en til. Ikke forveksle med print_org_nr (utskrift), customers.org_number
+// (kunder) eller erp_customers.org_number (Visma-lista).
+//
+// _validOrgNr: MOD11, brreg.no/?p=36889 (hentet 17.10.2026). Vekter FRA VENSTRE 3,2,7,6,5,4,3,2
+// på de åtte første sifrene; kontrollsiffer = 11 − (sum mod 11); rest 0 → 0; rest 1 → ugyldig.
+// Brregs engelske side motsier seg om retningen — regneeksempelet (123456785, sum 138) avgjør.
+// Ren funksjon: tåler null/undefined/tall, kaster aldri.
+function _normOrgNr(s) { return String(s == null ? '' : s).replace(/\D/g, ''); }
+function _validOrgNr(s) {
+  const d = _normOrgNr(s);
+  if (d.length !== 9) return false;
+  const w = [3, 2, 7, 6, 5, 4, 3, 2];
+  let sum = 0;
+  for (let i = 0; i < 8; i++) sum += w[i] * (d.charCodeAt(i) - 48);
+  const rest = sum % 11;
+  if (rest === 1) return false;                 // kontrollsiffer ville blitt 10
+  const k = rest === 0 ? 0 : 11 - rest;
+  return k === d.charCodeAt(8) - 48;
+}
+// Hvorfor nummeret er ugyldig, i ord (skjemaet viser forklaring, ikke bare rødt).
+function _orgNrExplain(s) {
+  const d = _normOrgNr(s);
+  if (!d.length) return 'Skriv ni siffer, eller kryss av for «ingen norsk organisasjonsnummer».';
+  if (d.length !== 9) return 'Et organisasjonsnummer har ni siffer — her er det ' + d.length + '.';
+  if (!_validOrgNr(d)) return 'Kontrollsifferet (det siste sifferet) stemmer ikke. Sjekk for tastefeil, eller slå opp bedriften på brreg.no.';
+  return '';
+}
+const _ADM_NO_ORGNR_MARK = 'Ingen norsk organisasjonsnummer';
+// Er migrasjonen kjørt? select('*') gir org_nr-nøkkelen på radene først når kolonnen finnes.
+// Fail-open: uten kolonnen virker oppretting/redigering som før, feltet er bare låst.
+function _admOrgNrReady() {
+  const orgs = _adminState.cache.orgs || [];
+  return orgs.length > 0 && Object.prototype.hasOwnProperty.call(orgs[0], 'org_nr');
+}
+function _admOrgByNr(digits, excludeId) {
+  if (!digits) return null;
+  return (_adminState.cache.orgs || []).find(o => o.id !== excludeId && _normOrgNr(o.org_nr) === digits) || null;
+}
+// Live-sjekk for et skjema. prefix = 'adm-new-org' (ny) eller 'adm-o' (rediger).
+// Returnerer { state: 'none'|'empty'|'invalid'|'duplicate'|'valid', digits, dup }.
+function _admOrgNrCheck(prefix, excludeId) {
+  const inp = document.getElementById(prefix + '-orgnr');
+  const none = document.getElementById(prefix + '-noorgnr');
+  const hint = document.getElementById(prefix + '-orgnr-hint');
+  if (!inp) return { state: 'empty', digits: '' };
+  let res;
+  if (none && none.checked) {
+    inp.disabled = true;
+    res = { state: 'none', digits: '' };
+  } else {
+    inp.disabled = !_admOrgNrReady();
+    const digits = _normOrgNr(inp.value);
+    if (!digits) res = { state: 'empty', digits };
+    else if (!_validOrgNr(digits)) res = { state: 'invalid', digits };
+    else {
+      const dup = _admOrgByNr(digits, excludeId);
+      res = dup ? { state: 'duplicate', digits, dup } : { state: 'valid', digits };
+    }
+  }
+  inp.style.borderColor = (res.state === 'invalid' || res.state === 'duplicate') ? '#ff6b6b'
+    : res.state === 'valid' ? 'var(--accent)' : '';
+  if (hint) {
+    let h = '', col = 'var(--muted)';
+    if (!_admOrgNrReady()) h = 'Kolonnen org_nr finnes ikke ennå — kjør supabase-migration-org-orgnr.sql i Supabase.';
+    else if (res.state === 'invalid') { h = _orgNrExplain(res.digits); col = '#ff6b6b'; }
+    else if (res.state === 'duplicate') {
+      h = 'Nummeret finnes alt på <a href="#" style="color:inherit;font-weight:600;text-decoration:underline" onclick="event.preventDefault();_admShowDetail(\'' + res.dup.id + '\')">' + _esc(res.dup.name) + '</a>. Åpne den i stedet for å lage en ny.';
+      col = '#ff6b6b';
+    }
+    else if (res.state === 'valid') { h = '✓ Gyldig organisasjonsnummer'; col = 'var(--accent)'; }
+    else if (res.state === 'none') h = 'Lagres uten org.nr. Hvem som overstyrte skrives i admin-notatene.';
+    else if (prefix === 'adm-new-org') h = 'Ni siffer. Påkrevd — eller kryss av under.';
+    hint.innerHTML = h; hint.style.color = col;
+  }
+  return res;
+}
+function _admOrgNrFieldHtml(prefix, value, noChecked, excludeId) {
+  const ready = _admOrgNrReady();
+  const ex = excludeId ? "'" + excludeId + "'" : 'null';
+  return `<div class="pf-field" style="margin:0"><label style="display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Organisasjonsnummer</label>
+      <input id="${prefix}-orgnr" class="adm-search" inputmode="numeric" placeholder="123 456 785" value="${_esc(value || '')}"${ready ? '' : ' disabled'} oninput="_admOrgNrCheck('${prefix}',${ex})" style="min-width:150px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:6px;text-transform:none;letter-spacing:0;cursor:pointer">
+        <input type="checkbox" id="${prefix}-noorgnr"${noChecked ? ' checked' : ''}${ready ? '' : ' disabled'} onchange="_admOrgNrCheck('${prefix}',${ex})" style="width:auto;margin:0"> ${_ADM_NO_ORGNR_MARK} (utenlandsk firma)</label>
+      <div id="${prefix}-orgnr-hint" style="font-size:12px;margin-top:4px;line-height:1.4"></div>
+    </div>`;
+}
+function _admOverrideNote() {
+  const who = _currentUser?.email || _currentUser?.id || 'ukjent';
+  return '[' + _ADM_NO_ORGNR_MARK + ' — overstyrt av ' + who + ' ' + _admDate(new Date()) + ']';
+}
+// Finn bedriften som har nummeret i databasen (ikke bare i cachen) — brukes når insert/update
+// treffer den unike indeksen (23505), f.eks. fordi noen andre opprettet den nettopp.
+async function _admFetchOrgByNr(digits) {
+  const { data } = await _db.from('organizations').select('id, name, org_nr').not('org_nr', 'is', null);
+  return (data || []).find(o => _normOrgNr(o.org_nr) === digits) || null;
+}
+function _admDupMsgHtml(dup) {
+  return 'Organisasjonsnummeret finnes alt på <a href="#" style="color:inherit;font-weight:600;text-decoration:underline" onclick="event.preventDefault();_admShowDetail(\'' + dup.id + '\')">' + _esc(dup.name) + '</a> — ingen ny organisasjon ble laget.';
+}
+
+// Kjør i konsollen: _orgNrRegressionTest(). Ren — rører verken S eller databasen.
+function _orgNrRegressionTest() {
+  const results = [];
+  const check = (name, expected, got) => results.push({ name, ok: expected === got, expected, got });
+  const v = s => { try { return _validOrgNr(s); } catch (e) { return 'KRASJ: ' + e.message; } };
+  // 1: brregs eget regneeksempel
+  check('1: 123456785 gyldig (sum 138, rest 6, 11−6=5)', true, v('123456785'));
+  check('1: 123456789 ugyldig', false, v('123456789'));
+  // 2: normalisering
+  check('2: «123 456 785» gyldig', true, v('123 456 785'));
+  check('2: «123.456.785» gyldig', true, v('123.456.785'));
+  check('2: «NO 123 456 785 MVA» gyldig', true, v('NO 123 456 785 MVA'));
+  check('2: med/uten mellomrom gir samme svar', v('123456785'), v('123 456 785'));
+  check('2: normalisert form er 9 siffer', '123456785', _normOrgNr(' 123 456-785 '));
+  // 3: feil lengde / tomt — ugyldig, aldri krasj
+  check('3: åtte siffer ugyldig', false, v('12345678'));
+  check('3: tolv siffer ugyldig', false, v('123456785123'));
+  check('3: tom streng ugyldig', false, v(''));
+  check('3: null ugyldig, ingen krasj', false, v(null));
+  check('3: undefined ugyldig, ingen krasj', false, v(undefined));
+  check('3: tall 123456785 gyldig', true, v(123456785));
+  check('3: bokstaver ugyldig', false, v('abcdefghi'));
+  // 4: rest 0 → kontrollsiffer 0. 1·3 + 4·2 = 11, rest 0.
+  check('4: 100000040 gyldig (sum 11, rest 0, kontrollsiffer 0)', true, v('100000040'));
+  check('4: 100000041 ugyldig (rest 0 krever 0)', false, v('100000041'));
+  // 5: rest 1 → kontrollsiffer ville blitt 10 → ugyldig uansett siste siffer.
+  //    12345670: 3+4+21+24+25+24+21+0 = 122, 122 mod 11 = 1.
+  let rest1 = true;
+  for (let k = 0; k <= 9; k++) if (v('12345670' + k) !== false) rest1 = false;
+  check('5: 12345670x ugyldig for alle x (sum 122, rest 1)', true, rest1);
+  // Verifiserte ekte numre (17.10.2026): hovedenhet og underenhet
+  check('Ekte: ELEKTROIMPORTØREN NORGE AS 914939828 gyldig', true, v('914939828'));
+  check('Ekte: avdeling SKØYEN 833911872 gyldig', true, v('833911872'));
+  check('Forklaring: tom gir tekst', true, _orgNrExplain('').length > 0);
+  check('Forklaring: gyldig gir tom tekst', '', _orgNrExplain('123456785'));
+  check('Forklaring: åtte siffer nevner antallet', true, /8/.test(_orgNrExplain('12345678')));
+  const ok = results.every(r => r.ok);
+  console[ok ? 'log' : 'error']('_orgNrRegressionTest: ' + (ok ? 'BESTÅTT' : 'FEILET') + ' (' + results.filter(r => r.ok).length + '/' + results.length + ')', results);
+  return { ok, results };
+}
+
 // ─── ORGS LIST ───
 function _admRenderOrgList(el) {
   const f = _adminState.filters;
   let orgs = _adminState.cache.orgs || [];
   if (f.orgType) orgs = orgs.filter(o => o.org_type === f.orgType);
   if (f.status) orgs = orgs.filter(o => (o.subscription_status||'trial') === f.status);
-  if (f.search) { const q = f.search.toLowerCase(); orgs = orgs.filter(o => (o.name||'').toLowerCase().includes(q)); }
+  if (f.search) { const q = f.search.toLowerCase(); const qd = _normOrgNr(f.search); orgs = orgs.filter(o => (o.name||'').toLowerCase().includes(q) || (qd.length >= 3 && _normOrgNr(o.org_nr).includes(qd))); }
 
   el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
       <h2 style="margin:0">Organisasjoner <span style="font-size:14px;font-weight:400;color:var(--muted)">(${orgs.length})</span></h2>
@@ -87389,7 +87534,7 @@ function _admRenderOrgList(el) {
     </div>
     <div id="adm-new-org-form" style="display:none"></div>
     <div class="adm-toolbar">
-      <input class="adm-search" placeholder="Søk på organisasjonsnavn..." value="${_esc(f.search)}" oninput="_adminState.filters.search=this.value;_admRenderOrgList(document.getElementById('adm-content'))">
+      <input class="adm-search" placeholder="Søk på navn eller org.nr..." value="${_esc(f.search)}" oninput="_adminState.filters.search=this.value;_admRenderOrgList(document.getElementById('adm-content'))">
       <select class="adm-select" onchange="_adminState.filters.orgType=this.value;_admRenderOrgList(document.getElementById('adm-content'))">
         <option value="">Alle typer</option>
         <option value="supplier"${f.orgType==='supplier'?' selected':''}>Leverandører</option>
@@ -87403,17 +87548,18 @@ function _admRenderOrgList(el) {
       </select>
     </div>
     <table class="adm-table">
-      <thead><tr><th>Navn</th><th>Type</th><th>Medlemmer</th><th>Abonnement</th><th>Opprettet</th></tr></thead>
+      <thead><tr><th>Navn</th><th>Org.nr</th><th>Type</th><th>Medlemmer</th><th>Abonnement</th><th>Opprettet</th></tr></thead>
       <tbody>${orgs.length ? orgs.map(o => {
         const mc = _admOrgMembers(o.id).length;
         return `<tr onclick="_admShowDetail('${o.id}')">
           <td style="font-weight:600">${_esc(o.name)}</td>
+          <td style="color:var(--muted);font-variant-numeric:tabular-nums">${o.org_nr ? _esc(_normOrgNr(o.org_nr).replace(/^(\d{3})(\d{3})(\d{3})$/, '$1 $2 $3')) : ''}</td>
           <td>${_admOrgTypeBadge(o.org_type)}</td>
           <td>${mc}</td>
           <td>${_admSubBadge(o.subscription_status||'trial')}</td>
           <td style="color:var(--muted)">${_admDate(o.created_at)}</td>
         </tr>`;
-      }).join('') : '<tr><td colspan="5" class="adm-empty">Ingen organisasjoner funnet</td></tr>'}</tbody>
+      }).join('') : '<tr><td colspan="6" class="adm-empty">Ingen organisasjoner funnet</td></tr>'}</tbody>
     </table>`;
 }
 
@@ -87431,10 +87577,12 @@ function _admShowNewOrgForm() {
           <option value="installer">Installatør</option><option value="supplier">Leverandør</option></select></div>
       <div id="adm-new-org-supplier-wrap" style="display:none"><label style="display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Leverandørnavn (matcher produkter)</label>
         <input id="adm-new-org-supplier" class="adm-search" placeholder="F.eks. Cenika AS" style="min-width:160px"></div>
+      <div>${_admOrgNrFieldHtml('adm-new-org', '', false, null)}</div>
       <button class="adm-btn primary" onclick="_admCreateOrg()">Opprett</button>
     </div>
     <div id="adm-new-org-msg" class="adm-msg"></div>
   </div>`;
+  _admOrgNrCheck('adm-new-org', null);
 }
 
 async function _admCreateOrg() {
@@ -87442,10 +87590,34 @@ async function _admCreateOrg() {
   const type = document.getElementById('adm-new-org-type').value;
   const supplier = document.getElementById('adm-new-org-supplier')?.value?.trim() || null;
   const msg = document.getElementById('adm-new-org-msg');
-  if (!name) { msg.style.display='block'; msg.style.background='rgba(255,60,60,.08)'; msg.style.color='#ff6b6b'; msg.textContent='Fyll inn navn'; return; }
+  const fail = (html) => { msg.style.display='block'; msg.style.background='rgba(255,60,60,.08)'; msg.style.color='#ff6b6b'; msg.innerHTML=html; };
+  if (!name) { fail('Fyll inn navn'); return; }
+  // 042: org.nr er påkrevd for NYE organisasjoner (eller eksplisitt «ingen norsk») — det er
+  // duplikatvernet. Uten kjørt migrasjon: som før (fail-open), feltet er låst.
+  const ready = _admOrgNrReady();
+  const chk = ready ? _admOrgNrCheck('adm-new-org', null) : { state: 'skip' };
+  if (chk.state === 'empty') { fail(_esc(_orgNrExplain(''))); return; }
+  if (chk.state === 'invalid') { fail(_esc(_orgNrExplain(chk.digits))); return; }
+  if (chk.state === 'duplicate') { fail(_admDupMsgHtml(chk.dup)); return; }
   try {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
-    await _db.from('organizations').insert({ name, slug, org_type:type, supplier_name: type==='supplier' ? supplier : null });
+    const row = { name, slug, org_type:type, supplier_name: type==='supplier' ? supplier : null };
+    if (ready) {
+      row.org_nr = chk.state === 'valid' ? chk.digits : null;
+      row.created_by_user = _currentUser?.id || null;
+      row.created_by_org = _userOrg?.id || null;
+      if (chk.state === 'none') row.admin_notes = _admOverrideNote();
+    }
+    // Supabase kaster ikke ved feil — feilen ligger i { error }. Før 042 ble den svelget.
+    const { error } = await _db.from('organizations').insert(row);
+    if (error) {
+      if (error.code === '23505' && row.org_nr) {
+        const dup = await _admFetchOrgByNr(row.org_nr);
+        await _admLoadOrgs();
+        if (dup) { fail(_admDupMsgHtml(dup)); return; }
+      }
+      throw error;
+    }
     await _admLoadOrgs();
     document.getElementById('adm-new-org-form').style.display = 'none';
     _admRenderOrgList(document.getElementById('adm-content'));
@@ -87482,6 +87654,10 @@ async function _admRenderOrgDetail(el) {
       </div>
       <div id="adm-o-supplier-wrap" style="display:${o.org_type==='supplier'?'block':'none'}">
         <div class="pf-field"><label>Leverandørnavn (matcher produkter)</label><input id="adm-o-supplier" value="${_esc(o.supplier_name||'')}"></div>
+      </div>
+      <div class="adm-row" style="align-items:flex-start">
+        ${_admOrgNrFieldHtml('adm-o', o.org_nr || '', !o.org_nr && String(o.admin_notes||'').includes(_ADM_NO_ORGNR_MARK), o.id)}
+        ${_admParentOrgHtml(o)}
       </div>
       <div class="adm-row">
         <div class="pf-field"><label>Abonnement</label>
@@ -87528,6 +87704,37 @@ async function _admRenderOrgDetail(el) {
         <div id="adm-o-member-msg" class="adm-msg"></div>
       </div>
     </div>`;
+  _admOrgNrCheck('adm-o', o.id);
+  _admParentOrgCheck(o.id);
+}
+
+// 042: hovedenhet for en underenhet. Vises med navn når vi har hovedenheten som organisasjon.
+// Kan tastes inn (valgfritt) — ingenting annet fyller den i dette løpet (043 Brreg kjøres ikke).
+function _admParentOrgHtml(o) {
+  if (!_admOrgNrReady()) return '';
+  return `<div class="pf-field" style="margin:0"><label style="display:block;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Hovedenhet org.nr (for underenheter)</label>
+      <input id="adm-o-parentnr" class="adm-search" inputmode="numeric" placeholder="Valgfritt" value="${_esc(o.parent_org_nr || '')}" oninput="_admParentOrgCheck('${o.id}')" style="min-width:150px">
+      <div id="adm-o-parentnr-hint" style="font-size:12px;margin-top:4px;line-height:1.4"></div>
+    </div>`;
+}
+function _admParentOrgCheck(orgId) {
+  const inp = document.getElementById('adm-o-parentnr');
+  const hint = document.getElementById('adm-o-parentnr-hint');
+  if (!inp || !hint) return { state: 'skip' };
+  const d = _normOrgNr(inp.value);
+  let res, h = '', col = 'var(--muted)';
+  if (!d) res = { state: 'empty', digits: '' };
+  else if (!_validOrgNr(d)) { res = { state: 'invalid', digits: d }; h = _orgNrExplain(d); col = '#ff6b6b'; }
+  else if (d === _normOrgNr(document.getElementById('adm-o-orgnr')?.value)) { res = { state: 'invalid', digits: d }; h = 'Hovedenheten kan ikke ha samme nummer som organisasjonen selv.'; col = '#ff6b6b'; }
+  else {
+    res = { state: 'valid', digits: d };
+    const p = _admOrgByNr(d, orgId);
+    h = p ? 'Hovedenhet: <a href="#" style="color:var(--accent);font-weight:600;text-decoration:underline" onclick="event.preventDefault();_admShowDetail(\'' + p.id + '\')">' + _esc(p.name) + '</a>'
+          : 'Gyldig — hovedenheten er ikke registrert som organisasjon hos oss.';
+  }
+  inp.style.borderColor = res.state === 'invalid' ? '#ff6b6b' : '';
+  hint.innerHTML = h; hint.style.color = col;
+  return res;
 }
 
 async function _admSaveOrg(orgId) {
@@ -87542,7 +87749,32 @@ async function _admSaveOrg(orgId) {
       trial_ends_at: document.getElementById('adm-o-trial').value || null,
       admin_notes: document.getElementById('adm-o-notes').value
     };
-    await _db.from('organizations').update(updates).eq('id', orgId);
+    // 042: org.nr ved redigering. Tomt er lov her (eldre organisasjoner har ikke nummer, og
+    // de andre feltene må fortsatt kunne lagres); ugyldig og duplikat stopper lagringen.
+    if (_admOrgNrReady()) {
+      const fail = (html) => { msg.style.display='block'; msg.style.background='rgba(255,60,60,.08)'; msg.style.color='#ff6b6b'; msg.innerHTML=html; };
+      const chk = _admOrgNrCheck('adm-o', orgId);
+      if (chk.state === 'invalid') { fail(_esc(_orgNrExplain(chk.digits))); return; }
+      if (chk.state === 'duplicate') { fail(_admDupMsgHtml(chk.dup).replace(' — ingen ny organisasjon ble laget.', ' — endringene ble ikke lagret.')); return; }
+      const par = _admParentOrgCheck(orgId);
+      if (par.state === 'invalid') { fail('Hovedenhet: ' + _esc(document.getElementById('adm-o-parentnr-hint')?.textContent || 'ugyldig nummer')); return; }
+      updates.org_nr = chk.state === 'valid' ? chk.digits : null;
+      updates.parent_org_nr = par.state === 'valid' ? par.digits : null;
+      if (chk.state === 'none' && !String(updates.admin_notes || '').includes(_ADM_NO_ORGNR_MARK)) {
+        updates.admin_notes = (updates.admin_notes ? updates.admin_notes.replace(/\s+$/, '') + '\n' : '') + _admOverrideNote();
+      }
+    }
+    // Supabase kaster ikke ved feil — feilen ligger i { error }. Før 042 ble den svelget.
+    const { error } = await _db.from('organizations').update(updates).eq('id', orgId);
+    if (error) {
+      if (error.code === '23505' && updates.org_nr) {
+        const dup = await _admFetchOrgByNr(updates.org_nr);
+        if (dup && dup.id !== orgId) { msg.style.display='block'; msg.style.background='rgba(255,60,60,.08)'; msg.style.color='#ff6b6b'; msg.innerHTML = _admDupMsgHtml(dup).replace(' — ingen ny organisasjon ble laget.', ' — endringene ble ikke lagret.'); return; }
+      }
+      throw error;
+    }
+    const notesEl = document.getElementById('adm-o-notes');
+    if (notesEl) notesEl.value = updates.admin_notes || '';
     await _admLoadOrgs();
     msg.style.display='block'; msg.style.background='rgba(34,211,238,.08)'; msg.style.color='var(--accent)'; msg.textContent='✓ Endringer lagret';
     setTimeout(() => { msg.style.display='none'; }, 3000);
