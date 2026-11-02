@@ -1,0 +1,44 @@
+--- /Users/kennethskretteberg/Code/varmeplan-web/docs/169/hnu-a.sql	2026-11-02 12:28:54
++++ /Users/kennethskretteberg/Code/varmeplan-web/docs/169/hnu-b.sql	2026-11-02 12:28:54
+@@ -3,6 +3,9 @@
+ DECLARE
+   new_org_id uuid;
+   company text;
++  v169_orgnr text;
++  v169_sup_txt text;
++  v169_sup uuid;
+ BEGIN
+   company := NEW.raw_user_meta_data->>'company_name';
+ 
+@@ -31,6 +34,31 @@
+ 
+       -- Link profile to org
+       UPDATE public.profiles SET org_id = new_org_id WHERE id = NEW.id;
++
++      -- 169: org.nr og "Kunde hos" fra registreringsskjemaet. Metadata er brukerens egne
++      -- data: leverandoeren godtas bare naar id-en er en org med org_type='supplier', og
++      -- org.nr bare naar det er gyldig (MOD11) og ikke finnes paa en annen org.
++      BEGIN
++        v169_orgnr := public._orgnr_valid_digits(NEW.raw_user_meta_data->>'org_number');
++        v169_sup_txt := NEW.raw_user_meta_data->>'requested_supplier_org_id';
++        IF v169_sup_txt ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
++          SELECT o.id INTO v169_sup FROM public.organizations o
++           WHERE o.id = v169_sup_txt::uuid AND o.org_type = 'supplier';
++        END IF;
++        UPDATE public.organizations
++           SET requested_org_nr = v169_orgnr,
++               requested_supplier_org_id = v169_sup
++         WHERE id = new_org_id;
++        IF v169_orgnr IS NOT NULL AND NOT EXISTS (
++          SELECT 1 FROM public.organizations o
++           WHERE o.id <> new_org_id AND o.org_nr IS NOT NULL
++             AND regexp_replace(o.org_nr, '[^0-9]', '', 'g') = v169_orgnr
++        ) THEN
++          UPDATE public.organizations SET org_nr = v169_orgnr WHERE id = new_org_id;
++        END IF;
++      EXCEPTION WHEN others THEN
++        RAISE WARNING 'handle_new_user 169: org.nr/Kunde hos ikke lagret for %: %', NEW.id, SQLERRM;
++      END;
+     END IF;
+   END IF;
+ 

@@ -30,6 +30,8 @@
 -- ============================================================
 
 -- --- 1. list_customer_orgs ----------------------------------------------------
+-- 169: supabase-migration-kundesoknad.sql lager denne funksjonen paa nytt (ordrett kopi + EN
+-- OR-linje for bedrifter Cenika har godkjent). Kjor denne fila FOER kundesoknad-fila.
 -- Elektrobedriftene kallerens leverandor har opprettet (created_by_org), pluss
 -- installator-orger leverandoren alt har delt et prosjekt med (f.eks. en bedrift som
 -- fantes fra for, funnet av duplikatsjekken i 044). Bare leverandor-medlemmer.

@@ -1,0 +1,106 @@
+sidefeil ved lasting: 0 []
+1 registrering {
+ "lenkePåLogin": "Ny kunde? Søk om tilgang for bedriften din",
+ "kundeHosSynlig": true,
+ "kundeHosValg": [
+  "Cenika AS",
+  "Ingen av disse"
+ ],
+ "forhåndsvalgt": "Cenika AS",
+ "utenOrgnr": "Fyll inn organisasjonsnummeret — Cenika AS bruker det for å finne bedriften.",
+ "hintUgyldig": "Kontrollsifferet (det siste sifferet) stemmer ikke. Sjekk for tastefeil, eller slå opp bedriften på brreg.no.",
+ "ugyldigOrgnr": "Organisasjonsnummeret er ugyldig. Kontrollsifferet (det siste sifferet) stemmer ikke. Sjekk for tastefeil, eller slå opp bedriften på brreg.no.",
+ "signUpFørGyldig": 0,
+ "hintGyldig": "✓ Gyldig",
+ "signUpMeta": {
+  "full_name": "Ola Welhaven",
+  "company_name": "Welhaven Elektro AS",
+  "org_number": "123456785",
+  "phone": "",
+  "message": "",
+  "requested_supplier_org_id": "11111111-2222-3333-4444-555555555555",
+  "requested_supplier_name": "Cenika AS"
+ },
+ "statusTekst": "✅ Søknaden er sendt Søknaden er sendt til Cenika AS. Du får e-post når den er behandlet. ← Tilbake til innlogging",
+ "adminVarsel": 1
+}
+1b ingen av disse / uten migrasjon {
+ "meta": {
+  "full_name": "Ola Welhaven",
+  "company_name": "Annen Elektro AS",
+  "org_number": "",
+  "phone": "",
+  "message": ""
+ },
+ "status": "✅ Registrering fullført Takk for registreringen! Bedriften din er opprettet og v",
+ "utenMigrasjonSkjult": true
+}
+2 ventesiden {
+ "pending": "⏳ Venter på godkjenning Søknaden er sendt til Cenika AS. Du får e-post når den er behandlet. Logg ut",
+ "slippetInnPending": 0,
+ "pendingUtenMedlemskap": "⏳ Venter på godkjenning Søknaden er sendt til Cenika AS. Du får e-post når den er behandlet. Logg ut",
+ "vanligPending": " Venter på godkjenning Bedriften din er registrert og venter på godkjenning. Du får tilgang når den er aktivert. Logg ut",
+ "avvist": "❌ Tilgang avvist Forespørselen din om ti",
+ "slippetInnTotalt": 0
+}
+3 velg passord {
+ "vist": true,
+ "tittel": "Velkommen til Varmeplan — velg passord",
+ "skjemaSynlig": true,
+ "loginSkjult": true,
+ "merkeSatt": true,
+ "etterLukketFane": true,
+ "forKort": "Passord må være minst 8 tegn.",
+ "ulike": "Passordene stemmer ikke overens.",
+ "updateUserFør": 0,
+ "updateUser": [
+  {
+   "password": "langtpassord1",
+   "data": {
+    "password_set": true
+   }
+  }
+ ],
+ "videreInn": 1,
+ "urlEtter": "/",
+ "merkeFjernet": true,
+ "ikkeIgjen": true
+}
+3b recovery {"recoveryTittel":"Velg nytt passord"}
+4 liste {
+ "tallKnapp": "3",
+ "tallFane": "3",
+ "rader": [
+  "Welhaven Elektro AS org.nr 123456785 1.11.2026 Ola Welhaven · ola@welhaven.no · 900 00 000 «Vi kjøper kabel fra dere» Kunde i Visma: 30470 Welhaven Elektro Godkjenn Avslå",
+  "Ny Elektro AS org.nr 914939828 31.10.2026 Kari Ny · kari@ny.no Ikke funnet i kundelista Godkjenn Avslå",
+  "Bravida Drammen org.nr 941163343 30.10.2026 Per Fremmed · per@gmail.com Kunde i Visma: 1001 Bravida avd Drammen Kunde i Visma: 1002 Bravida avd Kongsberg Bedriften har allerede Varmeplan. Søkeren må inviteres av bedriftens administrator. Avslå"
+ ],
+ "godkjennKnapper": [
+  "Godkjenn|Avslå",
+  "Godkjenn|Avslå",
+  "Avslå"
+ ]
+}
+5 godkjenn/avslå {
+ "approveArgs": [
+  {
+   "p_org_id": "a1",
+   "p_erp_customer_no": "30470"
+  }
+ ],
+ "mailKall": [
+  "{\"org_id\":\"a1\"}"
+ ],
+ "radA1": "Welhaven Elektro AS org.nr 123456785 1.11.2026 Ola Welhaven · ola@welhaven.no · 900 00 000 «Vi kjøper kabel fra dere» Kunde i Visma: 30470 Welhaven Elektro ✓ Godkjent. Welhaven Elektro AS har tilgang nå. E-posten ble ikke sendt (funksjonen kundesoknad-svar er ikke installert ennå) — gi søkeren beskjed selv.",
+ "radA2": "Ny Elektro AS org.nr 914939828 31.10.2026 Kari Ny · kari@ny.no Ikke funnet i kundelista Bedriften har allerede Varmeplan. Søkeren må inviteres av bedriftens administrator. Avslå",
+ "rejectArgs": [
+  {
+   "p_org_id": "a3",
+   "p_reason": "Søkeren er ikke ansatt i Bravida"
+  }
+ ],
+ "radA3": "Bravida Drammen org.nr 941163343 30.10.2026 Per Fremmed · per@gmail.com Kunde i Visma: 1001 Bravida avd Drammen Kunde i Visma: 1002 Bravida avd Kongsberg Bedriften har allerede Varmeplan. Søkeren må inviteres av bedriftens administrator. Søknaden er avslått. E-post sendt til per@gmail.com.",
+ "tallEtter": "1/"
+}
+6 uten migrasjon {"utenMigrasjon":"Søknader om tilgang Lukk Bedrifter som har registrert seg på varmeplan.no og oppgitt at de er kunde hos dere. Søkeren kommer ikke inn før dere godkjenner. Funksjonen finnes ikke i databasen ennå. Migrasjonen supabase-migration-kundesoknad.sql må kjøres i Supabase.","tall":"none"}
+sidefeil totalt: 0 []

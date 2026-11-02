@@ -14,6 +14,11 @@
 -- som sjekker kalleren selv -- samme monster som kundelenke-RPC-ene
 -- (set search_path, eksplisitt revoke/grant).
 --
+-- 169 (endret 02.11.2026, foer fila er kjort): regel 3-4 og MOD11-sjekken er trukket ut i
+-- to interne funksjoner (_orgnr_valid_digits, _activate_customer_org), definert rett over
+-- create_customer_org. approve_customer_org i supabase-migration-kundesoknad.sql bruker de
+-- samme, saa reglene bor ett sted. Kjor DENNE fila foer kundesoknad-fila.
+--
 -- Reglene, i rekkefolge:
 --  1. Kalleren maa vaere medlem av en org med org_type = 'supplier'. Leverandoren
 --     hentes fra MEDLEMSKAPET (auth.uid()), aldri fra noe klienten sender.
@@ -47,6 +52,104 @@
 alter table organizations
   add column if not exists erp_customer_no text;
 
+-- ------------------------------------------------------------
+-- 169: FELLES INTERNE FUNKSJONER. Reglene som gjelder BAADE naar Cenika oppretter en
+-- kundebedrift (create_customer_org, under) og naar Cenika godkjenner en bedrift som har
+-- registrert seg selv (approve_customer_org, supabase-migration-kundesoknad.sql), bor HER,
+-- ett sted. Ingen av dem kan kalles fra klienten (revoke nederst i blokka) -- de kalles bare
+-- fra security definer-funksjoner som alt har sjekket kalleren.
+-- ------------------------------------------------------------
+
+-- Org.nr: ni siffer etter MOD11 (vekter 3 2 7 6 5 4 3 2 fra venstre; rest 0 -> 0; rest 1 ->
+-- ugyldig). Samme regel som _validOrgNr i index.html (042). Returnerer de ni sifrene, eller
+-- null naar nummeret mangler eller er ugyldig. Kaster aldri.
+create or replace function public._orgnr_valid_digits(p text)
+returns text
+language plpgsql
+immutable
+set search_path = public
+as $$
+declare
+  v_d    text := regexp_replace(coalesce(p, ''), '[^0-9]', '', 'g');
+  v_w    int[] := array[3, 2, 7, 6, 5, 4, 3, 2];
+  v_sum  int := 0;
+  v_rest int;
+begin
+  if length(v_d) <> 9 then return null; end if;
+  for k in 1..8 loop
+    v_sum := v_sum + substr(v_d, k, 1)::int * v_w[k];
+  end loop;
+  v_rest := v_sum % 11;
+  if v_rest = 1 then return null; end if;
+  if (case when v_rest = 0 then 0 else 11 - v_rest end) <> substr(v_d, 9, 1)::int then
+    return null;
+  end if;
+  return v_d;
+end;
+$$;
+
+-- Gjoer en installatoer-org til aktiv kundebedrift hos EN leverandoer:
+--   * org_type maa vaere 'installer' (aldri en leverandoer)
+--   * subscription_status = 'active' og trial_ends_at = null EKSPLISITT (standarden er
+--     'trial' + 30 dager, og paaloggingen stenger ute naar den gaar ut)
+--   * erp_customer_no settes naar den er oppgitt (Visma-kundenummeret)
+--   * EN rad i organization_supplier_access for denne leverandoeren
+-- Kalleren blir IKKE medlem -- funksjonen roerer ikke organization_members.
+-- 170 (moduler for kundebedrifter): allowed_modules settes HER, saa begge veiene faar det.
+create or replace function public._activate_customer_org(
+  p_org_id       uuid,
+  p_supplier_org uuid,
+  p_erp          text,
+  p_by           uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_type     text;
+  v_sup_name text;
+  v_sup_id   uuid;
+begin
+  select o.org_type into v_type from organizations o where o.id = p_org_id for update;
+  if not found then
+    raise exception 'ORG_NOT_FOUND' using errcode = '22023';
+  end if;
+  if v_type is distinct from 'installer' then
+    raise exception 'NOT_INSTALLER: bare installatoer-orger kan bli kundebedrifter' using errcode = '42501';
+  end if;
+
+  select o.supplier_name into v_sup_name
+    from organizations o where o.id = p_supplier_org and o.org_type = 'supplier';
+  if not found then
+    raise exception 'NOT_SUPPLIER: leverandoer-orgen finnes ikke' using errcode = '42501';
+  end if;
+  select s.id into v_sup_id from suppliers s where s.name = v_sup_name;
+  if v_sup_id is null then
+    raise exception 'SUPPLIER_NOT_LINKED: leverandoer-orgen (supplier_name=%) har ingen rad i suppliers',
+      coalesce(v_sup_name, 'null') using errcode = '22023';
+  end if;
+
+  update organizations
+     set subscription_status = 'active',
+         trial_ends_at       = null,
+         erp_customer_no     = coalesce(nullif(btrim(coalesce(p_erp, '')), ''), erp_customer_no)
+   where id = p_org_id;
+
+  insert into organization_supplier_access (org_id, supplier_id, enabled, granted_by)
+  values (p_org_id, v_sup_id, true, p_by)
+  on conflict (org_id, supplier_id) do update set enabled = true;
+end;
+$$;
+
+revoke all on function public._orgnr_valid_digits(text) from public;
+revoke all on function public._orgnr_valid_digits(text) from anon;
+revoke all on function public._orgnr_valid_digits(text) from authenticated;
+revoke all on function public._activate_customer_org(uuid, uuid, text, uuid) from public;
+revoke all on function public._activate_customer_org(uuid, uuid, text, uuid) from anon;
+revoke all on function public._activate_customer_org(uuid, uuid, text, uuid) from authenticated;
+
 create or replace function public.create_customer_org(
   p_name            text,
   p_org_nr          text,
@@ -74,9 +177,6 @@ declare
   v_erp           text := nullif(btrim(coalesce(p_erp_customer_no, '')), '');
   v_addr          text := nullif(btrim(coalesce(p_address, '')), '');
   v_override      text := nullif(btrim(coalesce(p_orgnr_override, '')), '');
-  v_w             int[] := array[3, 2, 7, 6, 5, 4, 3, 2];
-  v_sum           int;
-  v_rest          int;
   v_ok            boolean;
   v_note          text := null;
   v_ex            record;
@@ -127,18 +227,9 @@ begin
     raise exception 'EMAIL_INVALID: kontaktpersonens e-post er paakrevd' using errcode = '22023';
   end if;
 
-  -- Org.nr: MOD11, vekter 3 2 7 6 5 4 3 2 fra venstre; rest 0 -> 0; rest 1 -> ugyldig.
-  -- Samme regel som _validOrgNr i index.html (042).
-  v_ok := false;
-  if length(v_digits) = 9 then
-    v_sum := 0;
-    for k in 1..8 loop
-      v_sum := v_sum + substr(v_digits, k, 1)::int * v_w[k];
-    end loop;
-    v_rest := v_sum % 11;
-    v_ok := v_rest <> 1
-        and (case when v_rest = 0 then 0 else 11 - v_rest end) = substr(v_digits, 9, 1)::int;
-  end if;
+  -- Org.nr: MOD11 i den felles funksjonen _orgnr_valid_digits (169; samme regel som
+  -- _validOrgNr i index.html, 042).
+  v_ok := public._orgnr_valid_digits(v_digits) is not null;
 
   if not v_ok then
     if v_override is null then
@@ -226,10 +317,9 @@ begin
     raise;
   end;
 
-  -- 4. Leverandoertilgang: bare kallerens egen leverandoer --------------------------
-  insert into organization_supplier_access (org_id, supplier_id, enabled, granted_by)
-  values (v_org_id, v_supplier_id, true, v_uid)
-  on conflict (org_id, supplier_id) do update set enabled = true;
+  -- 4. Aktiv kundebedrift + leverandoertilgang (bare kallerens egen leverandoer).
+  --    Felles regel med approve_customer_org (169): _activate_customer_org.
+  perform public._activate_customer_org(v_org_id, v_supplier_org, v_erp, v_uid);
 
   -- 5. (Med vilje ingenting: kalleren blir IKKE medlem.)
 

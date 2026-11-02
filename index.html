@@ -1113,7 +1113,7 @@ body.kunde-maal #minimap-widget{display:none !important}
 .auth-tab:hover:not(.active){color:var(--text)}
 .auth-field{display:flex;flex-direction:column;gap:4px}
 .auth-field label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
-.auth-field input,.auth-field textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:14px;outline:none;transition:border-color .15s;color:var(--text)}
+.auth-field input,.auth-field textarea,.auth-field select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:14px;outline:none;transition:border-color .15s;color:var(--text)}
 .auth-field input:focus,.auth-field textarea:focus{border-color:var(--accent)}
 .auth-field textarea{resize:vertical;min-height:60px;font-family:inherit}
 .auth-field .auth-hint{font-size:11px;color:var(--dim);margin-top:2px}
@@ -1351,6 +1351,28 @@ body.kunde-maal #minimap-widget{display:none !important}
       <div id="auth-invite-link" style="text-align:center;margin-top:14px">
         <a href="#" onclick="event.preventDefault();_authShowInvite()" style="font-size:13px;color:var(--accent);text-decoration:none"><svg class="ic ic-mail" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg> Har du en invitasjon?</a>
       </div>
+      <!-- 169: selvregistrering for kundebedrifter — samme registrering som «Opprett konto» -->
+      <div id="auth-apply-link" style="text-align:center;margin-top:8px">
+        <a href="#" onclick="event.preventDefault();_authSwitchTab('register')" style="font-size:13px;color:var(--accent);text-decoration:none">Ny kunde? Søk om tilgang for bedriften din</a>
+      </div>
+    </div>
+
+    <!-- 169: «Velkommen til Varmeplan — velg passord» (invitasjonslenke fra 045, eller type=recovery).
+         Ingen «hopp over»: uten passord kommer brukeren ikke videre inn i appen. -->
+    <div id="auth-setpw-form" style="display:none">
+      <h3 id="auth-setpw-title" style="font-size:18px;font-weight:600;margin:0 0 6px 0">Velkommen til Varmeplan — velg passord</h3>
+      <p id="auth-setpw-sub" style="font-size:13px;color:var(--muted);margin:0 0 14px 0;line-height:1.5">Du er logget inn med lenken fra e-posten. Velg et passord, så kan du logge inn med e-postadressen din neste gang.</p>
+      <div class="auth-field">
+        <label>Nytt passord *</label>
+        <input id="auth-setpw-pass" type="password" placeholder="Minimum 8 tegn" autocomplete="new-password">
+        <span class="auth-hint">Minimum 8 tegn</span>
+      </div>
+      <div class="auth-field">
+        <label>Gjenta passordet *</label>
+        <input id="auth-setpw-pass2" type="password" placeholder="Gjenta passordet" autocomplete="new-password" onkeydown="if(event.key==='Enter')_velkommenSubmit()">
+      </div>
+      <button class="auth-btn" onclick="_velkommenSubmit()" id="auth-setpw-btn">Lagre passord og fortsett</button>
+      <button class="auth-btn-ghost" onclick="_authLogout()" style="margin-top:8px;width:100%;text-align:center">Logg ut</button>
     </div>
 
     <!-- Invite-code path (third way: join an existing org via an invitation) -->
@@ -1392,9 +1414,17 @@ body.kunde-maal #minimap-widget{display:none !important}
           <label>Firmanavn *</label>
           <input id="auth-reg-company" type="text" placeholder="Ditt firma AS">
         </div>
+        <!-- 169: «Kunde hos» — leverandøren som godkjenner søknaden. Skjult når lista ikke kan
+             hentes (migrasjonen ikke kjørt) eller ved invitasjon; da er registreringen som før. -->
+        <div class="auth-field" id="auth-reg-supplier-field" style="display:none">
+          <label>Kunde hos</label>
+          <select id="auth-reg-supplier" onchange="_regOrgNrHint()"></select>
+          <span class="auth-hint" id="auth-reg-supplier-hint">Leverandøren godkjenner søknaden. Du får e-post når den er behandlet.</span>
+        </div>
         <div class="auth-field">
           <label>Org.nr</label>
-          <input id="auth-reg-orgnr" type="text" placeholder="Valgfritt">
+          <input id="auth-reg-orgnr" type="text" placeholder="Valgfritt" inputmode="numeric" oninput="_regOrgNrHint()">
+          <span class="auth-hint" id="auth-reg-orgnr-hint"></span>
         </div>
         <div class="auth-field">
           <label>Telefon</label>
@@ -1604,7 +1634,7 @@ body.kunde-maal #minimap-widget{display:none !important}
          breddekontrakt (width/max-width) står uendret. -->
     <div class="dash-tabs" style="display:flex;gap:0;justify-content:center;margin:16px 0 0;border-bottom:2px solid var(--border);width:100%;max-width:var(--dash-max-w);box-sizing:border-box">
       <button class="dash-tab active" id="dash-tab-projects" onclick="_switchDashTab('projects')"><svg class="ic ic-folder" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2z"/></svg> Prosjekter</button>
-      <button class="dash-tab" id="dash-tab-customers" onclick="_switchDashTab('customers')"><svg class="ic ic-user" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg> Kunder</button>
+      <button class="dash-tab" id="dash-tab-customers" onclick="_switchDashTab('customers')"><svg class="ic ic-user" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg> Kunder<span id="dash-tab-customers-count" title="Søknader om tilgang som venter" style="display:none;margin-left:6px;padding:1px 7px;border-radius:10px;background:#e8742c;color:#fff;font-size:11px;font-weight:700"></span></button>
       <button class="dash-tab" id="dash-tab-docs" onclick="_switchDashTab('docs')"><svg class="ic ic-clipboard" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg> Dokumentasjon</button>
       <button class="dash-tab" id="dash-tab-portal" onclick="_switchDashTab('portal')" style="display:none"><svg class="ic ic-shield" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6z"/><path d="m9 12 2 2 4-4"/></svg> Garantiportal</button>
     </div>
@@ -1756,8 +1786,10 @@ body.kunde-maal #minimap-widget{display:none !important}
           </select>
           <button class="dash-create-btn btn-gbao10" style="white-space:nowrap;display:none" onclick="_openCustNoImport()">Importer kundenumre</button>
           <button class="dash-create-btn" id="cust-grant-access-btn" onclick="_coOpen()" style="white-space:nowrap;display:none" title="Opprett elektrobedriften i Varmeplan og inviter kontaktpersonen">Gi kunden tilgang til Varmeplan</button>
+          <button class="dash-create-btn" id="cust-req-btn" onclick="_creqToggle()" style="white-space:nowrap;display:none" title="Bedrifter som har registrert seg selv og valgt dere som leverandør">Søknader om tilgang <span id="cust-req-count" style="display:none;margin-left:4px;padding:1px 7px;border-radius:10px;background:#e8742c;color:#fff;font-size:11px;font-weight:700"></span></button>
           <button class="dash-create-btn" onclick="_showNewCustomerPopup()" style="white-space:nowrap">＋ Ny kunde</button>
         </div>
+        <div id="cust-req-section" style="display:none;margin-bottom:16px"></div>
         <div class="pl-table-wrap">
           <table class="pl-table">
             <thead>
@@ -86305,6 +86337,156 @@ let _inviteToken = null;
   }
 })();
 
+// ─── 169 · VELKOMMEN — VELG PASSORD (SPØRSMÅL 19 og 29) ───
+// En invitert bruker (045: inviteUserByEmail, redirectTo https://varmeplan.no/?velkommen=1)
+// blir logget inn av lenka, men har intet passord. Denne skjermen ber om det før appen åpnes.
+// Signalene:
+//   * ?velkommen=1 i URL-en, eller type=invite / type=recovery i hashen (fanget HER, ved
+//     parsing — supabase-js tømmer hashen når den henter økta ut av den)
+//   * localStorage-merket (skjermen ble vist, men passordet ble aldri lagret — fanen ble lukket)
+//   * invitert konto (user.invited_at) uten user_metadata.password_set
+// Brukeren kan ikke hoppe over skjermen; uten passord kommer hun ikke forbi den. Lukker hun
+// fanen, kommer skjermen igjen neste gang (økta ligger i nettleseren), eller lenka virker til
+// den utløper.
+const _VELKOMMEN_BOOT = { search: location.search, hash: location.hash };
+const _VELKOMMEN_FLAG = 'vp_pw_required';
+// Ren: avgjør om skjermen skal vises. o = { search, hash, hasSession, invitedAt, passwordSet, localFlag }
+// → { show, reason } der reason er invite | recovery | unfinished | invited-no-password |
+//   link-error | no-session | none
+function _velkommenDecide(o) {
+  o = o || {};
+  const q = new URLSearchParams(String(o.search || '').replace(/^\?/, ''));
+  const h = new URLSearchParams(String(o.hash || '').replace(/^#/, ''));
+  const type = h.get('type');
+  const velkommen = q.get('velkommen') === '1';
+  if (!o.hasSession) {
+    if (h.get('error_code') || h.get('error')) return { show: false, reason: 'link-error', code: h.get('error_code') || h.get('error') };
+    return { show: false, reason: 'no-session' };
+  }
+  if (type === 'recovery') return { show: true, reason: 'recovery' };
+  if (type === 'invite') return { show: true, reason: 'invite' };
+  if (o.localFlag) return { show: true, reason: 'unfinished' };
+  // ?velkommen=1 alene (uten token i hashen): bare når kontoen faktisk mangler passord —
+  // ellers ville et bokmerke med parameteren spurt en bruker som alt har passord.
+  if (velkommen && !o.passwordSet) return { show: true, reason: 'invite' };
+  if (o.invitedAt && !o.passwordSet) return { show: true, reason: 'invited-no-password' };
+  return { show: false, reason: 'none' };
+}
+function _velkommenFlagGet(uid) { try { return !!uid && localStorage.getItem(_VELKOMMEN_FLAG) === uid; } catch (e) { return false; } }
+function _velkommenFlagSet(uid) { try { if (uid) localStorage.setItem(_VELKOMMEN_FLAG, uid); } catch (e) {} }
+function _velkommenFlagClear() { try { localStorage.removeItem(_VELKOMMEN_FLAG); } catch (e) {} }
+// URL-en uten velkommen-parameteren og uten hash (resten av spørrestrengen beholdes).
+function _velkommenCleanUrl(href) {
+  const u = new URL(href);
+  u.searchParams.delete('velkommen');
+  u.hash = '';
+  return u.pathname + (u.searchParams.toString() ? '?' + u.searchParams.toString() : '');
+}
+// Kalles fra initSupabase når en økt finnes. true = skjermen vises (stopp videre innlogging).
+function _velkommenMaybeShow(user) {
+  const d = _velkommenDecide({
+    search: _VELKOMMEN_BOOT.search, hash: _VELKOMMEN_BOOT.hash, hasSession: !!user,
+    invitedAt: user && user.invited_at, passwordSet: !!(user && user.user_metadata && user.user_metadata.password_set),
+    localFlag: _velkommenFlagGet(user && user.id),
+  });
+  if (!d.show) return false;
+  _velkommenFlagSet(user.id);
+  _velkommenShow(d.reason);
+  return true;
+}
+function _velkommenShow(reason) {
+  _authShowScreen();
+  ['auth-login-form','auth-register-form','auth-tabs','auth-error','auth-invite-form','auth-invite-link','auth-status'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  const t = document.getElementById('auth-setpw-title');
+  const s = document.getElementById('auth-setpw-sub');
+  if (reason === 'recovery') {
+    if (t) t.textContent = 'Velg nytt passord';
+    if (s) s.textContent = 'Du er logget inn med lenken fra e-posten. Velg et nytt passord for å fortsette.';
+  } else {
+    if (t) t.textContent = 'Velkommen til Varmeplan — velg passord';
+    if (s) s.textContent = 'Du er logget inn med lenken fra e-posten. Velg et passord, så kan du logge inn med e-postadressen din neste gang.';
+  }
+  const f = document.getElementById('auth-setpw-form'); if (f) f.style.display = '';
+  const p = document.getElementById('auth-setpw-pass'); if (p) { p.value = ''; try { p.focus(); } catch (e) {} }
+  const p2 = document.getElementById('auth-setpw-pass2'); if (p2) p2.value = '';
+}
+// Samme passordregler som registreringen (minst 8 tegn) og Min profil (to like felt).
+function _velkommenCheck(a, b) {
+  if (String(a || '').length < 8) return 'Passord må være minst 8 tegn.';
+  if (a !== b) return 'Passordene stemmer ikke overens.';
+  return '';
+}
+async function _velkommenSubmit() {
+  const a = document.getElementById('auth-setpw-pass')?.value || '';
+  const b = document.getElementById('auth-setpw-pass2')?.value || '';
+  const err = _velkommenCheck(a, b);
+  if (err) { _authShowError(err); return; }
+  const btn = document.getElementById('auth-setpw-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Lagrer…'; }
+  try {
+    const { data, error } = await _db.auth.updateUser({ password: a, data: { password_set: true } });
+    if (error) throw error;
+    if (data && data.user) _currentUser = data.user;
+    _velkommenFlagClear();
+    try { window.history.replaceState({}, '', _velkommenCleanUrl(location.href)); } catch (e) {}
+    _VELKOMMEN_BOOT.search = ''; _VELKOMMEN_BOOT.hash = '';
+    document.getElementById('auth-error').style.display = 'none';
+    const f = document.getElementById('auth-setpw-form'); if (f) f.style.display = 'none';
+    await _authCheckProfileAndProceed();
+  } catch (e) {
+    const m = String((e && e.message) || e || '');
+    _authShowError(/different from the old|same.*password/i.test(m) ? 'Velg et annet passord enn det gamle.'
+      : /weak|short|at least/i.test(m) ? 'Passordet er for svakt. Velg et lengre passord.'
+      : 'Kunne ikke lagre passordet: ' + m);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Lagre passord og fortsett'; }
+  }
+}
+// Lenka var utløpt eller brukt (Supabase legger error_code i hashen og gir ingen økt).
+function _velkommenLinkErrorText(code) {
+  return code === 'otp_expired'
+    ? 'Lenken i e-posten er utløpt eller allerede brukt. Be om en ny invitasjon, eller logg inn hvis du alt har valgt passord.'
+    : 'Lenken i e-posten virket ikke. Be om en ny invitasjon, eller logg inn hvis du alt har valgt passord.';
+}
+
+// Regresjonstest: når vises skjermen? (URL-varianter + kontotilstand). Ren — rører ingenting.
+function _velkommenRegressionTest() {
+  const results = [];
+  const check = (name, cond, got) => results.push({ name, ok: !!cond, got });
+  const D = o => _velkommenDecide(o);
+  const tok = '#access_token=abc&expires_in=3600&refresh_token=r&token_type=bearer';
+  check('A1: ?velkommen=1 + økt uten passord → vis', D({ search: '?velkommen=1', hasSession: true }).show);
+  check('A2: hash type=invite + økt → vis (invite)', D({ hash: tok + '&type=invite', hasSession: true }).reason === 'invite');
+  check('A3: hash type=recovery + økt → vis (recovery)', D({ hash: tok + '&type=recovery', hasSession: true }).reason === 'recovery');
+  check('A4: ?velkommen=1 + type=invite → vis', D({ search: '?velkommen=1', hash: tok + '&type=invite', hasSession: true }).show);
+  check('A5: type=invite vinner selv om password_set (ny invitasjon)', D({ hash: tok + '&type=invite', hasSession: true, passwordSet: true }).show);
+  check('A6: velkommen med andre parametre (?a=1&velkommen=1)', D({ search: '?a=1&velkommen=1', hasSession: true }).show);
+  check('B1: ingen økt → ikke vis', !D({ search: '?velkommen=1', hash: tok + '&type=invite', hasSession: false }).show);
+  check('B2: utløpt lenke → link-error, ikke vis', (r => !r.show && r.reason === 'link-error' && r.code === 'otp_expired')(D({ search: '?velkommen=1', hash: '#error=access_denied&error_code=otp_expired&error_description=x', hasSession: false })));
+  check('B3: vanlig økt uten signaler → ikke vis', !D({ hasSession: true }).show);
+  check('B4: ?velkommen=1 men passord alt valgt → ikke vis', !D({ search: '?velkommen=1', hasSession: true, passwordSet: true }).show);
+  check('B5: ?velkommen=0 → ikke vis', !D({ search: '?velkommen=0', hasSession: true }).show);
+  check('B6: type=signup/magiclink → ikke vis', !D({ hash: tok + '&type=signup', hasSession: true }).show && !D({ hash: tok + '&type=magiclink', hasSession: true }).show);
+  check('C1: lukket fane (lokalt merke) → vis igjen', D({ hasSession: true, localFlag: true }).reason === 'unfinished');
+  check('C2: invitert konto uten passord, ren URL → vis', D({ hasSession: true, invitedAt: '2026-11-02T10:00:00Z' }).reason === 'invited-no-password');
+  check('C3: invitert konto MED passord → ikke vis', !D({ hasSession: true, invitedAt: '2026-11-02T10:00:00Z', passwordSet: true }).show);
+  check('D1: passordregel: 7 tegn avvist', _velkommenCheck('1234567', '1234567') !== '');
+  check('D2: passordregel: ulike felt avvist', /stemmer ikke/.test(_velkommenCheck('12345678', '12345679')));
+  check('D3: passordregel: 8 like tegn godtatt', _velkommenCheck('12345678', '12345678') === '');
+  check('E1: ryddet URL fjerner velkommen og hash', _velkommenCleanUrl('https://varmeplan.no/?velkommen=1#access_token=x&type=invite') === '/');
+  check('E2: ryddet URL beholder andre parametre', _velkommenCleanUrl('https://varmeplan.no/?dev=1&velkommen=1') === '/?dev=1');
+  const src = _kildeUtenKommentarer(initSupabase.toString());
+  check('F1: initSupabase spør skjermen før _authCheckProfileAndProceed', /_velkommenMaybeShow\(session\.user\)/.test(src)
+    && src.indexOf('_velkommenMaybeShow(session.user)') < src.indexOf('_authCheckProfileAndProceed'), '');
+  check('F2: boot-URL fanges ved parsing (før createClient)', typeof _VELKOMMEN_BOOT === 'object' && 'hash' in _VELKOMMEN_BOOT);
+  check('F3: skjermen har ingen «hopp over»', !/hopp over|senere|skip/i.test(document.getElementById('auth-setpw-form')?.innerText || ''));
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_velkommenRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return results;
+}
+
 function _authSwitchTab(tab) {
   // Reset error
   const errEl = document.getElementById('auth-error');
@@ -86317,6 +86499,7 @@ function _authSwitchTab(tab) {
   // Consolidated status + invite path are hidden whenever a form tab is shown
   const statusEl = document.getElementById('auth-status'); if (statusEl) statusEl.style.display = 'none';
   const inviteForm = document.getElementById('auth-invite-form'); if (inviteForm) inviteForm.style.display = 'none';
+  const setpw = document.getElementById('auth-setpw-form'); if (setpw) setpw.style.display = 'none';
   // "Har du en invitasjon?"-link only makes sense on the login tab
   const inviteLink = document.getElementById('auth-invite-link'); if (inviteLink) inviteLink.style.display = tab === 'login' ? '' : 'none';
   document.getElementById('auth-tabs').style.display = '';
@@ -86333,6 +86516,76 @@ function _authRegStep(n) {
   // Step 2 shows a note + relaxes the company requirement when joining via invite
   const note = document.getElementById('auth-reg-invite-note');
   if (note) note.style.display = (n === 2 && _inviteToken) ? '' : 'none';
+  if (n === 2) _regLoadSuppliers();
+}
+
+// ─── 169 · SELVREGISTRERING FOR KUNDEBEDRIFTER ───
+// Bygger på dagens registrering (ingen ny tabell, intet nytt skjema): «Kunde hos» og org.nr
+// sendes i signUp-metadata, og triggeren handle_new_user lagrer dem på den ventende orgen
+// (supabase-migration-kundesoknad.sql). Profilen står 'pending' til leverandøren (eller
+// superadmin) godkjenner. Klienten bestemmer ingenting: triggeren godtar bare en id som er en
+// leverandør-org, og bare et gyldig, ledig org.nr.
+let _regSuppliers = null;   // null = ikke hentet, [] = ingen/ikke tilgjengelig
+async function _regLoadSuppliers() {
+  const field = document.getElementById('auth-reg-supplier-field');
+  const sel = document.getElementById('auth-reg-supplier');
+  if (!field || !sel) return;
+  // Invitert: brukeren blir med i den inviterte orgen — ingen søknad.
+  if (_inviteToken) { field.style.display = 'none'; return; }
+  if (_regSuppliers === null) {
+    try {
+      const { data, error } = await _db.rpc('list_registration_suppliers');
+      _regSuppliers = (!error && Array.isArray(data)) ? data.filter(s => s && s.id && s.name) : [];
+    } catch (e) { _regSuppliers = []; }
+  }
+  const o = _regSupplierOptions(_regSuppliers);
+  if (!o.show) { field.style.display = 'none'; sel.innerHTML = ''; return; }
+  const before = sel.value;
+  sel.innerHTML = o.html;
+  sel.value = before && _regSuppliers.some(s => s.id === before) ? before : o.preselect;
+  field.style.display = '';
+  _regOrgNrHint();
+}
+// Ren: valgene i «Kunde hos». Én leverandør → forhåndsvalgt. «Ingen av disse» beholder
+// dagens vei (systemadministrator godkjenner).
+function _regSupplierOptions(list) {
+  const arr = Array.isArray(list) ? list.filter(s => s && s.id && s.name) : [];
+  if (!arr.length) return { show: false, html: '', preselect: '' };
+  const html = (arr.length > 1 ? '<option value="">Velg leverandør…</option>' : '')
+    + arr.map(s => `<option value="${_esc(s.id)}">${_esc(s.name)}</option>`).join('')
+    + '<option value="__none__">Ingen av disse</option>';
+  return { show: true, html, preselect: arr.length === 1 ? arr[0].id : '' };
+}
+function _regSelectedSupplier() {
+  const sel = document.getElementById('auth-reg-supplier');
+  const field = document.getElementById('auth-reg-supplier-field');
+  if (!sel || !field || field.style.display === 'none') return null;
+  const s = (_regSuppliers || []).find(x => x.id === sel.value);
+  return s || null;
+}
+// Ren: avgjør om steg 2 kan sendes. Org.nr valideres med _validOrgNr (042). Er en
+// leverandør valgt, er org.nr påkrevd — det er det leverandøren finner bedriften på i
+// kundelista (Visma) og det duplikatsjekken bruker.
+function _regCheck(f) {
+  const company = String(f.company || '').trim();
+  const orgnr = String(f.orgnr || '').trim();
+  if (!company && !f.invite) return 'Fyll inn firmanavn.';
+  if (f.supplierPick === '' && f.supplierShown) return 'Velg hvilken leverandør dere er kunde hos, eller «Ingen av disse».';
+  if (f.supplierId && !orgnr) return 'Fyll inn organisasjonsnummeret — ' + (f.supplierName || 'leverandøren') + ' bruker det for å finne bedriften.';
+  if (orgnr && !_validOrgNr(orgnr)) return 'Organisasjonsnummeret er ugyldig. ' + _orgNrExplain(orgnr);
+  return '';
+}
+function _regOrgNrHint() {
+  const hint = document.getElementById('auth-reg-orgnr-hint');
+  const inp = document.getElementById('auth-reg-orgnr');
+  if (!hint || !inp) return;
+  const sup = _regSelectedSupplier();
+  inp.placeholder = sup ? '9 siffer' : 'Valgfritt';
+  const v = inp.value.trim();
+  if (!v) { hint.textContent = sup ? 'Påkrevd når dere søker som kunde hos ' + sup.name + '.' : ''; hint.style.color = ''; return; }
+  const ok = _validOrgNr(v);
+  hint.textContent = ok ? '✓ Gyldig' : _orgNrExplain(v);
+  hint.style.color = ok ? 'var(--accent)' : '#ff6b6b';
 }
 
 function _authRegNext() {
@@ -86389,6 +86642,12 @@ async function _authLogin() {
     const { data, error } = await _db.auth.signInWithPassword({ email, password: pass });
     if (error) throw error;
     _currentUser = data.user;
+    // 169: logget inn MED passord → kontoen har et. En invitert konto skal da ikke få
+    // «velg passord»-skjermen ved neste sidelasting. Best effort.
+    if (data.user?.invited_at && !data.user?.user_metadata?.password_set) {
+      _velkommenFlagClear();
+      _db.auth.updateUser({ data: { password_set: true } }).catch(() => {});
+    }
     await _authCheckProfileAndProceed();
   } catch(err) {
     const msg = err.message?.includes('Invalid login') ? 'Feil e-post eller passord.' : (err.message || 'Innlogging feilet.');
@@ -86409,7 +86668,15 @@ async function _authRegister() {
   if (!name) { _authShowError('Fyll inn fullt navn.'); _authRegStep(1); return; }
   if (!email) { _authShowError('Fyll inn e-post.'); _authRegStep(1); return; }
   if (pass.length < 8) { _authShowError('Passord må være minst 8 tegn.'); _authRegStep(1); return; }
-  if (!company && !_inviteToken) { _authShowError('Fyll inn firmanavn.'); return; }
+  // 169: «Kunde hos» + org.nr-validering (_validOrgNr, 042).
+  const supSel = document.getElementById('auth-reg-supplier');
+  const supShown = !!(supSel && document.getElementById('auth-reg-supplier-field')?.style.display !== 'none');
+  const sup = _regSelectedSupplier();
+  const regErr = _regCheck({ company, orgnr, invite: !!_inviteToken, supplierShown: supShown,
+    supplierPick: supShown ? supSel.value : null, supplierId: sup && sup.id, supplierName: sup && sup.name });
+  if (regErr) { _authShowError(regErr); return; }
+  const meta = { full_name: name, company_name: company, org_number: orgnr ? _normOrgNr(orgnr) : '', phone, message };
+  if (sup) { meta.requested_supplier_org_id = sup.id; meta.requested_supplier_name = sup.name; }
   const btn = document.getElementById('auth-reg-btn');
   btn.disabled = true; btn.textContent = 'Oppretter konto...';
   try {
@@ -86417,7 +86684,7 @@ async function _authRegister() {
       email,
       password: pass,
       options: {
-        data: { full_name: name, company_name: company, org_number: orgnr, phone, message }
+        data: meta
       }
     });
     if (error) throw error;
@@ -86428,7 +86695,8 @@ async function _authRegister() {
     // Show success via the consolidated status component
     document.getElementById('auth-tabs').style.display = 'none';
     document.getElementById('auth-error').style.display = 'none';
-    _authShowStatus('reg-success');
+    if (sup) _authShowStatus('request-sent', { supplier: sup.name });
+    else _authShowStatus('reg-success');
   } catch(err) {
     const msg = err.message?.includes('already registered') ? 'Denne e-posten er allerede registrert.' : (err.message || 'Registrering feilet.');
     _authShowError(msg);
@@ -86495,9 +86763,13 @@ async function _authCheckProfileAndProceed() {
       userOrgData._role = memberships[0].role;
     }
   } catch(e) {}
+  // 169: ventende søknad til en leverandør → egen tekst. Leverandørnavnet er det brukeren
+  // selv valgte ved registreringen (metadata); hun kan ikke lese leverandørens org-rad.
+  const _reqSup = _authOpenRequestSupplier(_currentProfile, _currentUser);
   // No org membership
   if (!userOrgData) {
     if (_currentProfile.status === 'pending') {
+      if (_reqSup) { _authShowStatus('request-pending', { supplier: _reqSup }); return; }
       _authShowMsg('auth-org-pending-msg');
     } else {
       _authShowMsg('auth-no-org-msg');
@@ -86516,6 +86788,7 @@ async function _authCheckProfileAndProceed() {
   }
   // Profile pending (org exists but waiting for superadmin to approve org)
   if (_currentProfile.status === 'pending') {
+    if (_reqSup) { _authShowStatus('request-pending', { supplier: _reqSup }); return; }
     _authShowMsg('auth-org-pending-msg');
     return;
   }
@@ -86527,6 +86800,16 @@ async function _authCheckProfileAndProceed() {
   }
   // Fallback: pending
   _authShowMsg('auth-pending-msg');
+}
+
+// 169: har brukeren en åpen søknad til en leverandør? Åpen = profilen er 'pending' og
+// «Kunde hos» ble valgt ved registreringen. Avslått → 'rejected' (egen tekst), godkjent →
+// 'active'. Returnerer leverandørnavnet, ellers null. Ren.
+function _authOpenRequestSupplier(profile, user) {
+  if (!profile || profile.status !== 'pending') return null;
+  const md = (user && user.user_metadata) || {};
+  if (!md.requested_supplier_org_id) return null;
+  return String(md.requested_supplier_name || '').trim() || 'leverandøren';
 }
 
 // Consolidated auth status component. One #auth-status box renders the right
@@ -86543,7 +86826,12 @@ const _AUTH_STATUS = {
   'org-suspended': { variant:'rejected', icon:'⏸️', title:'Abonnement utløpt', action:'logout',
                      body:'Organisasjonens abonnement er utløpt eller suspendert. Kontakt systemadministrator for å fornye.' },
   'org-pending':   { variant:'pending',  icon:'<svg class="ic ic-building" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-3h4v3"/></svg>', title:'Venter på godkjenning', action:'logout',
-                     body:'Bedriften din er registrert og venter på godkjenning. Du får tilgang når den er aktivert.' }
+                     body:'Bedriften din er registrert og venter på godkjenning. Du får tilgang når den er aktivert.' },
+  // 169: søknad til en leverandør. {supplier} fylles av _authShowStatus(key, { supplier }).
+  'request-sent':  { variant:'success',  icon:'✅', title:'Søknaden er sendt', action:'login',
+                     body:'Søknaden er sendt til {supplier}. Du får e-post når den er behandlet.' },
+  'request-pending': { variant:'pending', icon:'⏳', title:'Venter på godkjenning', action:'logout',
+                     body:'Søknaden er sendt til {supplier}. Du får e-post når den er behandlet.' }
 };
 // Map legacy element ids (used by existing callers) to the new status keys.
 const _AUTH_STATUS_ALIAS = {
@@ -86551,12 +86839,13 @@ const _AUTH_STATUS_ALIAS = {
   'auth-no-org-msg':'no-org', 'auth-org-suspended-msg':'org-suspended', 'auth-org-pending-msg':'org-pending'
 };
 
-function _authShowStatus(key) {
+function _authShowStatus(key, vars) {
   const type = _AUTH_STATUS_ALIAS[key] || key;
-  const cfg = _AUTH_STATUS[type];
-  if (!cfg) return;
+  const cfg0 = _AUTH_STATUS[type];
+  if (!cfg0) return;
+  const cfg = vars ? Object.assign({}, cfg0, { body: cfg0.body.replace(/\{(\w+)\}/g, (m, k) => vars[k] != null ? String(vars[k]) : m) }) : cfg0;
   _authShowScreen();
-  ['auth-login-form','auth-register-form','auth-tabs','auth-error','auth-invite-form','auth-invite-link'].forEach(id => {
+  ['auth-login-form','auth-register-form','auth-tabs','auth-error','auth-invite-form','auth-invite-link','auth-setpw-form'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -87024,7 +87313,8 @@ async function _changePassword() {
   if (newPass !== confirmPass) { _pfMsg(msgEl, 'Passordene stemmer ikke overens.', 'err'); return; }
   btn.disabled = true; btn.textContent = 'Oppdaterer...';
   try {
-    const { error } = await _db.auth.updateUser({ password: newPass });
+    // 169: password_set — så «Velkommen — velg passord» ikke spør en invitert bruker igjen.
+    const { error } = await _db.auth.updateUser({ password: newPass, data: { password_set: true } });
     if (error) throw error;
     _pfMsg(msgEl, '✓ Passord oppdatert!', 'ok');
     document.getElementById('pf-new-pass').value = '';
@@ -92116,6 +92406,246 @@ function _coShowResult(r) {
     </div><div style="margin-top:14px">${close}</div>`;
 }
 
+// ─── 169 · SØKNADER OM TILGANG (Cenika godkjenner selvregistrerte kundebedrifter) ───
+// Lista ligger i Kunder-fanen, der Cenika-ansatte alt gir kunder tilgang (044). Alle regler bor
+// i RPC-ene i supabase-migration-kundesoknad.sql: list_customer_requests (lesing, med treff i
+// Visma-lista), approve_customer_org og reject_customer_org (kallersjekk inne i funksjonen).
+// Klienten filtrerer ingenting på org_id — en ikke-leverandør får en tom liste fra databasen.
+// Superadmin-godkjenningen (_admApproveOrg) er uendret; dette er en ekstra vei.
+let _creqState = { rows: null, err: null, open: false, busy: {}, results: {}, rejectFor: null, erpPick: {} };
+const _CREQ_MIGR = 'supabase-migration-kundesoknad.sql';
+function _creqErrText(e) {
+  const m = String((e && (e.message || e.details)) || e || '');
+  const code = e && e.code;
+  if (code === 'PGRST202' || code === '42883' || (/not find|does not exist/i.test(m) && /function/i.test(m)))
+    return 'Funksjonen finnes ikke i databasen ennå. Migrasjonen ' + _CREQ_MIGR + ' må kjøres i Supabase.';
+  if (/NOT_ALLOWED/.test(m)) return 'Søknaden gjelder en annen leverandør, eller den finnes ikke lenger.';
+  if (/ALREADY_DECIDED/.test(m)) return 'Søknaden er alt behandlet.';
+  if (/NOT_PENDING/.test(m)) return 'Søkeren venter ikke lenger på godkjenning (alt godkjent eller avvist av administrator).';
+  if (/NO_OWNER/.test(m)) return 'Bedriften har ingen eier. Kontakt systemadministrator.';
+  if (/SUPPLIER_NOT_LINKED/.test(m)) return 'Leverandøren din er ikke koblet til produktkatalogen. Kontakt administrator.';
+  if (/NOT_AUTHENTICATED/.test(m)) return 'Du er ikke innlogget.';
+  return 'Feil: ' + m;
+}
+// Ren: Visma-teksten på raden. Én treff → «Kunde i Visma: 30470 Welhaven Elektro».
+function _creqVismaLabel(row) {
+  const ms = (row && Array.isArray(row.erp_matches)) ? row.erp_matches : [];
+  if (!ms.length) return 'Ikke funnet i kundelista';
+  if (ms.length === 1) return 'Kunde i Visma: ' + ms[0].erp_no + ' ' + (ms[0].name || '');
+  return 'Kunde i Visma: ' + ms.length + ' kundenumre med dette org.nr';
+}
+// Ren: resultatteksten etter godkjenn/avslå.
+function _creqResultText(r) {
+  if (!r) return '';
+  if (r.result === 'existing_org') return 'Bedriften har allerede Varmeplan. Søkeren må inviteres av bedriftens administrator.';
+  if (r.result === 'approved') return '✓ Godkjent. ' + (r.name || 'Bedriften') + ' har tilgang nå.';
+  if (r.result === 'rejected') return 'Søknaden er avslått.';
+  return '';
+}
+async function _creqLoad() {
+  if (!_db || !_userOrg || _userOrg.org_type !== 'supplier') { _creqState.rows = []; _creqState.err = null; return; }
+  try {
+    const { data, error } = await _db.rpc('list_customer_requests');
+    if (error) throw error;
+    _creqState.rows = Array.isArray(data) ? data : [];
+    _creqState.err = null;
+  } catch (e) { _creqState.rows = null; _creqState.err = _creqErrText(e); }
+}
+// Tallet på knappen og på Kunder-fanen. Bare åpne søknader (avgjorte i denne økta telles ikke).
+function _creqOpenCount() {
+  return (_creqState.rows || []).filter(r => {
+    const res = _creqState.results[r.org_id];
+    return !(res && (res.result === 'approved' || res.result === 'rejected'));
+  }).length;
+}
+function _creqUpdateBadge() {
+  const n = _creqOpenCount();
+  ['cust-req-count', 'dash-tab-customers-count'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = n ? String(n) : ''; el.style.display = n ? '' : 'none'; }
+  });
+}
+async function _creqRefresh() {
+  await _creqLoad();
+  _creqUpdateBadge();
+  if (_creqState.open) _creqRender();
+}
+function _creqToggle() {
+  _creqState.open = !_creqState.open;
+  _creqRender();
+  if (_creqState.open) _creqRefresh();
+}
+function _creqRender() {
+  const box = document.getElementById('cust-req-section');
+  if (!box) return;
+  if (!_creqState.open) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  box.style.display = '';
+  const head = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div style="font-size:14px;font-weight:600;color:var(--text)">Søknader om tilgang</div>
+      <button onclick="_creqToggle()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">Lukk</button></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5">Bedrifter som har registrert seg på varmeplan.no og oppgitt at de er kunde hos dere. Søkeren kommer ikke inn før dere godkjenner.</div>`;
+  if (_creqState.err) { box.innerHTML = head + `<div style="font-size:13px;color:#ff6b6b">${_esc(_creqState.err)}</div>`; return; }
+  if (_creqState.rows === null) { box.innerHTML = head + `<div style="font-size:13px;color:var(--muted)">Henter…</div>`; return; }
+  if (!_creqState.rows.length) { box.innerHTML = head + `<div style="font-size:13px;color:var(--muted)">Ingen søknader venter.</div>`; return; }
+  const btn = (txt, on, kind) => `<button onclick="${on}" style="padding:6px 14px;border-radius:6px;border:1px solid ${kind === 'ok' ? 'rgba(34,197,94,.5)' : 'var(--border)'};background:${kind === 'ok' ? 'rgba(34,197,94,.12)' : 'var(--surface2)'};color:var(--text);font-size:12px;font-weight:600;cursor:pointer">${txt}</button>`;
+  const rows = _creqState.rows.map(r => {
+    const id = _esc(r.org_id);
+    const res = _creqState.results[r.org_id];
+    const busy = !!_creqState.busy[r.org_id];
+    const ms = Array.isArray(r.erp_matches) ? r.erp_matches : [];
+    const visma = ms.length > 1
+      ? `<select id="creq-erp-${id}" onchange="_creqState.erpPick['${id}']=this.value" style="font-size:12px;padding:2px 4px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:4px">${ms.map(m => `<option value="${_esc(m.erp_no)}" ${(_creqState.erpPick[r.org_id] || ms[0].erp_no) === m.erp_no ? 'selected' : ''}>Kunde i Visma: ${_esc(m.erp_no)} ${_esc(m.name || '')}</option>`).join('')}</select>`
+      : `<span style="color:${ms.length ? 'var(--accent)' : 'var(--muted)'}">${_esc(_creqVismaLabel(r))}</span>`;
+    const dato = r.created_at ? new Date(r.created_at).toLocaleDateString('nb-NO') : '';
+    let actions;
+    if (res && (res.result === 'approved' || res.result === 'rejected')) {
+      actions = `<div style="font-size:13px;color:${res.result === 'approved' ? '#22c55e' : 'var(--muted)'}">${_esc(_creqResultText(res))}${res.mail ? ' <span style="color:var(--muted)">' + _esc(res.mail) + '</span>' : ''}</div>`;
+    } else if (_creqState.rejectFor === r.org_id) {
+      actions = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <input id="creq-reason-${id}" placeholder="Begrunnelse (valgfritt, står i e-posten)" style="flex:1;min-width:200px;padding:6px 8px;font-size:12px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px">
+        ${btn(busy ? 'Avslår…' : 'Bekreft avslag', `_creqReject('${id}')`)}
+        ${btn('Avbryt', `_creqState.rejectFor=null;_creqRender()`)}</div>`;
+    } else {
+      actions = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        ${(res && res.result === 'existing_org') || r.org_nr_taken ? '' : btn(busy ? 'Godkjenner…' : 'Godkjenn', `_creqApprove('${id}')`, 'ok')}
+        ${btn('Avslå', `_creqState.rejectFor='${id}';_creqRender()`)}</div>`;
+    }
+    const taken = (res && res.result === 'existing_org') || r.org_nr_taken;
+    return `<div class="creq-row" data-org="${id}" style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div style="font-size:14px;font-weight:600;color:var(--text)">${_esc(r.name || '')} <span style="font-weight:400;color:var(--muted);font-size:12px">org.nr ${_esc(r.org_nr || '—')}</span></div>
+        <div style="font-size:12px;color:var(--muted)">${_esc(dato)}</div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:3px">${_esc(r.contact_name || '')}${r.email ? ' · ' + _esc(r.email) : ''}${r.phone ? ' · ' + _esc(r.phone) : ''}</div>
+      ${r.message ? `<div style="font-size:12px;color:var(--muted);margin-top:3px;font-style:italic">«${_esc(r.message)}»</div>` : ''}
+      <div style="font-size:12px;margin-top:4px">${visma}</div>
+      ${taken ? `<div style="font-size:12px;margin-top:6px;padding:6px 8px;border-radius:6px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.35);color:var(--text)">${_esc(_creqResultText({ result: 'existing_org' }))}</div>` : ''}
+      ${res && res.err ? `<div style="font-size:12px;color:#ff6b6b;margin-top:6px">${_esc(res.err)}</div>` : ''}
+      <div style="margin-top:8px">${actions}</div>
+    </div>`;
+  }).join('');
+  box.innerHTML = head + rows;
+}
+function _creqErpFor(orgId) {
+  const r = (_creqState.rows || []).find(x => x.org_id === orgId);
+  const ms = (r && Array.isArray(r.erp_matches)) ? r.erp_matches : [];
+  if (!ms.length) return null;
+  const pick = _creqState.erpPick[orgId];
+  return (pick && ms.some(m => m.erp_no === pick)) ? pick : ms[0].erp_no;
+}
+async function _creqApprove(orgId) {
+  if (_creqState.busy[orgId]) return;
+  _creqState.busy[orgId] = true; _creqRender();
+  try {
+    const { data, error } = await _db.rpc('approve_customer_org', { p_org_id: orgId, p_erp_customer_no: _creqErpFor(orgId) });
+    if (error) throw error;
+    const r = Object.assign({}, data || {});
+    if (r.result === 'approved') r.mail = await _creqNotify(orgId);
+    _creqState.results[orgId] = r;
+  } catch (e) {
+    _creqState.results[orgId] = { err: _creqErrText(e) };
+  } finally {
+    delete _creqState.busy[orgId];
+    _creqUpdateBadge(); _creqRender();
+  }
+}
+async function _creqReject(orgId) {
+  if (_creqState.busy[orgId]) return;
+  const reason = (document.getElementById('creq-reason-' + orgId)?.value || '').trim();
+  _creqState.busy[orgId] = true; _creqRender();
+  try {
+    const { data, error } = await _db.rpc('reject_customer_org', { p_org_id: orgId, p_reason: reason || null });
+    if (error) throw error;
+    const r = Object.assign({}, data || { result: 'rejected' });
+    r.mail = await _creqNotify(orgId);
+    _creqState.results[orgId] = r;
+    _creqState.rejectFor = null;
+  } catch (e) {
+    _creqState.results[orgId] = { err: _creqErrText(e) };
+  } finally {
+    delete _creqState.busy[orgId];
+    _creqUpdateBadge(); _creqRender();
+  }
+}
+// E-post til søkeren (Edge Function kundesoknad-svar). Sender KUN org-id-en — mottaker,
+// utfall og tekst slås opp server-side. Best effort: avgjørelsen står uansett.
+async function _creqNotify(orgId) {
+  try {
+    const { data: { session } } = await _db.auth.getSession();
+    const res = await fetch(SUPABASE_URL + '/functions/v1/kundesoknad-svar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + (session?.access_token || '') },
+      body: JSON.stringify({ org_id: orgId })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (res.ok && j.ok) return j.sent_to ? 'E-post sendt til ' + j.sent_to + '.' : 'E-post er sendt.';
+    if (res.status === 404) return 'E-posten ble ikke sendt (funksjonen kundesoknad-svar er ikke installert ennå) — gi søkeren beskjed selv.';
+    return 'E-posten ble ikke sendt — gi søkeren beskjed selv.';
+  } catch (e) {
+    return 'E-posten ble ikke sendt — gi søkeren beskjed selv.';
+  }
+}
+
+// Regresjonstest 169: skjemaets regler, ventetekst, Visma-tekst og kildesjekker. Ren.
+function _kundesoknadRegressionTest() {
+  const results = [];
+  const check = (name, cond, got) => results.push({ name, ok: !!cond, got });
+  const checkIkke = (name, cond, got) => results.push({ name, ok: !cond, got });
+  try {
+    const cen = { id: '11111111-2222-3333-4444-555555555555', name: 'Cenika AS' };
+    const o0 = _regSupplierOptions([]), o1 = _regSupplierOptions([cen]), o2 = _regSupplierOptions([cen, { id: 'x2', name: 'ØS Varme' }]);
+    check('A1: ingen leverandører → feltet skjules', !o0.show);
+    check('A2: én leverandør → forhåndsvalgt', o1.show && o1.preselect === cen.id && !/Velg leverandør/.test(o1.html), o1);
+    check('A3: to leverandører → ingen forhåndsvalg, «Velg leverandør…»', o2.preselect === '' && /Velg leverandør/.test(o2.html));
+    check('A4: «Ingen av disse» finnes alltid', /__none__/.test(o1.html) && /__none__/.test(o2.html));
+    check('A5: navn escapes', /&lt;b&gt;/.test(_regSupplierOptions([{ id: 'y', name: '<b>' }]).html));
+
+    const base = { company: 'Welhaven Elektro AS', supplierShown: true, supplierPick: cen.id, supplierId: cen.id, supplierName: 'Cenika AS' };
+    check('B1: gyldig org.nr + leverandør → ok', _regCheck(Object.assign({}, base, { orgnr: '123 456 785' })) === '');
+    check('B2: ugyldig org.nr → avvist med forklaring', /ugyldig/.test(_regCheck(Object.assign({}, base, { orgnr: '123456789' }))));
+    check('B3: leverandør valgt uten org.nr → avvist', /organisasjonsnummeret/.test(_regCheck(Object.assign({}, base, { orgnr: '' }))));
+    check('B4: «Ingen av disse» uten org.nr → ok (dagens vei)', _regCheck({ company: 'X AS', orgnr: '', supplierShown: true, supplierPick: '__none__' }) === '');
+    check('B5: ingen leverandør, ugyldig org.nr → avvist', _regCheck({ company: 'X AS', orgnr: '12345' }) !== '');
+    check('B6: to leverandører, ingen valgt → avvist', /Velg hvilken/.test(_regCheck({ company: 'X AS', orgnr: '', supplierShown: true, supplierPick: '' })));
+    check('B7: uten firmanavn → avvist (som før)', /firmanavn/.test(_regCheck({ company: '', orgnr: '' })));
+    check('B8: invitasjon uten firmanavn → ok (som før)', _regCheck({ company: '', orgnr: '', invite: true }) === '');
+
+    const md = { requested_supplier_org_id: cen.id, requested_supplier_name: 'Cenika AS' };
+    check('C1: pending + «Kunde hos» → åpen søknad', _authOpenRequestSupplier({ status: 'pending' }, { user_metadata: md }) === 'Cenika AS');
+    check('C2: active → ingen åpen søknad', _authOpenRequestSupplier({ status: 'active' }, { user_metadata: md }) === null);
+    check('C3: rejected → ingen åpen søknad', _authOpenRequestSupplier({ status: 'rejected' }, { user_metadata: md }) === null);
+    check('C4: pending uten «Kunde hos» → dagens tekst', _authOpenRequestSupplier({ status: 'pending' }, { user_metadata: {} }) === null);
+    const body = _AUTH_STATUS['request-pending'].body.replace('{supplier}', 'Cenika AS');
+    check('C5: ventetekst', body === 'Søknaden er sendt til Cenika AS. Du får e-post når den er behandlet.', body);
+    check('C6: ventesiden har bare «Logg ut»', _AUTH_STATUS['request-pending'].action === 'logout');
+
+    check('D1: Visma ett treff', _creqVismaLabel({ erp_matches: [{ erp_no: '30470', name: 'Welhaven Elektro' }] }) === 'Kunde i Visma: 30470 Welhaven Elektro');
+    check('D2: Visma ingen treff', _creqVismaLabel({ erp_matches: [] }) === 'Ikke funnet i kundelista');
+    check('D3: existing_org-tekst', _creqResultText({ result: 'existing_org' }) === 'Bedriften har allerede Varmeplan. Søkeren må inviteres av bedriftens administrator.');
+
+    const kode = _kildeUtenKommentarer([...document.scripts].filter(sc => !sc.src).map(sc => sc.textContent).join('\n'))
+      .replace(/function _kundesoknadRegressionTest\(\)[\s\S]*?\n\}/, '');
+    const creq = [_creqLoad, _creqApprove, _creqReject, _creqNotify, _creqRender].map(f => _kildeUtenKommentarer(f.toString())).join('\n');
+    const notifyBody = (_kildeUtenKommentarer(_creqNotify.toString()).match(/body:\s*JSON\.stringify\(\{([^}]*)\}/) || ['', ''])[1];
+    check('E1: e-postkallet sender bare org_id', /^\s*org_id:\s*orgId\s*$/.test(notifyBody), notifyBody);
+    checkIkke('E2: godkjenningslista skriver aldri direkte til tabeller', /\.from\(\s*'(organizations|organization_members|profiles|organization_supplier_access)'\s*\)/.test(creq));
+    checkIkke('E3: ingen klientfiltrering på org_id i lista', /\.eq\(\s*'org_id'/.test(creq));
+    // Mønsteret er skrevet med [_] så KJOR-sjekken (grep på ordet) gir 0 treff i fila.
+    checkIkke('E4: service-role-nøkkelen nevnes ikke i klienten', /service[_]role/i.test(kode));
+    const reg = _kildeUtenKommentarer(_authRegister.toString());
+    check('E5: signUp sender «Kunde hos» i metadata', /requested_supplier_org_id/.test(reg));
+    check('E6: org.nr valideres med _validOrgNr i _regCheck', /_validOrgNr\(/.test(_regCheck.toString()));
+    check('E7: varselet til admin sendes fortsatt med id fra signUp', /_notifyAdminNewRegistration\(\s*data\?\.user\?\.id\s*,/.test(reg));
+    const chk = _kildeUtenKommentarer(_authCheckProfileAndProceed.toString());
+    check('E8: ventende søknad stopper før appen åpnes', (chk.match(/request-pending'[^;]*\);\s*return;/g) || []).length === 2);
+  } catch (e) {
+    results.push({ name: 'KASTET', ok: false, got: String(e && e.message || e) });
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_kundesoknadRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return results;
+}
+
 // ─── 047 · DEL MED ELEKTRIKER ───
 // Grensesnittet over 046 (share_project / revoke_project_share). Cenika beholder prosjektet;
 // elektrobedriften får LESE det. Alle regler bor i RPC-ene — klienten bestemmer ingenting.
@@ -94657,7 +95187,13 @@ async function initSupabase() {
     const { data: { session } } = await _db.auth.getSession();
     if (session?.user) {
       _currentUser = session.user;
-      await _authCheckProfileAndProceed();
+      // 169: invitert uten passord → «Velkommen — velg passord» før appen åpnes.
+      if (!_velkommenMaybeShow(session.user)) await _authCheckProfileAndProceed();
+    } else if (_velkommenDecide({ hash: _VELKOMMEN_BOOT.hash, hasSession: false }).reason === 'link-error') {
+      // 169: invitasjons-/gjenopprettingslenka var utløpt eller brukt.
+      _authShowScreen();
+      _authShowError(_velkommenLinkErrorText(_velkommenDecide({ hash: _VELKOMMEN_BOOT.hash, hasSession: false }).code));
+      try { window.history.replaceState({}, '', _velkommenCleanUrl(location.href)); } catch (e) {}
     } else if (location.hostname === 'localhost' && new URLSearchParams(location.search).has('dev')) {
       // Dev auto-login: fetch credentials from server and sign in
       try {
@@ -96277,6 +96813,12 @@ function _showProjectListScreen() {
   // grensen er create_customer_org() selv, som avviser alle som ikke er leverandør-medlem.
   const coBtn = document.getElementById('cust-grant-access-btn');
   if (coBtn) coBtn.style.display = _isSupplier ? '' : 'none';
+  // 169: «Søknader om tilgang» — bare leverandør; tallet hentes i bakgrunnen. Grensen er
+  // list_customer_requests() selv (tom liste for alle andre).
+  const reqBtn = document.getElementById('cust-req-btn');
+  if (reqBtn) reqBtn.style.display = _isSupplier ? '' : 'none';
+  if (_isSupplier) _creqRefresh().catch(() => {});
+  else { _creqState.rows = []; _creqUpdateBadge(); }
   // Render module buttons, tools, stats, and project list
   _renderDashModules();
   _renderDashTools();
