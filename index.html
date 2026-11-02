@@ -59355,8 +59355,9 @@ function _edgeMailRegressionTest() {
 
     // Alle utgående lenker på varmeplan.no (gjelder også reserveveien «del lenken manuelt»).
     // 044v2: fjerde invitasjonslenke («Gi kunden tilgang til Varmeplan», _coShowResult).
-    check('D: manuell reservelenke bygges på _PUBLIC_BASE_URL', 4,
-      (kode.match(/_PUBLIC_BASE_URL \+ '\/\?invite='/g) || []).length === 4,
+    // 047: femte («Del med elektriker» når opprett-kundebruker feiler, _shrAfterCreate).
+    check('D: manuell reservelenke bygges på _PUBLIC_BASE_URL', 5,
+      (kode.match(/_PUBLIC_BASE_URL \+ '\/\?invite='/g) || []).length === 5,
       (kode.match(/_PUBLIC_BASE_URL \+ '\/\?invite='/g) || []).length);
   } catch (e) {
     results.push({ name: 'KASTET', ok: false, expected: '-', got: e.message });
@@ -59619,8 +59620,9 @@ async function _kundelenkeRegressionTest() {
       _kode.length > 100000 && /_PUBLIC_BASE_URL/.test(_kode), _kode.length);
     const _invitt = (_kode.match(/'\/\?invite='/g) || []).length;
     // 044v2: fjerde invitasjonslenke («Gi kunden tilgang til Varmeplan», _coShowResult).
-    check('G: alle fire invitasjonslenkene bygges på _PUBLIC_BASE_URL', 4,
-      _invitt === 4 && (_kode.match(/_PUBLIC_BASE_URL \+ '\/\?invite='/g) || []).length === 4, _invitt);
+    // 047: femte («Del med elektriker» når opprett-kundebruker feiler, _shrAfterCreate).
+    check('G: alle fem invitasjonslenkene bygges på _PUBLIC_BASE_URL', 5,
+      _invitt === 5 && (_kode.match(/_PUBLIC_BASE_URL \+ '\/\?invite='/g) || []).length === 5, _invitt);
     check('G: basis-URL uendret av 029', 'https://varmeplan.no',
       _PUBLIC_BASE_URL === 'https://varmeplan.no', _PUBLIC_BASE_URL);
 
@@ -78029,6 +78031,12 @@ function _wfKundeModal() {
           style="margin-top:6px;display:none" oninput="_wfRespTyped()">
       </div>
     </div>
+    ${(_shrCanShare() && _supabaseProjectId && !(S.ui && (S.ui.kundeMode || S.ui.presentPublic))) ? `
+    <!-- 047: «Del med elektriker» — samme ark som i prosjektlistas radmeny. -->
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:16px;padding:10px 12px;border:1px solid var(--border);border-radius:8px">
+      <span style="font-size:12.5px;color:var(--muted)">Elektrobedriften som skal montere og dokumentere</span>
+      <button id="wf-k-del" class="npc-btn-ghost" onclick="_shrOpen(_supabaseProjectId, (S.project && S.project.name) || '')">Del med elektriker</button>
+    </div>` : ''}
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="npc-btn-ghost" onclick="document.getElementById('wf-kunde-modal').remove()">Avbryt</button>
       <button class="dash-create-btn" onclick="_wfKundeSave()">Lagre</button>
@@ -91756,15 +91764,20 @@ function _coField(id, label, val, extra) {
 }
 
 // prefill: { customerId } fra kundekortet (Varmeplan-kunden har ofte org.nr, kundenr. og e-post).
+// 047: prefill.share = { projectId, projectName } — åpnet fra «Del med elektriker». Samme skjema,
+// men innsendingen fortsetter med invitasjon (045) og deling (046) i samme klikk (_shrAfterCreate).
 async function _coOpen(prefill) {
-  _coState = { erpNo: null };
+  _coState = { erpNo: null, share: (prefill && prefill.share) || null };
   let overlay = document.getElementById('co-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
-    overlay.id = 'co-overlay'; overlay.className = 'cust-overlay'; overlay.style.zIndex = '1150';
+    overlay.id = 'co-overlay'; overlay.className = 'cust-overlay';
     overlay.onclick = e => { if (e.target === overlay) overlay.style.display = 'none'; };
     document.body.appendChild(overlay);
   }
+  // Over delingsarket (#_shr-ov, 3000) når det åpnes derfra; ellers som før.
+  overlay.style.zIndex = _coState.share ? '3100' : '1150';
+  const sh = _coState.share;
   let p = {};
   if (prefill && prefill.customerId) {
     const c = (_cachedCustomers || []).find(x => x.id === prefill.customerId);
@@ -91773,10 +91786,10 @@ async function _coOpen(prefill) {
   }
   overlay.innerHTML = `<div class="cust-card" style="width:620px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-      <h3 style="font-size:18px;font-weight:700;color:var(--text);margin:0">Gi kunden tilgang til Varmeplan</h3>
+      <h3 style="font-size:18px;font-weight:700;color:var(--text);margin:0">${sh ? 'Inviter elektrobedriften og del' : 'Gi kunden tilgang til Varmeplan'}</h3>
       <button onclick="document.getElementById('co-overlay').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer">&times;</button>
     </div>
-    <p style="font-size:13px;color:var(--muted);margin:0 0 14px;line-height:1.45">Bedriften opprettes i Varmeplan med tilgang til ${_esc(_userOrg?.supplier_name || 'deres')} sine produkter, og kontaktpersonen får en invitasjon. Dere blir ikke medlem av bedriften og ser ikke prosjektene deres.</p>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 14px;line-height:1.45">Bedriften opprettes i Varmeplan med tilgang til ${_esc(_userOrg?.supplier_name || 'deres')} sine produkter, og kontaktpersonen får en invitasjon. Dere blir ikke medlem av bedriften og ser ikke prosjektene deres.${sh ? ` Prosjektet <b>${_esc(sh.projectName || '')}</b> deles med bedriften i samme steg.` : ''}</p>
     <div id="co-form">
       <div style="position:relative;margin-bottom:12px">
         <label style="font-size:11px;color:var(--muted);text-transform:uppercase">Søk i Visma-kundelista</label>
@@ -91808,7 +91821,7 @@ async function _coOpen(prefill) {
         <div style="font-size:11px;color:var(--dim);margin-top:4px">Uten org.nr kan Varmeplan ikke oppdage om bedriften alt finnes.</div>
       </div>
       <div style="display:flex;gap:10px;align-items:center">
-        <button id="co-submit" onclick="_coSubmit()" style="padding:9px 20px;border-radius:6px;border:none;background:var(--accent);color:#0d0e10;font-size:13px;font-weight:600;cursor:pointer">Opprett og inviter</button>
+        <button id="co-submit" onclick="_coSubmit()" style="padding:9px 20px;border-radius:6px;border:none;background:var(--accent);color:#0d0e10;font-size:13px;font-weight:600;cursor:pointer">${_coSubmitLabel()}</button>
         <span id="co-msg" style="font-size:12px;color:var(--dim)"></span>
       </div>
     </div>
@@ -91957,6 +91970,7 @@ async function _coSubmit() {
   if (!_db) { say('Ikke tilkoblet.'); return; }
   if (btn) { btn.disabled = true; btn.textContent = 'Oppretter…'; }
   say('', 'var(--dim)');
+  const share = _coState.share;   // 047: fanges før await — skjemaet kan åpnes på nytt imens
   try {
     const { data, error } = await _db.rpc('create_customer_org', {
       p_name: name,
@@ -91968,12 +91982,18 @@ async function _coSubmit() {
       p_orgnr_override: chk.valid ? null : chk.reason,
     });
     if (error) throw error;
-    _coShowResult(data || {});
+    if (share) {
+      if (btn) btn.textContent = 'Deler…';
+      await _shrAfterCreate(data || {}, share, email);
+    } else _coShowResult(data || {});
   } catch(e) {
     say(_coErrText(e));
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Opprett og inviter'; }
+    if (btn) { btn.disabled = false; btn.textContent = _coSubmitLabel(share); }
   }
+}
+function _coSubmitLabel(share) {
+  return (share === undefined ? _coState.share : share) ? 'Opprett, inviter og del' : 'Opprett og inviter';
 }
 
 function _coShowResult(r) {
@@ -91987,7 +92007,7 @@ function _coShowResult(r) {
     const how = r.matched_on === 'erp_customer_no' ? 'samme kundenummer i Visma' : 'samme organisasjonsnummer';
     box.innerHTML = `<div style="padding:12px 14px;border:1px solid rgba(251,191,36,.35);border-radius:8px;background:rgba(251,191,36,.06);font-size:14px;color:var(--text);line-height:1.5">
         <b>${_esc(r.name || 'Bedriften')} finnes allerede.</b> Vil du dele prosjektet dit i stedet?
-        <div style="font-size:12px;color:var(--muted);margin-top:6px">Funnet på ${how}. Ingen ny bedrift og ingen ny invitasjon ble laget. Deling av prosjekter fra prosjektlista kommer snart.</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:6px">Funnet på ${how}. Ingen ny bedrift og ingen ny invitasjon ble laget. Del prosjekter dit med «Del med elektriker» i prosjektlista.</div>
       </div><div style="margin-top:14px">${close}</div>`;
     return;
   }
@@ -91999,6 +92019,375 @@ function _coShowResult(r) {
       ${url ? `<input id="co-invite-url" value="${_esc(url)}" readonly onclick="this.select()" style="width:100%;margin-top:8px;padding:6px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);box-sizing:border-box">
       <button onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById('co-invite-url').value);this.textContent='✓ Kopiert'" style="margin-top:6px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer">Kopier lenken</button>` : ''}
     </div><div style="margin-top:14px">${close}</div>`;
+}
+
+// ─── 047 · DEL MED ELEKTRIKER ───
+// Grensesnittet over 046 (share_project / revoke_project_share). Cenika beholder prosjektet;
+// elektrobedriften får LESE det. Alle regler bor i RPC-ene — klienten bestemmer ingenting.
+//
+// ⚠ MEDLEMSKAP (047 punkt 6): ingenting her skriver til organization_members eller
+// org_invitations. Det eneste medlemskapet i hele flyten er kontaktpersonen som legges inn i
+// SIN EGEN, nye bedrift — av Edge Function opprett-kundebruker (045), server-side. Cenika blir
+// aldri medlem hos elektrikeren, og elektrikeren aldri hos Cenika. _delMedElektrikerRegressionTest
+// sjekker kildeteksten.
+//
+// Lesing: Cenika kan ikke lese andres organizations/organization_members/org_invitations (RLS).
+// Navn og statusgrunnlag kommer derfor fra to security definer-funksjoner i
+// supabase-migration-del-med-elektriker.sql: list_customer_orgs() og list_project_shares(id).
+let _shrState = { projectId: null, projectName: '', orgs: null, orgsErr: null, shares: null, sharesErr: null };
+
+// Hvem ser handlingen: leverandør-medlemmer. Synlighet er bekvemmelighet — grensen er
+// share_project() selv (eier-org-medlem, ikke til leverandør, ikke i papirkurven).
+function _shrCanShare() { return !!(_userOrg && _userOrg.org_type === 'supplier'); }
+
+const _SHR_MIGR = {
+  share_project: 'supabase-migration-project-shares.sql',
+  revoke_project_share: 'supabase-migration-project-shares.sql',
+  list_customer_orgs: 'supabase-migration-del-med-elektriker.sql',
+  list_project_shares: 'supabase-migration-del-med-elektriker.sql',
+};
+function _shrErrText(e, fn) {
+  const m = String((e && (e.message || e.details)) || e || '');
+  const code = e && e.code;
+  if (code === 'PGRST202' || code === '42883' || (/not find|does not exist/i.test(m) && /function/i.test(m)))
+    return 'Funksjonen ' + fn + ' finnes ikke i databasen ennå. Migrasjonen ' + (_SHR_MIGR[fn] || '') + ' må kjøres i Supabase.';
+  if (code === '42P01' && /project_shares/.test(m))
+    return 'Tabellen project_shares finnes ikke ennå. Migrasjonen supabase-migration-project-shares.sql må kjøres i Supabase.';
+  if (/NOT_PROJECT_OWNER/.test(m)) return 'Du kan bare dele prosjekter som tilhører din bedrift.';
+  if (/NOT_SUPPLIER/.test(m)) return 'Bare ansatte hos en leverandør kan se kundebedriftene.';
+  if (/PROJECT_IN_TRASH/.test(m)) return 'Prosjektet ligger i papirkurven. Gjenopprett det først.';
+  if (/SAME_ORG/.test(m)) return 'Prosjektet tilhører allerede denne bedriften.';
+  if (/TARGET_IS_SUPPLIER/.test(m)) return 'Prosjekter deles med elektrobedrifter, ikke med leverandører.';
+  if (/ORG_NOT_FOUND/.test(m)) return 'Fant ikke bedriften.';
+  if (/NOT_AUTHENTICATED/.test(m)) return 'Du er ikke innlogget.';
+  return 'Feil: ' + m;
+}
+
+// ÆRLIG STATUS (047 punkt 4). Ren funksjon — testes uten DOM. En akseptert deling betyr at
+// bedriften HAR tilgang, ikke at noen har sett den. Grunnlaget kommer fra list_project_shares:
+// members (antall brukere), last_sign_in_at (siste innlogging blant dem), invite (ventende).
+function _shrStatus(s) {
+  const dato = v => v ? new Date(v).toLocaleDateString('nb-NO') : '';
+  if (!s) return { key: 'ukjent', label: 'Ukjent', color: '#8b8f98', detail: '' };
+  if (s.status === 'revoked')
+    return { key: 'revoked', label: 'Trukket tilbake', color: '#8b8f98', detail: 'Bedriften ser ikke prosjektet lenger.' };
+  if (s.status === 'pending' || !s.org_id)
+    return { key: 'pending_email', label: 'Venter — ikke koblet til en bedrift', color: '#f0b232',
+             detail: (s.invited_email ? 'Lagt inn for ' + s.invited_email + '. ' : '') + 'Ingen har tilgang før delingen er koblet til en bedrift.' };
+  const members = Number(s.members) || 0;
+  const delt = s.accepted_at || s.created_at;
+  const sist = s.last_sign_in_at ? Date.parse(s.last_sign_in_at) : null;
+  if (members === 0) {
+    if (s.invite) return { key: 'invite_not_sent', label: 'Invitasjonen er ikke sendt', color: '#e5484d',
+      detail: 'Ingen bruker i bedriften ennå. Invitasjonen til ' + (s.invite.email || 'kontaktpersonen') + ' ligger klar, men er ikke sendt.' };
+    return { key: 'no_users', label: 'Ingen bruker i bedriften', color: '#e5484d',
+      detail: 'Bedriften har tilgang, men ingen kan logge inn ennå.' };
+  }
+  if (sist == null)
+    return { key: 'invited', label: 'Invitert — ikke åpnet ennå', color: '#f0b232',
+      detail: 'Ingen i bedriften har logget inn ennå' + (s.invite && s.invite.email ? ' (invitert: ' + s.invite.email + ')' : '') + '.' };
+  if (delt && sist < Date.parse(delt))
+    return { key: 'shared_not_seen', label: 'Delt — ingen innlogging siden', color: '#4fa2b8',
+      detail: 'Sist innlogget ' + dato(s.last_sign_in_at) + ', før delingen.' };
+  return { key: 'shared', label: 'Delt', color: '#22c55e',
+    detail: 'Noen i bedriften har logget inn etter delingen (sist ' + dato(s.last_sign_in_at) + ').' };
+}
+
+async function _shrOpen(projectId, projectName) {
+  if (!_db || !projectId) { _showToast && _showToast('Lagre prosjektet i skyen først for å dele.'); return; }
+  _shrState = { projectId, projectName: projectName || '', orgs: null, orgsErr: null, shares: null, sharesErr: null };
+  document.getElementById('_shr-ov')?.remove();
+  const ov = document.createElement('div');
+  ov.id = '_shr-ov';
+  // Samme form som «Del presentasjon» (#_del-ov): mørk bakgrunn, kort på 520 px, tittel + ×.
+  ov.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);max-height:90vh;overflow:auto;padding:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <div style="font-size:17px;font-weight:700;color:var(--text)">Del med elektriker</div>
+      <button onclick="document.getElementById('_shr-ov').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:16px"><b style="color:var(--text)">${esc(_shrState.projectName)}</b> — elektrobedriften kan se prosjektet og dokumentere det i appen, men ikke endre tegningen. Dere blir ikke medlem av bedriften, og de blir ikke medlem hos dere.</div>
+
+    <div style="font-size:12px;font-weight:600;margin-bottom:5px">Velg bedrift</div>
+    <input id="_shr-sok" autocomplete="off" placeholder="Navn eller org.nr" oninput="_shrSearch()" aria-label="Søk etter bedrift"
+      style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface2);color:var(--text);font-size:13px">
+    <div id="_shr-treff" style="margin-top:6px;max-height:190px;overflow:auto"><div style="font-size:12px;color:var(--dim);padding:4px 2px">Laster bedrifter …</div></div>
+
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--dim);margin-bottom:6px">Finnes ikke bedriften ennå?</div>
+      <div style="display:flex;gap:9px;align-items:center">
+        <button id="_shr-inviter" onclick="_shrInvite()"
+          style="padding:8px 15px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;font-size:12.5px;color:var(--text);cursor:pointer;white-space:nowrap">Inviter på e-post</button>
+        <span style="font-size:11px;color:var(--dim)">Oppretter bedriften fra Visma-kundelista, sender invitasjonen og deler prosjektet — i ett steg.</span>
+      </div>
+    </div>
+
+    <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">Delt med</div>
+      <div id="_shr-liste"><div style="font-size:12px;color:var(--dim)">Laster …</div></div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+      <button onclick="document.getElementById('_shr-ov').remove()"
+        style="padding:8px 15px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer">Lukk</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('_shr-sok')?.focus();
+  await Promise.all([_shrLoadOrgs(), _shrLoadShares()]);
+}
+
+async function _shrLoadOrgs() {
+  const pid = _shrState.projectId;
+  let orgs = null, err = null;
+  try {
+    const { data, error } = await _db.rpc('list_customer_orgs');
+    if (error) err = _shrErrText(error, 'list_customer_orgs');
+    else orgs = Array.isArray(data) ? data : [];
+  } catch (e) { err = _shrErrText(e, 'list_customer_orgs'); }
+  if (_shrState.projectId !== pid) return;   // arket ble åpnet for et annet prosjekt imens
+  _shrState.orgs = orgs; _shrState.orgsErr = err;
+  _shrSearch();
+}
+
+async function _shrLoadShares() {
+  const pid = _shrState.projectId;
+  let shares = null, err = null;
+  try {
+    const { data, error } = await _db.rpc('list_project_shares', { p_project_id: pid });
+    if (error) err = _shrErrText(error, 'list_project_shares');
+    else shares = Array.isArray(data) ? data : [];
+  } catch (e) { err = _shrErrText(e, 'list_project_shares'); }
+  if (_shrState.projectId !== pid) return;
+  _shrState.shares = shares; _shrState.sharesErr = err;
+  _shrRenderShares();
+  _shrSearch();   // «✓ delt»-merket i treffene følger lista
+}
+
+// Treff: samme regel som Visma-søket (_erpRegMatcher — ord i vilkårlig rekkefølge, org.nr på
+// tre eller flere siffer). Tomt søk viser de første bedriftene.
+function _shrSearch() {
+  const box = document.getElementById('_shr-treff');
+  if (!box) return;
+  if (_shrState.orgsErr) { box.innerHTML = `<div style="font-size:12px;color:#e5484d;padding:4px 2px">${esc(_shrState.orgsErr)}</div>`; return; }
+  if (!_shrState.orgs) return;
+  if (!_shrState.orgs.length) {
+    box.innerHTML = '<div style="font-size:12px;color:var(--dim);padding:4px 2px">Dere har ikke gitt noen elektrobedrift tilgang ennå. Bruk «Inviter på e-post» under.</div>';
+    return;
+  }
+  const q = (document.getElementById('_shr-sok')?.value || '').trim();
+  const rows = _shrState.orgs.map(o => ({ o, name_norm: _custNoNormalize(o.name || ''), org_number: o.org_nr || '', erp_no: o.erp_customer_no || '' }));
+  const hits = q ? rows.filter(_erpRegMatcher(q)) : rows;
+  if (!hits.length) {
+    box.innerHTML = '<div style="font-size:12px;color:var(--dim);padding:4px 2px">Ingen treff. Finnes ikke bedriften, bruk «Inviter på e-post».</div>';
+    return;
+  }
+  const aktive = new Set((_shrState.shares || []).filter(s => s.status === 'accepted').map(s => s.org_id));
+  box.innerHTML = hits.slice(0, 20).map(({ o }) => {
+    const delt = aktive.has(o.org_id);
+    const sub = [o.org_nr ? 'org.nr ' + o.org_nr : 'uten org.nr', o.address || ''].filter(Boolean).join(' — ');
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;font-size:12.5px" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+      <div style="flex:1;min-width:0"><div style="color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.name || '')}</div>
+        <div style="font-size:11px;color:var(--dim)">${esc(sub)}</div></div>
+      ${delt ? '<span style="font-size:11.5px;color:#22c55e;white-space:nowrap">✓ Delt</span>'
+             : `<button onclick="_shrShareOrg(${_jsStr(o.org_id)})" style="padding:6px 12px;background:var(--accent);border:none;border-radius:7px;font-size:12px;font-weight:600;color:#0d0e10;cursor:pointer;white-space:nowrap">Del</button>`}
+    </div>`;
+  }).join('') + (hits.length > 20 ? `<div style="font-size:11px;color:var(--dim);padding:4px 8px">… ${hits.length - 20} flere — skriv mer for å avgrense</div>` : '');
+}
+
+function _shrRenderShares() {
+  const box = document.getElementById('_shr-liste');
+  if (!box) return;
+  if (_shrState.sharesErr) { box.innerHTML = `<div style="font-size:12px;color:#e5484d">${esc(_shrState.sharesErr)}</div>`; return; }
+  const list = _shrState.shares || [];
+  if (!list.length) { box.innerHTML = '<div style="font-size:12px;color:var(--dim)">Ikke delt med noen ennå.</div>'; return; }
+  // Aktive først, trukket tilbake nederst — historikken blir stående (raden slettes aldri).
+  const sortert = list.filter(s => s.status !== 'revoked').concat(list.filter(s => s.status === 'revoked'));
+  const btn = 'padding:5px 11px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;font-size:11.5px;color:var(--text);cursor:pointer;white-space:nowrap';
+  box.innerHTML = sortert.map(s => {
+    const st = _shrStatus(s);
+    const navn = s.org_name || s.invited_email || 'Ukjent bedrift';
+    const dato = new Date(s.accepted_at || s.created_at).toLocaleDateString('nb-NO');
+    const knapper = [];
+    if (st.key === 'invite_not_sent' && s.invite && s.invite.token)
+      knapper.push(`<button onclick="_shrResendInvite(${_jsStr(s.invite.token)}, this)" style="${btn};color:var(--accent);font-weight:600">Send invitasjon</button>`);
+    if (s.status === 'revoked' && s.org_id)
+      knapper.push(`<button onclick="_shrShareOrg(${_jsStr(s.org_id)})" style="${btn}">Del igjen</button>`);
+    if (s.status !== 'revoked')
+      knapper.push(`<button onclick="_shrRevoke(${_jsStr(s.share_id)}, ${_jsStr(navn)})" style="${btn};color:#e5484d">Trekk tilbake</button>`);
+    return `<div data-share="${esc(s.share_id)}" style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)${s.status === 'revoked' ? ';opacity:.6' : ''}">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(navn)}${s.org_nr ? ` <span style="font-weight:400;color:var(--dim);font-size:11px">org.nr ${esc(s.org_nr)}</span>` : ''}</div>
+        <div style="font-size:12px;margin-top:2px"><span style="color:${st.color};font-weight:600">${esc(st.label)}</span> <span style="color:var(--dim)">· ${s.status === 'revoked' ? 'delt' : (s.org_id ? 'delt' : 'lagt inn')} ${esc(dato)}</span></div>
+        ${st.detail ? `<div style="font-size:11px;color:var(--dim);margin-top:2px">${esc(st.detail)}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">${knapper.join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+// Vei 1: kjent bedrift → deles direkte (status accepted i share_project).
+async function _shrShareOrg(orgId) {
+  const pid = _shrState.projectId;
+  const org = (_shrState.orgs || []).find(o => o.org_id === orgId)
+    || (_shrState.shares || []).find(s => s.org_id === orgId);
+  const navn = (org && (org.name || org.org_name)) || 'bedriften';
+  try {
+    const { data, error } = await _db.rpc('share_project', { p_project_id: pid, p_org_id: orgId, p_invited_email: null });
+    if (error) throw error;
+    const varDelt = (_shrState.shares || []).some(s => s.org_id === orgId && s.status === 'accepted');
+    _showToast && _showToast(varDelt ? 'Prosjektet var allerede delt med ' + navn : 'Delt med ' + navn, 'ok');
+  } catch (e) {
+    _showToast && _showToast(_shrErrText(e, 'share_project'), 'warn');
+    return;
+  }
+  const s = document.getElementById('_shr-sok'); if (s) s.value = '';
+  await _shrLoadShares();
+}
+
+async function _shrRevoke(shareId, navn) {
+  if (!confirm('Trekke tilbake delingen med ' + navn + '?\n\nBedriften ser ikke prosjektet lenger. Garantibevis de alt har laget, blir liggende hos dem.')) return;
+  try {
+    const { error } = await _db.rpc('revoke_project_share', { p_share_id: shareId });
+    if (error) throw error;
+    _showToast && _showToast('Delingen med ' + navn + ' er trukket tilbake', 'ok');
+  } catch (e) {
+    _showToast && _showToast(_shrErrText(e, 'revoke_project_share'), 'warn');
+    return;
+  }
+  await _shrLoadShares();
+}
+
+// Vei 2: bedriften finnes ikke → 044-skjemaet (Visma-søk, org.nr-sjekk, e-post) i delingsmodus.
+function _shrInvite() {
+  _coOpen({ share: { projectId: _shrState.projectId, projectName: _shrState.projectName } });
+}
+
+// Edge Function opprett-kundebruker (045). Samme kallform som _kundeMailCall: eksplisitt
+// innloggingstoken, svaret leses også ved feil. Klienten sender BARE tokenet.
+async function _shrInviteCall(token) {
+  try {
+    const tok = (await _db.auth.getSession()).data.session?.access_token;
+    if (!tok) return { ok: false, error: 'Du må være innlogget for å sende invitasjonen' };
+    const resp = await fetch(SUPABASE_URL + '/functions/v1/opprett-kundebruker', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok, apikey: SUPABASE_KEY },
+      body: JSON.stringify({ token }),
+    });
+    let data = null;
+    try { data = await resp.json(); } catch (e) {}
+    if (resp.status === 404) return { ok: false, status: 404, error: 'Funksjonen opprett-kundebruker er ikke i drift ennå (ikke deployet)' };
+    if (!resp.ok || !data || !data.ok) return { ok: false, status: resp.status, error: (data && data.error) || ('HTTP ' + resp.status) };
+    return { ok: true, result: data.result };   // 'opprettet' | 'fantes_fra_for'
+  } catch (e) {
+    return { ok: false, error: e.message || 'nettverksfeil' };
+  }
+}
+
+async function _shrResendInvite(token, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Sender …'; }
+  const r = await _shrInviteCall(token);
+  if (btn) { btn.disabled = false; btn.textContent = 'Send invitasjon'; }
+  if (r.ok) _showToast && _showToast(r.result === 'fantes_fra_for'
+    ? 'E-posten har alt en konto — lagt inn i bedriften, ingen ny e-post sendt'
+    : 'Invitasjonen er sendt', 'ok');
+  else _showToast && _showToast('Invitasjonen ble ikke sendt: ' + r.error, 'warn');
+  await _shrLoadShares();
+}
+
+// Kalt av _coSubmit når skjemaet er åpnet fra delingsarket. Rekkefølgen er bevisst:
+//  1. del (share_project med den nye/eksisterende orgen) — prosjektet ligger klart når
+//     elektrikeren kommer inn;
+//  2. send invitasjonen (045) — bare for en NY bedrift. En eksisterende får ingen invitasjon
+//     (044: en leverandør skal ikke kunne legge brukere inn i en bedrift den ikke opprettet).
+// Feiler ett steg, vises det som det er; de andre stegene står.
+async function _shrAfterCreate(r, share, email) {
+  const res = { existed: !!r.existed, name: r.name || 'Bedriften', matched_on: r.matched_on, email: r.invite_email || email,
+                shared: null, invite: null, inviteUrl: r.invite_token ? (_PUBLIC_BASE_URL + '/?invite=' + r.invite_token) : '' };
+  try {
+    const { data, error } = await _db.rpc('share_project', { p_project_id: share.projectId, p_org_id: r.org_id,
+      p_invited_email: r.existed ? null : (r.invite_email || email || null) });
+    res.shared = error ? { ok: false, error: _shrErrText(error, 'share_project') } : { ok: true, data };
+  } catch (e) { res.shared = { ok: false, error: _shrErrText(e, 'share_project') }; }
+  if (!r.existed && r.invite_token) res.invite = await _shrInviteCall(r.invite_token);
+  _shrShowCreateResult(res);
+  if (_shrState.projectId === share.projectId) { _shrLoadOrgs(); _shrLoadShares(); }
+  return res;
+}
+
+function _shrShowCreateResult(res) {
+  const form = document.getElementById('co-form');
+  const box = document.getElementById('co-result');
+  if (!box) return;
+  if (form) form.style.display = 'none';
+  box.style.display = 'block';
+  const ok = 'border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.06)';
+  const warn = 'border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.06)';
+  const bad = 'border:1px solid rgba(229,72,77,.4);background:rgba(229,72,77,.06)';
+  const kort = (stil, html) => `<div style="padding:12px 14px;${stil};border-radius:8px;font-size:14px;color:var(--text);line-height:1.5;margin-bottom:10px">${html}</div>`;
+  const n = esc(res.name), e = esc(res.email || '');
+  let h = '';
+  // Punkt 5: si det når bedriften fantes fra før.
+  if (res.existed) {
+    const how = res.matched_on === 'erp_customer_no' ? 'samme kundenummer i Visma' : 'samme organisasjonsnummer';
+    h += kort(warn, `<b>${n} finnes allerede — deler dit.</b><div style="font-size:12px;color:var(--muted);margin-top:4px">Funnet på ${how}. Ingen ny bedrift og ingen invitasjon ble laget, så ${e || 'e-posten'} har ikke fått noen e-post. Om noen i bedriften har logget inn, står i delingslista.</div>`);
+  }
+  if (res.shared && res.shared.ok) {
+    if (!res.existed) h += kort(ok, `<b>✓ ${n} er opprettet, og prosjektet er delt med bedriften.</b>`);
+    else h += kort(ok, `<b>✓ Prosjektet er delt med ${n}.</b>`);
+  } else if (res.shared) {
+    h += kort(bad, `<b>Prosjektet ble ikke delt.</b><div style="font-size:12px;margin-top:4px">${esc(res.shared.error)}</div>`
+      + (!res.existed ? `<div style="font-size:12px;color:var(--muted);margin-top:4px">${n} er opprettet. Prøv «Del» på bedriften i delingsarket.</div>` : ''));
+  }
+  if (res.invite) {
+    if (res.invite.ok && res.invite.result === 'fantes_fra_for') {
+      // 045 regel 31: brukeren finnes — lagt inn i bedriften, ingen ny konto og ingen e-post.
+      h += kort(warn, `<b>${e} har alt en konto i Varmeplan.</b><div style="font-size:12px;color:var(--muted);margin-top:4px">Ingen e-post er sendt. Brukeren er lagt inn i ${n} og ser prosjektet neste gang hen logger inn med passordet sitt. Si gjerne fra selv.</div>`);
+    } else if (res.invite.ok) {
+      h += kort(ok, `<b>✓ Invitasjonen er sendt til ${e}.</b><div style="font-size:12px;color:var(--muted);margin-top:4px">Status: <b>Invitert — ikke åpnet ennå</b> til hen har valgt passord og logget inn. Lenken i e-posten er ett klikk.</div>`);
+    } else {
+      h += kort(bad, `<b>Invitasjonen ble ikke sendt.</b><div style="font-size:12px;margin-top:4px">${esc(res.invite.error || '')}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Ingen i ${n} kan logge inn før invitasjonen er sendt. Bruk «Send invitasjon» i delingslista senere, eller send lenken under til ${e} (gyldig i 30 dager).</div>
+        ${res.inviteUrl ? `<div style="display:flex;gap:7px;align-items:center;margin-top:8px">
+          <input readonly value="${esc(res.inviteUrl)}" onclick="this.select()" style="flex:1;padding:7px 9px;border:1px solid var(--border);border-radius:7px;background:var(--surface2);color:var(--dim);font-size:11.5px">
+          <button onclick="_copyLinkPlain(${_jsStr(res.inviteUrl)})" style="padding:7px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;font-size:12px;color:var(--text);cursor:pointer">Kopier adresse</button>
+        </div>` : ''}`);
+    }
+  }
+  box.innerHTML = h + `<div style="margin-top:4px"><button onclick="document.getElementById('co-overlay').style.display='none'" style="padding:8px 18px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;cursor:pointer">Tilbake til delingen</button></div>`;
+}
+
+// Konsoll: _delMedElektrikerRegressionTest() — statusavledning + kildetekst-vakter (punkt 6).
+function _delMedElektrikerRegressionTest() {
+  const out = [];
+  const check = (name, ok, got) => out.push({ name, ok: !!ok, got });
+  const t0 = '2026-11-01T10:00:00Z', før = '2026-10-01T10:00:00Z', etter = '2026-11-02T08:00:00Z';
+  const base = { share_id: 's', org_id: 'o', status: 'accepted', created_at: t0, accepted_at: t0 };
+  const k = s => _shrStatus(Object.assign({}, base, s)).key;
+  check('revoked → Trukket tilbake', k({ status: 'revoked', members: 3, last_sign_in_at: etter }) === 'revoked', k({ status: 'revoked' }));
+  check('pending uten org → ikke koblet', k({ status: 'pending', org_id: null, invited_email: 'a@b.no' }) === 'pending_email', null);
+  check('0 brukere + invitasjon → ikke sendt', k({ members: 0, invite: { email: 'a@b.no', token: 't' } }) === 'invite_not_sent', null);
+  check('0 brukere uten invitasjon → ingen bruker', k({ members: 0, invite: null }) === 'no_users', null);
+  check('bruker som aldri har logget inn → Invitert — ikke åpnet ennå', k({ members: 1, last_sign_in_at: null }) === 'invited', null);
+  check('label for invited er ordrett', _shrStatus(Object.assign({}, base, { members: 1 })).label === 'Invitert — ikke åpnet ennå', null);
+  check('innlogget før delingen → ikke «Delt»', k({ members: 2, last_sign_in_at: før }) === 'shared_not_seen', null);
+  check('innlogget etter delingen → Delt', k({ members: 2, last_sign_in_at: etter }) === 'shared', null);
+  check('invitert er ALDRI «Delt»', !/^Delt/.test(_shrStatus(Object.assign({}, base, { members: 1 })).label), null);
+  // Punkt 6: ingen 047-funksjon skriver medlemskap eller invitasjoner.
+  const kilde = [_shrOpen, _shrLoadOrgs, _shrLoadShares, _shrSearch, _shrRenderShares, _shrShareOrg, _shrRevoke,
+    _shrInvite, _shrInviteCall, _shrResendInvite, _shrAfterCreate, _shrShowCreateResult, _coSubmit, _coOpen]
+    .map(f => _kildeUtenKommentarer(f)).join('\n');
+  check('ingen organization_members i 047-flyten', !/organization_members/.test(kilde), null);
+  check('ingen org_invitations i 047-flyten', !/org_invitations/.test(kilde), null);
+  check('ingen direkte skriving til project_shares (bare RPC)', !/from\(['"]project_shares/.test(kilde), null);
+  // Ordet settes sammen, så KJOR-grepen («service" + "_role» i index.html → 0 treff) står.
+  check('ingen service-role-nøkkel i 047-flyten', !new RegExp('service' + '_role').test(kilde), null);
+  check('Edge Function får bare tokenet', /JSON\.stringify\(\{ token \}\)/.test(_kildeUtenKommentarer(_shrInviteCall)), null);
+  check('deling via share_project-RPC', /rpc\('share_project'/.test(kilde) && /rpc\('revoke_project_share'/.test(kilde), null);
+  check('eksisterende bedrift får ingen invitasjon', /!r\.existed && r\.invite_token/.test(_kildeUtenKommentarer(_shrAfterCreate)), null);
+  check('«finnes allerede — deler dit» står i resultatet', /finnes allerede — deler dit/.test(_shrShowCreateResult.toString()), null);
+  return out;
 }
 
 async function _editCustomerInline(customerId) {
@@ -96320,6 +96709,7 @@ async function _renderProjectList() {
         <button class="pl-act-btn" disabled title="Kun admin kan slette permanent" style="opacity:.35;cursor:not-allowed"><svg class="ic ic-trash" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M18.5 6l-1 14a2 2 0 0 1-2 1.8H8.5a2 2 0 0 1-2-1.8L5.5 6"/></svg></button>`}` : `
         <button class="pl-act-btn" onclick="event.stopPropagation();_quickSetCustomer('${p.id}')" title="Bytt kunde"><svg class="ic ic-building" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M10 21v-3h4v3"/></svg></button>
         <button class="pl-act-btn" onclick="event.stopPropagation();_inlineRenameProject('${p.id}',this.closest('tr').querySelector('.pl-proj-name-project'))" title="Gi nytt navn"><svg class="ic ic-pencil" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+        ${_shrCanShare() ? `<button class="pl-act-btn" onclick="event.stopPropagation();_shrOpen('${p.id}', ${_jsStr(p.name || '')})" title="Del med elektriker">${IC('users', 14)}</button>` : ''}
         <button class="pl-act-btn" onclick="event.stopPropagation();_duplicateProject('${p.id}')" title="Dupliser"><svg class="ic ic-clipboard" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2.5" width="6" height="3.5" rx="1"/></svg></button>
         <button class="pl-act-btn" onclick="event.stopPropagation();_exportProject('${p.id}')" title="Eksporter"><svg class="ic ic-download" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M12 4v12M7 11l5 5 5-5"/><path d="M5 20h14"/></svg></button>
         <button class="pl-act-btn danger" onclick="event.stopPropagation();_confirmDeleteProject('${p.id}','${safeName}')" title="Flytt til papirkurv"><svg class="ic ic-trash" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M18.5 6l-1 14a2 2 0 0 1-2 1.8H8.5a2 2 0 0 1-2-1.8L5.5 6"/></svg></button>`}
