@@ -1755,6 +1755,7 @@ body.kunde-maal #minimap-widget{display:none !important}
             <option value="private">Privat</option>
           </select>
           <button class="dash-create-btn btn-gbao10" style="white-space:nowrap;display:none" onclick="_openCustNoImport()">Importer kundenumre</button>
+          <button class="dash-create-btn" id="cust-grant-access-btn" onclick="_coOpen()" style="white-space:nowrap;display:none" title="Opprett elektrobedriften i Varmeplan og inviter kontaktpersonen">Gi kunden tilgang til Varmeplan</button>
           <button class="dash-create-btn" onclick="_showNewCustomerPopup()" style="white-space:nowrap">＋ Ny kunde</button>
         </div>
         <div class="pl-table-wrap">
@@ -59353,8 +59354,9 @@ function _edgeMailRegressionTest() {
       /type\s*:/.test(fbBody) && /message\s*:/.test(fbBody), fbBody);
 
     // Alle utgående lenker på varmeplan.no (gjelder også reserveveien «del lenken manuelt»).
-    check('D: manuell reservelenke bygges på _PUBLIC_BASE_URL', 3,
-      (kode.match(/_PUBLIC_BASE_URL \+ '\/\?invite='/g) || []).length === 3,
+    // 044v2: fjerde invitasjonslenke («Gi kunden tilgang til Varmeplan», _coShowResult).
+    check('D: manuell reservelenke bygges på _PUBLIC_BASE_URL', 4,
+      (kode.match(/_PUBLIC_BASE_URL \+ '\/\?invite='/g) || []).length === 4,
       (kode.match(/_PUBLIC_BASE_URL \+ '\/\?invite='/g) || []).length);
   } catch (e) {
     results.push({ name: 'KASTET', ok: false, expected: '-', got: e.message });
@@ -59616,8 +59618,9 @@ async function _kundelenkeRegressionTest() {
     check('G: sveipet fant faktisk kode (ikke tom streng)', true,
       _kode.length > 100000 && /_PUBLIC_BASE_URL/.test(_kode), _kode.length);
     const _invitt = (_kode.match(/'\/\?invite='/g) || []).length;
-    check('G: alle tre invitasjonslenkene bygges på _PUBLIC_BASE_URL', 3,
-      _invitt === 3 && (_kode.match(/_PUBLIC_BASE_URL \+ '\/\?invite='/g) || []).length === 3, _invitt);
+    // 044v2: fjerde invitasjonslenke («Gi kunden tilgang til Varmeplan», _coShowResult).
+    check('G: alle fire invitasjonslenkene bygges på _PUBLIC_BASE_URL', 4,
+      _invitt === 4 && (_kode.match(/_PUBLIC_BASE_URL \+ '\/\?invite='/g) || []).length === 4, _invitt);
     check('G: basis-URL uendret av 029', 'https://varmeplan.no',
       _PUBLIC_BASE_URL === 'https://varmeplan.no', _PUBLIC_BASE_URL);
 
@@ -89633,6 +89636,7 @@ function _openCustomerCard(customerId) {
     <div style="display:flex;gap:8px;margin-bottom:16px">
       <button onclick="_saveCustomerCard('${c.id}')" style="padding:8px 20px;border-radius:6px;border:none;background:var(--accent);color:#0d0e10;font-size:13px;font-weight:600;cursor:pointer"><svg class="ic ic-save" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg> Lagre endringer</button>
       <span id="cc-save-msg" style="font-size:12px;color:var(--dim);align-self:center"></span>
+      ${(_userOrg && _userOrg.org_type === 'supplier' && cat !== 'private') ? `<button onclick="_coOpen({ customerId:'${c.id}' })" style="margin-left:auto;padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--accent);font-size:13px;font-weight:600;cursor:pointer">Gi kunden tilgang til Varmeplan</button>` : ''}
     </div>
     <div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -89684,18 +89688,12 @@ async function _ccErpSearch() {
     results.style.display = 'block';
     return;
   }
-  const qNorm = _custNoNormalize(raw);
-  const qLower = raw.toLowerCase();
-  // Treffer på BÅDE nummer og navn, og på delstrenger — «bravida ålesund», «31114» og
-  // «ålesund» skal alle finne raden (krav 1). «bravida ålesund» er IKKE en sammenhengende
-  // delstreng av «bravida norge avd ålesund» — egen bug funnet under testing: et rent
-  // .includes()-sammenligning bommet nettopp på spec sitt eget eksempel. Ordene i søket må derfor
-  // finnes NOEN steder i navnet, i hvilken som helst rekkefølge — ikke som én sammenhengende bit.
-  const qTokens = qNorm.split(' ').filter(Boolean);
   // Krav DEL C: totaltallet må telles FØR .slice() — ellers vet ikke «flere treff»-teksten
   // hvor mange den faktisk avkortet (den gamle koden slicet til 30 for så å sjekke
   // matches.length >= 30, som alltid var sant etter at treffene alt var kastet vekk).
-  const allMatches = reg.filter(r => r.erp_no.toLowerCase().includes(qLower) || (qTokens.length && qTokens.every(t => r.name_norm.includes(t))));
+  // 044v2: selve treff-regelen bor i _erpRegMatcher (delt med «Gi kunden tilgang»-dialogen).
+  const _m = _erpRegMatcher(raw);
+  const allMatches = reg.filter(_m);
   if (!allMatches.length) {
     results.innerHTML = `<div style="padding:6px 10px;color:var(--dim);font-size:12px">Ingen treff i registeret — fritekst godtas</div>`;
     results.style.display = 'block';
@@ -89706,6 +89704,21 @@ async function _ccErpSearch() {
   results.innerHTML = matches.map(r => `<div onclick="_ccErpPick(${sq(r.erp_no)},${sq(r.name)})" style="padding:6px 10px;cursor:pointer;font-size:12px;border-radius:6px" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''"><b>${_esc(r.erp_no)}</b> ${_esc(r.name)}</div>`).join('')
     + (allMatches.length > 30 ? `<div style="padding:6px 10px;color:var(--dim);font-size:11px">… ${allMatches.length - 30} flere treff — skriv mer for å avgrense</div>` : '');
   results.style.display = 'block';
+}
+// Treff-regelen for Visma-registeret (erp_customers). Treffer på BÅDE nummer og navn, og på
+// delstrenger — «bravida ålesund», «31114» og «ålesund» skal alle finne raden (krav 1).
+// «bravida ålesund» er IKKE en sammenhengende delstreng av «bravida norge avd ålesund» — egen bug
+// funnet under testing: et rent .includes()-sammenligning bommet nettopp på spec sitt eget
+// eksempel. Ordene i søket må derfor finnes NOEN steder i navnet, i hvilken som helst rekkefølge.
+// 044v2: trukket ut av _ccErpSearch så «Gi kunden tilgang»-dialogen bruker SAMME regel, og utvidet
+// med org.nr: tre eller flere siffer i søket (mellomrom ignoreres) treffer også org.nr-feltet.
+function _erpRegMatcher(raw) {
+  const qLower = String(raw || '').trim().toLowerCase();
+  const qTokens = _custNoNormalize(raw).split(' ').filter(Boolean);
+  const qDigits = /^[\d\s.]+$/.test(qLower) ? qLower.replace(/\D/g, '') : '';
+  return r => (r.erp_no || '').toLowerCase().includes(qLower)
+    || (qTokens.length > 0 && qTokens.every(t => (r.name_norm || '').includes(t)))
+    || (qDigits.length >= 3 && String(r.org_number || '').replace(/\D/g, '').includes(qDigits));
 }
 function _ccErpPick(erpNo, name) {
   const inp = document.getElementById('cc-erpno');
@@ -91726,6 +91739,266 @@ async function _addCustomerFromErpRow(erpNo, btn) {
     alert('Kunne ikke opprette kunde: ' + (e.message || e));
     if (btn) { btn.disabled = false; btn.textContent = '+ Legg til'; }
   }
+}
+
+// ─── 044v2 · GI KUNDEN TILGANG TIL VARMEPLAN ───
+// Leverandøren (Cenika) oppretter elektrobedriften som installatør-org og inviterer kontaktpersonen.
+// ALLE regler bor i RPC-en create_customer_org (supabase-migration-opprett-kundebedrift.sql):
+// kalleren må være leverandør-medlem, orgen blir 'installer' + 'active', bare kallerens egen
+// leverandørtilgang, kalleren blir IKKE medlem, duplikat på org.nr gir den eksisterende tilbake.
+// Klienten her fyller bare ut skjemaet fra Visma-lista (erp_customers) — den bestemmer ingenting.
+// Ingen Brreg-oppslag (043 kjøres ikke). E-posten sendes av 045; til da vises lenken.
+let _coState = { erpNo: null };
+
+function _coField(id, label, val, extra) {
+  return `<div${extra && extra.full ? ' style="grid-column:1/-1"' : ''}><label style="font-size:11px;color:var(--muted);text-transform:uppercase">${label}</label>
+    <input id="${id}" value="${_esc(val || '')}"${extra && extra.attrs ? ' ' + extra.attrs : ''} style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;box-sizing:border-box"></div>`;
+}
+
+// prefill: { customerId } fra kundekortet (Varmeplan-kunden har ofte org.nr, kundenr. og e-post).
+async function _coOpen(prefill) {
+  _coState = { erpNo: null };
+  let overlay = document.getElementById('co-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'co-overlay'; overlay.className = 'cust-overlay'; overlay.style.zIndex = '1150';
+    overlay.onclick = e => { if (e.target === overlay) overlay.style.display = 'none'; };
+    document.body.appendChild(overlay);
+  }
+  let p = {};
+  if (prefill && prefill.customerId) {
+    const c = (_cachedCustomers || []).find(x => x.id === prefill.customerId);
+    if (c) p = { name: c.name, org_nr: c.org_number, erp: c.erp_customer_no, email: c.email,
+                 address: [c.address, [c.postal_code, c.city].filter(Boolean).join(' ')].filter(Boolean).join(', ') };
+  }
+  overlay.innerHTML = `<div class="cust-card" style="width:620px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <h3 style="font-size:18px;font-weight:700;color:var(--text);margin:0">Gi kunden tilgang til Varmeplan</h3>
+      <button onclick="document.getElementById('co-overlay').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer">&times;</button>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 14px;line-height:1.45">Bedriften opprettes i Varmeplan med tilgang til ${_esc(_userOrg?.supplier_name || 'deres')} sine produkter, og kontaktpersonen får en invitasjon. Dere blir ikke medlem av bedriften og ser ikke prosjektene deres.</p>
+    <div id="co-form">
+      <div style="position:relative;margin-bottom:12px">
+        <label style="font-size:11px;color:var(--muted);text-transform:uppercase">Søk i Visma-kundelista</label>
+        <input id="co-search" autocomplete="off" placeholder="Navn, kundenummer eller org.nr" oninput="_coSearch()" onfocus="_coSearch()" style="width:100%;padding:8px 10px;border:1px solid var(--accent);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;box-sizing:border-box">
+        <div id="co-search-results" class="cust-search-results" style="display:none"></div>
+      </div>
+      <div id="co-siblings" style="display:none;margin-bottom:12px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted);line-height:1.45"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        ${_coField('co-name', 'Bedriftsnavn *', p.name, { full: true })}
+        <div>
+          <label style="font-size:11px;color:var(--muted);text-transform:uppercase">Org.nr *</label>
+          <input id="co-orgnr" inputmode="numeric" placeholder="123 456 785" value="${_esc(p.org_nr || '')}" oninput="_coCheckOrgNr()" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;box-sizing:border-box">
+          <div id="co-orgnr-hint" style="font-size:11px;margin-top:3px;line-height:1.35"></div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);text-transform:uppercase">Hovedenhet org.nr (avdeling)</label>
+          <input id="co-parent" inputmode="numeric" placeholder="valgfritt" value="" oninput="_coCheckOrgNr()" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;box-sizing:border-box">
+          <div id="co-parent-hint" style="font-size:11px;margin-top:3px;line-height:1.35;color:var(--dim)">Bare når bedriften er en avdeling med eget org.nr.</div>
+        </div>
+        ${_coField('co-erp', 'Kundenr. i Visma', p.erp)}
+        ${_coField('co-addr', 'Adresse', p.address)}
+        ${_coField('co-email', 'Kontaktpersonens e-post * (blir brukernavnet)', p.email, { full: true, attrs: 'type="email" autocomplete="off"' })}
+      </div>
+      <div id="co-override-box" style="display:none;margin-bottom:12px;padding:10px;border:1px solid rgba(251,191,36,.35);border-radius:8px;background:rgba(251,191,36,.06)">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);cursor:pointer">
+          <input type="checkbox" id="co-override" onchange="_coCheckOrgNr()" style="width:auto;margin:0"> ${_ADM_NO_ORGNR_MARK} (utenlandsk firma) — opprett likevel
+        </label>
+        <input id="co-override-reason" placeholder="Begrunnelse (lagres med navnet ditt)" oninput="_coCheckOrgNr()" style="display:none;width:100%;margin-top:6px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;box-sizing:border-box">
+        <div style="font-size:11px;color:var(--dim);margin-top:4px">Uten org.nr kan Varmeplan ikke oppdage om bedriften alt finnes.</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button id="co-submit" onclick="_coSubmit()" style="padding:9px 20px;border-radius:6px;border:none;background:var(--accent);color:#0d0e10;font-size:13px;font-weight:600;cursor:pointer">Opprett og inviter</button>
+        <span id="co-msg" style="font-size:12px;color:var(--dim)"></span>
+      </div>
+    </div>
+    <div id="co-result" style="display:none"></div>
+  </div>`;
+  overlay.style.display = 'flex';
+  _coCheckOrgNr();
+  const s = document.getElementById('co-search'); if (s && !p.name) s.focus();
+}
+
+// Søket: samme register (_erpCustomersForOrg, cachet) og samme treff-regel (_erpRegMatcher) som
+// kundekortets «Kundenr. i Visma»-felt. Ingen ny henting per tastetrykk.
+async function _coSearch() {
+  const inp = document.getElementById('co-search');
+  const results = document.getElementById('co-search-results');
+  if (!inp || !results) return;
+  const raw = (inp.value || '').trim();
+  if (!raw) { results.style.display = 'none'; results.innerHTML = ''; return; }
+  let reg;
+  try { reg = (await _erpCustomersForOrg()).filter(r => r.active); }
+  catch(e) {
+    results.innerHTML = `<div style="padding:6px 10px;color:#f87171;font-size:12px">Kunne ikke laste Visma-kundelista: ${_esc(e.message||e)}</div>`;
+    results.style.display = 'block'; return;
+  }
+  if (!reg.length) {
+    results.innerHTML = `<div style="padding:6px 10px;color:var(--dim);font-size:12px">Visma-kundelista er tom for denne organisasjonen — fyll ut feltene under.</div>`;
+    results.style.display = 'block'; return;
+  }
+  const all = reg.filter(_erpRegMatcher(raw));
+  if (!all.length) {
+    results.innerHTML = `<div style="padding:6px 10px;color:var(--dim);font-size:12px">Ingen treff i Visma-kundelista — fyll ut feltene under.</div>`;
+    results.style.display = 'block'; return;
+  }
+  const sq = s => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  results.innerHTML = all.slice(0, 20).map(r => `<div onclick="_coPick(${sq(r.erp_no)})" style="padding:6px 10px;cursor:pointer;font-size:12px;border-radius:6px" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+      <b>${_esc(r.erp_no)}</b> ${_esc(r.name)}<span style="color:var(--dim)">${r.org_number ? ' — org.nr ' + _esc(r.org_number) : ' — mangler org.nr'}${(r.postal_code || r.city) ? ' — ' + _esc((r.postal_code||'') + ' ' + (r.city||'')) : ''}</span></div>`).join('')
+    + (all.length > 20 ? `<div style="padding:6px 10px;color:var(--dim);font-size:11px">… ${all.length - 20} flere treff — skriv mer for å avgrense</div>` : '');
+  results.style.display = 'block';
+}
+
+// Valgt rad fyller navn, org.nr, adresse og kundenummer. E-post finnes ikke i Visma-lista
+// (målt i 168: erp_customers har ingen e-post) — den skrives alltid inn.
+async function _coPick(erpNo) {
+  const results = document.getElementById('co-search-results');
+  if (results) { results.style.display = 'none'; results.innerHTML = ''; }
+  let reg = [];
+  try { reg = await _erpCustomersForOrg(); } catch(e) { return; }
+  const r = reg.find(x => x.erp_no === erpNo);
+  if (!r) return;
+  _coState.erpNo = r.erp_no;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  set('co-name', r.name);
+  set('co-orgnr', r.org_number ? _normOrgNr(r.org_number) : '');
+  set('co-parent', '');
+  set('co-erp', r.erp_no);
+  set('co-addr', [r.postal_code, r.city].filter(Boolean).join(' '));
+  const s = document.getElementById('co-search'); if (s) s.value = '';
+  _coRenderSiblings(reg, r);
+  _coCheckOrgNr();
+  const em = document.getElementById('co-email'); if (em && !em.value) em.focus();
+}
+
+// Avdelinger: flere Visma-kunder med SAMME org.nr er avdelinger under ett nummer. I Varmeplan er
+// org.nr duplikatnøkkelen — det blir én bedrift per nummer. Har avdelingen eget nummer
+// (underenhet), skriver selgeren det inn og flytter fellesnummeret til «Hovedenhet».
+function _coRenderSiblings(reg, r) {
+  const box = document.getElementById('co-siblings');
+  if (!box) return;
+  const d = _normOrgNr(r.org_number);
+  const sibs = d.length === 9 ? reg.filter(x => x.active && x.erp_no !== r.erp_no && _normOrgNr(x.org_number) === d) : [];
+  if (!sibs.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const sq = s => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+  box.style.display = 'block';
+  box.innerHTML = `<div style="color:var(--text);font-weight:600;margin-bottom:4px">${sibs.length + 1} kunder i Visma-lista har org.nr ${_esc(d)}</div>
+    ${[r].concat(sibs).slice(0, 12).map(x => `<div>${x.erp_no === r.erp_no ? '● ' : `<a href="#" onclick="event.preventDefault();_coPick(${sq(x.erp_no)})" style="color:var(--accent)">velg</a> `}${_esc(x.erp_no)} ${_esc(x.name)}${x.city ? ' — ' + _esc(x.city) : ''}</div>`).join('')}
+    <div style="margin-top:6px">Varmeplan lager én bedrift per org.nr. Skal en avdeling ha egen bedrift (og ikke se de andres prosjekter), må den ha eget org.nr: skriv det inn og
+    <a href="#" onclick="event.preventDefault();_coMoveToParent()" style="color:var(--accent)">flytt ${_esc(d)} til hovedenhet</a>.</div>`;
+}
+function _coMoveToParent() {
+  const o = document.getElementById('co-orgnr'), pa = document.getElementById('co-parent');
+  if (!o || !pa) return;
+  pa.value = _normOrgNr(o.value); o.value = ''; o.focus();
+  _coCheckOrgNr();
+}
+
+// Live-sjekk med 042 sin _validOrgNr. Returnerer { ok, digits, override, reason, parent }.
+function _coCheckOrgNr() {
+  const o = document.getElementById('co-orgnr');
+  const hint = document.getElementById('co-orgnr-hint');
+  const box = document.getElementById('co-override-box');
+  const ov = document.getElementById('co-override');
+  const reasonEl = document.getElementById('co-override-reason');
+  const pa = document.getElementById('co-parent');
+  const paHint = document.getElementById('co-parent-hint');
+  if (!o) return { ok: false };
+  const digits = _normOrgNr(o.value);
+  const valid = _validOrgNr(digits);
+  const override = !valid && !!(ov && ov.checked);
+  const reason = (reasonEl && reasonEl.value || '').trim();
+  if (box) box.style.display = valid ? 'none' : 'block';
+  if (reasonEl) reasonEl.style.display = override ? '' : 'none';
+  o.style.borderColor = valid ? 'var(--accent)' : (digits ? '#ff6b6b' : '');
+  if (hint) {
+    if (valid) { hint.textContent = '✓ Gyldig organisasjonsnummer'; hint.style.color = 'var(--accent)'; }
+    else if (override) { hint.textContent = 'Opprettes uten org.nr — begrunnelse kreves.'; hint.style.color = '#fbbf24'; }
+    else { hint.textContent = digits ? _orgNrExplain(digits) : 'Mangler i Visma-lista? Skriv det inn (ni siffer).'; hint.style.color = digits ? '#ff6b6b' : 'var(--muted)'; }
+  }
+  const pd = _normOrgNr(pa && pa.value);
+  let parentOk = true;
+  if (pd) {
+    parentOk = _validOrgNr(pd) && pd !== digits;
+    if (paHint) {
+      paHint.textContent = !_validOrgNr(pd) ? _orgNrExplain(pd) : (pd === digits ? 'Kan ikke være samme nummer som bedriften.' : '✓ Gyldig');
+      paHint.style.color = parentOk ? 'var(--accent)' : '#ff6b6b';
+    }
+  } else if (paHint) { paHint.textContent = 'Bare når bedriften er en avdeling med eget org.nr.'; paHint.style.color = 'var(--dim)'; }
+  return { ok: (valid || (override && !!reason)) && parentOk, digits, valid, override, reason, parent: pd || null };
+}
+
+function _coErrText(e) {
+  const m = String((e && (e.message || e.details)) || e || '');
+  const code = e && e.code;
+  if (code === 'PGRST202' || code === '42883' || /create_customer_org/.test(m) && /not find|does not exist/i.test(m))
+    return 'Funksjonen finnes ikke i databasen ennå. Migrasjonen supabase-migration-opprett-kundebedrift.sql må kjøres i Supabase.';
+  if (/NOT_SUPPLIER/.test(m)) return 'Bare ansatte hos en leverandør kan gi kunder tilgang.';
+  if (/AMBIGUOUS_SUPPLIER/.test(m)) return 'Brukeren din er medlem av flere leverandører. Kontakt administrator.';
+  if (/SUPPLIER_NOT_LINKED/.test(m)) return 'Leverandøren din er ikke koblet til produktkatalogen. Kontakt administrator.';
+  if (/NOT_AUTHENTICATED/.test(m)) return 'Du er ikke innlogget.';
+  if (/ORGNR_INVALID/.test(m)) return 'Organisasjonsnummeret er ugyldig. Rett det, eller kryss av for «ingen norsk organisasjonsnummer» med begrunnelse.';
+  if (/PARENT_ORGNR/.test(m)) return 'Hovedenhetens nummer er ugyldig.';
+  if (/EMAIL_INVALID/.test(m)) return 'Skriv inn kontaktpersonens e-post.';
+  if (/NAME_/.test(m)) return 'Skriv inn bedriftsnavnet.';
+  return 'Kunne ikke opprette: ' + m;
+}
+
+async function _coSubmit() {
+  const msg = document.getElementById('co-msg');
+  const btn = document.getElementById('co-submit');
+  const val = id => (document.getElementById(id)?.value || '').trim();
+  const say = (t, col) => { if (msg) { msg.textContent = t; msg.style.color = col || '#ff6b6b'; } };
+  const name = val('co-name'), email = val('co-email');
+  const chk = _coCheckOrgNr();
+  if (!name) { say('Skriv inn bedriftsnavnet.'); return; }
+  if (!chk.ok) { say(chk.override ? 'Skriv en begrunnelse for å opprette uten org.nr.' : 'Rett organisasjonsnummeret først.'); return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { say('Skriv inn kontaktpersonens e-post.'); return; }
+  if (!_db) { say('Ikke tilkoblet.'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Oppretter…'; }
+  say('', 'var(--dim)');
+  try {
+    const { data, error } = await _db.rpc('create_customer_org', {
+      p_name: name,
+      p_org_nr: chk.valid ? chk.digits : (val('co-orgnr') || null),
+      p_parent_org_nr: chk.parent,
+      p_address: val('co-addr') || null,
+      p_contact_email: email,
+      p_erp_customer_no: val('co-erp') || null,
+      p_orgnr_override: chk.valid ? null : chk.reason,
+    });
+    if (error) throw error;
+    _coShowResult(data || {});
+  } catch(e) {
+    say(_coErrText(e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Opprett og inviter'; }
+  }
+}
+
+function _coShowResult(r) {
+  const form = document.getElementById('co-form');
+  const box = document.getElementById('co-result');
+  if (!box) return;
+  if (form) form.style.display = 'none';
+  box.style.display = 'block';
+  const close = `<button onclick="document.getElementById('co-overlay').style.display='none'" style="padding:8px 18px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;cursor:pointer">Lukk</button>`;
+  if (r.existed) {
+    const how = r.matched_on === 'erp_customer_no' ? 'samme kundenummer i Visma' : 'samme organisasjonsnummer';
+    box.innerHTML = `<div style="padding:12px 14px;border:1px solid rgba(251,191,36,.35);border-radius:8px;background:rgba(251,191,36,.06);font-size:14px;color:var(--text);line-height:1.5">
+        <b>${_esc(r.name || 'Bedriften')} finnes allerede.</b> Vil du dele prosjektet dit i stedet?
+        <div style="font-size:12px;color:var(--muted);margin-top:6px">Funnet på ${how}. Ingen ny bedrift og ingen ny invitasjon ble laget. Deling av prosjekter fra prosjektlista kommer snart.</div>
+      </div><div style="margin-top:14px">${close}</div>`;
+    return;
+  }
+  const url = r.invite_token ? (_PUBLIC_BASE_URL + '/?invite=' + r.invite_token) : '';
+  box.innerHTML = `<div style="padding:12px 14px;border:1px solid rgba(34,197,94,.35);border-radius:8px;background:rgba(34,197,94,.06);font-size:14px;color:var(--text);line-height:1.5">
+      <b>✓ ${_esc(r.name || '')} finnes nå i Varmeplan.</b><br>
+      Invitasjonen er laget for <b>${_esc(r.invite_email || '')}</b> (administrator i bedriften).
+      <div style="font-size:12px;color:var(--muted);margin-top:6px">E-posten med invitasjonen sendes ikke automatisk ennå. Send lenken under til kontaktpersonen — den er gyldig i 30 dager. Når de oppretter konto med denne e-posten, kommer de rett inn.</div>
+      ${url ? `<input id="co-invite-url" value="${_esc(url)}" readonly onclick="this.select()" style="width:100%;margin-top:8px;padding:6px;font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);box-sizing:border-box">
+      <button onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById('co-invite-url').value);this.textContent='✓ Kopiert'" style="margin-top:6px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--accent);font-size:12px;font-weight:600;cursor:pointer">Kopier lenken</button>` : ''}
+    </div><div style="margin-top:14px">${close}</div>`;
 }
 
 async function _editCustomerInline(customerId) {
@@ -95516,6 +95789,10 @@ function _showProjectListScreen() {
   if (portalBtn) portalBtn.style.display = _isSupplier ? '' : 'none';
   const docsBtn = document.getElementById('dash-tab-docs');
   if (docsBtn) docsBtn.style.display = _isSupplier ? 'none' : '';
+  // 044v2: «Gi kunden tilgang til Varmeplan» — bare leverandør. Synlighet er bekvemmelighet;
+  // grensen er create_customer_org() selv, som avviser alle som ikke er leverandør-medlem.
+  const coBtn = document.getElementById('cust-grant-access-btn');
+  if (coBtn) coBtn.style.display = _isSupplier ? '' : 'none';
   // Render module buttons, tools, stats, and project list
   _renderDashModules();
   _renderDashTools();
