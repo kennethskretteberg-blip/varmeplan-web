@@ -47605,10 +47605,12 @@ function _stairHsPaint(c, stair, P, o) {
     c.fillText(sf.hsTop ? 'Trinn 1 (topp)' : 'Trinn ' + (sf.stepIdx + 1), lp.x, lp.y);
   }
   // Bakkanten — den rette linja alle trinnene deler (står i ro).
+  let bakX0 = 0, dimTopPx = Infinity;   // 177: kjeden over toppflaten må vite hvor «Bakkant» står
   {
     let x0 = Infinity, x1 = -Infinity;
     for (let si = rFrom; si <= rTo; si++) { const sf = surfs[si]; if (!sf) continue; x0 = Math.min(x0, sf.x_cm); x1 = Math.max(x1, sf.x_cm + sf.w_cm); }
     if (isFinite(x0)) {
+      bakX0 = x0;
       const a = P(x0, 0), b = P(x1, 0);
       c.strokeStyle = o.labelColor; c.lineWidth = Math.max(1.5, o.surfLineW * 1.6); c.setLineDash([]);
       c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
@@ -47742,8 +47744,71 @@ function _stairHsPaint(c, stair, P, o) {
       const m = ssOf(rFrom).edgeMargin_cm;
       vtick(minX - gapCm, 0, m, R(m) + ' (sider)');
     }
+    // 177: toppflaten — kjede «margin · streng · margin» over bakkanten, samme plass som rette trapper
+    // har sidemarginen (over flaten). Tallene er rutingens (_stairHsTopDims), ikke et felt.
+    for (let si = rFrom; si <= rTo; si++) {
+      const sf = surfs[si]; if (!sf || !sf.hsTop) continue;
+      const td = _stairHsTopDims(stair, si); if (!td) continue;
+      const off = _stairHsTopChainOffPx(c, o, P(bakX0, 0).x, P(sf.x_cm, 0).x);
+      const xs = [sf.x_cm, sf.x_cm + td.chain[0], sf.x_cm + td.chain[1], sf.x_cm + sf.w_cm];
+      const labels = [td.leftTxt, 'streng ' + td.strandTxt + ' cm', td.rightTxt];
+      const y0px = P(sf.x_cm, 0).y, yl = y0px - off;
+      const px = xs.map(x => P(x, 0).x);
+      c.globalAlpha = 0.35;   // hjelpelinjer ned til bakkanten
+      c.beginPath(); for (const x of px) { c.moveTo(x, y0px); c.lineTo(x, yl); } c.stroke();
+      c.globalAlpha = 1;
+      c.beginPath(); c.moveTo(px[0], yl); c.lineTo(px[3], yl);
+      for (const x of px) { c.moveTo(x, yl - t); c.lineTo(x, yl + t); }
+      c.stroke();
+      c.textAlign = 'center'; c.textBaseline = 'bottom';
+      for (let k = 0; k < 3; k++) {
+        // Et smalt marginledd får tallet likevel (montøren trenger det), men utenfor kjeden når
+        // det ikke får plass mellom tikkene — venstre margin mot venstre, høyre mot høyre.
+        const wPx = px[k + 1] - px[k], tw = c.measureText(labels[k]).width;
+        if (k !== 1 && tw + 4 > wPx) { c.textAlign = k === 0 ? 'right' : 'left'; c.fillText(labels[k], k === 0 ? px[1] - 2 : px[2] + 2, yl - 2); c.textAlign = 'center'; }
+        else c.fillText(labels[k], (px[k] + px[k + 1]) / 2, yl - 2);
+      }
+      dimTopPx = Math.min(dimTopPx, yl - 2 - o.dimFontPx);
+    }
   }
   c.restore();
+  return { dimTopPx };
+}
+
+// 177: toppflatens kabelmål lest fra rutingen (Regel 9) — avstand fra svingene til venstre og
+// høyre sidekant, og strenglengdene. Svingen ligger ytterst i strengens ende (buen buler ut til
+// endepunktet, se _stairHsPaint), så avstanden kant→sving = s ved den enden. Gir null for U-flater.
+//   left/right: [min, max] over svingene på den siden (uten sving der: strengendene på den siden)
+//   strand:     [min, max] over strenglengdene (sum av segmentene)
+//   chain:      [s-start, s-slutt] for kjeden — ytterste sving venstre / høyre
+function _stairHsTopDims(stair, si) {
+  const sf = stair.surfaces && stair.surfaces[si];
+  const runs = (stair.runs || []).filter(r => r.surfaceIdx === si);
+  if (!sf || sf.shape === 'u' || !runs.length) return null;
+  const lo = r => r.segments[0].start_cm, hi = r => r.segments[r.segments.length - 1].end_cm;
+  const L = [], Rt = [];
+  for (let k = 0; k < runs.length - 1; k++) {
+    const a = runs[k], b = runs[k + 1];
+    if (a.isGoingRight) Rt.push(sf.w_cm - hi(a), sf.w_cm - hi(b)); else L.push(lo(a), lo(b));
+  }
+  if (!L.length) for (const r of runs) L.push(lo(r));
+  if (!Rt.length) for (const r of runs) Rt.push(sf.w_cm - hi(r));
+  const len = runs.map(r => r.segments.reduce((s, g) => s + (g.end_cm - g.start_cm), 0));
+  const span = a => [Math.min(...a), Math.max(...a)];
+  const R = _stairDimRound;
+  const txt = ([a, b]) => Math.abs(R(a) - R(b)) < 0.05 ? R(a) + '' : R(a) + '–' + R(b);
+  const left = span(L), right = span(Rt), strand = span(len);
+  return { left, right, strand, chain: [left[0], sf.w_cm - right[0]], leftTxt: txt(left), rightTxt: txt(right), strandTxt: txt(strand) };
+}
+// 177: hvor høyt over bakkanten kjeden står (px). Standard dimGapCm; løftes over «Bakkant»-teksten
+// når den stikker inn under kjedens venstre ende (smale U-armer).
+function _stairHsTopChainOffPx(c, o, bakkantXpx, chainLeftPx) {
+  let off = (o.dimGapCm || 4) * o.pxPerCm;
+  c.save(); c.font = Math.round(o.fontPx * 0.85) + 'px sans-serif';
+  const bkRight = bakkantXpx + 2 + c.measureText('Bakkant').width;
+  c.restore();
+  if (bkRight + 4 > chainLeftPx) off = Math.max(off, o.fontPx * 0.85 + 6);
+  return off;
 }
 
 // Skjerm: plan for en hesteskotrapp. Kalles fra _drawStairPlan (som da returnerer med en gang).
@@ -47754,7 +47819,7 @@ function _drawStairPlanHs(stair) {
   if (!surfs.length) return;
   const ox = stair.x_cm, oy = stair.y_cm, z = S.view.zoom;
   ctx.save();
-  _stairHsPaint(ctx, stair, (x, y) => w2s(ox + x, oy + y), {
+  const painted = _stairHsPaint(ctx, stair, (x, y) => w2s(ox + x, oy + y), {
     pxPerCm: z * BASE_SCALE, lineW: Math.max(1, 1.5 * z), fontPx: Math.max(8, 10 * z), markerR: 4,
     cableColor: isSel ? '#ff6040' : _lc('#c06030', '#e08050'),
     surfFill: _lc('rgba(180,180,180,0.30)', 'rgba(80,80,80,0.25)'),
@@ -47765,6 +47830,8 @@ function _drawStairPlanHs(stair) {
   if (isSel && z > 0.2) _drawStairGeoDims(ctx, _stairGeometryDims(stair, 'plan'), (x, y) => w2s(ox + x, oy + y), _stairGeoDimScreenOpts());
   if (z > 0.12 && stair.name) {
     const b = _stairPlanBounds(stair), lp = w2s(b.x + b.w / 2, b.y - 2);
+    // 177: toppflatens målkjede står over bakkanten — navnet løftes over den, ellers ligger det oppå «streng …».
+    if (painted && isFinite(painted.dimTopPx)) lp.y = Math.min(lp.y, painted.dimTopPx - 2);
     ctx.fillStyle = _lc('#555', '#bbb'); ctx.font = `bold ${Math.max(9, 11 * z)}px sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.fillText(stair.name + ' · hestesko', lp.x, lp.y);
@@ -47783,20 +47850,33 @@ function _stairDrawToCanvasHs(stair, opts) {
     minX = Math.min(minX, sf.x_cm); maxX = Math.max(maxX, sf.x_cm + sf.w_cm);
     minY = Math.min(minY, sf.shape === 'u' ? 0 : sf.y_cm); maxY = Math.max(maxY, sf.y_cm + sf.d_cm);
   }
-  const padL = opts.geoDims ? 30 : 18, padR = 24, padT = 10, padB = opts.geoDims ? 26 : 6;
-  const totalW_cm = (maxX - minX) + padL + padR, totalH_cm = (maxY - minY) + padT + padB;
+  const padL = opts.geoDims ? 30 : 18, padR = 24, padB = opts.geoDims ? 26 : 6;
   const PRINT_W_IN = 7.09, PRINT_MAX_H_IN = 10.51, TARGET_DPI = 150, MAX_PIXELS = 1400000;
-  const printW_cm = opts.rotated ? totalH_cm : totalW_cm, printH_cm = opts.rotated ? totalW_cm : totalH_cm;
-  const printW_in = Math.min(PRINT_W_IN, PRINT_MAX_H_IN * (printW_cm / printH_cm));
-  let px = (printW_in * TARGET_DPI) / printW_cm;
-  let W = Math.round(totalW_cm * px), H = Math.round(totalH_cm * px);
-  if (W * H > MAX_PIXELS) { const k = Math.sqrt(MAX_PIXELS / (W * H)); px *= k; W = Math.round(totalW_cm * px); H = Math.round(totalH_cm * px); }
+  const mm2px = mm => (mm / 25.4) * TARGET_DPI;
+  // 177: toppflatens målkjede står over bakkanten — padT må romme den (målestokken avhenger av padT,
+  // så regn én gang til med plassen kjeden faktisk trenger i den målestokken).
+  let hasTop = false;
+  for (let i = range[0]; i <= range[1]; i++) if (surfs[i] && surfs[i].hsTop && (stair.runs || []).some(r => r.surfaceIdx === i)) hasTop = true;
+  let padT = 10, px, W, H, totalW_cm, totalH_cm;
+  for (let pass = 0; pass < 2; pass++) {
+    totalW_cm = (maxX - minX) + padL + padR; totalH_cm = (maxY - minY) + padT + padB;
+    const printW_cm = opts.rotated ? totalH_cm : totalW_cm, printH_cm = opts.rotated ? totalW_cm : totalH_cm;
+    const printW_in = Math.min(PRINT_W_IN, PRINT_MAX_H_IN * (printW_cm / printH_cm));
+    px = (printW_in * TARGET_DPI) / printW_cm;
+    W = Math.round(totalW_cm * px); H = Math.round(totalH_cm * px);
+    if (W * H > MAX_PIXELS) { const k = Math.sqrt(MAX_PIXELS / (W * H)); px *= k; W = Math.round(totalW_cm * px); H = Math.round(totalH_cm * px); }
+    if (!hasTop) break;
+    // Verste fall: løftet over «Bakkant» (fontPx · 0,85 + 6) eller 4 cm, + 2 px + tallets høyde + 4 px luft.
+    const fontPx = Math.max(mm2px(3), Math.round(px * 3)), dimFontPx = Math.max(mm2px(2.4), Math.round(px * 2.4));
+    const need = (Math.max(4 * px, fontPx * 0.85 + 6) + 2 + dimFontPx + 4) / px;
+    if (need <= padT || pass === 1) break;   // pass 1 har målestokken for den nye padT — ikke endre den etterpå
+    padT = need + 2;                          // 2 cm slakk: px krymper litt når padT vokser
+  }
   const cv = document.createElement('canvas');
   cv.width = Math.max(W, 160); cv.height = Math.max(H, 100);
   const c = cv.getContext('2d');
   c.fillStyle = '#ffffff'; c.fillRect(0, 0, cv.width, cv.height);
   const tx = x => (padL + x - minX) * px, ty = y => (padT + y - minY) * px;
-  const mm2px = mm => (mm / 25.4) * TARGET_DPI;
   _stairHsPaint(c, stair, (x, y) => ({ x: tx(x), y: ty(y) }), {
     range, pxPerCm: px, lineW: Math.max(1.5, px * 0.3), fontPx: Math.max(mm2px(3), Math.round(px * 3)), markerR: Math.max(3, px * 0.5),
     cableColor: '#e06030', surfFill: 'rgba(180,180,180,0.30)', surfStroke: '#888', surfLineW: 1, labelColor: '#666',
@@ -53199,10 +53279,13 @@ function _stairSoneGeometryBlocks(stair) {
       let strandLen_cm = runs.length ? Math.round(runs[0].segments.reduce((s, g) => s + (g.end_cm - g.start_cm), 0) * 10) / 10 : 0;
       // 176: strengene på en hesteskoflate er ulikt lange (2·Δt per streng) — oppgi SNITTET, så
       // N × streng = lagt per trinn fortsatt stemmer med rutingen (Regel 9).
-      let laidU_cm = null;
+      let laidU_cm = null, strandSpan = null;
       if (surf.shape === 'u' && runs.length) {
         laidU_cm = runs.reduce((s, r) => s + r.segments.reduce((a, g) => a + (g.end_cm - g.start_cm), 0), 0);
         strandLen_cm = Math.round(laidU_cm / runs.length * 10) / 10;
+        // 177: og spennet, så PDF-en viser strenglengdene montøren legger (600–760), ikke bare snittet.
+        const ls = runs.map(r => r.segments.reduce((a, g) => a + (g.end_cm - g.start_cm), 0));
+        strandSpan = [Math.round(Math.min(...ls) * 10) / 10, Math.round(Math.max(...ls) * 10) / 10];
       }
       const stepLabel = (surf.stepIdx != null ? surf.stepIdx : surf.index) + 1;
       const sig = surf.w_cm + '|' + N + '|' + actualCC + '|' + strandLen_cm;
@@ -53211,7 +53294,7 @@ function _stairSoneGeometryBlocks(stair) {
         prev.toLabel = stepLabel; prev.lastSurf = si; prev.count++;
       } else {
         groups.push({ sig, fromLabel: stepLabel, toLabel: stepLabel, lastSurf: si, count: 1,
-          w_cm: surf.w_cm, N, actualCC, strandLen_cm, ...(laidU_cm != null ? { laidU_cm } : {}) });
+          w_cm: surf.w_cm, N, actualCC, strandLen_cm, ...(laidU_cm != null ? { laidU_cm, strandMin_cm: strandSpan[0], strandMax_cm: strandSpan[1] } : {}) });
       }
     }
 
@@ -55289,6 +55372,58 @@ function _stairHorseshoeRegressionTest() {
     const rett = _createStairObj({ name: 'RETT', width_cm: 120, step_depth_cm: 30, step_height_cm: 17, step_count: 3, edgeMargin_cm: 5, stepCC_cm: 10 });
     check('6: rett trapp har ikke design-felt', 'undefined', rett.design === undefined && !_stairIsHorseshoe(rett), String(rett.design));
     check('6: rett trapp har ingen U-flater', true, rett.surfaces.every(f => !f.shape), rett.surfaces.map(f => f.shape || '-').join(','));
+
+    // ─── 7 — 177: toppflatens mål (sving → sidekant, strenglengde) = rutingen, og teksten som tegnes ───
+    // Tegner med _stairHsPaint (samme som skjerm og PDF) på et lerret som tar opp fillText med boks.
+    const paintTexts = (s, scale) => {
+      const cv7 = document.createElement('canvas'); cv7.width = 2400; cv7.height = 1200;
+      const c7 = cv7.getContext('2d'), texts = [], orig = c7.fillText.bind(c7);
+      c7.fillText = (txt, x, y) => {
+        const m = c7.measureText(txt), h = parseFloat(c7.font) || 10;
+        const l = c7.textAlign === 'center' ? x - m.width / 2 : c7.textAlign === 'right' ? x - m.width : x;
+        const tp = c7.textBaseline === 'bottom' ? y - h : c7.textBaseline === 'middle' ? y - h / 2 : y;
+        const tr = c7.getTransform();   // venstre kjede roteres — hopp over (bare b/c ≈ 0 regnes)
+        if (Math.abs(tr.b) < 1e-9) texts.push({ txt: String(txt), l: l + tr.e, r: l + m.width + tr.e, t: tp + tr.f, b: tp + h + tr.f });
+        orig(txt, x, y);
+      };
+      _stairHsPaint(c7, s, (x, y) => ({ x: 80 + x * scale, y: 160 + y * scale }), { pxPerCm: scale, lineW: 1.5, fontPx: 10 * scale / 1.5, markerR: 4,
+        cableColor: '#e06030', surfFill: '#eee', surfStroke: '#888', surfLineW: 1, labelColor: '#666', dims: true, dimColor: '#2090e0', dimFontPx: 9 * scale / 1.5, dimGapCm: 4 });
+      return texts;
+    };
+    const topIdx = s => s.surfaces.findIndex(f => f.hsTop);
+    st = mk(KENNETH);
+    const p7 = _generateStairProposals(st); if (p7[0]) _applyStairProposal(st, p7[0]);
+    let ti = topIdx(st), tsf = st.surfaces[ti], trs = runsOf(st, ti);
+    let td = _stairHsTopDims(st, ti);
+    const m7 = st.edgeMargin_cm;
+    // Uavhengig fra rutingen: svingene på venstre side ligger på s = start_cm, på høyre på s = end_cm.
+    const lo7 = trs.map(r => r.segments[0].start_cm), hi7 = trs.map(r => r.segments[r.segments.length - 1].end_cm);
+    check('7: toppflaten venstre sving → kant = rutingen (= løst margin)', r1(m7), r1(Math.min(...lo7)) === r1(m7) && td.leftTxt === r1(m7) + '', td.leftTxt + ' (ruting ' + r1(Math.min(...lo7)) + ')');
+    check('7: toppflaten høyre sving → kant = rutingen (= løst margin)', r1(m7), r1(tsf.w_cm - Math.max(...hi7)) === r1(m7) && td.rightTxt === r1(m7) + '', td.rightTxt + ' (ruting ' + r1(tsf.w_cm - Math.max(...hi7)) + ')');
+    check('7: strengmål inneholder bredde − 2 × margin', r1(tsf.w_cm - 2 * m7), td.strand[1] === tsf.w_cm - 2 * m7, td.strandTxt);
+    check('7: strengmål = spennet av strengene i rutingen', td.strandTxt, td.strandTxt === (r1(Math.min(...trs.map(runLen))) === r1(Math.max(...trs.map(runLen))) ? r1(runLen(trs[0])) + '' : r1(Math.min(...trs.map(runLen))) + '–' + r1(Math.max(...trs.map(runLen)))), trs.map(r => r1(runLen(r))).join('/'));
+    let tx7 = paintTexts(st, 1.5).map(t => t.txt);
+    check('7: tegnet tekst: venstre, streng, høyre', `${td.leftTxt} | streng ${td.strandTxt} cm | ${td.rightTxt}`,
+      tx7.includes('streng ' + td.strandTxt + ' cm') && tx7.filter(t => t === td.leftTxt).length >= (td.leftTxt === td.rightTxt ? 2 : 1) && tx7.includes(td.rightTxt), tx7.filter(t => /streng|^\d/.test(t)).slice(-4).join(' | '));
+    // Låst sidemargin 10: målene følger med.
+    st.edgeMarginLocked_cm = 10; _regenerateStairCable(st);
+    td = _stairHsTopDims(st, ti); tx7 = paintTexts(st, 1.5).map(t => t.txt);
+    check('7: låst 10 cm → «10 · streng 450 cm · 10»', '10|450|10', td.leftTxt === '10' && td.rightTxt === '10' && td.strand[1] === 450 && tx7.includes('streng ' + td.strandTxt + ' cm'), td.leftTxt + '|' + td.strandTxt + '|' + td.rightTxt);
+    st.edgeMarginLocked_cm = null; _regenerateStairCable(st);
+    // Hesteskotrinnet: PDF-tabellen har strenglengdene som spenn (600–760 ved margin 11), snittet beholdt.
+    const bU = _stairSoneGeometryBlocks(st)[0].groups.find(g => g.laidU_cm != null);
+    const uL = runsOf(st, 0).map(runLen);
+    check('7: hestesko i PDF-tabellen: spenn = rutingen, snitt beholdt', `${r1(Math.min(...uL))}–${r1(Math.max(...uL))}`, bU && bU.strandMin_cm === r1(Math.min(...uL)) && bU.strandMax_cm === r1(Math.max(...uL)) && bU.strandLen_cm === r1(uL.reduce((a, v) => a + v, 0) / uL.length), bU && `${bU.strandMin_cm}–${bU.strandMax_cm} (snitt ${bU.strandLen_cm})`);
+    // Fire hesteskotrinn: de nye tekstene overlapper ingen annen tekst, i to målestokker.
+    st = mk({ topW_cm: 300, topD_cm: 60, count: 4, front_cm: 40, stepHeight_cm: 17 });
+    const p7b = _generateStairProposals(st); if (p7b[0]) _applyStairProposal(st, p7b[0]);
+    for (const sc of [1.5, 3]) {
+      const T = paintTexts(st, sc), td4 = _stairHsTopDims(st, topIdx(st));
+      const mine = T.filter(t => t.txt === 'streng ' + td4.strandTxt + ' cm' || ((t.txt === td4.leftTxt || t.txt === td4.rightTxt) && t.b < 160));
+      const hits = [];
+      for (const a of mine) for (const b of T) if (a !== b && a.l < b.r - 0.5 && b.l < a.r - 0.5 && a.t < b.b - 0.5 && b.t < a.b - 0.5) hits.push(a.txt + '×' + b.txt);
+      check(`7: fire trinn, skala ${sc}: toppflatens mål overlapper ingen tekst`, '0', mine.length === 3 && hits.length === 0, mine.length + ' mål, ' + (hits.join(', ') || 'ingen kollisjon'));
+    }
   } catch (e) {
     results.push({ name: 'unntak', ok: false, expected: 'ingen', got: String(e && e.message || e) });
   } finally {
@@ -84096,7 +84231,7 @@ async function exportPDF(opts) {
           const rangeLbl = sb.varies
             ? (g.fromLabel === g.toLabel ? 'Trinn ' + g.fromLabel : 'Trinn ' + g.fromLabel + '–' + g.toLabel) + ' (bredde ' + Math.round(g.w_cm) + ' cm): '
             : '';
-          doc.text(rangeLbl + g.N + ' strenger/trinn   |   CC ' + _cm1(g.actualCC) + '   |   ' + _cm1(g.strandLen_cm) + '/streng   |   ' + _cm1(g.laidPerStep_cm) + '/trinn   |   ' + (g.wm2 != null ? g.wm2 + ' W/m²' : '—'), M, y);
+          doc.text(rangeLbl + g.N + ' strenger/trinn   |   CC ' + _cm1(g.actualCC) + '   |   ' + (g.strandMin_cm != null && g.strandMax_cm - g.strandMin_cm >= 0.05 ? (Math.round(g.strandMin_cm * 10) / 10) + '–' + _cm1(g.strandMax_cm) + '/streng (snitt ' + _cm1(g.strandLen_cm) + ')' : _cm1(g.strandLen_cm) + '/streng') + '   |   ' + _cm1(g.laidPerStep_cm) + '/trinn   |   ' + (g.wm2 != null ? g.wm2 + ' W/m²' : '—'), M, y);
           y += 4;
         }
 
@@ -84401,7 +84536,8 @@ async function exportPDF(opts) {
         for (const g of groupRows) {
           if (y + 5 > H - M) { _addPage(); _sDrawHead(); }
           const cells = g ? [
-            _rangeLbl(g), _rnd(g.w_cm), String(g.N), _rnd(g.actualCC), _rnd(g.strandLen_cm),
+            _rangeLbl(g), _rnd(g.w_cm), String(g.N), _rnd(g.actualCC),
+            g.strandMin_cm != null && g.strandMax_cm - g.strandMin_cm >= 0.05 ? _rnd(g.strandMin_cm) + '–' + _rnd(g.strandMax_cm) : _rnd(g.strandLen_cm),   // 177: U = spennet
             _rnd(g.laidPerStep_cm), g.wm2 != null ? String(g.wm2) : '—',
           ] : ['—', '', '', '', '', '', ''];
           doc.setFontSize(7.5);
