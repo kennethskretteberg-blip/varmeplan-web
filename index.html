@@ -81463,7 +81463,7 @@ function _showExportDialog() {
           ${hasRooms ? `<div class="exp-check"><input type="checkbox" id="exp-roomtable" checked title="Hak av for utskrift"><span onclick="_expPreviewSection('roomtable')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Romoversikt</span></div>` : ''}
           ${hasStairs ? `<div class="exp-check"><input type="checkbox" id="exp-stairtable" checked title="Hak av for utskrift"><span onclick="_expPreviewSection('stairtable')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Trappeoversikt</span></div>` : ''}
           <div class="exp-check"><input type="checkbox" id="exp-matlist" checked title="Hak av for utskrift"><span onclick="_expPreviewSection('matlist')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Materialliste</span></div>
-          ${hasFoilRes ? `<div class="exp-check"><input type="checkbox" id="exp-resistance" checked title="Hak av for utskrift"><span onclick="_expPreviewSection('resistance')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Motstandsmåling (varmefolie)</span></div>` : ''}
+          ${hasFoilRes ? `<div class="exp-check"><input type="checkbox" id="exp-resistance" checked title="Hak av for utskrift"><span onclick="_expPreviewSection('resistance')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Motstandsmåling – varmefolie</span></div>` : ''}
           ${hasPrices ? `<label class="exp-check"><input type="checkbox" id="exp-pricing"${_pp.show ? ' checked' : ''}> Tilbudspris</label>
             <div class="exp-check sub" style="padding-left:24px;flex-direction:column;align-items:stretch;gap:4px">
               <div style="display:flex;align-items:center;gap:6px">
@@ -82029,7 +82029,7 @@ function _expPreviewSection(kind) {
   } else if (kind === 'resistance') {
     // 145: samme tall som PDF-tabellen (_foilResistanceRooms / _fmtNo).
     const rowsHtml = _foilResistanceRooms(rooms).map(({ room, res }) => `<tr style="border-top:1px solid var(--border)"><td style="padding:5px 8px 5px 0">${E(room.name || 'Rom')}</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.P, 1)} W</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.rLow, 1)}</td><td style="padding:5px 8px;text-align:right;color:var(--muted)">${_fmtNo(res.rNom, 1)}</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.rHigh, 1)}</td></tr>`).join('');
-    html = box('Motstandsmåling — varmefolie', `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:0 8px 4px 0">Rom</th><th style="text-align:right;padding:0 8px 4px">Effekt</th><th style="text-align:right;padding:0 8px 4px">Nedre Ω</th><th style="text-align:right;padding:0 8px 4px">Nominell Ω</th><th style="text-align:right;padding:0 8px 4px">Øvre Ω</th></tr></thead><tbody>${rowsHtml}</tbody></table><div style="margin-top:10px;font-size:11px;color:var(--dim)">Effekt = tegnet lengde × W/m. Grenser: 48 400 / P (220 V) og 57 600 / P (240 V).</div>`);
+    html = box('Motstandsmåling – varmefolie', `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:0 8px 4px 0">Rom</th><th style="text-align:right;padding:0 8px 4px">Effekt</th><th style="text-align:right;padding:0 8px 4px">Nedre Ω</th><th style="text-align:right;padding:0 8px 4px">Nominell Ω</th><th style="text-align:right;padding:0 8px 4px">Øvre Ω</th></tr></thead><tbody>${rowsHtml}</tbody></table><div style="margin-top:10px;font-size:11px;color:var(--dim)">Effekt = tegnet lengde × W/m. Grenser: 48 400 / P (220 V) og 57 600 / P (240 V).</div>`);
   } else if (kind === 'floorplan') {
     // 154: én etasje om gangen, ‹ › blar når det er flere. 158: levende lerret (hjul = zoom,
     // dra = flytt, labels kan dras) — samme komponent som rommene, se _expPreviewFloor.
@@ -82229,8 +82229,16 @@ async function _foilResistanceRegressionTest() {
     const antall = (r, s) => r.alle.filter(t => t === s).length;
 
     const på = await kjør(true);
-    check('PDF: blokk «Motstandsmåling — varmefolie» på hvert av de tre folierommene', 3, antall(på, 'Motstandsmåling — varmefolie') === 3, antall(på, 'Motstandsmåling — varmefolie'));
-    check('PDF: tabelltittel finnes én gang', 1, antall(på, 'Motstandsmåling — oversikt for elektriker') === 1, antall(på, 'Motstandsmåling — oversikt for elektriker'));
+    { // 180: tabellsiden har samme tittel — tell blokkene på sidene UTENOM tabellsiden.
+      const tSide = (på.pages.find(x => x.t === 'Oversikt for elektriker') || {}).page;
+      const blokker = på.pages.filter(x => x.t === 'Motstandsmåling \u2013 varmefolie' && x.page !== tSide).length;
+      check('PDF: blokk «Motstandsmåling – varmefolie» på hvert av de tre folierommene', 3, blokker === 3, blokker);
+    }
+    // 180: tabellsiden heter «Motstandsmåling – varmefolie» (som blokken) med undertittelen «Oversikt for elektriker».
+    check('PDF: undertittel «Oversikt for elektriker» finnes én gang', 1, antall(på, 'Oversikt for elektriker') === 1, antall(på, 'Oversikt for elektriker'));
+    check('180: tabellsiden heter «Motstandsmåling – varmefolie» (tittel rett over undertittelen)', 'ja', (() => { const i = på.pages.findIndex(x => x.t === 'Oversikt for elektriker'); return i > 0 && på.pages[i - 1].t === 'Motstandsmåling \u2013 varmefolie' && på.pages[i - 1].page === på.pages[i].page; })(), 'mangler');
+    check('180: ingen «Motstandsmåling —» med lang strek igjen', 0, på.alle.filter(t => t.indexOf('Motstandsmåling \u2014') === 0).length === 0, på.alle.filter(t => t.indexOf('Motstandsmåling \u2014') === 0).length);
+    check('180: tabellside + tre romblokker = fire «Motstandsmåling – varmefolie»', 4, antall(på, 'Motstandsmåling \u2013 varmefolie') === 4, antall(på, 'Motstandsmåling \u2013 varmefolie'));
     check('PDF: rom b — «Installert effekt» 1066,8 W i blokk og tabell', '≥ 2', antall(på, '1066,8 W') >= 1 && antall(på, '1066,8') >= 1, antall(på, '1066,8 W') + '/' + antall(på, '1066,8'));
     check('PDF: rom b — formelen «= 57 600 / 1066,8» og «= 48 400 / 1066,8»', 'begge', har(på, '= 57 600 / 1066,8') && har(på, '= 48 400 / 1066,8'), 'se tekst');
     check('PDF: rom b — «= 54,0 » og «= 45,4 » (Ω i symbol-font)', 'begge', har(på, '= 54,0 ') && har(på, '= 45,4 ') && har(på, 'Ω'), 'se tekst');
@@ -82248,7 +82256,7 @@ async function _foilResistanceRegressionTest() {
     {
       // Tabellen gruppert per etasje: «1. etasje» (rekkefølge 1) kommer FØR «2. etasje», og hver
       // vises ÉN gang i tabellen (første rad i gruppa).
-      const tabellSide = på.pages.find(x => x.t === 'Motstandsmåling — oversikt for elektriker').page;
+      const tabellSide = på.pages.find(x => x.t === 'Oversikt for elektriker').page;
       const sideTekst = på.pages.filter(x => x.page === tabellSide).map(x => x.t);
       const i1 = sideTekst.indexOf('1. etasje'), i2 = sideTekst.indexOf('2. etasje');
       check('PDF: tabellen gruppert per etasje (1. før 2.), én gang hver', 'ja', i1 >= 0 && i2 > i1 && sideTekst.filter(t => t === '1. etasje').length === 1, i1 + '/' + i2);
@@ -82785,8 +82793,8 @@ function _pdfExportSmokeTest() {
         if (navn.indexOf('(145)') >= 0) {
           // 145: 6,0 m × 36 W/m = 216,0 W → øvre 266,7 · nominell 244,9 · nedre 224,1 (håndregnet).
           const har = (t) => smokeTekst.includes(t);
-          check('«' + navn + '»: blokken står i PDF-teksten', 'ja', har('Motstandsmåling \u2014 varmefolie') && har('Installert effekt') && har('216,0 W'), 'mangler');
-          check('«' + navn + '»: tabellen står i PDF-teksten', 'ja', har('Motstandsmåling \u2014 oversikt for elektriker') && har('Målt av:'), 'mangler');
+          check('«' + navn + '»: blokken står i PDF-teksten', 'ja', har('Motstandsmåling \u2013 varmefolie') && har('Installert effekt') && har('216,0 W'), 'mangler');
+          check('«' + navn + '»: tabellen står i PDF-teksten', 'ja', har('Motstandsmåling \u2013 varmefolie') && har('Oversikt for elektriker') && har('Målt av:'), 'mangler');
           check('«' + navn + '»: grensene 224,1 / 244,9 / 266,7', 'alle', ['224,1', '244,9', '266,7'].every(har), ['224,1', '244,9', '266,7'].filter(x => !har(x)).join(','));
         }
       }
@@ -83859,7 +83867,7 @@ async function exportPDF(opts) {
   } // end if (opts.summary)
   // (Status legend removed \u2014 Status column is gone)
 
-  // ── 145 · Motstandsmåling — varmefolie (romsidens blokk) ──
+  // ── 145 · Motstandsmåling – varmefolie (romsidens blokk) ──
   // Alle tall kommer ferdig fra `_roomFoilResistance` — her tegnes bare. Høyden regnes før
   // tegning, så blokken holdes samlet (`_checkPage`) i stedet for å brytes midt i utregningen.
   const _RES_EXPL = 'Foliebreddene kobles parallelt. Jo mer folie, jo lavere motstand. Grensene tar høyde for '
@@ -83872,7 +83880,7 @@ async function exportPDF(opts) {
   const _drawResistanceBlock = (res) => {
     const xR = M + 135;                       // høyre kant for effekt-/motstandskolonnen
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(20, 60, 130);
-    doc.text('Motstandsmåling \u2014 varmefolie', M, y); y += 5;
+    doc.text('Motstandsmåling \u2013 varmefolie', M, y); y += 5;   // 180: samme navn og strek (–) som tabellsiden
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(40, 50, 70);
     for (const r of res.rows) {
       doc.text(r.product.name || 'Folie', M, y);
@@ -84809,7 +84817,7 @@ async function exportPDF(opts) {
     _pageStarted = true;
   } // end if (opts.stairTable)
 
-  // ── 145 · Motstandsmåling — oversikt for elektriker ── (only when selected AND a room has foil)
+  // ── 145 · Motstandsmåling – varmefolie (oversikt for elektriker; navnet fra 180) ── (only when selected AND a room has foil)
   // Én tabell over alle folierom (de som er valgt som romsider), til å skrive ut og fylle inn på
   // byggeplassen. Tallene kommer fra samme `_roomFoilResistance` som romsidenes blokk. Prosjekt
   // uten folie, eller valget av: ingen side og ingen tom tabell.
@@ -84819,7 +84827,10 @@ async function exportPDF(opts) {
   if (_resRooms.length) {
     if (_pageStarted) _addPage(); else _pageStarted = true;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(20, 40, 80);
-    doc.text('Motstandsmåling — oversikt for elektriker', M, y); y += 7;
+    // 180 (Fredrik): siden skal tydelig hete «Motstandsmåling – varmefolie»; «oversikt for elektriker» er undertittel.
+    doc.text('Motstandsmåling \u2013 varmefolie', M, y); y += 5.5;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(90, 100, 120);
+    doc.text('Oversikt for elektriker', M, y); y += 6.5;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(90, 100, 120);
     _pdfTextOhm(doc, 'Mål motstanden på tilkoblingen før gulvet dekkes. Skriv målt verdi (Ω) og kryss av når den ligger mellom nedre og øvre grense.', M, y); y += 4;
     doc.setFontSize(7); doc.setTextColor(120, 130, 150);
