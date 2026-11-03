@@ -94711,6 +94711,54 @@ function _accessoryFoilQtyRegressionTest() {
         }
       }
 
+      // ── 179: Fredriks ønske — varmekabel og kabeltilbehør sist i Visma-lim, GBAO10 og Excel ──
+      // Innsamlingen stubbes (folie + matte + kabel + trappekabel, kabel innsatt FØRST) så bare
+      // ordningen testes; mengdene er de samme som før (bare rekkefølgen er endret i 179).
+      {
+        const ektCollect = window._collectMaterialItems, ektDrawn = window._foilDrawnByProduct;
+        try {
+          const P = (id, art) => ({ id, name: 'P' + art, article_no: art, el_no: '' });
+          const it = (product, kind, count, lenM) => ({ product, kind, count, lenM, roomName: 'R', qtyStr: '', areaM2: 0, watt: 0 });
+          const fol = P(997101, 'X-F50'), kab = P(997102, 'X-K50'), mat = P(997103, 'X-M2'), trapp = P(997104, 'X-TK');
+          const acc = (id, art, type, qty) => ({ id, name: 'A' + art, art_no: art, el_no: '1', unit: 'stk', qty, source: 'auto', type });
+          const fAcc = [acc('lerretstape', 'X-LT', 'foil', 2), acc('underlagsplater', 'X-UP', 'foil', 40)];
+          const kAcc = [acc('kabel_strips', 'X-STR', 'cable', 300), acc('kabel_folerror', 'X-FR', 'cable', 2)];
+          const mAcc = [acc('mat_folerror', 'X-MFR', 'mat', 1)];
+          const kjor = async (items, accItems) => {
+            window._collectMaterialItems = () => items;
+            const drawn = new Map(items.filter(i => i.kind === 'Folie').map(i => [i.product.id, { lenM: i.lenM }]));
+            window._foilDrawnByProduct = () => drawn;
+            _vismaPasteAccessoryItems = accItems; const v = _vismaPasteBuild();
+            _gbao10AccessoryItems = accItems; const g = _gbao10Build();
+            const b = await xlsxBestilling(accItems);
+            _vismaPasteAccessoryItems = []; _gbao10AccessoryItems = [];
+            return { v: v.lines.map(l => l.artikkelnr).join(','), g: g.lines.map(l => l.artikkelnr).join(','),
+              b: b.slice(1).map(r => r[0] || r[2]).join(','), vRows: _vismaPasteText(v) };
+          };
+          // Alt: folie, folietilbehør, matte (+ tilbehør), så kabel + trappekabel + kabeltilbehør.
+          let r = await kjor([it(kab, 'Kabel', 1, 50), it(fol, 'Folie', 3, 12), it(mat, 'Matte', 2, 0), it(trapp, 'Kabel (trapp)', 1, 20)], [...fAcc, ...kAcc, ...mAcc]);
+          const fasit = 'X-F50,X-M2,X-UP,X-LT,X-MFR,X-K50,X-TK,X-STR,X-FR';
+          check('179 Visma-lim: folie + matte + tilbehør, så kabel + kabeltilbehør sist', fasit, r.v === fasit, r.v);
+          check('179 GBAO10: samme rekkefølge', fasit, r.g === fasit, r.g);
+          const bFasit = 'X-F50,X-M2,— Tilbehør — Varmefolie —,X-UP,X-LT,— Tilbehør — Annet —,X-MFR,X-K50,X-TK,— Tilbehør — Varmekabel —,X-STR,X-FR';
+          check('179 Excel «Bestilling»: kabel + kabeltilbehør sist', bFasit, r.b === bFasit, r.b);
+          check('179 Visma-lim: to tomrader foran hver tilbehørsblokk, én foran hver produktseksjon',
+            true, /\t\nX-UP/.test(r.vRows) && /X-MFR\t1\n\t\nX-K50/.test(r.vRows) && /X-TK\t1\n\t\n\t\nX-STR/.test(r.vRows), r.vRows);
+          // Bare folie / bare kabel: som før.
+          r = await kjor([it(fol, 'Folie', 3, 12)], fAcc);
+          check('179 bare folie: folie, folietilbehør (uendret)', 'X-F50,X-UP,X-LT', r.v === 'X-F50,X-UP,X-LT' && r.g === r.v, r.v + ' / ' + r.g);
+          r = await kjor([it(kab, 'Kabel', 1, 50)], kAcc);
+          check('179 bare kabel: kabel, kabeltilbehør (uendret)', 'X-K50,X-STR,X-FR', r.v === 'X-K50,X-STR,X-FR' && r.g === r.v, r.v + ' / ' + r.g);
+          // Folie + kabel uten kabeltilbehør: kabelen sist, ingen tom tilbehørsblokk.
+          r = await kjor([it(kab, 'Kabel', 1, 50), it(fol, 'Folie', 3, 12)], fAcc);
+          check('179 folie + kabel uten kabeltilbehør: kabel sist', 'X-F50,X-UP,X-LT,X-K50', r.v === 'X-F50,X-UP,X-LT,X-K50' && r.g === r.v, r.v + ' / ' + r.g);
+          check('179 Excel uten kabeltilbehør: ingen «Tilbehør — Varmekabel»-overskrift', 'X-F50,— Tilbehør — Varmefolie —,X-UP,X-LT,X-K50', r.b === 'X-F50,— Tilbehør — Varmefolie —,X-UP,X-LT,X-K50', r.b);
+          check('179 Visma-lim uten kabeltilbehør: ingen tomrader til slutt', true, !/\n\t$/.test(r.vRows), JSON.stringify(r.vRows.slice(-12)));
+        } finally {
+          window._collectMaterialItems = ektCollect; window._foilDrawnByProduct = ektDrawn;
+        }
+      }
+
       // ── 175: kolonnerekkefølge Lev.art.nr | El.nr | Produkt | Antall | Enhet | Areal i alle tre ──
       // tabellene; Areal = B × bestilt lengde for folie, coversM2PerUnit × antall for tilbehør, tom
       // ellers; Enhet uten parentes. Tekstene fanges med x/y, radene leses venstre → høyre.
@@ -94914,6 +94962,29 @@ function _groupByMaterialGroups(entries, kindOf, idOf) {
   return groups;
 }
 
+// ═══ 179 · KABEL SIST I VISMA-UTDATAENE ═══════════════════════════════════════════════════════
+// Fredriks ønske 02.11.2026 (179): varmekabel og kabeltilbehør sist.
+// «Varmekabler legger seg mellom folie og tilbehør ved import til visma» — MATERIAL_GROUPS har
+// Varmekabel som gruppe 2, og alt tilbehøret kom samlet etter alle produktgruppene. ÉN regel for
+// alle tre utdataene med samme kilde (Visma-lim _vismaPasteBuild, GBAO10 _gbao10Build, Excel
+// «Bestilling» i _exportMaterialListXLSX): linjene deles STABILT i to blokker —
+//   1) alt som ikke er kabel: produktene, så tilbehøret (folietilbehør i FOIL_ACC_ORDER, så resten)
+//   2) kabelblokka: kabelproduktene (Varmekabel, Varmekabel (trapp)), så kabeltilbehøret
+// Innbyrdes rekkefølge i hver blokk er nøyaktig den samme som før 179. Uten kabel er blokk 2 tom
+// og alt er som før; med bare kabel er blokk 1 tom og alt er som før.
+// Aluboard-gruppa (plate + kabel under én overskrift) er IKKE kabelblokka — se docs/179/SPØRSMÅL.md.
+// Ikke brukt av PDF-materiallista eller tilbehørsdialogen (179: skal ikke endres).
+const VISMA_CABLE_KINDS = ['Kabel', 'Kabel (trapp)'];
+function _vismaIsCableKind(kind) { return VISMA_CABLE_KINDS.includes(kind); }
+// products: hva som helst (grupper, aggregerte rader) — isCableProduct avgjør; acc: tilbehør med .type.
+function _vismaCableLastBlocks(products, isCableProduct, acc) {
+  const isCabAcc = a => !!a && a.type === 'cable';
+  return [
+    { cable: false, products: products.filter(p => !isCableProduct(p)), acc: acc.filter(a => !isCabAcc(a)) },
+    { cable: true,  products: products.filter(p => isCableProduct(p)),  acc: acc.filter(isCabAcc) },
+  ];
+}
+
 // ═══ KOPIER TIL VISMA (spec-visma-paste.md, Kenneth 28.08.2026) ═══════════════════════════════
 // Tabulatorseparerte artikkellinjer på utklippstavla, limt inn i et ALLEREDE ÅPENT tilbud i Visma
 // Global — Cenikas eget paste-oppsett (Bok6.xlsx). Kortere vei enn en GBAO10-fil: brukeren har
@@ -94977,7 +95048,8 @@ function _vismaPasteBuild() {
         antall,
       });
     }
-    if (lines.length) sections.push({ label: g.label, lines });
+    // 179: kabel-flagget styrer bare plasseringen (_vismaCableLastBlocks), ikke innholdet.
+    if (lines.length) sections.push({ label: g.label, lines, cable: g.rows.every(r => _vismaIsCableKind(r.kind)) });
   }
   // Tilbehør ETTER produktseksjonene (samme rekkefølge som Bestilling-arket, der tilbehøret
   // kommer til slutt under sine grupper) — INGEN fritekst-overskrift her (testet, virker ikke),
@@ -94986,34 +95058,44 @@ function _vismaPasteBuild() {
   // art_no, IKKE article_no — tilbehør (showAccessoriesModal) og produkter (HEATING_PRODUCTS)
   // navngir samme felt ulikt; slått sammen uendret ville artikkelnr blitt undefined → tom streng
   // → en varelinje Visma ikke kjenner igjen.
-  const accLines = [];
+  const accEntries = [];   // 179: { type, line } — typen avgjør blokka, linja er som før
   for (const acc of _aggregateAccessoryItems(_vismaPasteAccessoryItems)) {
     const antall = Math.ceil(acc.qty);
     if (antall <= 0) continue;
     if (!acc.art_no) { missing.push(acc.name || 'Tilbehør'); continue; }   // samme regel som produkter
-    accLines.push({
+    accEntries.push({ type: acc.type, line: {
       artikkelnr: acc.art_no,
       artikkelnavn: (acc.name || '').replace(/[\t\r\n]+/g, ' ').trim(),
       antall,
-    });
+    } });
   }
+  // 179: kabel + kabeltilbehør sist. parts = seksjonene i utklippsrekkefølge (produktseksjoner og
+  // tilbehørsblokker), brukt av forhåndsvisningen så den viser det som faktisk limes inn.
+  const blocks = _vismaCableLastBlocks(sections, sec => sec.cable, accEntries);
+  const parts = [];
+  for (const b of blocks) {
+    for (const sec of b.products) parts.push({ label: sec.label, lines: sec.lines, acc: false });
+    if (b.acc.length) parts.push({ label: 'Tilbehør', lines: b.acc.map(e => e.line), acc: true });
+  }
+  const orderedSections = parts.filter(p => !p.acc).map(p => ({ label: p.label, lines: p.lines }));
+  const accLines = parts.filter(p => p.acc).flatMap(p => p.lines);
   const cols = ['artikkelnr', 'antall'];   // DEL A: kun 2269+2281 limes inn — navn/rabatt utgår
   const header = cols.map(c => VISMA_FIELD[c]);
   const blank = cols.map(() => '');        // «tom rad» = én tabulator (to tomme felt), ikke ""
   const rows = [];
   let wroteSection = false;
-  for (const sec of sections) {
-    rows.push(blank);   // ett tomrom foran HVER materialseksjon, inkl. den første (rett etter header)
-    for (const l of sec.lines) rows.push(cols.map(c => l[c]));
+  for (const part of parts) {
+    if (!part.acc) {
+      rows.push(blank);   // ett tomrom foran HVER materialseksjon, inkl. den første (rett etter header)
+    } else {
+      rows.push(blank);
+      if (wroteSection) rows.push(blank);   // andre tomrad KUN når tilbehøret skiller seg fra noe over
+    }
+    for (const l of part.lines) rows.push(cols.map(c => l[c]));
     wroteSection = true;
   }
-  if (accLines.length) {
-    rows.push(blank);
-    if (wroteSection) rows.push(blank);   // andre tomrad KUN når tilbehøret skiller seg fra noe over
-    for (const l of accLines) rows.push(cols.map(c => l[c]));
-  }
-  const lines = sections.flatMap(s => s.lines).concat(accLines);   // flatt, for forhåndsvisning/telling
-  return { cols, header, rows, sections, accLines, lines, missing, totalAntall: lines.reduce((s, l) => s + l.antall, 0) };
+  const lines = parts.flatMap(p => p.lines);   // flatt, for forhåndsvisning/telling
+  return { cols, header, rows, sections: orderedSections, accLines, parts, lines, missing, totalAntall: lines.reduce((s, l) => s + l.antall, 0) };
 }
 // Tabulator mellom kolonner, \n mellom rader — det Excel legger på utklippstavla og det Visma
 // forventer (DEL D).
@@ -95265,9 +95347,7 @@ function _vismaPasteRender() {
   // ekstra, ikke-limt kolonne. Seksjonene (material-grupper + ev. tilbehør) vises med samme
   // rekkefølge OG samme tomrads-grenser som det faktiske utklippet (DEL B), som en visuell
   // bekreftelse på gruppering — ikke bare en påstand i teksten.
-  const previewSections = built.accLines.length
-    ? [...built.sections, { label: 'Tilbehør', lines: built.accLines }]
-    : built.sections;
+  const previewSections = built.parts;   // 179: samme rekkefølge som utklippet (kabelblokka sist)
   const headHtml = `<th style="text-align:left;padding:4px 10px 4px 0;color:var(--muted);font-weight:600">${VISMA_FIELD.artikkelnr}</th>` +
     `<th style="text-align:left;padding:4px 10px 4px 0;color:var(--muted);font-weight:600">Navn</th>` +
     `<th style="text-align:left;padding:4px 10px 4px 0;color:var(--muted);font-weight:600">${VISMA_FIELD.antall}</th>`;
@@ -95387,9 +95467,11 @@ function _gbao10Build() {
   const items = _collectMaterialItems();
   const groups = _groupByMaterialGroups(_aggregateMaterialItems(items), e => e.kind, e => e.product.id);
   const missing = [];   // {key, name, el_no}
-  const lines = [];
+  const prodGroups = [];   // 179: { cable, lines } per materialgruppe — plassering via _vismaCableLastBlocks
   const _foilDrawn = _foilDrawnByProduct();
   for (const g of groups) {
+    const lines = [];
+    prodGroups.push({ cable: g.rows.every(r => _vismaIsCableKind(r.kind)), lines });
     for (const { product, count, kind } of g.rows) {
       // Samme regel som _vismaPasteBuild: kun folie selges løpende (meter), resten er stk.
       // 125: foliemeterne fra ÉN kilde (_foilOrderQtyM, med _gbao10AccessoryItems som lagret valg).
@@ -95402,13 +95484,20 @@ function _gbao10Build() {
     }
   }
   // Tilbehør ETTER produktene (samme rekkefølge som Bestilling-arket/paste-veien).
+  const accEntries = [];   // 179: { type, line }
   for (const acc of _aggregateAccessoryItems(_gbao10AccessoryItems)) {
     const antall = Math.ceil(acc.qty);
     if (antall <= 0) continue;
-    if (acc.art_no) { lines.push({ artikkelnr: acc.art_no, antall }); continue; }
+    if (acc.art_no) { accEntries.push({ type: acc.type, line: { artikkelnr: acc.art_no, antall } }); continue; }
     const key = 'acc:' + acc.id;
-    if (acc.el_no && _gbao10ElChoices.has(key)) { lines.push({ artikkelnr: acc.el_no, antall }); continue; }
+    if (acc.el_no && _gbao10ElChoices.has(key)) { accEntries.push({ type: acc.type, line: { artikkelnr: acc.el_no, antall } }); continue; }
     missing.push({ key, name: acc.name || 'Tilbehør', el_no: acc.el_no || null });
+  }
+  // 179: Fredriks ønske — kabel + kabeltilbehør sist (samme regel som Visma-lim og Excel).
+  const lines = [];
+  for (const b of _vismaCableLastBlocks(prodGroups, pg => pg.cable, accEntries)) {
+    for (const pg of b.products) lines.push(...pg.lines);
+    for (const e of b.acc) lines.push(e.line);
   }
   // 012: kundenavnet inn i filnavnet — kunderaden når kunden er koblet (samme oppslag
   // `kundenr` bruker), ellers prosjektets fritekstfelt.
@@ -95719,7 +95808,11 @@ async function _exportMaterialListXLSX() {
   // ── Sheet 1: Bestilling — 3 cols, aggregated by product ──
   // What case-workers paste into ordering tools.
   const orderRows = [['Art.nr', 'Antall', 'Produkt']];
-  for (const { product, count, totalLen, kind } of _aggregateMaterialItems(items)) {
+  // 179: Fredriks ønske — kabel + kabeltilbehør sist (_vismaCableLastBlocks, samme regel som
+  // Visma-lim og GBAO10). Hver blokk: produktene, så tilbehøret — alt i samme rekkefølge som før.
+  const _orderBlocks = _vismaCableLastBlocks(_aggregateMaterialItems(items), e => _vismaIsCableKind(e.kind), _accOnly);
+  for (const _blk of _orderBlocks) {
+  for (const { product, count, kind, totalLen } of _blk.products) {
     // 125: folie bestilles i hele meter fra ÉN kilde (_foilOrderQtyM: brukerens justerte tall
     // eller forslaget) — samme tall som PDF-materiallista og Visma. 0 m → ingen linje.
     if (kind === 'Folie') {
@@ -95733,7 +95826,7 @@ async function _exportMaterialListXLSX() {
     orderRows.push([product.article_no || '', qty, product.name || '']);
   }
   // Accessories on Bestilling — gruppert per type (folie/kabel), aggregert qty + unit.
-  if (_accOnly.length > 0) {
+  if (_blk.acc.length > 0) {
     const _accGroups = [{ key: 'foil', label: 'Tilbehør — Varmefolie' }, { key: 'cable', label: 'Tilbehør — Varmekabel' }];
     const _emit = (label, list) => {
       if (!list.length) return;
@@ -95743,9 +95836,10 @@ async function _exportMaterialListXLSX() {
         orderRows.push([art_no, `${qty} ${unit || ''}`.trim() + _accCoversSuffix(id, qty), name]);
       }
     };
-    for (const g of _accGroups) _emit(g.label, _accOnly.filter(it => (it.type || 'foil') === g.key));
-    _emit('Tilbehør — Annet', _accOnly.filter(it => !_accGroups.some(g => g.key === (it.type || 'foil'))));
+    for (const g of _accGroups) _emit(g.label, _blk.acc.filter(it => (it.type || 'foil') === g.key));
+    _emit('Tilbehør — Annet', _blk.acc.filter(it => !_accGroups.some(g => g.key === (it.type || 'foil'))));
   }
+  }   // 179: slutt på blokk-løkka
   const wsOrder = XLSX.utils.aoa_to_sheet(orderRows);
   wsOrder['!cols'] = [{wch:18},{wch:18},{wch:40}];
 
