@@ -129,3 +129,96 @@ Ny seksjon 7 i hestesko-testen:
   strengene. Det er de grå geometrimålene fra 085, som står under hver flate og havner inne i U-en.
 - Toppflaten i PDF-tabellen regnes fortsatt som N × første streng (448), slik rette trinn gjør. Halen på 1 cm står
   derfor med der. Dette var allerede beskrevet i 176.
+
+---
+
+# 177b · Måltabell per trinn oppe til høyre, i stedet for strengmålet inne i tegningen
+
+Kenneth 03.11.2026: «Ville det vært mer oversiktlig å sette opp målene per hesteskotrinn der hvor jeg har markert
+(oppe til høyre)?»
+
+## Kort svar
+
+- **Måltabellen** står oppe til høyre over dybdekjeden. Den høyre kanten flukter med tallene i kjeden, og tabellen
+  ligger helt utenfor trappeflaten. Den har én rad per trinn, toppflaten først:
+
+  | Trinn | Strenger | Strenglengde (cm) | CC (cm) | Avstand sider (cm) | Kabel (m) |
+  |---|---|---|---|---|---|
+  | 1 (topp) | 8 | 447–448 | 9.1 | 11 | 35.8 |
+  | 2 | 5 | 600–760 | 10 | 11 | 34 |
+
+  VK Hovedterrasse, forslag A med testkatalogen. Med fire trinn får tabellen fem rader.
+- **Fjernet:** den vannrette strenglinja og de vannrette sidemålene på toppflaten fra 177.
+- **Beholdt:** dybdekjeden til høyre og «(sider)» ved bakkanten.
+- **Vises:** på skjermen når mållinjene er på (`o.dims`, zoom over 0,25), og alltid i PDF-planen. Detaljutsnittene i
+  PDF-en får én rad, den for flaten som vises.
+- **Ingen kollisjon:**
+  - På skjermen løftes tabellen over trappenavnet og over «Plan»/«Side» når begge visningene står side om side.
+    Den holder seg også unna «Bakkant».
+  - I PDF-en får bildet plass over bakkanten til hele tabellen. Tabellen vokser nedover med antall trinn, og
+    tegningen flyttes ned tilsvarende.
+  - Skriftstørrelsen er den samme som i de andre målene (`dimFontPx`).
+
+## Hvor tallene kommer fra (Regel 9: alt fra `stair.runs`, `_stairHsSurfDims`)
+
+- **Strenger:** antall strenger på flaten.
+- **Strenglengde:** summen av segmentene per streng. Er spennet under 1 cm, står **ett** tall: den fulle strengen.
+  Ellers står spennet «a–b».
+- **CC:** `|pos₁ − pos₀|`. Det er samme tall som `actualCC` i PDF-tabellen, langs fronten for hestesko.
+- **Avstand sider:** avstanden fra kanten til svingene.
+  - Toppflaten: `start_cm` for svingene på venstre side og `bredde − end_cm` for svingene på høyre side.
+  - Hestesko: det samme langs strengens egen senterlinje (`_stairRunPath`), det vil si fra bakkanten til armenes ende.
+  - Er venstre og høyre like, står ett tall, ellers «v / h».
+  - Bare svingene teller. Kabelens start og slutt teller ikke med.
+- **Kabel:** kabelen som er lagt på flaten, i meter. Opptrinnene står ikke i tabellen. I testen er Σ Kabel + opptrinn =
+  lagt kabel.
+
+## Hvorfor strenglengden på toppflaten varierer (398,8–399,4 hos deg, 447–448 her)
+
+Alle strengene på et rektangel er like lange, nemlig bredde − 2 × margin. Unntaket er den **siste**. Kabelen har en
+fast produktlengde, og der den tar slutt, slutter den siste strengen. Den blir derfor litt kortere, med en «hale».
+- Med testkatalogen er rutingen 7001 cm og kabelen 70 m. Den siste strengen blir 447 i stedet for 448, altså 1,0 cm
+  kortere. Det er **ikke** under 1 cm, så spennet står.
+- Dine 398,8–399,4 (0,6 cm) ville ha stått som ett tall: «399.4».
+- Jeg har ikke åpnet prosjektet ditt, så forklaringen for akkurat de tallene er en slutning ut fra hvordan motoren
+  legger kabelen. Er det en annen streng enn den siste som er kortere, vil jeg gjerne se prosjektet.
+
+## Endringslogg
+
+- **`_stairHsTopDims` → `_stairHsSurfDims`:** gjelder nå både rektangel og U, og gir også N, CC og lagt kabel.
+- **Nye funksjoner:** `_stairHsTableRows` (radene og tekstene), `_stairHsTableSize`, `_stairHsDrawTable` og
+  `_STAIR_HS_TABLE_HEAD`.
+- **`_stairHsPaint`, blokk 6:** 177-kjeden er erstattet av tabellen. Plasseringen viker for `o.avoid`-boksene og
+  «Bakkant». Funksjonen returnerer `{ tableBox }`.
+- **`_drawStairPlanHs`:** sender boksene for navnet og «Plan»/«Side» som `avoid`. Løftet av navnet fra 177 er fjernet.
+- **`_stairDrawToCanvasHs`:** `padT` regnes ut fra tabellens høyde. PDF-planen til VK blir 1064 × 559 px. Den var
+  433 med 177 og 404 med 176.
+- **PDF-tabellen** (spennet for U) er uendret siden 177.
+
+## Test
+
+| | resultat |
+|---|---|
+| `_stairHorseshoeRegressionTest` | **50/50**. Seksjon 7 er skrevet om til å kontrollere tabellradene mot rutingen. |
+| de fem gamle trapptestene | grønne, verdi for verdi identiske |
+| rette trapper, 7 varianter | hash identisk |
+
+Seksjon 7 kontrollerer dette:
+1. Radene for VK, låst 10 og fire trinn = rutingen. Strenger, lengde, CC og kabel regnes uavhengig fra `stair.runs`.
+2. VK har to rader, toppflaten først. «Avstand sider» = løst margin på begge flatene.
+3. Toppflatens fulle streng = bredde − 2 × margin. Hesteskoen har «600–760».
+4. Teksten som tegnes inneholder alle cellene, og ingen «streng …»-linje.
+5. Låst 10 gir 10 og 10.
+6. Fire trinn gir fem rader, og Σ Kabel + opptrinn = lagt kabel.
+7. I målestokk 1,5 og 3 px/cm står tabellen over bakkanten, og ingen tekst utenfor tabellen skjærer den.
+
+## Bilder (`docs/177/bilder/177b-*`, før = 177, etter = 177b, visning «plan + side»)
+
+- `177b-1-vk-both-skjerm-*`, `177b-1-vk-both-pdf-*`: VK Hovedterrasse
+- `177b-3-fire-trinn-skjerm-*`, `177b-3-fire-trinn-pdf-*`: fire hesteskotrinn, fem rader
+- `177b-4-pdf-side2-etter.png`: hel PDF-side
+
+## Funn (fantes før, ikke rettet)
+
+- I visningen «plan + side» står «Plan» (8 cm over) og trappenavnet (2 cm over) delvis oppå hverandre. Det gjelder
+  også rette trapper.
