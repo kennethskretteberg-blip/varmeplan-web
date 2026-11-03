@@ -5773,6 +5773,53 @@ function _foilResistanceRooms(rooms) {
   }
   return out;
 }
+// ── 181 · VARMEKABLER – OVERSIKT (Fredrik 02.11.2026) ────────────────────────────────────────────
+// Én rad per KABEL (Romoversikten slår sammen to like kabler til «Ant 2»), bare innendørs-rom —
+// snø/frost/trapp har egne sider og er utenfor nå. Ingen nye utregninger:
+//   Effekt  = _cableRatedW (samme som _roomProductRows → Romoversikt/romside); reserve = 0 W
+//   Lengde  = produktets kabellengde (Romoversiktens «Lengde», det som bestilles); mangler den,
+//             kabelens tegnede lengde
+//   CC      = kabelens egen spacing_cm
+//   W/m²    = rommets ratede effekt ÷ netto gulv, som Romoversikten (romnivå, står på rommets
+//             første rad)
+// Rekkefølge: etasjer som i PDF-en (_floorLevelCompare), rom i S.rooms-rekkefølge, i rommet
+// kablene i K1, K2 … rekkefølge og reserven sist.
+function _cableOverviewRows(rooms) {
+  const set = new Set((rooms || S.rooms).map(r => r.id));
+  const fl = (S.floors || []).slice().sort(_floorLevelCompare);
+  const order = [];
+  for (const f of fl) for (const r of S.rooms) if (r.floorId === f.id) order.push(r);
+  for (const r of S.rooms) if (!fl.some(f => f.id === r.floorId)) order.push(r);
+  const out = [];
+  for (const room of order) {
+    if (!set.has(room.id) || room.listDraft || _roomModuleType(room.id) !== 'indoor') continue;
+    const cabs = _cablesForRoom(room.id).slice()
+      .sort((a, b) => ((a.reserve ? 1 : 0) - (b.reserve ? 1 : 0)) || ((a.multiCableIndex || 0) - (b.multiCableIndex || 0)));
+    if (!cabs.length) continue;
+    const nettoM2 = _computeRoomStats(room).nettoM2 || 0;
+    const roomWm2 = nettoM2 > 0 ? Math.round(_roomRatedEffectW(room) / nettoM2) : 0;
+    const multi = cabs.filter(c => !c.reserve && c.multiCableGroup != null).length >= 2;
+    const floor = (S.floors || []).find(f => f.id === room.floorId) || null;
+    cabs.forEach((c, i) => {
+      const p = HEATING_PRODUCTS.find(pr => pr.id === c.productId) || null;
+      const wRaw = c.reserve ? 0 : _cableRatedW(p, c);
+      const note = c.reserve ? 'Reserve' : (c.labelOnly ? 'Kalkyle'
+        : (multi && c.multiCableGroup != null ? 'K' + ((c.multiCableIndex || 0) + 1) : ''));
+      out.push({ room, floor, cable: c, product: p, firstInRoom: i === 0, nettoM2, roomWm2,
+        lengthM: (p && p.cable_length_m != null) ? p.cable_length_m : (c.totalLength_cm || 0) / 100,
+        effectW: Math.round(wRaw), effectWRaw: wRaw, ccCm: c.spacing_cm > 0 ? c.spacing_cm : null,
+        reserve: !!c.reserve, note });
+    });
+  }
+  return out;
+}
+// Summene under tabellen: antall kabler (inkl. reserve, som materiallista teller), sum lengde,
+// sum effekt (urundet summert, rundet til slutt — som romtotalen).
+function _cableOverviewTotals(rows) {
+  let lengthM = 0, w = 0, reserve = 0;
+  for (const r of rows) { lengthM += r.lengthM || 0; w += r.effectWRaw || 0; if (r.reserve) reserve++; }
+  return { count: rows.length, reserve, lengthM: Math.round(lengthM * 10) / 10, effectW: Math.round(w) };
+}
 // Norsk tallformat: komma som desimaltegn, hardt mellomrom som tusenskille fra fem sifre
 // (57 600, men 1066,8 — slik Cenikas veiledning og Kenneths mal skriver det).
 function _fmtNo(v, dec) {
@@ -14716,6 +14763,12 @@ function _roomComputedStamp(room) {
 //
 // `effectW` er rundet (det er tallet som VISES per rad); `effectWRaw` er urundet, og romtotalen
 // summerer den — ellers ville en rad-for-rad-avrunding flyttet summer som har stått siden før.
+// 181: ÉN kabels ratede effekt (W) — uttrykket som sto inne i _roomProductRows, uendret: produktets
+// merkeeffekt, ellers produktlengde × W/m, ellers tegnet lengde × W/m. Reserven regnes IKKE her
+// (kallstedet setter 0 W for den).
+function _cableRatedW(p, c) {
+  return p ? (p.total_effect_w || ((p.cable_length_m || 0) * (p.watt_per_m || 0)) || ((c.totalLength_cm / 100) * (p.watt_per_m || 0))) : 0;
+}
 function _roomProductRows(room) {
   if (!room) return [];
   const map = new Map(); // key -> { product, kind, count, effectWRaw, lengthM, areaM2 }
@@ -14742,7 +14795,7 @@ function _roomProductRows(room) {
   // Hovedkabler først, reserver etter — så reserve-raden havner rett under sin hovedkabel-rad.
   for (const c of _cablesForRoom(room.id).slice().sort((x, y) => (x.reserve ? 1 : 0) - (y.reserve ? 1 : 0))) {
     const p = HEATING_PRODUCTS.find(pr => pr.id === c.productId);
-    const w = p ? (p.total_effect_w || ((p.cable_length_m || 0) * (p.watt_per_m || 0)) || ((c.totalLength_cm / 100) * (p.watt_per_m || 0))) : 0;
+    const w = _cableRatedW(p, c);   // 181: flyttet ut uendret, så kabeloversikten bruker samme tall
     // 025: reserven har 0 W (ikke tilkoblet) — W-cellen viser da «—» og Σ W er fortsatt
     // romtotalen. Antall/lengde/art.nr er som en vanlig kabel, så den bestilles.
     add(p, c.reserve ? 'Reservekabel' : 'Kabel', c.reserve ? 0 : w, p ? (p.cable_length_m ?? null) : null, 0, null, null, !!c.labelOnly);
@@ -81431,6 +81484,7 @@ function _showExportDialog() {
   // en tom Romoversikt-side med bare kolonneoverskrifter. Samme mønster begge veier.
   const hasRooms = rooms.length > 0;
   const hasFoilRes = _foilResistanceRooms(rooms).length > 0;   // 145: valget vises bare med folie
+  const hasCableTable = _cableOverviewRows(rooms).length > 0;   // 181: valget vises bare med innendørs kabel
   const hasPrices = HEATING_PRODUCTS.some(p => p.price_list > 0);
   const _pp = (S.project && S.project.pricing) || {};   // lagrede rabatter per prosjekt
   const priceGroups = _projectProductGroups();
@@ -81461,6 +81515,7 @@ function _showExportDialog() {
         </div>` : ''}
         <div class="exp-group">
           ${hasRooms ? `<div class="exp-check"><input type="checkbox" id="exp-roomtable" checked title="Hak av for utskrift"><span onclick="_expPreviewSection('roomtable')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Romoversikt</span></div>` : ''}
+          ${hasCableTable ? `<div class="exp-check"><input type="checkbox" id="exp-cabletable" checked title="Hak av for utskrift"><span onclick="_expPreviewSection('cabletable')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Varmekabler – oversikt</span></div>` : ''}
           ${hasStairs ? `<div class="exp-check"><input type="checkbox" id="exp-stairtable" checked title="Hak av for utskrift"><span onclick="_expPreviewSection('stairtable')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Trappeoversikt</span></div>` : ''}
           <div class="exp-check"><input type="checkbox" id="exp-matlist" checked title="Hak av for utskrift"><span onclick="_expPreviewSection('matlist')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Materialliste</span></div>
           ${hasFoilRes ? `<div class="exp-check"><input type="checkbox" id="exp-resistance" checked title="Hak av for utskrift"><span onclick="_expPreviewSection('resistance')" style="flex:1;cursor:pointer" title="Klikk for forhåndsvisning">Motstandsmåling – varmefolie</span></div>` : ''}
@@ -82026,6 +82081,14 @@ function _expPreviewSection(kind) {
       _inner += `<div style="font-weight:700;margin:10px 0 2px">${gl}</div><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>${_th}</thead><tbody>${rowsHtml}</tbody></table>`;
     }
     html = box('Materialliste', _inner || '<div style="color:var(--dim)">Ingen produkter</div>');
+  } else if (kind === 'cabletable') {
+    // 181: samme rader og summer som PDF-siden (_cableOverviewRows / _cableOverviewTotals).
+    const cr = _cableOverviewRows(rooms.filter(r => !r.listDraft));
+    const ct = _cableOverviewTotals(cr);
+    const td = (t, st) => `<td style="padding:5px 8px${st || ''}">${t}</td>`;
+    const rowsHtml = cr.map(r => `<tr style="border-top:1px solid var(--border)">${td(r.firstInRoom ? E(r.room.name || 'Rom') : '', ';padding-left:0')}${td(E(r.product ? r.product.name : 'Ukjent produkt'))}${td(r.lengthM ? _fmtNo(r.lengthM, 1) + ' m' : '—', ';text-align:right')}${td(r.reserve ? '—' : _fmtNo(r.effectW, 0) + ' W', ';text-align:right')}${td(r.ccCm ? _fmtNo(r.ccCm, 1) : '—', ';text-align:right;color:var(--muted)')}${td(E(r.note), ';color:var(--muted)')}</tr>`).join('');
+    const sumHtml = `<tr style="border-top:2px solid var(--border);font-weight:700">${td('Sum', ';padding-left:0')}${td(ct.count + (ct.count === 1 ? ' kabel' : ' kabler'))}${td(_fmtNo(ct.lengthM, 1) + ' m', ';text-align:right')}${td(_fmtNo(ct.effectW, 0) + ' W', ';text-align:right')}${td('')}${td('')}</tr>`;
+    html = box('Varmekabler – oversikt', `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:0 8px 4px 0">Rom</th><th style="text-align:left;padding:0 8px 4px">Produkt</th><th style="text-align:right;padding:0 8px 4px">Lengde</th><th style="text-align:right;padding:0 8px 4px">Effekt</th><th style="text-align:right;padding:0 8px 4px">CC cm</th><th style="padding:0 8px 4px"></th></tr></thead><tbody>${rowsHtml}${sumHtml}</tbody></table><div style="margin-top:10px;font-size:11px;color:var(--dim)">Én rad per kabel, innendørs. PDF-siden har også etasje, netto m², El.nr og W/m².</div>`);
   } else if (kind === 'resistance') {
     // 145: samme tall som PDF-tabellen (_foilResistanceRooms / _fmtNo).
     const rowsHtml = _foilResistanceRooms(rooms).map(({ room, res }) => `<tr style="border-top:1px solid var(--border)"><td style="padding:5px 8px 5px 0">${E(room.name || 'Rom')}</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.P, 1)} W</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.rLow, 1)}</td><td style="padding:5px 8px;text-align:right;color:var(--muted)">${_fmtNo(res.rNom, 1)}</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.rHigh, 1)}</td></tr>`).join('');
@@ -82058,6 +82121,7 @@ function _runExportPDF() {
     stairTable: document.getElementById('exp-stairtable')?.checked,
     materialList: document.getElementById('exp-matlist')?.checked,
     resistance: document.getElementById('exp-resistance')?.checked,   // 145
+    cableTable: document.getElementById('exp-cabletable')?.checked,   // 181
     pricing: document.getElementById('exp-pricing')?.checked,
     discount: parseFloat(document.getElementById('exp-discount')?.value) || 0,
     groupDiscount: (() => { const o = {}; document.querySelectorAll('.exp-grp-disc').forEach(i => { const v = (i.value || '').trim(); if (v !== '') o[i.dataset.family] = Math.max(0, Math.min(100, parseFloat(v) || 0)); }); return o; })(),
@@ -82104,6 +82168,199 @@ async function _runExport(hva, fn) {
 // direkte fra en knapp — da er vi tilbake til det stille unntaket.
 function exportPDFGuarded(opts) { return _runExport('PDF', () => exportPDF(opts)); }
 function exportMaterialListXLSXGuarded() { return _runExport('Materiallista', () => _exportMaterialListXLSX()); }
+
+// 181 — «Varmekabler – oversikt» i PDF-en: én rad per kabel (innendørs), summer, sidebryting med
+// tabellhode, siden bare når prosjektet har innendørs kabel og valget er på, og valget i dialogen.
+// Kjøres fra konsollen: await _cableOverviewRegressionTest(). Fasit er regnet for HÅND.
+async function _cableOverviewRegressionTest() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const saved = {
+    rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats,
+    matPaths: S.matPaths, plates: S.plates, aluboard: S.aluboard, zones: S.zones, hindrings: S.hindrings,
+    stairs: S.stairs, floors: S.floors, project: S.project, counters: { ...S.counters },
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedStairId: S.ui.selectedStairId,
+    prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
+    autoSave: window._performAutoSave, toast: window._showToast, modal: window.showAccessoriesModal,
+    branding: window._pdfBranding, jsPDF: window.jspdf && window.jspdf.jsPDF,
+    undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
+  };
+  const dlgSaved = document.getElementById('export-dialog') ? document.getElementById('export-dialog').style.display : null;
+  try {
+    const F60 = { id: 996101, category_id: 1, active: true, name: 'FlexFoil B=60cm', width_mm: 590, netto_width_mm: 590, watt_per_lm: 36, watt_per_m2: 60, voltage: 230, min_gap_mm: 10, min_wall_margin_mm: 25 };
+    const K1 = { id: 996201, category_id: 2, active: true, product_family: 'TestKabel 10T', name: 'TestKabel 10T 600W 60m', voltage: 230, cable_length_m: 60, watt_per_m: 10, total_effect_w: 600, el_no: '1002601' };
+    const K2 = { id: 996202, category_id: 2, active: true, product_family: 'TestKabel 10T', name: 'TestKabel 10T 400W 40m', voltage: 230, cable_length_m: 40, watt_per_m: 10, total_effect_w: 400, el_no: '1002401' };
+    const K3 = { id: 996203, category_id: 2, active: true, product_family: 'TestKabel 17T', name: 'TestKabel 17T 1020W 60m', voltage: 230, cable_length_m: 60, watt_per_m: 17, total_effect_w: 1020, el_no: '1002102' };
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(F60, K1, K2, K3);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push({ id: 1, name: 'Folie' }, { id: 2, name: 'Kabel', module_type: 'cable' });
+    const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+    const mkRoom = (id, navn, pts, floorId, extra) => Object.assign({ id, floorId, partId: null, name: navn,
+      points: pts.map(p => ({ ...p })), walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [] }, extra || {});
+    const cab = (id, roomId, prod, cc, x0, y0, w, h, extra) => {
+      const runs = []; for (let x = x0 + cc / 2; x < x0 + w; x += cc) runs.push({ pos_cm: x, segments: [{ start_cm: y0 + cc / 2, end_cm: y0 + h - cc / 2 }] });
+      return Object.assign({ id, roomId, productId: prod.id, direction: 'v', spacing_cm: cc, startCorner: 'bl',
+        totalLength_cm: prod.cable_length_m * 100, runs, connections: [] }, extra || {});
+    };
+    const tom = () => {
+      S.rooms = []; S.cables = []; S.mats = []; S.matPaths = []; S.plates = []; S.aluboard = [];
+      S.foilFree = []; S.strips = []; S.zones = []; S.hindrings = []; S.stairs = []; S.floors = [];
+      S.ui.activeFloorId = null; S.ui.activePartId = null; S.ui.selectedStairId = null;
+      S.project = { name: 'KABELOVERSIKT-TEST', parts: [], revision: 0, lastExportedAt: null, createdAt: Date.now() };
+      _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache(); _invalidateStripCache();
+    };
+    // Etasjene står i «feil» rekkefølge i S.floors — tabellen skal sortere dem som resten av PDF-en.
+    const bygg = (medKabel) => {
+      tom();
+      S.floors = [{ id: 993002, name: '2. etasje', order: 2 }, { id: 993001, name: '1. etasje', order: 1 }];
+      S.rooms = [
+        mkRoom(993101, 'Vaskerom', rect(0, 0, 500, 400), 993002),
+        mkRoom(993102, 'Stue', rect(0, 0, 600, 400), 993001),
+        mkRoom(993103, 'Bad', rect(700, 0, 300, 250), 993001),
+        mkRoom(993104, 'Gang', rect(700, 300, 400, 200), 993001),
+        mkRoom(993105, 'Bad 2. etg', rect(600, 0, 300, 250), 993002),
+        mkRoom(993106, 'Uteplass', rect(0, 600, 300, 300), 993001, { moduleType: 'snow' }),
+      ];
+      S.strips = [{ id: 993201, roomId: 993102, productId: F60.id, direction: 'v', pos_cm: 50, start_cm: 20, length_cm: 360 }];
+      if (medKabel) S.cables = [
+        cab(993302, 993101, K3, 10, 250, 0, 250, 400, { multiCableGroup: 1, multiCableIndex: 1 }),   // K2 først i S.cables
+        cab(993301, 993101, K3, 10, 0, 0, 250, 400, { multiCableGroup: 1, multiCableIndex: 0 }),
+        cab(993303, 993103, K2, 7.5, 700, 0, 300, 250),
+        cab(993304, 993104, K1, 6.7, 700, 300, 400, 200),
+        cab(993305, 993105, K2, 7.5, 600, 0, 300, 250),
+        cab(993306, 993105, K2, 7.5, 600, 0, 300, 250, { reserve: true, _manual: true, mainCableId: 993305 }),   // manuell, ellers rydder _syncReserveCables den
+        cab(993307, 993106, K1, 10, 0, 600, 300, 300),   // snø — ikke med
+      ];
+      _invalidateCableCache && _invalidateCableCache(); _invalidateStripCache();
+    };
+
+    // ── 1. Radene og summene ────────────────────────────────────────────────────────────────
+    bygg(true);
+    const rows = _cableOverviewRows(S.rooms);
+    const navn = rows.map(r => r.room.name + (r.note ? '/' + r.note : '')).join(', ');
+    check('én rad per kabel, etasjer sortert, K1 før K2, reserve sist, snø ute',
+      'Bad, Gang, Vaskerom/K1, Vaskerom/K2, Bad 2. etg, Bad 2. etg/Reserve',
+      navn === 'Bad, Gang, Vaskerom/K1, Vaskerom/K2, Bad 2. etg, Bad 2. etg/Reserve', navn);
+    check('effekt per rad (håndregnet)', '400,600,1020,1020,400,0', rows.map(r => r.effectW).join(',') === '400,600,1020,1020,400,0', rows.map(r => r.effectW).join(','));
+    check('lengde per rad = produktlengde', '40,60,60,60,40,40', rows.map(r => r.lengthM).join(',') === '40,60,60,60,40,40', rows.map(r => r.lengthM).join(','));
+    check('CC per rad = kabelens spacing', '7.5,6.7,10,10,7.5,7.5', rows.map(r => r.ccCm).join(',') === '7.5,6.7,10,10,7.5,7.5', rows.map(r => r.ccCm).join(','));
+    for (const room of S.rooms.filter(r => rows.some(x => x.room === r))) {
+      const sumW = Math.round(rows.filter(x => x.room === room).reduce((a, x) => a + x.effectWRaw, 0));
+      check(room.name + ': radene summerer til rommets effekt i Romoversikten', _roomRatedEffectW(room), sumW === _roomRatedEffectW(room), sumW);
+      const wm2 = rows.find(x => x.room === room).roomWm2;
+      const fasit = Math.round(_roomRatedEffectW(room) / _computeRoomStats(room).nettoM2);
+      check(room.name + ': W/m² = Romoversiktens (effekt ÷ netto)', fasit, wm2 === fasit, wm2);
+    }
+    const tot = _cableOverviewTotals(rows);
+    check('sum: 6 kabler, herav 1 reserve', '6/1', tot.count === 6 && tot.reserve === 1, tot.count + '/' + tot.reserve);
+    check('sum lengde 300 m (40+60+60+60+40+40)', 300, tot.lengthM === 300, tot.lengthM);
+    check('sum effekt 3440 W (400+600+2×1020+400)', 3440, tot.effectW === 3440, tot.effectW);
+    const innKabler = S.cables.filter(c => _roomModuleType(c.roomId) === 'indoor');
+    check('antall = innendørs kabler materiallista teller (inkl. reserve)', innKabler.length, tot.count === innKabler.length, tot.count);
+
+    // ── 2. PDF ──────────────────────────────────────────────────────────────────────────────
+    window._performAutoSave = () => Promise.resolve();
+    window._showToast = () => {};
+    window.showAccessoriesModal = () => Promise.resolve({ items: [] });
+    window._pdfBranding = () => Promise.resolve(null);
+    const Ekte = saved.jsPDF;
+    let sider = null, tekst = [];
+    window.jspdf.jsPDF = function (...a) {
+      const d = new Ekte(...a);
+      const t0 = d.text.bind(d);
+      d.text = function (txt, ...r) {
+        tekst.push({ t: Array.isArray(txt) ? txt.join(' ') : String(txt), page: d.internal.getCurrentPageInfo().pageNumber, size: d.getFontSize() });
+        return t0(txt, ...r);
+      };
+      d.save = function () { sider = d.internal.getNumberOfPages(); return d; };
+      return d;
+    };
+    const kjør = async (cableTable) => {
+      sider = null; tekst = [];
+      const opts = { cover: false, summary: false, rooms: [], stairs: [], roomTable: true,
+        stairTable: false, materialList: true, resistance: false, pricing: false, discount: 0, showDGDB: false,
+        docs: false, signature: false, freeText: '' };
+      if (cableTable !== undefined) opts.cableTable = cableTable;
+      await exportPDF(opts);
+      return { sider, alle: tekst.map(x => x.t), pages: tekst };
+    };
+    const TITTEL = 'Varmekabler – oversikt';
+    const side = (r, s) => { const x = r.pages.find(p => p.t === s); return x ? x.page : null; };
+    const antall = (r, s) => r.alle.filter(t => t === s).length;
+
+    const på = await kjør(true);
+    check('PDF: siden finnes (tittel én gang)', 1, antall(på, TITTEL) === 1, antall(på, TITTEL));
+    check('PDF: rett etter Romoversikten', side(på, 'Romoversikt') + 1, side(på, TITTEL) === side(på, 'Romoversikt') + 1, side(på, TITTEL));
+    const ks = side(på, TITTEL);
+    const kRader = på.pages.filter(p => p.page === ks && p.size === 8 && /^TestKabel/.test(p.t)).length;
+    check('PDF: 6 produktrader på kabelsiden', 6, kRader === 6, kRader);
+    check('PDF: sumraden «6 kabler (herav 1 reserve)» · 300,0 · 3440', 'ja',
+      på.pages.some(p => p.page === ks && p.t === '6 kabler (herav 1 reserve)') && på.pages.some(p => p.page === ks && p.t === '300,0')
+      && på.pages.some(p => p.page === ks && p.t === '3440'), 'mangler');
+    check('PDF: snø-rommet står ikke på kabelsiden', 0, på.pages.filter(p => p.page === ks && p.t === 'Uteplass').length === 0, på.pages.filter(p => p.page === ks && p.t === 'Uteplass').length);
+    check('PDF: reserveforklaringen står med', 'ja', på.pages.some(p => p.page === ks && /Reservekabel er ikke tilkoblet/.test(p.t)), 'mangler');
+    const av = await kjør(false);
+    check('PDF: valget av → ingen kabelside', 0, antall(av, TITTEL) === 0, antall(av, TITTEL));
+    check('PDF: valget av → én side mindre', på.sider - 1, av.sider === på.sider - 1, av.sider);
+    const uten = await kjør(undefined);
+    check('PDF: gamle kallsteder uten valget → ingen kabelside', 0, antall(uten, TITTEL) === 0, antall(uten, TITTEL));
+
+    // ── 3. Bare folie: ingen side, ingen valg i dialogen ────────────────────────────────────
+    bygg(false);
+    const folie = await kjør(true);
+    check('bare folie: ingen kabelside selv med valget på', 0, antall(folie, TITTEL) === 0, antall(folie, TITTEL));
+    _showExportDialog();
+    check('bare folie: valget vises ikke i dialogen', 'ingen', !document.getElementById('exp-cabletable'), !!document.getElementById('exp-cabletable'));
+    bygg(true);
+    _showExportDialog();
+    const cb = document.getElementById('exp-cabletable');
+    check('med kabel: valget «Varmekabler – oversikt» er på som standard', 'på',
+      cb && cb.checked && /Varmekabler – oversikt/.test(cb.parentElement.textContent), cb ? (cb.checked ? 'på' : 'av') : 'mangler');
+    document.getElementById('export-dialog').style.display = 'none';
+
+    // ── 4. Mange kabler: sidebryting med tabellhode på hver side ────────────────────────────
+    tom();
+    S.floors = [{ id: 993001, name: '1. etasje', order: 1 }];
+    for (let i = 0; i < 60; i++) {
+      S.rooms.push(mkRoom(993400 + i, 'Rom ' + (i + 1), rect((i % 10) * 400, Math.floor(i / 10) * 400, 300, 250), 993001));
+      S.cables.push(cab(993500 + i, 993400 + i, [K1, K2, K3][i % 3], 10, (i % 10) * 400, Math.floor(i / 10) * 400, 300, 250));
+    }
+    _invalidateCableCache && _invalidateCableCache();
+    const mange = await kjør(true);
+    const iTab = p => p.page >= side(mange, TITTEL) && p.page < side(mange, 'Materialliste');   // materiallista har også produktnavn
+    const radSider = [...new Set(mange.pages.filter(p => p.size === 8 && /^TestKabel/.test(p.t) && iTab(p)).map(p => p.page))];
+    const hodeSider = [...new Set(mange.pages.filter(p => p.t === 'Merknad').map(p => p.page))];
+    const radN = mange.pages.filter(p => p.size === 8 && /^TestKabel/.test(p.t) && iTab(p)).length;
+    check('60 kabler: 60 rader', 60, radN === 60, radN);
+    check('60 kabler: over minst to sider', '≥2', radSider.length >= 2, radSider.length);
+    check('60 kabler: tabellhode på hver side med rader', radSider.join(','), radSider.every(p => hodeSider.includes(p)) && hodeSider.length === radSider.length, hodeSider.join(','));
+    const sumSide = side(mange, 'Sum');
+    check('60 kabler: sumraden står ikke alene (har minst én rad på sin side)', 'ja', radSider.includes(sumSide), sumSide);
+    // 20 × (600 + 400 + 1020) = 40 400 W; 20 × (60 + 40 + 60) = 3200 m
+    check('60 kabler: sum 3200,0 m og 40 400 W', 'ja', mange.alle.includes('3200,0') && mange.alle.includes('40 400'), 'mangler');
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree,
+      cables: saved.cables, mats: saved.mats, matPaths: saved.matPaths, plates: saved.plates,
+      aluboard: saved.aluboard, zones: saved.zones, hindrings: saved.hindrings, stairs: saved.stairs,
+      floors: saved.floors, project: saved.project });
+    Object.assign(S.counters, saved.counters);
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId;
+    S.ui.selectedStairId = saved.selectedStairId;
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push(...saved.cats);
+    window._performAutoSave = saved.autoSave; window._showToast = saved.toast;
+    window.showAccessoriesModal = saved.modal; window._pdfBranding = saved.branding;
+    if (window.jspdf) window.jspdf.jsPDF = saved.jsPDF;
+    if (saved.undoLen != null) _undoStack.length = saved.undoLen;
+    const dlg = document.getElementById('export-dialog'); if (dlg) dlg.style.display = dlgSaved == null ? 'none' : dlgSaved;
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_cableOverviewRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return { ok: allOk, results };
+}
 
 // 145 — motstandsmåling for varmefolie: utregningen (P = Σ W/m × tegnet lengde; 48 400 / 52 900 /
 // 57 600 ÷ P), at romsidens blokk og oversiktstabellen viser de samme tallene, og at valget slår
@@ -83500,7 +83757,7 @@ function _pdfSuperscriptPatch(doc) {
 }
 
 async function exportPDF(opts) {
-  opts = opts || { cover:true, summary:true, floorplan:S.rooms.length > 1, rooms:S.rooms.map(r=>r.id), stairs:(S.stairs||[]).map(s=>s.id), roomTable:true, stairTable:true, materialList:true, resistance:true, pricing:false, discount:0, showDGDB:false, docs:false, signature:false, freeText:'' };
+  opts = opts || { cover:true, summary:true, floorplan:S.rooms.length > 1, rooms:S.rooms.map(r=>r.id), stairs:(S.stairs||[]).map(s=>s.id), roomTable:true, stairTable:true, materialList:true, resistance:true, cableTable:true, pricing:false, discount:0, showDGDB:false, docs:false, signature:false, freeText:'' };
   if (!window.jspdf) { alert('PDF-bibliotek ikke lastet. Prøv igjen.'); return; }
   // Foil-accessories modal — gathers tilbehør quantities before render.
   // Cancelled modal short-circuits the whole export (per spec).
@@ -84701,6 +84958,81 @@ async function exportPDF(opts) {
     }
     _pageStarted = true;
   } // end if (opts.roomTable)
+
+  // ── 181 · Varmekabler – oversikt ── (only when selected AND an indoor room has cable)
+  // Rett etter Romoversikten: den er «romlista hvor kablene også dukker opp», og denne siden er
+  // samme kabler én rad per kabel. Stil som motstandsmålingssiden (145/180). Rader og summer fra
+  // _cableOverviewRows / _cableOverviewTotals — samme kilder som Romoversikten og materiallista.
+  const _cabRows = opts.cableTable ? _cableOverviewRows(S.rooms) : [];
+  if (_cabRows.length) {
+    if (_pageStarted) _addPage(); else _pageStarted = true;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(20, 40, 80);
+    doc.text('Varmekabler \u2013 oversikt', M, y); y += 5.5;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(90, 100, 120);
+    doc.text('Én rad per kabel', M, y); y += 6.5;
+    doc.setFontSize(7); doc.setTextColor(120, 130, 150);
+    const _cabHasRes = _cabRows.some(r => r.reserve);
+    doc.text('Lengde = kabelens produktlengde. Effekt = kabelens merkeeffekt. W/m\u00b2 = rommets effekt ÷ netto gulvareal (som i Romoversikten).', M, y);
+    if (_cabHasRes) { y += 3.5; doc.text('Reservekabel er ikke tilkoblet (0 W), men telles med i antall og lengde.', M, y); }
+    y += 6;
+
+    // Kolonner (sum 180 mm): Etasje · Rom · Netto · Produkt · El.nr · Lengde · Effekt · CC · W/m² · Merknad
+    const cw = [18, 26, 13, 42, 15, 15, 15, 12, 10, 14];
+    const cx = []; { let a = M; for (const w of cw) { cx.push(a); a += w; } }
+    const heads = ['Etasje', 'Rom', 'Netto m\u00b2', 'Produkt', 'El.nr', 'Lengde (m)', 'Effekt (W)', 'CC (cm)', 'W/m\u00b2', 'Merknad'];
+    const numCol = [false, false, true, false, false, true, true, true, true, false];
+    const rowH = 6;
+    const _cFit = (t, i) => { t = String(t == null ? '' : t); return t ? (doc.splitTextToSize(t, cw[i] - 2)[0] || '') : ''; };
+    const _cabHead = () => {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(20, 60, 130);
+      heads.forEach((h, i) => doc.text(h, numCol[i] ? cx[i] + cw[i] - 1.5 : cx[i] + 1, y, numCol[i] ? { align: 'right' } : undefined));
+      y += 2; doc.setDrawColor(150, 165, 190); doc.setLineWidth(0.3); doc.line(M, y, M + pw, y); y += 5;
+    };
+    _cabHead();
+    let _prevFloor = Symbol('start'), _prevRoom = null;
+    _cabRows.forEach((r, ri) => {
+      // Siste rad tar sumraden med seg (10 mm), så summen aldri står alene øverst på en ny side.
+      if (y + rowH + (ri === _cabRows.length - 1 ? 10 : 0) > H - M) { _addPage(); _cabHead(); _prevFloor = Symbol('page'); _prevRoom = null; }
+      const fName = r.floor ? (r.floor.name || 'Etasje') : '\u2014';
+      const newRoom = _prevRoom !== r.room.id;   // rommets felt også øverst på en ny side
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(30, 40, 60);
+      if (fName !== _prevFloor) { doc.setFont('helvetica', 'bold'); doc.text(_cFit(fName, 0), cx[0] + 1, y); doc.setFont('helvetica', 'normal'); }
+      _prevFloor = fName;
+      const cells = [
+        null,
+        newRoom ? (r.room.name || 'Rom') : '',
+        newRoom && r.nettoM2 ? _fmtNo(r.nettoM2, 1) : '',
+        r.product ? (r.product.name || '\u2014') : 'Ukjent produkt',
+        (r.product && r.product.el_no) || '\u2014',
+        r.lengthM ? _fmtNo(r.lengthM, 1) : '\u2014',
+        r.reserve ? '\u2014' : _fmtNo(r.effectW, 0),
+        r.ccCm ? _fmtNo(r.ccCm, 1) : '\u2014',
+        newRoom && r.roomWm2 ? String(r.roomWm2) : '',
+        r.note,
+      ];
+      for (let i = 1; i < cells.length; i++) {
+        // Produkt: et langt navn (målt: InSnow «… 117.4m 400V») krympes til 7 pt før det kuttes,
+        // så spenningen sist i navnet ikke forsvinner. Alle InFloor-navn i katalogen får plass i 8 pt.
+        if (i === 3 && doc.getTextWidth(String(cells[i])) > cw[i] - 2) doc.setFontSize(7);
+        const t = _cFit(cells[i], i);
+        if (t) { if (numCol[i]) doc.text(t, cx[i] + cw[i] - 1.5, y, { align: 'right' }); else doc.text(t, cx[i] + 1, y); }
+        doc.setFontSize(8);
+      }
+      _prevRoom = r.room.id;
+      doc.setDrawColor(225, 232, 244); doc.setLineWidth(0.15); doc.line(M, y + 2, M + pw, y + 2);
+      y += rowH;
+    });
+    // Sumrad (plassen er alt sikret av siste rad)
+    const tot = _cableOverviewTotals(_cabRows);
+    y -= 1.5; doc.setDrawColor(150, 165, 190); doc.setLineWidth(0.3); doc.line(M, y, M + pw, y); y += 4.5;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(20, 40, 80);
+    doc.text('Sum', cx[0] + 1, y);
+    doc.text(tot.count + (tot.count === 1 ? ' kabel' : ' kabler') + (tot.reserve ? ' (herav ' + tot.reserve + ' reserve)' : ''), cx[1] + 1, y);
+    doc.text(_fmtNo(tot.lengthM, 1), cx[5] + cw[5] - 1.5, y, { align: 'right' });
+    doc.text(_fmtNo(tot.effectW, 0), cx[6] + cw[6] - 1.5, y, { align: 'right' });
+    y += 8;
+    _pageStarted = true;
+  } // end if (_cabRows.length)
 
   // ── Trappeoversikt (A-Q tabell, én rad pr. sone/trinn-serie) ── (only when selected)
   // DEL D (spec-trapp-navn-oversikt.md, Kenneth 28.08.2026): trapper mangler i dag helt i
