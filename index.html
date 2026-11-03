@@ -83827,26 +83827,29 @@ async function exportPDF(opts) {
   doc.setTextColor(20, 40, 80);
   doc.text('Materialliste', M, y); y += 8;
 
-  // Felles 5-kolonne-mal (Produkt | Antall | Enhet | El.nr | Lev.art.nr) for produkter OG tilbehør,
-  // så kolonnene linjerer. KUN varmefolie måles i meter (selges pr m); alt annet i stk.
-  const col5 = [M, M + 92, M + 112, M + 132, M + 158];
+  // Felles 6-kolonne-mal for produkter OG tilbehør, så kolonnene linjerer. KUN varmefolie måles i
+  // meter (selges pr m); alt annet i stk. 175 (Kenneth 02.11.2026): bestillingsnumrene først —
+  // Lev.art.nr | El.nr | Produkt | Antall | Enhet | Areal. Produkt beholder ~84 mm (46 tegn ≈ 70 mm
+  // ved 8 pt), Areal er tom for alt som ikke dekker areal. A4 stående, pw = 180 mm.
+  const col5 = [M, M + 24, M + 44, M + 128, M + 144, M + 160];   // navnet beholdt (Rom:/OBS: bruker col5[0])
+  const MAT_COLS = ['Lev.art.nr', 'El.nr', 'Produkt', 'Antall', 'Enhet', 'Areal'];
   const _matHeadRow = (title) => {
     _checkPage(18);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(20, 60, 130);
     doc.text(title, M, y); y += 5.5;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(120, 130, 150);
-    doc.text('Produkt', col5[0], y); doc.text('Antall', col5[1], y); doc.text('Enhet', col5[2], y);
-    doc.text('El.nr', col5[3], y); doc.text('Lev.art.nr', col5[4], y);
+    MAT_COLS.forEach((h, i) => doc.text(h, col5[i], y));
     y += 2.5; _line(y); y += 4;
   };
-  const _matRow = (name, antall, enhet, elNo, artNo) => {
+  const _matRow = (name, antall, enhet, elNo, artNo, areal) => {
     _checkPage(6);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(30, 40, 60);
-    doc.text(String(name).substring(0, 46), col5[0], y);
-    doc.text(String(antall), col5[1], y);
-    doc.text(String(enhet || ''), col5[2], y);
-    doc.text(String(elNo || '—'), col5[3], y);
-    doc.text(String(artNo || '—'), col5[4], y);
+    doc.text(String(artNo || '—'), col5[0], y);
+    doc.text(String(elNo || '—'), col5[1], y);
+    doc.text(String(name).substring(0, 46), col5[2], y);
+    doc.text(String(antall), col5[3], y);
+    doc.text(String(enhet || ''), col5[4], y);
+    if (areal) doc.text(String(areal), col5[5], y);
     y += 5;
   };
 
@@ -83949,7 +83952,8 @@ async function exportPDF(opts) {
     _matRow(e.prod ? e.prod.name : 'Ukjent',
             isFoil ? String(e.foilM) : String(e.info.count),
             isFoil ? 'm' : 'stk',
-            e.prod?.el_no, e.prod?.article_no);
+            e.prod?.el_no, e.prod?.article_no,
+            isFoil ? _foilOrderAreaText(e.prod, e.foilM) : '');   // 175: B × bestilt lengde
   };
   const _shownTypes = [];
   for (const g of _matGroups) {
@@ -83973,8 +83977,8 @@ async function exportPDF(opts) {
       const _sorted = title === 'Tilbehør varmefolie' ? _sortFoilAccessories(list)
         : [...list].sort((a, b) => (a.art_no || '').localeCompare(b.art_no || ''));
       for (const it of _sorted) {
-        // 163: dekket areal bak enheten — «60 | stk (43,2 m²)» for plater og plastfolie, ellers som før.
-        _matRow(it.name, it.qty, (it.unit || 'stk') + _accCoversSuffix(it.id, it.qty), it.el_no, it.art_no);
+        // 175: dekket areal (163, coversM2PerUnit) i egen kolonne — «60 | stk | 43,2 m²», ikke i Enhet.
+        _matRow(it.name, it.qty, it.unit || 'stk', it.el_no, it.art_no, _accCoversText(it.id, it.qty));
         if (it.rooms && it.rooms.length) {
           doc.setFontSize(7); doc.setTextColor(120, 130, 150);
           doc.text('Rom: ' + it.rooms.join(', '), col5[0] + 2, y); y += 4;
@@ -85880,9 +85884,21 @@ function _accFmtM2(m2) { return Number(m2).toFixed(1).replace('.', ',') + ' m²'
 // Tillegget bak antallet i eksportene (PDF-tilbehørslista, Excel «Bestilling»): « (43,2 m²)», ellers ''.
 // Oppslag på id, siden lagrede rader bare bærer id/qty — katalogoppføringen eier arealet per enhet.
 function _accCoversSuffix(accId, qty) {
+  const t = _accCoversText(accId, qty);
+  return t ? ` (${t})` : '';
+}
+// 175: samme tall uten parentes — PDF-materiallistas Areal-kolonne. '' når oppføringen ikke dekker areal.
+function _accCoversText(accId, qty) {
   const a = FOIL_ACCESSORIES.find(x => x.id === accId);
   const m2 = _accCoversM2(a, Number(qty) || 0);
-  return m2 == null ? '' : ` (${_accFmtM2(m2)})`;
+  return m2 == null ? '' : _accFmtM2(m2);
+}
+// 175: arealet for en folielinje i materiallista — produktbredde (B=…, width_mm) × bestilt lengde
+// (hele meter fra _foilOrderQtyM, samme tall som står i Antall). B=20cm × 23 m → «4,6 m²».
+function _foilOrderAreaText(prod, meters) {
+  const wmm = prod && (prod.width_mm || prod.netto_width_mm);
+  if (!(wmm > 0) || !(meters > 0)) return '';
+  return _accFmtM2(Math.round(wmm / 1000 * meters * 10) / 10);
 }
 // Dialogens informasjonslinje under raden — ÉN formatter, live med antallet i feltet:
 //   coversM2PerUnit → «= 43,2 m² (brutto 39,2 m²)» / «= 39,0 m² (folie 25,0 m²)»
@@ -93606,6 +93622,76 @@ function _accessoryFoilQtyRegressionTest() {
         }
       }
 
+      // ── 175: kolonnerekkefølge Lev.art.nr | El.nr | Produkt | Antall | Enhet | Areal i alle tre ──
+      // tabellene; Areal = B × bestilt lengde for folie, coversM2PerUnit × antall for tilbehør, tom
+      // ellers; Enhet uten parentes. Tekstene fanges med x/y, radene leses venstre → høyre.
+      if (window.jspdf && saved.jsPDF) {
+        const F20 = { id: 997003, category_id: 9900, active: true, name: 'FlexFoil TEST B=20cm', width_mm: 200,
+          netto_width_mm: 180, watt_per_m2: 60, article_no: 'TF20', el_no: '1000020' };
+        const CAT_KAB = { id: 9901, module_type: 'cable', name: 'TESTKABEL' };
+        const K1 = { id: 997004, category_id: 9901, active: true, name: 'TESTKABEL 10W', watt_per_m: 10,
+          article_no: 'TK10', el_no: '1000010', cable_length_m: 50 };
+        const lagretStrips = S.strips, lagretCables = S.cables;
+        HEATING_PRODUCTS.push(F20, K1); PRODUCT_CATEGORIES.push(CAT_KAB);
+        S.strips = [strip(11, A, F20.id, 2250, 25)];   // 22,5 m → bestilt 23 m
+        S.cables = [{ id: 1, roomId: B, productId: K1.id, totalLength_cm: 5000 }];
+        _invalidateStripCache();
+        try {
+          const UP2 = _acc('underlagsplater'), PO2 = _acc('plast_over'), KL2 = _acc('tilkoblingsklemmer');
+          const accRad = (a, qty, unit) => ({ id: a.id, name: a.name, art_no: a.art_no, el_no: a.el_no, unit, qty, source: 'auto', type: 'foil' });
+          const items = [accRad(UP2, 326, 'stk'), accRad(PO2, 5, 'rull'), accRad(KL2, 23, 'stk')];
+          const fanget = [];
+          window.showAccessoriesModal = () => Promise.resolve({ items });
+          const Ekte = saved.jsPDF;
+          window.jspdf.jsPDF = function (...a) {
+            const d = new Ekte(...a); const ekte = d.text.bind(d); let side = 1;
+            const ekteAdd = d.addPage.bind(d); d.addPage = function (...r) { side++; return ekteAdd(...r); };
+            d.text = function (t, x, y, ...rest) { if (typeof t === 'string') fanget.push({ t, x, y, side }); return ekte(t, x, y, ...rest); };
+            d.save = function () { return d; };
+            return d;
+          };
+          await exportPDF({ cover: false, summary: false, rooms: [], stairs: [], roomTable: false,
+            stairTable: false, materialList: true, pricing: false, discount: 0, showDGDB: false,
+            docs: false, signature: false, freeText: '' });
+          // Superscript-patchen tegner «m²» som «m» + løftet «2» (annen y) + resten — cellene settes
+          // sammen per kolonne (x mellom kolonnestartene), og fasiten sammenlignes uten «²».
+          const kolX = [];
+          const raden = (forst) => { const h = fanget.find(o => o.t === forst); if (!h) return null;
+            const biter = fanget.filter(o => o.side === h.side && Math.abs(o.y - h.y) < 0.01).sort((p, q) => p.x - q.x);
+            const celler = kolX.map(() => '');
+            for (const b of biter) { let k = 0; while (k + 1 < kolX.length && b.x >= kolX[k + 1] - 0.01) k++; celler[k] += b.t; }
+            while (celler.length && celler[celler.length - 1] === '') celler.pop();
+            return celler; };
+          const uten2 = (a) => (Array.isArray(a) ? a.join('|') : a).replace(/\u00b2/g, '');
+          const hoder = fanget.filter(o => o.t === 'Lev.art.nr');
+          const fasitHode = 'Lev.art.nr|El.nr|Produkt|Antall|Enhet|Areal';
+          const alleHoder = hoder.map(h => fanget.filter(o => o.side === h.side && Math.abs(o.y - h.y) < 0.01).sort((p, q) => p.x - q.x).map(o => o.t).join('|'));
+          check('175 tre tabeller (Varmefolie, Varmekabel, Tilbehør varmefolie) med overskrift', 3, alleHoder.length === 3 && ['Varmefolie', 'Varmekabel', 'Tilbehør varmefolie'].every(x => fanget.some(o => o.t === x)), alleHoder.length);
+          check('175 kolonnerekkefølge i alle tre', fasitHode, alleHoder.length === 3 && alleHoder.every(h => h === fasitHode), alleHoder);
+          const xs = (t) => fanget.filter(o => o.t === t).map(o => o.x);
+          if (hoder[0]) kolX.push(...fanget.filter(o => o.side === hoder[0].side && Math.abs(o.y - hoder[0].y) < 0.01).map(o => o.x).sort((p, q) => p - q));
+          check('175 kolonnene står likt under hverandre (samme x i alle tre)', true, ['Lev.art.nr', 'Produkt', 'Areal'].every(t => new Set(xs(t)).size === 1), ['Lev.art.nr', 'Produkt', 'Areal'].map(t => xs(t).join('/')));
+          const folie = raden('TF20'), kabel = raden('TK10'), plate = raden(UP2.art_no), plast = raden(PO2.art_no), klemme = raden(KL2.art_no);
+          check('175 folie: TF20 | 1000020 | navn | 23 | m | 4,6 m²', 'TF20|1000020|FlexFoil TEST B=20cm|23|m|4,6 m²', folie && folie.join('|') === uten2(['TF20|1000020|FlexFoil TEST B=20cm|23|m|4,6 m²']), folie);
+          check('175 kabel: Areal tom (5 celler)', 'TK10|1000010|TESTKABEL 10W|1|stk', kabel && kabel.join('|') === 'TK10|1000010|TESTKABEL 10W|1|stk', kabel);
+          check('175 underlagsplater 326 stk → «stk» + 234,7 m²', [UP2.art_no, UP2.el_no, UP2.name, '326', 'stk', '234,7 m²'].join('|'), plate && plate.join('|') === uten2([UP2.art_no, UP2.el_no, UP2.name, '326', 'stk', '234,7 m²'].join('|')), plate);
+          check('175 plastfolie 5 rull → «rull» + 195,0 m²', [PO2.art_no, PO2.el_no, PO2.name, '5', 'rull', '195,0 m²'].join('|'), plast && plast.join('|') === uten2([PO2.art_no, PO2.el_no, PO2.name, '5', 'rull', '195,0 m²'].join('|')), plast);
+          check('175 klemmer: Areal tom', [KL2.art_no, KL2.el_no, KL2.name, '23', 'stk'].join('|'), klemme && klemme.join('|') === [KL2.art_no, KL2.el_no, KL2.name, '23', 'stk'].join('|'), klemme);
+          check('175 ingen «(… m²)» i Enhet lenger', false, !fanget.some(o => /^(stk|rull) \(/.test(o.t)), fanget.filter(o => /^(stk|rull) \(/.test(o.t)).map(o => o.t));
+          check('175 ingen sumrad for areal', false, !fanget.some(o => /^Sum/i.test(o.t) && o.side === (hoder[0] || {}).side), fanget.filter(o => /^Sum/i.test(o.t)).map(o => o.t));
+          check('175 Excel «Bestilling» urørt: _accCoversSuffix gir fortsatt « (234,7 m²)»', ' (234,7 m²)', _accCoversSuffix('underlagsplater', 326) === ' (234,7 m²)', _accCoversSuffix('underlagsplater', 326));
+          // VAKSINE: uten coversM2PerUnit på plastfolien skal Areal-cellen forsvinne — feltet styrer, ikke art.nr.
+          const ekteCov = PO2.coversM2PerUnit; PO2.coversM2PerUnit = 0;
+          let vaks; try { vaks = _accCoversText(PO2.id, 5); } finally { PO2.coversM2PerUnit = ekteCov; }
+          check('175 vaksine: uten coversM2PerUnit → tom Areal', '', vaks === '', vaks);
+          window.jspdf.jsPDF = saved.jsPDF;
+        } finally {
+          S.strips = lagretStrips; S.cables = lagretCables; _invalidateStripCache();
+          HEATING_PRODUCTS.splice(HEATING_PRODUCTS.indexOf(F20), 1); HEATING_PRODUCTS.splice(HEATING_PRODUCTS.indexOf(K1), 1);
+          PRODUCT_CATEGORIES.splice(PRODUCT_CATEGORIES.indexOf(CAT_KAB), 1);
+        }
+      }
+
       // ── 163: selve dialogen (DOM) — info-linje live, bekreftelse runder Kapton til hel rull ──
       // Fiksturen: 5 bredder → klemmer tegnet 10, forslag 12; Kapton behov 10 → 100; brutto 38,0 m²
       // (20 + 12 + 6) → plater 59; folie 29,16 m². saved.modal er den EKTE modalen (window-stubben over
@@ -93669,7 +93755,8 @@ function _accessoryFoilQtyRegressionTest() {
         if (window.jspdf && saved.jsPDF) {
           const t = await pdfTekster([plateRad, kdRad]);
           const i = t.indexOf(UP.name);   // superscript-patchen deler «m²» i biter → «stk (43,2 m», «2», «)»
-          check('163 PDF tilbehørslista: 60 | stk (43,2 m²)', '60 | stk (43,2 m', i >= 0 && t[i + 1] === '60' && t[i + 2] === 'stk (43,2 m', i >= 0 ? t.slice(i + 1, i + 4).join(' | ') : null);
+          // 175: arealet står i egen kolonne (Areal), ikke i parentes bak enheten.
+          check('163/175 PDF tilbehørslista: 60 | stk | 43,2 m²', '60 | stk | 43,2 m', i >= 0 && t[i + 1] === '60' && t[i + 2] === 'stk' && t[i + 3] === '43,2 m', i >= 0 ? t.slice(i + 1, i + 4).join(' | ') : null);
           const j = t.indexOf(KD.name);
           check('163 PDF tilbehørslista: Kapton 100 | stk', '100 | stk', j >= 0 && t[j + 1] === '100' && t[j + 2] === 'stk', j >= 0 ? t.slice(j + 1, j + 3).join(' | ') : null);
         }
