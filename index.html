@@ -52509,6 +52509,10 @@ function _generateStairSurfaces(stair) {
 // LAGRING: stair.design = 'horseshoe' + stair.horseshoe = { topW_cm, topD_cm, count, front_cm,
 // side_cm (null = følger front_cm), stepHeight_cm }. Mangler design, er trappa 'straight' — alle
 // eksisterende trapper går nøyaktig samme vei som før.
+// 182 (additivt): perStepDepth (true | mangler = false) + depths_cm = [d2, d3, …] — én verdi per
+// hesteskotrinn innenfra og ut, null = følger front_cm. Overstyringene lagres også når valget er av
+// (de huskes), men brukes bare når perStepDepth er true. Sidene følger trinnets egen dybde når
+// side_cm er null; ellers beholder de side_cm på alle trinn.
 //
 // FLATER: surfaces[0] = YTTERSTE hesteskotrinn (nederst, der kabelen starter, Regel 14), innover,
 // og toppflaten (rektangelet) sist. stepIdx = Kenneths nummer − 1 (toppen = trinn 1).
@@ -52539,10 +52543,47 @@ function _stairHsParams(stair) {
   const side = (h.side_cm != null && h.side_cm !== '' && +h.side_cm > 0) ? +h.side_cm : front;
   const count = Math.max(1, Math.round(+h.count || 1));
   const topW = Math.max(10, +h.topW_cm || 0), topD = Math.max(5, +h.topD_cm || 0);
+  const sideFollowsFront = !(h.side_cm != null && h.side_cm !== '' && +h.side_cm > 0);
+  // 182: «Ulik dybde per trinn». fronts[i]/sides[i] gjelder hesteskotrinn i + 1 innenfra (i = 0 er
+  // Kenneths trinn 2, rett rundt toppflaten). Valget av, eller ingen overstyring: alle = felles verdi,
+  // og `uniform` sier at summene regnes som før (count · side), så gamle trapper blir bit-identiske.
+  const perStepDepth = h.perStepDepth === true;
+  const depths = Array.isArray(h.depths_cm) ? h.depths_cm : [];
+  const fronts = [], sides = [];
+  for (let i = 0; i < count; i++) {
+    const d = perStepDepth ? depths[i] : null;
+    const f = (d != null && d !== '' && +d > 0) ? +d : front;
+    fronts.push(f);
+    sides.push(sideFollowsFront ? f : side);
+  }
+  const uniform = fronts.every(f => f === front) && sides.every(s => s === side);
+  // Σ av de i innerste dybdene (uniform: i · felles, nøyaktig det gamle uttrykket).
+  const cumFront = i => uniform ? i * front : fronts.slice(0, i).reduce((a, v) => a + v, 0);
+  const cumSide = i => uniform ? i * side : sides.slice(0, i).reduce((a, v) => a + v, 0);
+  const sideTot = cumSide(count);
   return { topW, topD, count, front, side, stepHeight: Math.max(1, +h.stepHeight_cm || 17),
     topLevel: h.topLevel === 'flush' ? 'flush' : 'below',
-    sideFollowsFront: !(h.side_cm != null && h.side_cm !== '' && +h.side_cm > 0),
-    outerW: topW + 2 * count * side, outerD: topD + count * front };
+    sideFollowsFront, perStepDepth, fronts, sides, uniform, cumFront, cumSide, sideTot,
+    outerW: topW + 2 * sideTot, outerD: topD + cumFront(count) };
+}
+
+// 182: grensene for ett trinns dybde i listen «Ulik dybde per trinn».
+const STAIR_HS_STEP_MIN_CM = 10, STAIR_HS_STEP_MAX_CM = 200;
+// Trinn som ikke kan legges kabel på: ingen brukbar dybde (dybde ≤ opptrinn + nese) eller færre
+// enn 2 strenger (Regel 3: _stairRunCount gir N = 1 bare når brukbar ≤ 0). Gjelder både fronten
+// og sidene (sidene kan ha egen verdi). Listefeltene må i tillegg ligge i 10–200 cm.
+// Returnerer [{ no (Kenneths trinnnummer), i, depth, sider, msg }] — tom = gyldig.
+function _stairHsDepthProblems(p, riser, nose, maxCC) {
+  const out = [];
+  const R = _stairDimRound;
+  for (let i = 0; i < p.count; i++) {
+    const no = i + 2, f = p.fronts[i], s = p.sides[i];
+    const bad = [['', f], [' (sider)', s]].find(([, d]) => _stairRunCount(d - riser - nose, maxCC > 0 ? maxCC : STAIR_DEFAULT_MAX_CC_CM).N < 2);
+    if (bad) out.push({ no, i, depth: bad[1], sider: !!bad[0], msg: `Trinn ${no} er for grunt: ${R(bad[1])} cm${bad[0]} gir ingen brukbar dybde (opptrinn ${R(riser)} + nese ${R(nose)} cm)` });
+    else if (p.perStepDepth && f < STAIR_HS_STEP_MIN_CM) out.push({ no, i, depth: f, msg: `Trinn ${no} er for grunt: minst ${STAIR_HS_STEP_MIN_CM} cm (står ${R(f)})` });
+    else if (p.perStepDepth && f > STAIR_HS_STEP_MAX_CM) out.push({ no, i, depth: f, msg: `Trinn ${no} er for dypt: høyst ${STAIR_HS_STEP_MAX_CM} cm (står ${R(f)})` });
+  }
+  return out;
 }
 
 // Segmentlista en hesteskotrapp bærer for bakoverkompatibilitet (ingen soner, ingen repos):
@@ -52553,17 +52594,19 @@ function _stairHsSegments(p) {
 
 function _generateHorseshoeSurfaces(stair) {
   const p = _stairHsParams(stair);
-  const sideTot = p.count * p.side;
+  const sideTot = p.sideTot;
   const surfs = [];
   for (let k = p.count; k >= 1; k--) {   // k = 1 er hesteskoen rett rundt toppen (Kenneths trinn 2)
-    const xl = sideTot - (k - 1) * p.side, xr = sideTot + p.topW + (k - 1) * p.side;
-    const innerD = p.topD + (k - 1) * p.front;
+    // 182: indre kontur = toppflaten + Σ dybdene INNENFOR trinnet (akkumulert, ikke (k − 1) · felles).
+    const fk = p.fronts[k - 1], sk = p.sides[k - 1];
+    const xl = sideTot - p.cumSide(k - 1), xr = sideTot + p.topW + p.cumSide(k - 1);
+    const innerD = p.topD + p.cumFront(k - 1);
     surfs.push({ type: 'tread', shape: 'u', segIdx: 0, stepIdx: k,
-      x_cm: xl - p.side, y_cm: innerD, w_cm: (xr - xl) + 2 * p.side, d_cm: p.front,
+      x_cm: xl - sk, y_cm: innerD, w_cm: (xr - xl) + 2 * sk, d_cm: fk,
       span_cm: (xr - xl) + 2 * innerD,   // indre konturs lengde ≈ korteste streng før marginer
       stepHeight_cm: p.stepHeight,
       hsInner: [{ x: xl, y: 0 }, { x: xl, y: innerD }, { x: xr, y: innerD }, { x: xr, y: 0 }],
-      hsWidths: [p.side, p.front, p.side] });
+      hsWidths: [sk, fk, sk] });
   }
   surfs.push({ type: 'tread', shape: 'rect', hsTop: true, segIdx: 0, stepIdx: 0,
     x_cm: sideTot, y_cm: 0, w_cm: p.topW, d_cm: p.topD, stepHeight_cm: p.stepHeight });
@@ -55678,6 +55721,117 @@ function _stairHorseshoeRegressionTest() {
       check('178: fire trinn flush — tegningen mister nøyaktig ett opptrinn', '6 × 17 = 102 → 5 × 17 = 85', d4b.includes('6 × 17 = 102@') && d4f.includes('5 × 17 = 85@'), d4f);
       check('178: fire trinn flush — kabel identisk', 'identisk', cableSig(st4f) === cableSig(st4b), 'se over');
     } finally { _stairHsB = savedB; _stairHsBEditId = savedBId; }
+
+    // ─── 182 — «Ulik dybde per trinn» (Fredrik via Kenneth 03.11.2026) ───
+    const savedB2 = _stairHsB, savedBId2 = _stairHsBEditId;
+    try {
+      const geoSig = stt => JSON.stringify({ surf: stt.surfaces }) + cableSig(stt);
+      // 1 · av / på uten overstyring / på med alle = felles: identisk med en trapp uten feltene.
+      for (const [nm, hs] of [['VK', KENNETH], ['fire trinn', { topW_cm: 300, topD_cm: 60, count: 4, front_cm: 40, stepHeight_cm: 17 }], ['sider 60', { ...KENNETH, count: 2, side_cm: 60 }]]) {
+        const ref = geoSig(mk({ ...hs }));
+        const vs = [['på, ingen overstyring', { ...hs, perStepDepth: true, depths_cm: Array(hs.count).fill(null) }],
+          ['på, alle = felles', { ...hs, perStepDepth: true, depths_cm: Array(hs.count).fill(hs.front_cm) }],
+          ['av, med lagrede overstyringer', { ...hs, depths_cm: Array(hs.count).fill(99) }]];
+        for (const [vn, v] of vs) { const g = geoSig(mk(v)); check(`182.1: ${nm} — ${vn} = uten feltene`, 'identisk', g === ref, g === ref ? 'lik' : 'ulik'); }
+      }
+      // 2 · Fredriks eksempel: toppflate 300 × 60, 10 hesteskotrinn à 28, trinn 5 → 35 med ▲ (7 trykk).
+      const TI = { topW_cm: 300, topD_cm: 60, count: 10, front_cm: 28, stepHeight_cm: 17 };
+      st = mk({ ...TI });
+      const surfByNo = (stt, no) => stt.surfaces.findIndex(f => !f.hsTop && f.stepIdx + 1 === no);
+      const stepSig = (stt, no) => { const si = surfByNo(stt, no), rr = runsOf(stt, si); return { d: stt.surfaces[si].d_cm, N: rr.length, pos: rr.map(r => r2(r.pos_cm)).join('/'), cc: rr.length > 1 ? r2(rr[1].pos_cm - rr[0].pos_cm) : null, len: rr.map(r => r2(runLen(r))).join('/') }; };
+      const before = {}; for (let no = 2; no <= 11; no++) before[no] = stepSig(st, no);
+      const p0 = _stairHsParams(st);
+      const topWorld0 = st.x_cm + st.surfaces[st.surfaces.length - 1].x_cm, back0 = st.y_cm;
+      _showHsBuilder(st.id);
+      const rowsN = () => document.querySelectorAll('#shs-steps-list [id^="shs-row-"]').length;
+      const val = i => { const el = document.getElementById('shs-d-' + i); return el ? +el.value : null; };
+      const shown = i => { const el = document.getElementById(i); return !!el && el.style.visibility !== 'hidden' && el.textContent !== ''; };
+      check('182.2: valget er av som standard (listen skjult)', 'av', !_stairHsB.perStep && document.getElementById('shs-steps').style.display === 'none', String(_stairHsB.perStep));
+      _stairHsBPerStep(true);
+      check('182.2: på → 10 rader, alle 28, ingen «endret»', '10 × 28', rowsN() === 10 && [...Array(10).keys()].every(i => val(i) === 28 && !shown('shs-dm-' + i)), rowsN() + ' · ' + [...Array(10).keys()].map(val).join(','));
+      check('182.2: toppflaten som grå info-rad først', 'Trinn 1 (topp) · 300 × 60', document.getElementById('shs-steps-list').textContent.includes('Trinn 1 (topp)') && document.getElementById('shs-steps-list').textContent.includes('300 × 60'), document.getElementById('shs-steps-list').textContent.slice(0, 40));
+      const lbl = document.querySelector('#shs-row-0 span'); check('182.2: første rad er trinn 2', 'Trinn 2', lbl && lbl.textContent === 'Trinn 2', lbl && lbl.textContent);
+      for (let t = 0; t < 7; t++) document.getElementById('shs-up-3').click();
+      check('182.2: 7 × ▲ på trinn 5 → 35 og «endret»', '35 endret', val(3) === 35 && shown('shs-dm-3') && _stairHsB.depths[3] === 35, val(3) + ' ' + document.getElementById('shs-dm-3').textContent);
+      const pB = _stairHsParams({ horseshoe: _stairHsBParams() });
+      check('182.2: ytre mål +7 foran og +2 × 7 i bredden', `${p0.outerW + 14} × ${p0.outerD + 7}`, pB.outerW === p0.outerW + 14 && pB.outerD === p0.outerD + 7, `${p0.outerW} × ${p0.outerD} → ${pB.outerW} × ${pB.outerD}`);
+      check('182.2: «Ytre totalmål» i byggeren oppdatert', `${pB.outerW} × ${pB.outerD}`, document.getElementById('shs-summary').textContent.includes(`${pB.outerW} × ${pB.outerD} cm`), document.getElementById('shs-summary').textContent.slice(0, 40));
+      // Tastatur: pil = 1, Shift + pil = 10 (på trinn 6), ▼ tilbake.
+      const kin = document.getElementById('shs-d-4');
+      kin.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }));
+      const k1 = val(4);
+      kin.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', shiftKey: true, bubbles: true, cancelable: true }));
+      const k2 = val(4);
+      kin.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', shiftKey: true, bubbles: true, cancelable: true }));
+      kin.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+      check('182.2: pil = 1 cm, Shift + pil = 10 cm, tilbake til 28 = ikke endret', '29 → 39 → 28', k1 === 29 && k2 === 39 && val(4) === 28 && _stairHsB.depths[4] == null && !shown('shs-dm-4'), `${k1} → ${k2} → ${val(4)}`);
+      _confirmHsBuilder();
+      check('182.2: lagret additivt: perStepDepth + depths_cm [null,null,null,35]', 'true / [null,null,null,35]', st.horseshoe.perStepDepth === true && JSON.stringify(st.horseshoe.depths_cm) === '[null,null,null,35]', st.horseshoe.perStepDepth + ' / ' + JSON.stringify(st.horseshoe.depths_cm));
+      const after = {}; for (let no = 2; no <= 11; no++) after[no] = stepSig(st, no);
+      const s5 = after[5], s5b = before[5];
+      check('182.2: trinn 5 — dybde 35, egne strenger og egen CC (Regel 3: N = ceil(29/10)+1 = 4, CC 9,67)', '35 · 4 @ 9.67', s5.d === 35 && s5.N === 4 && s5.cc === 9.67 && s5.pos !== s5b.pos, `${s5.d} · ${s5.N} @ ${s5.cc} (før ${s5b.d} · ${s5b.N} @ ${s5b.cc})`);
+      const others = [2, 3, 4, 6, 7, 8, 9, 10, 11].filter(no => after[no].d !== 28 || after[no].N !== before[no].N || after[no].pos !== before[no].pos || after[no].cc !== before[no].cc);
+      check('182.2: de andre trinnene: samme dybde, N, CC og strengposisjoner', 'ingen endret', others.length === 0, others.join(',') || 'ingen');
+      const inner = [2, 3, 4].filter(no => after[no].len !== before[no].len);
+      check('182.2: trinn 2–4 (innenfor) har nøyaktig samme strenglengder', 'like', inner.length === 0, inner.join(',') || 'like');
+      // Utenfor trinn 5 er den indre konturen 2 · 7 bredere og 7 dypere: hver streng + 14 + 2 · 7 = 28 cm (Regel 23: Wi + 2·Di + …).
+      const outerOk = [6, 7, 8, 9, 10, 11].every(no => { const a = before[no].len.split('/'), b = after[no].len.split('/'); return a.length === b.length && a.every((x, j) => Math.abs((+b[j] - +x) - 28) < 0.02 || j === a.length - 1 && no === 11); });
+      check('182.2: trinnene utenfor: strengene 28 cm lengre (ny kontur)', '+28', outerOk, after[6].len + ' (før ' + before[6].len + ')');
+      // 7 · bakkanten og toppflaten står i ro i planen.
+      const topWorld1 = st.x_cm + st.surfaces[st.surfaces.length - 1].x_cm;
+      check('182.7: toppflaten og bakkanten står i ro', `x ${topWorld0}, y ${back0}`, Math.abs(topWorld1 - topWorld0) < 1e-9 && st.y_cm === back0 && st.surfaces.every(f => f.shape !== 'u' || (f.hsInner[0].y === 0 && f.hsInner[3].y === 0)), `x ${topWorld1}, y ${st.y_cm}`);
+      const bU2 = _stairHsTableRows(st).find(r => r.cells[0] === '5');
+      check('182.2: måltabellen viser trinn 5 med 4 strenger og CC 9,7', '5 · 4 · 9.7', bU2 && bU2.cells[1] === '4' && bU2.cells[3] === '9.7', bU2 && bU2.cells.join(' · '));
+      check('182.2: dybdekjeden i planen har 35-trinnets nese', 'tegnes', _stairDrawToCanvas(st).width > 0, 'ok');
+      // 4 · antall 10 → 12 → 8: listen følger, trinn 5 består.
+      _showHsBuilder(st.id);
+      check('182.5: gjenåpnet: valget på, trinn 5 = 35', '35', _stairHsB.perStep && val(3) === 35 && shown('shs-dm-3'), val(3));
+      const cnt = n => { document.getElementById('shs-count').value = n; _stairHsBUpd('count', n); };
+      cnt(12); const r12 = rowsN(), v12 = [...Array(12).keys()].map(val).join(',');
+      cnt(8); const r8 = rowsN(), v8 = [...Array(8).keys()].map(val).join(',');
+      check('182.4: 10 → 12 → 8 rader, trinn 5 = 35 hele veien, nye rader 28', '12 / 8', r12 === 12 && r8 === 8 && v12 === '28,28,28,35,28,28,28,28,28,28,28,28' && v8 === '28,28,28,35,28,28,28,28', `${r12}: ${v12} · ${r8}: ${v8}`);
+      cnt(10);
+      // 3 · felles inntrinn 28 → 30: ikke-overstyrte følger, trinn 5 står; ↺ gir 30.
+      document.getElementById('shs-front').value = 30; _stairHsBUpd('front', 30);
+      const v30 = [...Array(10).keys()].map(val).join(',');
+      check('182.3: felles 30 → resten 30, trinn 5 står på 35', '30,30,30,35,30,…', v30 === '30,30,30,35,30,30,30,30,30,30', v30);
+      document.getElementById('shs-dr-3').click();
+      check('182.3: ↺ på trinn 5 → 30 og ikke lenger endret', '30', val(3) === 30 && _stairHsB.depths[3] == null && !shown('shs-dm-3'), val(3));
+      for (let t = 0; t < 5; t++) document.getElementById('shs-up-3').click();   // 35 igjen
+      // 5 · av og på: samme verdier tilbake; av = alle felles.
+      document.getElementById('shs-perstep').checked = false; _stairHsBPerStep(false);
+      const pOff = _stairHsParams({ horseshoe: _stairHsBParams() });
+      check('182.5: av → alle trinn felles 30, overstyringen huskes', 'alle 30 · lagret 35', pOff.fronts.every(f => f === 30) && _stairHsBParams().depths_cm && _stairHsBParams().depths_cm[3] === 35 && !_stairHsBParams().perStepDepth, pOff.fronts.join(',') + ' · ' + JSON.stringify(_stairHsBParams().depths_cm));
+      document.getElementById('shs-perstep').checked = true; _stairHsBPerStep(true);
+      check('182.5: på igjen → trinn 5 = 35', '35', val(3) === 35 && _stairHsParams({ horseshoe: _stairHsBParams() }).fronts[3] === 35, val(3));
+      // 6 · trinn på 5 cm: rødt felt, melding med trinnet, kan ikke lagres.
+      const hsBefore = JSON.stringify(st.horseshoe);
+      const in3 = document.getElementById('shs-d-3'); in3.value = 5; _stairHsBStepSet(3, '5');
+      const err = document.getElementById('shs-err'), ok = document.getElementById('shs-ok');
+      const red = getComputedStyle(in3).borderTopColor;
+      check('182.6: 5 cm → rødt felt', 'rød kant', /229, 72, 77/.test(red), red);
+      check('182.6: meldingen sier hvilket trinn', 'Trinn 5 er for grunt', err.style.display !== 'none' && err.textContent.includes('Trinn 5 er for grunt'), err.textContent.slice(0, 90));
+      check('182.6: knappen sperret', 'disabled', ok.disabled, String(ok.disabled));
+      _confirmHsBuilder();
+      check('182.6: «Lagre» gjør ingenting mens trinnet er for grunt', 'uendret, dialogen åpen', JSON.stringify(st.horseshoe) === hsBefore && !!document.getElementById('stair-modal-bg'), JSON.stringify(st.horseshoe) === hsBefore ? 'uendret' : 'ENDRET');
+      in3.value = 35; _stairHsBStepSet(3, '35');
+      check('182.6: rettet → meldingen borte, knappen åpen', 'ok', err.style.display === 'none' && !ok.disabled, err.style.display + ' ' + ok.disabled);
+      document.getElementById('stair-modal-bg').remove();
+      // 6b · ny trapp: «Plasser trapp» sperret på samme måte (byggerens egne marginer 2 + 2).
+      _showHsBuilder(null); _stairHsBPerStep(true); _stairHsBStepSet(0, '4');
+      const okN = document.getElementById('shs-ok'), placeBefore = S.ui.stairPlaceParams;
+      _confirmHsBuilder();
+      check('182.6: ny trapp med et 4 cm-trinn kan ikke plasseres', 'sperret', okN.disabled && S.ui.stairPlaceParams === placeBefore && !!document.getElementById('stair-modal-bg') && document.getElementById('shs-err').textContent.includes('Trinn 2'), document.getElementById('shs-err').textContent.slice(0, 80));
+      document.getElementById('stair-modal-bg').remove();
+      // Sider satt til egen verdi: sidene holder den på alle trinn, bare fronten følger listen.
+      st = mk({ ...TI, count: 3, side_cm: 50, perStepDepth: true, depths_cm: [null, 40, null] });
+      const us = st.surfaces.filter(f => f.shape === 'u');
+      check('182: sider 50 fast → hsWidths [50, d, 50], trinn 3 front 40', '50/28/50 · 50/40/50 · 50/28/50', us.map(f => f.hsWidths.join('/')).reverse().join(' · ') === '50/28/50 · 50/40/50 · 50/28/50', us.map(f => f.hsWidths.join('/')).reverse().join(' · '));
+      const pS = _stairHsParams(st);
+      check('182: sider fast → ytre bredde = topp + 2 · 3 · 50', 300 + 300, pS.outerW === 600 && pS.outerD === 60 + 28 + 40 + 28, pS.outerW + ' × ' + pS.outerD);
+      const pr = _stairHsDepthProblems(_stairHsParams({ horseshoe: { ...TI, count: 4, perStepDepth: true, depths_cm: [5, 250, 8, 10] } }), 3, 3, 10).map(q => q.msg);
+      check('182.6: meldingene — ingen brukbar dybde / for dypt (> 200) / for grunt (< 10); 10 cm er gyldig', 'trinn 2, 3, 4', pr.length === 3 && pr[0].startsWith('Trinn 2 er for grunt: 5 cm gir ingen brukbar dybde') && pr[1].startsWith('Trinn 3 er for dypt') && pr[2].startsWith('Trinn 4 er for grunt: minst 10'), pr.join(' | '));
+    } finally { _stairHsB = savedB2; _stairHsBEditId = savedBId2; }
   } catch (e) {
     results.push({ name: 'unntak', ok: false, expected: 'ingen', got: String(e && e.message || e) });
   } finally {
@@ -56002,7 +56156,9 @@ function _createStairObj(params) {
     runs: [], connections: [], totalCableLength_cm: 0, cableLengths: [], surfaces: []
   };
   // 176: hesteskotrapp — feltet settes BARE når det er valgt; mangler det, er trappa rett (som før).
-  if (params.design === 'horseshoe') { stair.design = 'horseshoe'; stair.horseshoe = { ...(params.horseshoe || {}) }; }
+  if (params.design === 'horseshoe') { stair.design = 'horseshoe'; stair.horseshoe = { ...(params.horseshoe || {}) };
+    if (Array.isArray(stair.horseshoe.depths_cm)) stair.horseshoe.depths_cm = stair.horseshoe.depths_cm.slice();   // 182: egen kopi
+  }
   // Ensure segments exist (migrate from flat if needed)
   if (!stair.segments || !stair.segments.length) {
     _migrateStairToSegments(stair);
@@ -66960,13 +67116,24 @@ function _showHsBuilder(stairId) {
   const p = _stairHsParams(st || {});
   _stairHsBEditId = st ? st.id : null;
   _stairHsB = { topW: p.topW, topD: p.topD, count: p.count, front: p.front, side: p.sideFollowsFront ? null : p.side,
-    height: p.stepHeight, topLevel: p.topLevel, riser: 2, nose: 2, edge: 5, maxCC: STAIR_DEFAULT_MAX_CC_CM, name: st ? (st.name || 'Trapp') : _stairBuilderDefaultName() };
+    height: p.stepHeight, topLevel: p.topLevel, riser: 2, nose: 2, edge: 5, maxCC: STAIR_DEFAULT_MAX_CC_CM, name: st ? (st.name || 'Trapp') : _stairBuilderDefaultName(),
+    // 182: «Ulik dybde per trinn» — depths[i] = overstyring for trinn i + 2 (null = følger felles inntrinn).
+    perStep: p.perStepDepth,
+    depths: ((st && st.horseshoe && Array.isArray(st.horseshoe.depths_cm)) ? st.horseshoe.depths_cm : []).map(v => (v != null && v !== '' && +v > 0 && +v !== p.front) ? +v : null) };   // lagret som det er (ingen avrunding); = felles → følger felles
   _renderHsBuilder();
 }
 function _stairHsBParams() {
   const b = _stairHsB;
-  return { topW_cm: b.topW, topD_cm: b.topD, count: b.count, front_cm: b.front, side_cm: b.side, stepHeight_cm: b.height,
+  const out = { topW_cm: b.topW, topD_cm: b.topD, count: b.count, front_cm: b.front, side_cm: b.side, stepHeight_cm: b.height,
     topLevel: b.topLevel === 'flush' ? 'flush' : 'below' };
+  // 182 (additivt): feltene skrives bare når de betyr noe, så en gammel trapp som lagres uten å
+  // røre valget, får nøyaktig samme horseshoe-objekt som før. Overstyringene huskes også når
+  // valget er av; rader utenfor «Antall hesteskotrinn» lagres ikke.
+  const d = (b.depths || []).slice(0, b.count).map(v => v == null ? null : v);
+  while (d.length && d[d.length - 1] == null) d.pop();
+  if (b.perStep) out.perStepDepth = true;
+  if (d.length) out.depths_cm = d;
+  return out;
 }
 function _stairHsBUpd(key, val) {
   const v = parseFloat(String(val).replace(',', '.'));
@@ -66979,6 +67146,8 @@ function _stairHsBUpd(key, val) {
     _stairHsB[key] = v;
   }
   if (key === 'front' && _stairHsB.side == null) { const sEl = document.getElementById('shs-side'); if (sEl) sEl.value = _stairHsB.front; }
+  // 182: rader som ikke er overstyrt, følger felles inntrinn; antall trinn gir flere/færre rader.
+  if (key === 'front' || key === 'count' || key === 'side' || key === 'topW' || key === 'topD') _stairHsBListRender();
   _stairHsBRefresh();
 }
 // 178: toppflate under (eget trinn) eller i plan med det trappa fører til.
@@ -66995,6 +67164,121 @@ function _stairHsBTopLevel(v) {
 function _stairHsBRefresh() {
   const pv = document.getElementById('shs-preview'); if (pv) pv.innerHTML = _stairHsPreviewSVG();
   const sm = document.getElementById('shs-summary'); if (sm) sm.innerHTML = _stairHsSummaryHtml();
+  _stairHsBValidate();
+}
+
+// ══ 182 · ULIK DYBDE PER TRINN ═════════════════════════════════════════════════════════════════
+// Fredrik (via Kenneth 03.11.2026): én rad per hesteskotrinn, forhåndsutfylt med felles inntrinn,
+// som kan overstyres med tall eller ▲/▼ (1 cm; Shift + pil i feltet = 10 cm). Radene nummereres
+// som resten av trappa (toppflaten = trinn 1), så listen starter med trinn 2 rett rundt toppen.
+// Feltene oppdateres PÅ STEDET (ikke ny HTML) mens man skriver, så markøren blir stående.
+function _stairHsBDepth(i) { const v = (_stairHsB.depths || [])[i]; return v != null ? v : _stairHsB.front; }
+function _stairHsBMargins() {
+  // Ny trapp: byggerens egne felt. Eksisterende: trappas innstillinger (de endres i panelet).
+  const st = _stairHsBEditId != null ? S.stairs.find(s => s.id === _stairHsBEditId) : null;
+  if (st) return { riser: st.riserOffset_cm ?? 2, nose: st.noseOffset_cm ?? 2, maxCC: st.stepCC_cm || st.cableSpacing_cm || STAIR_DEFAULT_MAX_CC_CM };
+  return { riser: _stairHsB.riser, nose: _stairHsB.nose, maxCC: _stairHsB.maxCC };
+}
+function _stairHsBListHtml() {
+  const b = _stairHsB, R = _stairDimRound;
+  const btn = 'padding:0 7px;height:24px;border-radius:5px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer;font-size:11px;line-height:1';
+  let h = `<div style="display:flex;gap:8px;align-items:center;padding:3px 4px;color:var(--dim);font-size:12px"><span style="width:92px">Trinn 1 (topp)</span><span>${R(b.topW)} × ${R(b.topD)} cm</span><span style="margin-left:auto;font-size:11px">endres i feltene over</span></div>`;
+  for (let i = 0; i < b.count; i++) {
+    h += `<div id="shs-row-${i}" style="display:flex;gap:6px;align-items:center;padding:2px 4px;border-radius:5px">
+      <span style="width:92px;color:var(--text)">Trinn ${i + 2}</span>
+      <input id="shs-d-${i}" type="number" min="${STAIR_HS_STEP_MIN_CM}" max="${STAIR_HS_STEP_MAX_CM}" step="1" value="${_stairHsBDepth(i)}"
+        oninput="_stairHsBStepSet(${i},this.value)" onkeydown="_stairHsBStepKey(event,${i})"
+        style="width:68px;padding:4px 6px;border-radius:5px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);font-size:13px">
+      <span style="color:var(--muted);font-size:12px">cm</span>
+      <button type="button" id="shs-up-${i}" title="+1 cm" onclick="_stairHsBStepBy(${i},1)" style="${btn}">▲</button>
+      <button type="button" id="shs-dn-${i}" title="−1 cm" onclick="_stairHsBStepBy(${i},-1)" style="${btn}">▼</button>
+      <span id="shs-dm-${i}" style="font-size:10px;padding:1px 5px;border-radius:8px;background:rgba(245,166,35,0.18);color:#f5a623"></span>
+      <button type="button" id="shs-dr-${i}" title="Tilbake til felles inntrinn" onclick="_stairHsBStepReset(${i})" style="${btn}">↺</button>
+    </div>`;
+  }
+  return h;
+}
+function _stairHsBListRender() {
+  const list = document.getElementById('shs-steps-list'); if (!list || !_stairHsB) return;
+  list.innerHTML = _stairHsBListHtml();
+  for (let i = 0; i < _stairHsB.count; i++) _stairHsBRowState(i);
+  const note = document.getElementById('shs-steps-note');
+  if (note) note.textContent = _stairHsB.side == null
+    ? 'Sidene på hvert trinn følger trinnets egen dybde.'
+    : `Inntrinn sider er satt til ${_stairDimRound(_stairHsB.side)} cm og holder det på alle trinn — listen endrer fronten.`;
+}
+// «endret» + ↺ bare på overstyrte rader.
+function _stairHsBRowState(i) {
+  const over = (_stairHsB.depths || [])[i] != null;
+  const m = document.getElementById('shs-dm-' + i), r = document.getElementById('shs-dr-' + i);
+  if (m) { m.textContent = over ? 'endret' : ''; m.style.visibility = over ? 'visible' : 'hidden'; }
+  if (r) r.style.visibility = over ? 'visible' : 'hidden';
+}
+// Tallet som står i feltet blir trinnets dybde (hele cm). Er det lik felles inntrinn, følger raden
+// felles verdi igjen (ingen overstyring).
+function _stairHsBStepSet(i, val, fromArrow) {
+  const v = Math.round(parseFloat(String(val).replace(',', '.')));
+  if (!Number.isFinite(v) || v <= 0) return;   // halvskrevet/tomt felt: vent på et tall
+  if (!_stairHsB.depths) _stairHsB.depths = [];
+  while (_stairHsB.depths.length <= i) _stairHsB.depths.push(null);
+  _stairHsB.depths[i] = v === _stairHsB.front ? null : v;
+  if (fromArrow) { const el = document.getElementById('shs-d-' + i); if (el) el.value = v; }
+  _stairHsBRowState(i);
+  _stairHsBRefresh();
+}
+function _stairHsBStepBy(i, d) {
+  const v = Math.max(1, Math.min(STAIR_HS_STEP_MAX_CM, Math.round(_stairHsBDepth(i)) + d));
+  _stairHsBStepSet(i, v, true);
+}
+function _stairHsBStepKey(e, i) {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  e.preventDefault();   // nettleserens eget steg (1) ville ellers kommet i tillegg
+  _stairHsBStepBy(i, (e.shiftKey ? 10 : 1) * (e.key === 'ArrowUp' ? 1 : -1));
+}
+function _stairHsBStepReset(i) {
+  if (_stairHsB.depths && i < _stairHsB.depths.length) _stairHsB.depths[i] = null;
+  const el = document.getElementById('shs-d-' + i); if (el) el.value = _stairHsB.front;
+  _stairHsBRowState(i);
+  _stairHsBRefresh();
+}
+function _stairHsBPerStep(on) {
+  _stairHsB.perStep = !!on;
+  const box = document.getElementById('shs-steps'); if (box) box.style.display = _stairHsB.perStep ? '' : 'none';
+  if (_stairHsB.perStep) _stairHsBListRender();
+  _stairHsBRefresh();
+}
+// Trinn uten brukbar dybde: rødt felt, melding med trinnnummer, og «Plasser»/«Lagre» sperret.
+function _stairHsBProblems() {
+  const p = _stairHsParams({ horseshoe: _stairHsBParams() }), m = _stairHsBMargins();
+  return _stairHsDepthProblems(p, m.riser, m.nose, m.maxCC);
+}
+function _stairHsBValidate() {
+  if (!_stairHsB) return [];
+  const probs = _stairHsBProblems();
+  const badI = new Set(probs.map(q => q.i));
+  const red = '#e5484d';
+  for (let i = 0; i < _stairHsB.count; i++) {
+    const el = document.getElementById('shs-d-' + i), row = document.getElementById('shs-row-' + i);
+    const bad = badI.has(i);
+    if (el) { el.style.borderColor = bad ? red : 'var(--brd)'; el.style.background = bad ? 'rgba(229,72,77,0.12)' : 'var(--surface2)'; }
+    if (row) row.style.background = bad ? 'rgba(229,72,77,0.07)' : '';
+  }
+  // Valget av: det er felles inntrinn (og eventuelt sider) som er for grunt.
+  const fEl = document.getElementById('shs-front'), sEl = document.getElementById('shs-side');
+  const commonBad = !_stairHsB.perStep && probs.length > 0;
+  if (fEl) fEl.style.borderColor = commonBad ? red : 'var(--brd)';
+  if (sEl) sEl.style.borderColor = commonBad && probs.some(q => q.sider) ? red : 'var(--brd)';
+  const err = document.getElementById('shs-err');
+  if (err) {
+    err.style.display = probs.length ? '' : 'none';
+    err.innerHTML = probs.length
+      ? probs.slice(0, 4).map(q => esc(q.msg) + '.').join('<br>') + (probs.length > 4 ? `<br>… og ${probs.length - 4} til.` : '') +
+        `<br><b>Rett ${probs.length === 1 ? 'trinnet' : 'trinnene'} før trappa kan ${_stairHsBEditId != null ? 'lagres' : 'plasseres'}.</b>`
+      : '';
+  }
+  const ok = document.getElementById('shs-ok');
+  if (ok) { ok.disabled = probs.length > 0; ok.style.opacity = probs.length ? '0.45' : '1'; ok.style.cursor = probs.length ? 'not-allowed' : 'pointer'; }
+  return probs;
 }
 function _stairHsSummaryHtml() {
   const p = _stairHsParams({ horseshoe: _stairHsBParams() });
@@ -67022,10 +67306,13 @@ function _stairHsPreviewSVG() {
   const X = x => pad + x * sc + ((W - 2 * pad) - p.outerW * sc) / 2, Y = y => pad + y * sc;
   const poly = pts => pts.map((q, i) => (i ? 'L' : 'M') + X(q.x).toFixed(1) + ',' + Y(q.y).toFixed(1)).join(' ');
   let g = '';
+  // 182: trinn uten brukbar dybde tegnes røde (samme sjekk som sperrer «Plasser»).
+  const badNo = new Set(_stairHsB ? _stairHsBProblems().map(q => q.no) : []);
   for (const sf of surfs) {
     if (sf.shape === 'u') {
       const outer = _stairOffsetOpen(sf.hsInner, sf.hsWidths);
-      g += `<path d="${poly([...outer, ...sf.hsInner.slice().reverse()])} Z" fill="rgba(78,168,255,0.10)" stroke="var(--accent,#4ea8ff)" stroke-width="1.4"/>`;
+      const bad = badNo.has(sf.stepIdx + 1);
+      g += `<path d="${poly([...outer, ...sf.hsInner.slice().reverse()])} Z" fill="${bad ? 'rgba(229,72,77,0.30)' : 'rgba(78,168,255,0.10)'}" stroke="${bad ? '#e5484d' : 'var(--accent,#4ea8ff)'}" stroke-width="1.4"/>`;
       g += `<text x="${X(sf.x_cm + sf.w_cm / 2)}" y="${Y(sf.y_cm + sf.d_cm / 2) + 3}" font-size="9" fill="var(--muted)" text-anchor="middle">${sf.stepIdx + 1}</text>`;
     } else {
       g += `<rect x="${X(sf.x_cm)}" y="${Y(sf.y_cm)}" width="${sf.w_cm * sc}" height="${sf.d_cm * sc}" fill="rgba(78,168,255,0.22)" stroke="var(--accent,#4ea8ff)" stroke-width="1.4"/>`;
@@ -67039,8 +67326,10 @@ function _stairHsPreviewSVG() {
   g += `<line x1="${X(0)}" y1="${yb}" x2="${X(p.outerW)}" y2="${yb}" stroke="var(--muted)" stroke-width="0.8"/><text x="${(X(0) + X(p.outerW)) / 2}" y="${yb + 10}" font-size="10" fill="var(--text)" text-anchor="middle" font-weight="600">${_stairDimRound(p.outerW)}</text>`;
   const xl = X(0) - 10;
   g += `<line x1="${xl}" y1="${Y(0)}" x2="${xl}" y2="${Y(p.outerD)}" stroke="var(--muted)" stroke-width="0.8"/><text x="${xl - 3}" y="${(Y(0) + Y(p.outerD)) / 2}" font-size="10" fill="var(--text)" text-anchor="end" dominant-baseline="middle" font-weight="600">${_stairDimRound(p.outerD)}</text>`;
-  g += `<text x="${X(p.outerW / 2)}" y="${Y(p.outerD) - 2}" font-size="8.5" fill="var(--muted)" text-anchor="middle">foran ${_stairDimRound(p.front)}</text>`;
-  g += `<text x="${X(p.outerW) - 2}" y="${Y(p.outerD / 2)}" font-size="8.5" fill="var(--muted)" text-anchor="end">side ${_stairDimRound(p.side)}</text>`;
+  // 182: ytterste trinns egne tall (= felles verdi når alle trinn er like).
+  const fO = p.fronts[p.count - 1], sO = p.sides[p.count - 1];
+  g += `<text x="${X(p.outerW / 2)}" y="${Y(p.outerD) - 2}" font-size="8.5" fill="var(--muted)" text-anchor="middle">foran ${_stairDimRound(fO)}</text>`;
+  g += `<text x="${X(p.outerW) - 2}" y="${Y(p.outerD / 2)}" font-size="8.5" fill="var(--muted)" text-anchor="end">side ${_stairDimRound(sO)}</text>`;
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="max-width:100%">${g}</svg>`;
 }
 function _renderHsBuilder() {
@@ -67066,7 +67355,14 @@ function _renderHsBuilder() {
         <div style="grid-column:1/3">${lbl('Toppflate')}<div style="display:flex;gap:6px;margin-top:3px">${['below', 'flush'].map(k => { const on = (b.topLevel || 'below') === k;
           return `<button type="button" id="shs-top-${k}" onclick="_stairHsBTopLevel('${k}')" style="flex:1;padding:6px;border-radius:6px;border:1px solid ${on ? '#4ea8ff' : 'var(--brd)'};background:${on ? '#4ea8ff' : 'var(--surface2)'};color:${on ? '#fff' : 'var(--text)'};cursor:pointer;font-size:12px">${k === 'below' ? 'Eget trinn' : 'I plan med øverste nivå'}</button>`; }).join('')}</div>
           <div id="shs-top-help" style="font-size:11px;color:var(--dim);margin-top:3px">${STAIR_HS_TOPLEVEL_HELP[b.topLevel === 'flush' ? 'flush' : 'below']}</div></div>
+        <div style="grid-column:1/3"><label style="display:flex;gap:6px;align-items:center;cursor:pointer;color:var(--text)"><input type="checkbox" id="shs-perstep" ${b.perStep ? 'checked' : ''} onchange="_stairHsBPerStep(this.checked)"> Ulik dybde per trinn</label>
+          <div id="shs-steps" style="${b.perStep ? '' : 'display:none;'}margin-top:6px;border:1px solid var(--brd);border-radius:8px;padding:6px">
+            <div id="shs-steps-note" style="font-size:11px;color:var(--dim);margin:0 4px 4px"></div>
+            <div id="shs-steps-list" style="max-height:230px;overflow-y:auto"></div>
+            <div style="font-size:11px;color:var(--dim);margin:4px 4px 0">▲/▼ = 1 cm · piltastene i feltet gjør det samme, Shift + pil = 10 cm · ↺ = tilbake til felles inntrinn</div>
+          </div></div>
       </div>
+      <div id="shs-err" style="display:none;font-size:12px;color:#e5484d;background:rgba(229,72,77,0.08);border:1px solid rgba(229,72,77,0.4);border-radius:6px;padding:6px 8px;margin:-4px 0 10px"></div>
       <div style="font-size:11px;color:var(--dim);margin:-6px 0 12px">Inntrinn sider følger inntrinn foran til du endrer det. Bakkanten (mot det trappa fører til) er felles for alle trinn.</div>
       <div id="shs-preview" style="background:var(--surface2);border:1px solid var(--brd);border-radius:8px;padding:8px;margin-bottom:8px;text-align:center">${_stairHsPreviewSVG()}</div>
       <div id="shs-summary" style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:12px">${_stairHsSummaryHtml()}</div>
@@ -67081,15 +67377,18 @@ function _renderHsBuilder() {
       <div style="display:flex;gap:8px;justify-content:flex-end">
         ${editing ? '' : `<button onclick="document.getElementById('stair-modal-bg').remove();_showStairDesignPicker()" style="padding:8px 16px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;margin-right:auto">← Trappedesign</button>`}
         <button onclick="document.getElementById('stair-modal-bg').remove()" style="padding:8px 16px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px">Avbryt</button>
-        <button onclick="_confirmHsBuilder()" style="padding:8px 16px;border-radius:6px;border:none;background:#4ea8ff;color:#fff;cursor:pointer;font-size:13px;font-weight:600">${editing ? 'Lagre endringer' : 'Plasser trapp'}</button>
+        <button id="shs-ok" onclick="_confirmHsBuilder()" style="padding:8px 16px;border-radius:6px;border:none;background:#4ea8ff;color:#fff;cursor:pointer;font-size:13px;font-weight:600">${editing ? 'Lagre endringer' : 'Plasser trapp'}</button>
       </div>
     </div></div>`;
   document.body.insertAdjacentHTML('beforeend', html);
   const bg = document.getElementById('stair-modal-bg');
   if (bg) Object.assign(bg.style, { position: 'fixed', inset: '0', zIndex: '9999', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' });
+  _stairHsBListRender();   // 182
+  _stairHsBValidate();
 }
 function _confirmHsBuilder() {
   const b = _stairHsB; if (!b) return;
+  if (_stairHsBValidate().length) return;   // 182: et trinn uten brukbar dybde kan ikke plasseres
   const nameEl = document.getElementById('stair-name'), prodEl = document.getElementById('stair-product');
   const name = (nameEl ? nameEl.value.trim() : '') || 'Trapp';
   const bg = document.getElementById('stair-modal-bg'); if (bg) bg.remove();
@@ -67104,12 +67403,14 @@ function _confirmHsBuilder() {
     // BAKKANTEN STÅR I RO: toppflatens venstre kant ligger på x = antall · inntrinn sider. Endres
     // den summen, flyttes origo tilsvarende, så toppflaten og bakkanten blir liggende der de var.
     const old = _stairHsParams(stair);
-    const dx = old.count * old.side - p.count * p.side;
+    const dx = old.sideTot - p.sideTot;   // 182: Σ inntrinn sider (= antall · side når alle er like)
     if (dx) {
       stair.x_cm += dx;
       for (const d of (stair.dims || [])) { d.p1.x -= dx; d.p2.x -= dx; }
     }
     stair.horseshoe = { ...hs };   // nytt objekt — angre-stakken deler ikke referansen
+    if (hs.depths_cm) stair.horseshoe.depths_cm = hs.depths_cm.slice();
+    else delete stair.horseshoe.depths_cm;
     stair.segments = _stairHsSegments(p);
     stair.runsPerStep = null;
     if (stair.selectedProposal) { stair.lastProposal = stair.selectedProposal; stair.selectedProposal = null; }
