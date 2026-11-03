@@ -4,6 +4,19 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 178 — Hesteskotrapp: toppflate eget trinn eller i plan med øverste nivå (03.11.2026, `main`, ikke pushet)
+
+- Hesteskobyggeren har fått valget «Toppflate: Eget trinn / I plan med øverste nivå» med hjelpetekst. Det lagres som `stair.horseshoe.topLevel = below | flush`, og mangler feltet, gjelder `below`.
+- Ny felles hjelper `_stairSideRiserCm(stair, surf)` gir opptrinnet sidevisningen tegner over en flate: 0 for repos og for en toppflate i plan. Den brukes i `_drawStairSide`, `_stairDrawSideToCanvas` (PDF), `_stairGeometryDims(side)`, `_stairSideBounds` og snappingen.
+- Kabelen er ikke rørt, fordi opptrinn bare regnes mellom flatene (Regel 5). Kabelen er identisk i begge valg.
+- Oppsummeringen i byggeren viser `count × opptrinn` ved «I plan».
+- ⚠ Oppsummeringen og tegningen var uenige med ett opptrinn (opptrinnet fra bakken) allerede før 178, se `docs/178/SPØRSMÅL.md` 1.
+- Ordet «terrasse» er tatt ut av byggerens tekster.
+- `_stairHorseshoeRegressionTest` har gått fra 50 til 61. Gamle trapptester og VK Hovedterrasse uten feltet er identiske mot HEAD (skjermpiksler, PDF og oppsummering).
+- Rapport i `docs/178/RAPPORT.md`, bilder i `docs/178/`. Svarene på 176-spørsmål 3 og 5 er skrevet inn i `docs/176/SPØRSMÅL.md`.
+
+---
+
 ## Løp 168 — Varmeplan klar for demo hos Cenika (02.11.2026, `main`, ikke pushet)
 
 Hele løpet i én oppføring (KJOR regel 12). Prompter, regler og spørsmål i Cowork-mappa

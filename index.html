@@ -47572,7 +47572,7 @@ function _stairGeometryDims(stair, view, range) {
     // Samme profil-aritmetikk som _drawStairSide (speilet høyde) — regnet på nytt her, ikke lest
     // derfra, fordi utskriften (_stairDrawSideToCanvas) ikke har tilgang til skjermfunksjonens lokale.
     let totalH = 0;
-    for (const s of surfs) if (s.type !== 'landing') totalH += (s.stepHeight_cm || stair.step_height_cm || 17);
+    for (const s of surfs) totalH += _stairSideRiserCm(stair, s);   // 178: 0 over en toppflate i plan
     const firstStepH = (surfs[0].type !== 'landing' ? surfs[0].stepHeight_cm : null) || stair.step_height_cm || 17;
     const ground = totalH + firstStepH;
     let cx = 0, cumulH = 0, xFrom = null, xTo = 0;
@@ -47589,8 +47589,8 @@ function _stairGeometryDims(stair, view, range) {
         depthItems.push({ kind: s.type === 'landing' ? 'landing' : 'tread', v: s.d_cm, from: cx, to: cx + s.d_cm });
       }
       if (s.type !== 'landing') {
-        const sh = s.stepHeight_cm || stair.step_height_cm || 17;
-        if (inR) riserItems.push({ kind: 'tread', v: sh, from: yTop, to: yTop - sh });
+        const sh = _stairSideRiserCm(stair, s);
+        if (inR && sh > 0) riserItems.push({ kind: 'tread', v: sh, from: yTop, to: yTop - sh });
         cumulH += sh;
       }
       cx += s.d_cm;
@@ -48568,7 +48568,7 @@ function _drawStairSide(stair) {
   // som kabelstrenger/forbindelser/etiketter tegnes fra) følger automatisk med siden de leser
   // samme, nå speilede, verdi.
   let totalH = 0;
-  for (const surf of surfs) if (surf.type !== 'landing') totalH += (surf.stepHeight_cm || stair.step_height_cm || 17);
+  for (const surf of surfs) totalH += _stairSideRiserCm(stair, surf);   // 178: 0 over en toppflate i plan
 
   // In side view: x = depth position, y = height (cumulative step heights, speilet — se over)
   const pts = [];
@@ -48583,13 +48583,15 @@ function _drawStairSide(stair) {
       cx += surf.d_cm;
       pts.push({x: cx, y: totalH - cumulH});
     } else { // tread
-      const sh = surf.stepHeight_cm || stair.step_height_cm || 17;
+      const sh = _stairSideRiserCm(stair, surf);
       pts.push({x: cx, y: totalH - cumulH});           // tread start
       surfSideCoords.push({ xStart: cx, yTop: totalH - cumulH, depth: surf.d_cm });
       cx += surf.d_cm;
       pts.push({x: cx, y: totalH - cumulH});           // tread end (nose)
-      cumulH += sh;                             // klatre en riser oppover (fysisk) — speilet: y minker
-      pts.push({x: cx, y: totalH - cumulH});           // riser bottom
+      if (sh > 0) {                             // 178: ingen riser over en toppflate i plan med øverste nivå
+        cumulH += sh;                           // klatre en riser oppover (fysisk) — speilet: y minker
+        pts.push({x: cx, y: totalH - cumulH});         // riser bottom
+      }
     }
   }
 
@@ -48849,14 +48851,15 @@ function _stairDimSnap(p) {
     if (st.viewMode === 'side' || st.viewMode === 'both') {
       const sx0 = st.viewMode === 'both' ? ox + _stairPlanBounds(st).w + 20 : ox;   // samme forskyvning som drawStairs
       let totalH = 0;
-      for (const sf of surfs) if (sf.type !== 'landing') totalH += (sf.stepHeight_cm || st.step_height_cm || 17);
+      for (const sf of surfs) totalH += _stairSideRiserCm(st, sf);   // 178
       const firstStepH = (surfs[0].type !== 'landing' ? surfs[0].stepHeight_cm : null) || st.step_height_cm || 17;
       const pts = [];
       let cx = 0, cumulH = 0;
       for (const sf of surfs) {
         const yTop = totalH - cumulH;
         pts.push({ x: cx, y: yTop }); cx += sf.d_cm; pts.push({ x: cx, y: yTop });
-        if (sf.type !== 'landing') { const sh = sf.stepHeight_cm || st.step_height_cm || 17; cumulH += sh; pts.push({ x: cx, y: totalH - cumulH }); }
+        const sh = _stairSideRiserCm(st, sf);
+        if (sh > 0) { cumulH += sh; pts.push({ x: cx, y: totalH - cumulH }); }
       }
       pts.push({ x: cx, y: totalH + firstStepH }); pts.push({ x: 0, y: totalH + firstStepH });
       for (let i = 0; i < pts.length; i++) {
@@ -52460,9 +52463,22 @@ function _generateStairSurfaces(stair) {
 // Hver hesteskoflate bærer også et omsluttende rektangel (x_cm/y_cm/w_cm/d_cm) for grenser og
 // treff: d_cm = inntrinn FORAN (dybdemålet motoren og sidevisningen — et snitt gjennom fronten —
 // leser), y_cm = der frontbåndet begynner, w_cm = ytre bredde.
-const STAIR_HS_DEFAULTS = { topW_cm: 470, topD_cm: 70, count: 1, front_cm: 46, side_cm: null, stepHeight_cm: 17 };
+const STAIR_HS_DEFAULTS = { topW_cm: 470, topD_cm: 70, count: 1, front_cm: 46, side_cm: null, stepHeight_cm: 17 };   // + topLevel (178), mangler = 'below'
 
 function _stairIsHorseshoe(stair) { return !!stair && stair.design === 'horseshoe'; }
+
+// 178 (Kenneth 03.11.2026, svar 176/5): toppflaten ligger ett opptrinn UNDER det trappa fører til
+// ('below', standard — mangler feltet, gjelder den) eller I PLAN med det ('flush'). Bare sidevisningen
+// (profil, høydemål, grenser) og byggerens oppsummering bryr seg: kabelen regner kun opptrinnene
+// MELLOM flatene (Regel 5), aldri det over toppflaten.
+function _stairHsTopFlush(stair) { return _stairIsHorseshoe(stair) && !!stair.horseshoe && stair.horseshoe.topLevel === 'flush'; }
+// Opptrinnet sidevisningen tegner RETT OVER en flate (0 for repos og for en toppflate i plan med
+// øverste nivå). Felles for skjerm, PDF, mål, grenser og snapp, så de aldri blir uenige.
+function _stairSideRiserCm(stair, surf) {
+  if (!surf || surf.type === 'landing') return 0;
+  if (surf.hsTop && _stairHsTopFlush(stair)) return 0;
+  return surf.stepHeight_cm || stair.step_height_cm || 17;
+}
 
 function _stairHsParams(stair) {
   const h = { ...STAIR_HS_DEFAULTS, ...((stair && stair.horseshoe) || {}) };
@@ -52471,6 +52487,7 @@ function _stairHsParams(stair) {
   const count = Math.max(1, Math.round(+h.count || 1));
   const topW = Math.max(10, +h.topW_cm || 0), topD = Math.max(5, +h.topD_cm || 0);
   return { topW, topD, count, front, side, stepHeight: Math.max(1, +h.stepHeight_cm || 17),
+    topLevel: h.topLevel === 'flush' ? 'flush' : 'below',
     sideFollowsFront: !(h.side_cm != null && h.side_cm !== '' && +h.side_cm > 0),
     outerW: topW + 2 * count * side, outerD: topD + count * front };
 }
@@ -52601,7 +52618,7 @@ function _stairSideBounds(stair) {
   const surfs = stair.surfaces && stair.surfaces.length ? stair.surfaces : _generateStairSurfaces(stair);
   const totalDepth = surfs.reduce((s,f) => s + f.d_cm, 0);
   let totalHeight = 0;
-  for (const s of surfs) if (s.type === 'tread') totalHeight += (s.stepHeight_cm || stair.step_height_cm || 17);
+  for (const s of surfs) if (s.type === 'tread') totalHeight += _stairSideRiserCm(stair, s);   // 178
   return { x: stair.x_cm, y: stair.y_cm, w: totalDepth, h: totalHeight + (surfs[0]?.stepHeight_cm || 17) };
 }
 function _stairBounds(stair) {
@@ -55577,6 +55594,37 @@ function _stairHorseshoeRegressionTest() {
       const hits = texts.filter(t => !inside(t) && t.l < box.r && box.l < t.r && t.t < box.b && box.t < t.b).map(t => t.txt);
       check(`7: fire trinn, skala ${sc}: tabellen over tegningen, ingen tekst overlapper`, '0', box && box.b <= bakkantY && hits.length === 0, box ? (hits.join(', ') || 'ingen kollisjon') + ` (bunn ${Math.round(box.b)} ≤ ${bakkantY})` : 'ingen tabell');
     }
+
+    // ─── 178 — toppflate: eget trinn ('below', standard) eller i plan med øverste nivå ('flush') ───
+    const sideSig = stt => {   // alt sidevisningen avleder: mål, grenser, PDF-piksler
+      const dims = _stairGeometryDims(stt, 'side').map(d => `${d.label}@${d.a.x},${d.a.y}-${d.b.x},${d.b.y}/${d.level}`).join('|');
+      const b = _stairSideBounds(stt);
+      return { dims, bounds: b.w + '×' + b.h, png: _stairDrawSideToCanvas(stt).toDataURL() };
+    };
+    const cableSig = stt => JSON.stringify({ tot: stt.totalCableLength_cm, cov: stt.coveredCableLength_cm,
+      runs: stt.runs.map(r => [r.surfaceIdx, r2(r.pos_cm), r2(runLen(r))]), conn: (stt.connections || []).map(c => [c.fromSurf, c.toSurf, c.length_cm]) });
+    const sumFor = hs => { _stairHsB = { topW: hs.topW_cm, topD: hs.topD_cm, count: hs.count, front: hs.front_cm, side: null, height: hs.stepHeight_cm,
+      topLevel: hs.topLevel, riser: 3, nose: 3, edge: 5, maxCC: 10, name: 'TEST' }; _stairHsBEditId = 1; return _stairHsSummaryHtml(); };
+    const savedB = _stairHsB, savedBId = _stairHsBEditId;
+    try {
+      const stMissing = mk(KENNETH); const sigMissing = sideSig(stMissing), cabMissing = cableSig(stMissing);
+      const stBelow = mk({ ...KENNETH, topLevel: 'below' }); const sigBelow = sideSig(stBelow), cabBelow = cableSig(stBelow);
+      check('178: mangler topLevel = below (mål, grenser, PDF-piksler)', 'identisk', sigMissing.dims === sigBelow.dims && sigMissing.bounds === sigBelow.bounds && sigMissing.png === sigBelow.png, sigMissing.bounds + ' / ' + sigBelow.bounds);
+      check('178: below — høydekjede 3 × 17 = 51 som før', '3 × 17 = 51', sigBelow.dims.includes('3 × 17 = 51@'), sigBelow.dims);
+      check('178: below — oppsummering høyde 34 (som før)', 'høyde 34 cm', sumFor({ ...KENNETH, topLevel: 'below' }).includes('høyde 34 cm') && sumFor(KENNETH).includes('høyde 34 cm'), sumFor(KENNETH));
+      const stFlush = mk({ ...KENNETH, topLevel: 'flush' }); const sigFlush = sideSig(stFlush), cabFlush = cableSig(stFlush);
+      check('178: flush — øverste opptrinn borte (kjede 2 × 17 = 34)', '2 × 17 = 34', sigFlush.dims.includes('2 × 17 = 34@') && !sigFlush.dims.includes('51'), sigFlush.dims);
+      check('178: flush — sidegrensen 17 cm lavere', '116×51 → 116×34', sigBelow.bounds === '116×51' && sigFlush.bounds === '116×34', sigBelow.bounds + ' → ' + sigFlush.bounds);
+      check('178: flush — PDF-sidevisningen endret', 'ulik below', sigFlush.png !== sigBelow.png, sigFlush.png === sigBelow.png ? 'lik' : 'ulik');
+      check('178: flush — oppsummering høyde 1 × 17 = 17', 'høyde 17 cm', sumFor({ ...KENNETH, topLevel: 'flush' }).includes('høyde 17 cm'), sumFor({ ...KENNETH, topLevel: 'flush' }));
+      check('178: flush — kabel og ruting identisk med below', 'identisk', cabFlush === cabBelow && cabBelow === cabMissing, cabFlush === cabBelow ? 'lik' : cabFlush + ' ≠ ' + cabBelow);
+      const FOUR = { topW_cm: 300, topD_cm: 60, count: 4, front_cm: 40, stepHeight_cm: 17 };
+      const st4b = mk({ ...FOUR }), st4f = mk({ ...FOUR, topLevel: 'flush' });
+      check('178: fire trinn flush — oppsummering 4 × 17 = 68', 'høyde 68 cm', sumFor({ ...FOUR, topLevel: 'flush' }).includes('høyde 68 cm') && sumFor(FOUR).includes('høyde 85 cm'), sumFor({ ...FOUR, topLevel: 'flush' }));
+      const d4f = sideSig(st4f).dims, d4b = sideSig(st4b).dims;
+      check('178: fire trinn flush — tegningen mister nøyaktig ett opptrinn', '6 × 17 = 102 → 5 × 17 = 85', d4b.includes('6 × 17 = 102@') && d4f.includes('5 × 17 = 85@'), d4f);
+      check('178: fire trinn flush — kabel identisk', 'identisk', cableSig(st4f) === cableSig(st4b), 'se over');
+    } finally { _stairHsB = savedB; _stairHsBEditId = savedBId; }
   } catch (e) {
     results.push({ name: 'unntak', ok: false, expected: 'ingen', got: String(e && e.message || e) });
   } finally {
@@ -66859,12 +66907,13 @@ function _showHsBuilder(stairId) {
   const p = _stairHsParams(st || {});
   _stairHsBEditId = st ? st.id : null;
   _stairHsB = { topW: p.topW, topD: p.topD, count: p.count, front: p.front, side: p.sideFollowsFront ? null : p.side,
-    height: p.stepHeight, riser: 2, nose: 2, edge: 5, maxCC: STAIR_DEFAULT_MAX_CC_CM, name: st ? (st.name || 'Trapp') : _stairBuilderDefaultName() };
+    height: p.stepHeight, topLevel: p.topLevel, riser: 2, nose: 2, edge: 5, maxCC: STAIR_DEFAULT_MAX_CC_CM, name: st ? (st.name || 'Trapp') : _stairBuilderDefaultName() };
   _renderHsBuilder();
 }
 function _stairHsBParams() {
   const b = _stairHsB;
-  return { topW_cm: b.topW, topD_cm: b.topD, count: b.count, front_cm: b.front, side_cm: b.side, stepHeight_cm: b.height };
+  return { topW_cm: b.topW, topD_cm: b.topD, count: b.count, front_cm: b.front, side_cm: b.side, stepHeight_cm: b.height,
+    topLevel: b.topLevel === 'flush' ? 'flush' : 'below' };
 }
 function _stairHsBUpd(key, val) {
   const v = parseFloat(String(val).replace(',', '.'));
@@ -66877,6 +66926,17 @@ function _stairHsBUpd(key, val) {
     _stairHsB[key] = v;
   }
   if (key === 'front' && _stairHsB.side == null) { const sEl = document.getElementById('shs-side'); if (sEl) sEl.value = _stairHsB.front; }
+  _stairHsBRefresh();
+}
+// 178: toppflate under (eget trinn) eller i plan med det trappa fører til.
+const STAIR_HS_TOPLEVEL_HELP = { below: 'Ett opptrinn opp til døra, reposet eller terrassen', flush: 'Toppflaten ligger i samme høyde som det trappa fører til' };
+function _stairHsBTopLevel(v) {
+  _stairHsB.topLevel = v === 'flush' ? 'flush' : 'below';
+  for (const k of ['below', 'flush']) {
+    const el = document.getElementById('shs-top-' + k);
+    if (el) { const on = _stairHsB.topLevel === k; el.style.background = on ? '#4ea8ff' : 'var(--surface2)'; el.style.color = on ? '#fff' : 'var(--text)'; el.style.borderColor = on ? '#4ea8ff' : 'var(--brd)'; }
+  }
+  const h = document.getElementById('shs-top-help'); if (h) h.textContent = STAIR_HS_TOPLEVEL_HELP[_stairHsB.topLevel];
   _stairHsBRefresh();
 }
 function _stairHsBRefresh() {
@@ -66896,7 +66956,9 @@ function _stairHsSummaryHtml() {
     const g = generateStairCable(tmp);
     behov = ` · kabelbehov ≈ <b>${R(g.totalCableLength_cm / 100)} m</b> (${g.runs.length} strenger)`;
   }
-  return `Ytre totalmål <b>${R(p.outerW)} × ${R(p.outerD)} cm</b> · ${p.count + 1} trinn · høyde ${R((p.count + 1) * p.stepHeight)} cm${behov}`;
+  // 178: i plan med øverste nivå faller ett opptrinn bort (spesifisert: count × opptrinn).
+  const hN = p.topLevel === 'flush' ? p.count : p.count + 1;
+  return `Ytre totalmål <b>${R(p.outerW)} × ${R(p.outerD)} cm</b> · ${p.count + 1} trinn · høyde ${R(hN * p.stepHeight)} cm${behov}`;
 }
 function _stairHsPreviewSVG() {
   const tmp = { design: 'horseshoe', horseshoe: _stairHsBParams() };
@@ -66948,8 +67010,11 @@ function _renderHsBuilder() {
         <label>${lbl('Opptrinnshøyde (cm)')}<br>${num('height', 'height', b.height)}</label>
         <label>${lbl('Inntrinn foran (cm)')}<br>${num('front', 'front', b.front)}</label>
         <label>${lbl('Inntrinn sider (cm)')}<br>${num('side', 'side', b.side != null ? b.side : b.front)}</label>
+        <div style="grid-column:1/3">${lbl('Toppflate')}<div style="display:flex;gap:6px;margin-top:3px">${['below', 'flush'].map(k => { const on = (b.topLevel || 'below') === k;
+          return `<button type="button" id="shs-top-${k}" onclick="_stairHsBTopLevel('${k}')" style="flex:1;padding:6px;border-radius:6px;border:1px solid ${on ? '#4ea8ff' : 'var(--brd)'};background:${on ? '#4ea8ff' : 'var(--surface2)'};color:${on ? '#fff' : 'var(--text)'};cursor:pointer;font-size:12px">${k === 'below' ? 'Eget trinn' : 'I plan med øverste nivå'}</button>`; }).join('')}</div>
+          <div id="shs-top-help" style="font-size:11px;color:var(--dim);margin-top:3px">${STAIR_HS_TOPLEVEL_HELP[b.topLevel === 'flush' ? 'flush' : 'below']}</div></div>
       </div>
-      <div style="font-size:11px;color:var(--dim);margin:-6px 0 12px">Inntrinn sider følger inntrinn foran til du endrer det. Bakkanten (mot terrassen/veggen) er felles for alle trinn.</div>
+      <div style="font-size:11px;color:var(--dim);margin:-6px 0 12px">Inntrinn sider følger inntrinn foran til du endrer det. Bakkanten (mot det trappa fører til) er felles for alle trinn.</div>
       <div id="shs-preview" style="background:var(--surface2);border:1px solid var(--brd);border-radius:8px;padding:8px;margin-bottom:8px;text-align:center">${_stairHsPreviewSVG()}</div>
       <div id="shs-summary" style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:12px">${_stairHsSummaryHtml()}</div>
       ${editing ? `<div style="font-size:11px;color:var(--dim);margin-bottom:12px">Kabelvalg, CC og avstander endres i innstillingspanelet — denne dialogen endrer kun formen.</div>` : `
@@ -86168,14 +86233,14 @@ function _stairDrawSideToCanvas(stair, opts) {
 
   // Profilkoordinater — identisk aritmetikk med _drawStairSide.
   let totalH = 0;
-  for (const surf of surfs) if (surf.type !== 'landing') totalH += (surf.stepHeight_cm || stair.step_height_cm || 17);
+  for (const surf of surfs) totalH += _stairSideRiserCm(stair, surf);   // 178: 0 over en toppflate i plan
   const firstStepH = (surfs[0].type !== 'landing' ? surfs[0].stepHeight_cm : null) || stair.step_height_cm || 17;
   const ground = totalH + firstStepH;
   const coords = [];   // per flate: xStart, yTop, depth, stepH
   let cx = 0, cumulH = 0;
   for (const surf of surfs) {
     const yTop = totalH - cumulH;
-    const sh = surf.type !== 'landing' ? (surf.stepHeight_cm || stair.step_height_cm || 17) : 0;
+    const sh = _stairSideRiserCm(stair, surf);
     coords.push({ xStart: cx, yTop, depth: surf.d_cm, stepH: sh });
     cx += surf.d_cm;
     if (surf.type !== 'landing') cumulH += sh;
@@ -86206,7 +86271,7 @@ function _stairDrawSideToCanvas(stair, opts) {
     const sc = coords[i], isLanding = surfs[i].type === 'landing';
     pts.push({ x: sc.xStart, y: sc.yTop });
     pts.push({ x: sc.xStart + sc.depth, y: sc.yTop });
-    if (!isLanding) pts.push({ x: sc.xStart + sc.depth, y: sc.yTop - sc.stepH });
+    if (!isLanding && sc.stepH > 0) pts.push({ x: sc.xStart + sc.depth, y: sc.yTop - sc.stepH });   // 178
   }
   pts.push({ x: xTo, y: ground }); pts.push({ x: xFrom, y: ground });
   c.beginPath();
