@@ -49301,7 +49301,7 @@ function _stairApplyManualCables(stair) {
 function _setStairEdgeMargin(val) {
   const stair = S.stairs.find(s => s.id === S.ui.selectedStairId);
   if (!stair) return;
-  const laast = _stairLockedMargin(stair) != null;
+  const laast = _stairLockedRawCm(stair) != null;   // 185: også en låst verdi over armen
   // 120: tomt felt = tilbake til auto (låsen av). Gulvet står som det var.
   if (String(val == null ? '' : val).trim() === '') {
     if (!laast) return;
@@ -49314,6 +49314,16 @@ function _setStairEdgeMargin(val) {
   // 111: ikke lenger et fast 20 cm-tak — bare det geometriske (se _stairMaxEdgeMarginCm).
   const tak = _stairMaxEdgeMarginCm(stair.surfaces, stair.width_cm);
   const cm = Math.round(Math.max(1, Math.min(tak, parseFloat(val) || 5)) * 10) / 10;
+  // 185 (svar 184/7): hestesko + hengelås + over armen → verdien lagres som låst (feltet blir rødt med
+  // «Maks X cm …»), men den brukes ikke: utlegget og gulvet står som de var.
+  if (laast && cm > _stairLockMaxCm(stair) + 1e-6) {
+    if (cm === stair.edgeMarginLocked_cm) return;
+    pushUndo();
+    stair.edgeMarginLocked_cm = cm;
+    _regenerateStairCable(stair); _invalidateStairCache();
+    _updateStairSettingsPanel(); updateCtxBar(); render();
+    return;
+  }
   if (cm === stair.edgeMargin_cm && (cm === stair.edgeMarginMin_cm || (laast && _stairHsFillTop(stair))) && (!laast || cm === stair.edgeMarginLocked_cm)) return;
   pushUndo();
   // 084 (Regel 19): det brukeren taster er BÅDE utlegget nå og gulvet for alle senere forslag.
@@ -49334,7 +49344,7 @@ function _setStairEdgeMargin(val) {
 function _setStairEdgeMarginLock(paa) {
   const stair = S.stairs.find(s => s.id === S.ui.selectedStairId);
   if (!stair) return;
-  const er = _stairLockedMargin(stair) != null;
+  const er = _stairLockedRawCm(stair) != null;   // 185: en låst verdi over armen er også «på»
   if (!!paa === er) return;
   pushUndo();
   stair.edgeMarginLocked_cm = paa ? Math.round((stair.edgeMargin_cm || 5) * 10) / 10 : null;
@@ -49944,15 +49954,17 @@ function _renderStairSettingsPanel(stairId) {
       ${/* 120 (Regel 22 på trappenivå): hengelås. Låst = tallet brukes nøyaktig; av = som før
            (gulv for Forslag/manuelt). Tomt felt = låsen av. */''}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
-        <span>Avstand sider${_stairLockedMargin(stair) != null
+        <span>Avstand sider${_stairLockedRawCm(stair) != null
           ? ' <span style="font-size:10px;color:var(--accent)" title="Låst: brukes nøyaktig. Forslag varierer bare kabelsettet.">🔒 låst</span>'
           : (stair.edgeMarginMin_cm > 0 && Math.abs(stair.edgeMarginMin_cm - (stair.edgeMargin_cm || 5)) > 0.05 ? ` <span style="font-size:10px;color:var(--dim)" title="Din kantavstand (gulv for forslag). Utlegget ligger lenger inn fordi et forslag justerte marginen for å treffe kabellengden.">(din: ${stair.edgeMarginMin_cm})</span>` : '')}</span>
         <span style="display:flex;align-items:center;gap:3px">
-          <input type="number" min="1" max="${_stairMaxEdgeMarginCm(stair.surfaces, stair.width_cm)}" step="0.5" value="${_stairLockedMargin(stair) != null ? _stairLockedMargin(stair) : Math.round((stair.edgeMargin_cm || 5) * 100) / 100}" title="${_stairLockedMargin(stair) != null ? 'Låst: avstanden brukes nøyaktig. Tomt felt = tilbake til auto.' : 'Din kantavstand — gulv for Forslag og manuelt kabelsett. Trykk hengelåsen for å bruke tallet nøyaktig.'}" style="width:48px;text-align:center;background:var(--surface2);border:1px solid ${_stairLockedMargin(stair) != null ? 'var(--accent)' : 'var(--brd)'};border-radius:4px;color:var(--text);padding:2px;font-size:11px;font-family:'IBM Plex Mono',monospace" onchange="_setStairEdgeMargin(this.value)" onclick="event.stopPropagation()">
-          <button onclick="event.stopPropagation();_setStairEdgeMarginLock(${_stairLockedMargin(stair) == null})" title="${_stairLockedMargin(stair) != null ? 'Lås opp: appen justerer avstanden selv igjen' : 'Lås: bruk avstanden nøyaktig'}" style="flex:0 0 auto;padding:1px 4px;border:1px solid ${_stairLockedMargin(stair) != null ? 'var(--accent)' : 'var(--brd)'};border-radius:4px;background:var(--surface2);font-size:11px;cursor:pointer;line-height:1.3">${_stairLockedMargin(stair) != null ? '🔒' : '🔓'}</button>
+          <input id="stair-edge-margin" type="number" min="1" max="${_stairLockedRawCm(stair) != null && _stairIsHorseshoe(stair) ? Math.min(_stairMaxEdgeMarginCm(stair.surfaces, stair.width_cm), _stairLockMaxCm(stair)) : _stairMaxEdgeMarginCm(stair.surfaces, stair.width_cm)}" step="0.5" value="${_stairLockedRawCm(stair) != null ? _stairLockedRawCm(stair) : Math.round((stair.edgeMargin_cm || 5) * 100) / 100}" title="${_stairLockedRawCm(stair) != null ? 'Låst: avstanden brukes nøyaktig. Tomt felt = tilbake til auto.' : 'Din kantavstand — gulv for Forslag og manuelt kabelsett. Trykk hengelåsen for å bruke tallet nøyaktig.'}" style="width:48px;text-align:center;background:var(--surface2);border:1px solid ${_stairLockedOverArm(stair) ? '#e5484d' : (_stairLockedRawCm(stair) != null ? 'var(--accent)' : 'var(--brd)')};${_stairLockedOverArm(stair) ? 'background:rgba(229,72,77,0.12);' : ''}border-radius:4px;color:var(--text);padding:2px;font-size:11px;font-family:'IBM Plex Mono',monospace" onchange="_setStairEdgeMargin(this.value)" onclick="event.stopPropagation()">
+          <button onclick="event.stopPropagation();_setStairEdgeMarginLock(${_stairLockedRawCm(stair) == null})" title="${_stairLockedRawCm(stair) != null ? 'Lås opp: appen justerer avstanden selv igjen' : 'Lås: bruk avstanden nøyaktig'}" style="flex:0 0 auto;padding:1px 4px;border:1px solid ${_stairLockedRawCm(stair) != null ? 'var(--accent)' : 'var(--brd)'};border-radius:4px;background:var(--surface2);font-size:11px;cursor:pointer;line-height:1.3">${_stairLockedRawCm(stair) != null ? '🔒' : '🔓'}</button>
           <span style="font-size:10px;color:var(--dim)">cm</span>
         </span>
       </div>
+      ${/* 185 (svar 184/7): låst avstand over armen på hestesko — rødt og ikke brukt. */''}
+      ${_stairLockedOverArm(stair) ? `<div id="stair-edge-margin-err" style="font-size:10px;color:#e5484d;margin:-2px 0 6px;line-height:1.35">Maks ${_stairDimRound(_stairLockMaxCm(stair))} cm, ellers går strengene forbi hjørnet. Låst ${_stairLockedRawCm(stair)} cm brukes ikke.</div>` : ''}
       ${surfs.some(s => s.type === 'landing') ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
         <span>Dybdemargin repos</span>
         <span style="display:flex;align-items:center;gap:3px">
@@ -52698,13 +52710,19 @@ function _stairAdjSurfaces(stair) {
   const surfs = (stair && stair.surfaces) || [];
   return _stairHsFillTop(stair) ? surfs.filter(f => !f.hsTop) : surfs;
 }
-// Taket for hesteskoens margin i 'fillTop': armen til den innerste strengen på hvert hesteskotrinn
+// Taket for hesteskoens margin: armen til den innerste strengen på hvert hesteskotrinn
 // (bakkant → hjørnet, Di + opptrinnsavstand). Større margin ville flyttet strengens ende forbi hjørnet.
+// 184: bare i 'fillTop'. 185 (svar 184/5): i begge valg, og taket for låst avstand (svar 184/7).
+// Innerste streng ligger på opptrinnsavstanden — bare depthStart/depthEnd brukes av _stairRunPath,
+// så de settes direkte her i stedet for via _stairSurfSettings. Det holder funksjonen fri for
+// sidemarginen og låsen (_stairLockedMargin spør hit, og _stairSurfSettings spør _stairLockedMargin).
+// Hesteskotrapper har ingen soner, så verdiene er de samme som _stairSurfSettings gir.
 function _stairHsArmCapCm(stair) {
   let cap = Infinity;
   (stair.surfaces || []).forEach((sf, si) => {
     if (!sf || sf.shape !== 'u') return;
-    const ss = _stairSurfSettings(stair, si);
+    const r0 = stair.riserOffset_cm ?? 2;
+    const ss = { depthStart_cm: r0, depthEnd_cm: (sf.d_cm || 0) - (stair.noseOffset_cm ?? 2) };
     const path = _stairRunPath(stair, si, ss.depthStart_cm, ss);
     if (path.length < 2) return;
     const n = path.length;
@@ -53838,7 +53856,30 @@ function _stairFloorMargin(stair) {
 // `edgeMarginMin_cm`, Forslag/manuelt løser marginen — 084/Regel 12). Eksisterende trapper har
 // ikke feltet og oppfører seg som før.
 function _stairLockedMargin(stair) {
+  const v = _stairLockedRawCm(stair);
+  // 185 (svar 184/7): på hestesko stopper låst avstand ved hjørnet. En verdi over armen brukes ikke —
+  // trappa oppfører seg da som uten lås (gulvet + Forslag/manuelt), og panelet viser feltet rødt
+  // (_stairLockedOverArm) til verdien er rettet.
+  if (v != null && _stairLockedOverArm(stair)) return null;
+  return v;
+}
+// Den lagrede låste verdien, uten armsjekken (panelet og setterne trenger å se den).
+function _stairLockedRawCm(stair) {
   return stair && stair.edgeMarginLocked_cm > 0 ? Math.round(stair.edgeMarginLocked_cm * 10) / 10 : null;
+}
+// 185: { cm, cap } når en hesteskotrapp har en låst avstand over armen (_stairHsArmCapCm), ellers null.
+// Gjelder begge valg. Rette trapper: alltid null.
+function _stairLockedOverArm(stair) {
+  const v = _stairLockedRawCm(stair);
+  if (v == null || !_stairIsHorseshoe(stair) || !stair.surfaces || !stair.surfaces.length) return null;
+  const cap = _stairHsArmCapCm(stair);
+  return v > cap + 0.01 ? { cm: v, cap } : null;
+}
+// Største låste avstand feltet godtar: armen for hestesko, ellers ingen egen grense (Infinity).
+function _stairLockMaxCm(stair) {
+  if (!_stairIsHorseshoe(stair)) return Infinity;
+  if (!stair.surfaces || !stair.surfaces.length) stair.surfaces = _generateStairSurfaces(stair);
+  return Math.floor(_stairHsArmCapCm(stair) * 10 + 1e-6) / 10;
 }
 
 // 111 (Kenneth 21.10.2026): «ta bort maks verdi på avstand sider — nå får jeg ikke satt mer enn
@@ -53948,8 +53989,9 @@ function _stairMarginProbe(stair) {
   const totalStrands = fillTop ? probe.runs.filter(r => !((stair.surfaces || [])[r.surfaceIdx] || {}).hsTop).length : probe.runs.length;
   const neededAtFloor_cm = probe.totalCableLength_cm;
   const minSurfW = Math.min(...adjSurfs.map(s => _stairSurfSpanCm(s, stair.width_cm)));   // 176: span (= w_cm for rette)
-  // 184: hesteskoens margin kan ikke gå forbi hjørnet (armen til innerste streng) — bare i 'fillTop'.
-  const armCap = fillTop ? _stairHsArmCapCm(stair) : Infinity;
+  // 184: hesteskoens margin kan ikke gå forbi hjørnet (armen til innerste streng).
+  // 185 (svar 184/5): i begge valg — «strenger skal aldri gå forbi hesteskoens hjørne».
+  const armCap = _stairIsHorseshoe(stair) ? _stairHsArmCapCm(stair) : Infinity;
   const maxMargin75 = Math.min(minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC, minSurfW / 2 - 1, armCap);
   return {
     ok: totalStrands > 0 && neededAtFloor_cm > 0,
@@ -53959,7 +54001,7 @@ function _stairMarginProbe(stair) {
     // bred (+15 cm fra brukerens gulv — et sett som krever mer bør vike for et annet sett).
     // 184: i 'fillTop' er hesteskoens margin MENT å ligge langt over gulvet (den bærer hele
     // justeringen alene), så +15-taket gjelder ikke der — bare 75 % og armen.
-    maxSaneMargin: fillTop ? maxMargin75 : Math.min(minSurfW / 2 - 1, floorMargin + 15),
+    maxSaneMargin: fillTop ? maxMargin75 : Math.min(minSurfW / 2 - 1, floorMargin + 15, armCap),   // 185: armen også i valg 1
     // Regel 19-taket: varmet bredde >= 75 % av smaleste flate, altså høyst 12,5 % per side. Gjelder
     // en-kabel-forslaget OG alle manuelle sett (Regel 20: «aldri under 75 % varmet bredde»).
     maxMargin75,
@@ -54008,8 +54050,8 @@ function _stairFitFixedSet(stair, productIds) {
   if (margin > pr.maxMargin75 + 0.01) {
     // Hvor mye kabel som mangler for å nå 75 %-grensen — tallet brukeren faktisk kan handle på.
     const needAt75_cm = pr.neededAtFloor_cm - 2 * pr.totalStrands * (pr.maxMargin75 - pr.floorMargin);
-    // 184: i «Fyll toppflaten» kan det være hjørnet (armen), ikke 75 %, som stopper hesteskoen.
-    const forbiHjornet = pr.fillTop && margin > pr.armCap + 0.01 && pr.armCap <= pr.minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC;
+    // 184: det kan være hjørnet (armen), ikke 75 %, som stopper hesteskoen. 185: i begge valg.
+    const forbiHjornet = margin > pr.armCap + 0.01 && pr.armCap <= pr.minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC;
     return { ok: false, edgeMargin_cm: pr.floorMargin, residual_cm: 0,
       short: `${_stairLenTxt(Math.max(0, needAt75_cm - sum_cm))} for korte`,
       reason: forbiHjornet
@@ -54243,15 +54285,19 @@ function _stairSolveExactCableSet(stair, opts) {
       } else if (margin > maxMargin + 0.01) {
         // Er problemet at selv LENGSTE kabel er for kort, si det (Kenneths ord: «behovet (128 m)
         // er lengre enn lengste kabel (115 m)»); ellers er det marginen som er problemet.
+        // 185: på hestesko kan det være hjørnet (armen) og ikke 75 % som stopper.
+        const grunn = (margin > pr.armCap + 0.01 && pr.armCap <= minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC)
+          ? `strengene ville gått forbi hjørnet, armen er ${_stairDimRound(pr.armCap)} cm` : 'under 75 % varmet bredde';
         singleReason = L1 === longest
-          ? `1 kabel: behovet (${needM} m) er lengre enn lengste kabel (${longest} m) — ${prod1.name} ville gitt ${margin.toFixed(1)} cm kantavstand (under 75 % varmet bredde)`
-          : `1 kabel: ${prod1.name} ville gitt ${margin.toFixed(1)} cm kantavstand (under 75 % varmet bredde)`;
+          ? `1 kabel: behovet (${needM} m) er lengre enn lengste kabel (${longest} m) — ${prod1.name} ville gitt ${margin.toFixed(1)} cm kantavstand (${grunn})`
+          : `1 kabel: ${prod1.name} ville gitt ${margin.toFixed(1)} cm kantavstand (${grunn})`;
       } else {
         const geo1 = generateStairCable({ ...stair, edgeMargin_cm: margin, cables: [{ productId: null }] });
         single = {
           edgeMargin_cm: margin, products: [prod1], totalAvailable_m: Math.round(sum_cm) / 100,
           residual_cm: Math.round((sum_cm - geo1.totalCableLength_cm) * 100) / 100,
-          wideMargin: margin > floorMargin + STAIR_SINGLE_WARN_ABOVE_FLOOR_CM + 0.01,
+          // 185 (svar 184/6): ikke i «Fyll toppflaten» — der er stor avstand på hesteskoen meningen.
+          wideMargin: !pr.fillTop && margin > floorMargin + STAIR_SINGLE_WARN_ABOVE_FLOOR_CM + 0.01,
           heatedWidth_cm: Math.round((minSurfW - 2 * margin) * 10) / 10, minSurfW_cm: minSurfW,
           floorMargin_cm: floorMargin,
         };
@@ -55965,9 +56011,9 @@ function _stairHorseshoeRegressionTest() {
       _showHsBuilder(st.id); _stairHsBPerStep(true);
       _stairHsBStepSet(3, '35');
       const fIn = document.getElementById('shs-front');
-      fIn.value = 35; _stairHsBUpd('front', '35');
+      fIn.value = 35; _stairHsBUpd('front', '35'); _stairHsBFrontCommit(null);   // 185: slippes når feltet forlates
       const rel = _stairHsB.depths[3] == null && !shown('shs-dm-3') && val(3) === 35;
-      fIn.value = 30; _stairHsBUpd('front', '30');
+      fIn.value = 30; _stairHsBUpd('front', '30'); _stairHsBFrontCommit(null);
       check('183.3: trinn 5 = 35 → felles 35 slipper raden («endret» borte) → felles 30 gir trinn 5 = 30', '35 slippes · 30', rel && val(3) === 30 && _stairHsParams({ horseshoe: _stairHsBParams() }).fronts[3] === 30 && !_stairHsBParams().depths_cm, `${rel ? 'sluppet' : 'IKKE sluppet'} · ${val(3)} · ${JSON.stringify(_stairHsBParams().depths_cm)}`);
       // 183.4 · ▼ stopper på 15; 12 for hånd → rødt, melding, sperret; felles 12 det samme.
       _stairHsBStepSet(3, '17'); for (let k = 0; k < 5; k++) _stairHsBStepBy(3, -1); const a15 = val(3);
@@ -56099,6 +56145,86 @@ function _stairHorseshoeRegressionTest() {
       const tabF = _stairHsTableRows(st).map(r => r.cells[4]);
       check('184.5: fire trinn, ulik dybde, i plan: toppflate 2, alle hesteskotrinn samme løste margin, går opp', '2 / m / m / m / m',
         pff.length > 0 && tabF[0] === '2' && tabF.slice(1).every(v => v === r1(st.edgeMargin_cm) + '') && st.edgeMargin_cm > 2 && passer(st), tabF.join(' / '));
+
+      // ─── 185 · svar på 183 og 184 (Kenneth 04.11.2026) ───
+      // 185.1 (184/5) · armtaket gjelder også «Lik avstand». BRED: toppflate 700 × 40, ett hesteskotrinn på 31,
+      // opptrinn/nese 2, gulv 2 → armen er 40 + 2 = 42, men 75 %-taket er 87,5. 60 m ville (før 185) gitt 49,2
+      // i valg 1, altså strenger 7,2 cm forbi hjørnet.
+      const BRED = { topW_cm: 700, topD_cm: 40, count: 1, front_cm: 31, stepHeight_cm: 17 };
+      st = mk(BRED, EX); setCable(st, [98004]);
+      const armB = _stairHsArmCapCm(st);
+      check('185.1: BRED — armen 42, 75 %-taket over (87,5)', '42 < 87.5', r1(armB) === 42 && _stairMarginProbe(st).minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC === 87.5 && _stairMarginProbe(st).maxMargin75 === 42, r1(armB) + ' · ' + _stairMarginProbe(st).maxMargin75);
+      check('185.1: valg 1, 60 m: «for korte … forbi hjørnet (armen er 42 cm)»', 'for korte · forbi hjørnet',
+        st.manualFit && !st.manualFit.ok && /for korte/.test(st.manualFit.short) && /forbi hjørnet \(armen er 42 cm\)/.test(st.manualFit.reason), st.manualFit && st.manualFit.reason);
+      check('185.1: valg 1, 60 m: ingen streng forbi hjørnet (marginen på gulvet, udekket stiplet)', '≤ 42 · udekket',
+        runsOf(st, 0).every(r => r.segments[0].start_cm <= armB + 1e-6) && st.edgeMargin_cm === 2 && (st.uncoveredRuns || []).length > 0, runsOf(st, 0).map(r => r1(r.segments[0].start_cm)).join('/') + ' · ' + (st.uncoveredRuns || []).length + ' udekket');
+      const pB = _generateStairProposals(st);
+      check('185.1: Forslag i valg 1 går aldri forbi armen (60 @ 49,2 er borte)', '≤ 42', pB.every(p => p.edgeMargin_cm <= armB + 1e-6), pB.map(p => p.products.map(x => x.length_m).join('+') + '@' + p.edgeMargin_cm).join(', ') || 'ingen forslag');
+      // Testtrappene: armen ligger over 75 %-taket, så armtaket binder ikke (mot HEAD: identiske, se rapporten).
+      for (const [nm, hs, ex] of [['VK 31', VK31, EX], ['VK 46', KENNETH, null], ['fire trinn', { topW_cm: 300, topD_cm: 60, count: 4, front_cm: 40, stepHeight_cm: 17 }, null],
+        ['ulik dybde', { topW_cm: 300, topD_cm: 60, count: 4, front_cm: 40, stepHeight_cm: 17, perStepDepth: true, depths_cm: [null, 45, null, 30] }, null]]) {
+        st = mk(hs, ex || undefined); const pq = _stairMarginProbe(st);
+        check(`185.1: ${nm} — armen (${r1(pq.armCap)}) over 75 %-taket, binder ikke`, 'binder ikke', pq.armCap > pq.minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC && pq.maxSaneMargin < pq.armCap, r1(pq.armCap) + ' / ' + r2(pq.minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC));
+      }
+      // 185.2 (184/6) · gult merke «Stor kantavstand» skjules i «Fyll toppflaten», som før i «Lik avstand».
+      const gult = (stt, pp) => { _renderStairProposalPanel(stt, pp); const el = document.getElementById('stair-proposal-panel'); const t = el ? el.textContent : ''; if (el) el.remove(); return t.includes('Stor kantavstand'); };
+      st = mk(VK31, EX); const pq1 = _generateStairProposals(st);
+      check('185.2: valg 1 (VK 31, 60 @ 19,4 > gulv + 15): gult merke som før', 'gult', pq1[0] && pq1[0].wideMargin === true && gult(st, pq1), pq1[0] && pq1[0].wideMargin);
+      st = mk({ ...VK31, marginMode: 'fillTop' }, EX); const pq2 = _generateStairProposals(st);
+      check('185.2: valg 2 (VK 31, 60 @ 54,1): ikke gult merke', 'ikke gult', pq2[0] && pq2[0].edgeMargin_cm > 17 && pq2[0].wideMargin === false && !gult(st, pq2), pq2[0] && (pq2[0].edgeMargin_cm + ' · ' + pq2[0].wideMargin));
+      // 185.3 (184/7) · låst avstand stopper ved hjørnet, i begge valg. VK 31: armen 72.
+      const panel = stt => { S.ui.selectedStairId = stt.id; _updateStairSettingsPanel(); const f = document.getElementById('stair-edge-margin'), e = document.getElementById('stair-edge-margin-err');
+        return { max: f ? +f.max : null, red: !!f && /229, 72, 77|e5484d/i.test(f.style.borderColor + f.getAttribute('style')), err: e ? e.textContent : '' }; };
+      for (const mode of ['equal', 'fillTop']) {
+        const nm = mode === 'equal' ? 'valg 1' : 'valg 2';
+        st = mk({ ...VK31, marginMode: mode }, EX); setCable(st, [98005]);
+        const fri = sig(st), friCells = cells(st), gulv0 = st.edgeMarginMin_cm;
+        _setStairEdgeMarginLock(true); _setStairEdgeMargin('80');
+        const pa = panel(st);
+        check(`185.3: ${nm} — lås 80 (arm 72): lagret, men ikke brukt (utlegget som uten lås, gulvet urørt)`, 'ikke brukt',
+          st.edgeMarginLocked_cm === 80 && _stairLockedMargin(st) == null && sig(st) === fri && cells(st) === friCells && st.edgeMarginMin_cm === gulv0 && runsOf(st, 0).every(r => r.segments[0].start_cm <= 72 + 1e-6), `låst ${st.edgeMarginLocked_cm} · ${cells(st)}`);
+        check(`185.3: ${nm} — rødt felt, max 72, «Maks 72 cm, ellers går strengene forbi hjørnet»`, 'rødt · 72 · melding',
+          pa.red && pa.max === 72 && pa.err.includes('Maks 72 cm, ellers går strengene forbi hjørnet'), JSON.stringify(pa));
+        _setStairEdgeMargin('70');
+        const pb = panel(st);
+        check(`185.3: ${nm} — lås 70 virker (hestesko 70, ikke rødt)`, mode === 'equal' ? '70 / 70' : '2 / 70',
+          _stairLockedMargin(st) === 70 && cells(st) === (mode === 'equal' ? '70 / 70' : '2 / 70') && runsOf(st, 0).every(r => r1(r.segments[0].start_cm) === 70) && !pb.red && !pb.err, cells(st) + ' · ' + JSON.stringify(pb));
+      }
+      st = mk(VK31, EX); st.edgeMarginLocked_cm = 80; setCable(st, [98005]);   // som lagret fra før 185
+      const pOld = panel(st);
+      check('185.3: gammel trapp med låst 80 åpnes, tegnes uten låsen og viser rødt', 'tegnes · rødt',
+        st.runs.length > 0 && _stairLockedMargin(st) == null && pOld.red && pOld.err.includes('Maks 72 cm'), JSON.stringify(pOld));
+      { const stR = _createStairObj({ name: 'RETT', segments: [{ type: 'flight', steps: 3 }], edgeMargin_cm: 5, edgeMarginMin_cm: 5, edgeMarginLocked_cm: 80, x_cm: 0, y_cm: 0 });
+        check('185.3: rett trapp: ingen armgrense', 'ingen', _stairLockedOverArm(stR) == null && _stairLockMaxCm(stR) === Infinity, String(_stairLockMaxCm(stR))); }
+      // 185.4 (183/3) · en rad slippes først når feltet forlates (Enter, Tab, klikk utenfor).
+      // 185.5 (183/4) · felles 12 på en bred, grunn trapp: dybdemålet «180» står helt.
+      {
+        const sB = _stairHsB, sI = _stairHsBEditId;
+        try {
+          const TI5 = { topW_cm: 300, topD_cm: 60, count: 10, front_cm: 28, stepHeight_cm: 17 };
+          st = mk(TI5); _showHsBuilder(st.id); _stairHsBPerStep(true); _stairHsBStepSet(3, '35');
+          const fIn = document.getElementById('shs-front'), dm = () => { const el = document.getElementById('shs-dm-3'); return !!el && el.style.visibility !== 'hidden' && el.textContent !== ''; };
+          const typ = v => { fIn.value = v; fIn.dispatchEvent(new Event('input', { bubbles: true })); };
+          for (const v of ['3', '35', '350']) typ(v);
+          check('185.4: skriver 350 i felles inntrinn (passerer 35): trinn 5 er fortsatt «endret» 35', '35 · endret', _stairHsB.depths[3] === 35 && dm(), _stairHsB.depths[3] + ' · ' + dm());
+          fIn.dispatchEvent(new Event('change', { bubbles: true }));
+          check('185.4: … og går ut av feltet med 350: trinn 5 står (35 ≠ 350)', '35 · endret', _stairHsB.depths[3] === 35 && dm(), _stairHsB.depths[3] + ' · ' + dm());
+          typ('35');
+          check('185.4: skriver 35 (mens feltet er i bruk): ikke sluppet ennå', '35 · endret', _stairHsB.depths[3] === 35 && dm(), _stairHsB.depths[3] + ' · ' + dm());
+          fIn.dispatchEvent(new Event('change', { bubbles: true }));   // Tab / klikk utenfor
+          check('185.4: … Tab: trinn 5 slippes («endret» borte)', 'sluppet', _stairHsB.depths[3] == null && !dm(), _stairHsB.depths[3] + ' · ' + dm());
+          _stairHsBStepSet(3, '40'); typ('40');
+          fIn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          check('185.4: Enter slipper også', 'sluppet', _stairHsB.depths[3] == null && !dm(), _stairHsB.depths[3] + ' · ' + dm());
+          _stairHsBPerStep(false); typ('12'); fIn.dispatchEvent(new Event('change', { bubbles: true }));
+          const svg = document.querySelector('#shs-preview svg'), sr = svg.getBoundingClientRect();
+          const t180 = [...svg.querySelectorAll('text')].find(t => t.textContent === '180');
+          const tr = t180 ? t180.getBoundingClientRect() : null;
+          check('185.5: felles 12 (540 × 180): dybdemålet «180» står helt inne i forhåndsvisningen', '180 · inne',
+            !!tr && tr.left >= sr.left - 0.5 && tr.right <= sr.right + 0.5 && tr.width > 10, tr ? `${r1(tr.left - sr.left)} px fra venstre kant, bredde ${r1(tr.width)}` : 'fant ikke «180»');
+          document.getElementById('stair-modal-bg').remove();
+        } finally { _stairHsB = sB; _stairHsBEditId = sI; }
+      }
     }
   } catch (e) {
     results.push({ name: 'unntak', ok: false, expected: 'ingen', got: String(e && e.message || e) });
@@ -67403,6 +67529,16 @@ function _stairHsBParams() {
   if (d.length) out.depths_cm = d;
   return out;
 }
+// 183 (svar 182/3): en overstyrt rad som er lik felles inntrinn, slippes og følger felles igjen.
+// 185 (svar 183/3): først når feltet forlates (Enter, Tab eller klikk utenfor), ikke mens du skriver —
+// står trinn 5 på 35 og du skriver 350, passerer feltet 35 uten at raden slippes.
+function _stairHsBFrontCommit(val) {
+  if (val != null) _stairHsBUpd('front', val);
+  if (!_stairHsB || !_stairHsB.depths) return;
+  const før = JSON.stringify(_stairHsB.depths);
+  _stairHsB.depths = _stairHsB.depths.map(d => (d != null && d === _stairHsB.front) ? null : d);
+  if (JSON.stringify(_stairHsB.depths) !== før) { _stairHsBListRender(); _stairHsBRefresh(); }
+}
 function _stairHsBUpd(key, val) {
   const v = parseFloat(String(val).replace(',', '.'));
   if (key === 'side') {
@@ -67414,8 +67550,6 @@ function _stairHsBUpd(key, val) {
     _stairHsB[key] = v;
   }
   if (key === 'front' && _stairHsB.side == null) { const sEl = document.getElementById('shs-side'); if (sEl) sEl.value = _stairHsB.front; }
-  // 183 (svar 182/3): en overstyrt rad som blir lik felles inntrinn, slippes og følger felles igjen.
-  if (key === 'front' && _stairHsB.depths) _stairHsB.depths = _stairHsB.depths.map(d => (d != null && d === _stairHsB.front) ? null : d);
   // 182: rader som ikke er overstyrt, følger felles inntrinn; antall trinn gir flere/færre rader.
   if (key === 'front' || key === 'count' || key === 'side' || key === 'topW' || key === 'topD') _stairHsBListRender();
   _stairHsBRefresh();
@@ -67583,8 +67717,17 @@ function _stairHsPreviewSVG() {
   const surfs = _generateHorseshoeSurfaces(tmp);
   const p = _stairHsParams(tmp);
   const W = 440, H = 200, pad = 26;
-  const sc = Math.min((W - 2 * pad) / p.outerW, (H - 2 * pad) / p.outerD);
-  const X = x => pad + x * sc + ((W - 2 * pad) - p.outerW * sc) / 2, Y = y => pad + y * sc;
+  let sc = Math.min((W - 2 * pad) / p.outerW, (H - 2 * pad) / p.outerD);
+  let x0 = pad + ((W - 2 * pad) - p.outerW * sc) / 2;
+  // 185 (svar 183/4): det venstre dybdemålet står til venstre for X(0) (strek 10 px ut, tekst 3 px til
+  // venstre for streken). På en bred, grunn trapp fyller planen hele bredden, og «180» ble kuttet til «80».
+  // Trenger teksten mer plass enn det er, flyttes og krympes planen så hele teksten får plass. Ellers
+  // er alt som før (samme skala og plassering).
+  const needL = String(_stairDimRound(p.outerD)).length * 10 * 0.62 + 2 + 13 + 2;
+  const flytt = x0 < needL;
+  if (flytt) { sc = Math.min(sc, (W - pad - needL) / p.outerW); x0 = needL + ((W - pad - needL) - p.outerW * sc) / 2; }
+  // Uten flytting: nøyaktig samme uttrykk som før 185 (samme flyttall i SVG-en).
+  const X = flytt ? (x => x0 + x * sc) : (x => pad + x * sc + ((W - 2 * pad) - p.outerW * sc) / 2), Y = y => pad + y * sc;
   const poly = pts => pts.map((q, i) => (i ? 'L' : 'M') + X(q.x).toFixed(1) + ',' + Y(q.y).toFixed(1)).join(' ');
   let g = '';
   // 182: trinn uten brukbar dybde tegnes røde (samme sjekk som sperrer «Plasser»).
@@ -67661,7 +67804,7 @@ function _renderHsBuilder() {
         <label>${lbl('Toppflate dybde (cm)')}<br>${num('topD', 'topD', b.topD)}</label>
         <label>${lbl('Antall hesteskotrinn')}<br>${num('count', 'count', b.count, 'min="1" max="20" step="1"')}</label>
         <label>${lbl('Opptrinnshøyde (cm)')}<br>${num('height', 'height', b.height)}</label>
-        <label>${lbl('Inntrinn foran (cm)')}<br>${num('front', 'front', b.front, `min="${STAIR_HS_STEP_MIN_CM}" max="${STAIR_HS_STEP_MAX_CM}" step="1"`)}</label>
+        <label>${lbl('Inntrinn foran (cm)')}<br>${num('front', 'front', b.front, `min="${STAIR_HS_STEP_MIN_CM}" max="${STAIR_HS_STEP_MAX_CM}" step="1" onchange="_stairHsBFrontCommit(this.value)" onkeydown="if(event.key==='Enter')_stairHsBFrontCommit(this.value)"`)}</label>
         <label>${lbl('Inntrinn sider (cm)')}<br>${num('side', 'side', b.side != null ? b.side : b.front, `min="${STAIR_HS_STEP_MIN_CM}" max="${STAIR_HS_STEP_MAX_CM}" step="1"`)}</label>
         <div style="grid-column:1/3">${lbl('Toppflate')}<div style="display:flex;gap:6px;margin-top:3px">${['below', 'flush'].map(k => { const on = (b.topLevel || 'below') === k;
           return `<button type="button" id="shs-top-${k}" onclick="_stairHsBTopLevel('${k}')" style="flex:1;padding:6px;border-radius:6px;border:1px solid ${on ? '#4ea8ff' : 'var(--brd)'};background:${on ? '#4ea8ff' : 'var(--surface2)'};color:${on ? '#fff' : 'var(--text)'};cursor:pointer;font-size:12px">${k === 'below' ? 'Eget trinn' : 'I plan med øverste nivå'}</button>`; }).join('')}</div>
