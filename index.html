@@ -47934,7 +47934,9 @@ function _stairHsTableOffset(stair) {
 // er ett av de to rettvinklede alternativene (B.x, A.y) eller (A.x, B.y): det som FORLENGER strengene
 // (A-strengen videre i sin egen retning, B-strengen bakfra inn i sin), og aldri det som går tilbake
 // langs en streng. Like gode → vannrett først, (B.x, A.y).
-// Kabellengden er IKKE herfra: opptrinnet teller stepHeight_cm (Regel 5), avstanden i plan teller ikke.
+// 187 (svar 186/1): kabellengden for en HESTESKOTRAPP er opptrinnet (stepHeight_cm) + lengden av denne
+// ruten (generateStairCable). Rette trapper teller fortsatt bare opptrinnet (Regel 5) — ruten i plan
+// tegnes, men legges ikke til (Kenneth avgjør det senere; målt i docs/187/RAPPORT.md).
 function _stairConnRoute(A, uA, B, uB) {
   const a = { x: A.x, y: A.y }, b = { x: B.x, y: B.y };
   if (Math.abs(a.x - b.x) < 1e-6 || Math.abs(a.y - b.y) < 1e-6) return [a, b];
@@ -47959,20 +47961,46 @@ function _stairRouteSlice(route, t0, t1) {
   const L = _stairPolyLen(route);
   return _stairPolySlice(route, t0 * L, t1 * L).map(p => ({ x: p.x, y: p.y }));
 }
-// Hesteskotrappas overgang conn i plan-cm: fra siste strengs utgang på fromSurf til første strengs
-// inngang på toSurf, med fartsretningen langs strengen (_stairRunPath, samme senterlinje som motoren).
-function _stairHsConnRoute(stair, conn, ssOf) {
+// 187: ett punkt på en streng (plan-cm, trapp-lokalt) med kabelens fartsretning der. s = avstand langs
+// strengens senterlinje (_stairRunPath — rektangel: fra flatens venstre kant; U: buelengde), fwd = strengen
+// legges i stigende s (isGoingRight).
+function _stairRunEndPt(stair, si, pos, s, fwd, ss) {
+  const p = _stairPolyAt(_stairRunPath(stair, si, pos, ss), s);
+  return { pt: { x: p.x, y: p.y }, u: fwd ? { x: p.dx, y: p.dy } : { x: -p.dx, y: -p.dy } };
+}
+// 187: ruten mellom to strenger — fra strengen kabelen forlater (a) til strengen den kommer til (b).
+// a/b = { si, pos, s, fwd } der s er strengens UTGANG på a og INNGANG på b. Brukes av motoren (lengden,
+// hestesko) og av alle tegnere (via _stairConnPlanRoute), så tegning og lengde leser samme rute (Regel 9).
+function _stairConnRouteBetween(stair, a, b, ssOf) {
   const ss = ssOf || (si => _stairSurfSettings(stair, si));
+  const A = _stairRunEndPt(stair, a.si, a.pos, a.s, a.fwd, ss(a.si));
+  const B = _stairRunEndPt(stair, b.si, b.pos, b.s, b.fwd, ss(b.si));
+  return _stairConnRoute(A.pt, A.u, B.pt, B.u);
+}
+// Overgangen conn i plan-cm (trapp-lokalt): fra siste strengs utgang på fromSurf til første strengs
+// inngang på toSurf, lest fra de tildelte løpene (stair.runs). 187: gjelder hestesko OG rette trapper
+// (svar 186/4: «fra strengens ende rettvinklet til neste strengs start», skjerm og PDF likt).
+function _stairConnPlanRoute(stair, conn, ssOf) {
   const by = si => (stair.runs || []).filter(r => r.surfaceIdx === si);
   const fr = by(conn.fromSurf), tr = by(conn.toSurf);
   if (!fr.length || !tr.length) return [];
   const last = fr[fr.length - 1], first = tr[0];
   const lo = r => r.segments[0].start_cm, hi = r => r.segments[r.segments.length - 1].end_cm;
-  const A = _stairPolyAt(_stairRunPath(stair, conn.fromSurf, last.pos_cm, ss(conn.fromSurf)), last.isGoingRight ? hi(last) : lo(last));
-  const B = _stairPolyAt(_stairRunPath(stair, conn.toSurf, first.pos_cm, ss(conn.toSurf)), first.isGoingRight ? lo(first) : hi(first));
-  const dir = (p, fwd) => fwd ? { x: p.dx, y: p.dy } : { x: -p.dx, y: -p.dy };
-  return _stairConnRoute(A, dir(A, last.isGoingRight), B, dir(B, first.isGoingRight));
+  if (!_stairIsHorseshoe(stair)) {
+    // Rett trapp: run.isGoingRight er bare paritet INNE i flaten (starter alltid mot høyre); tegnerne speiler
+    // flaten etter inngangssiden (entryRight = forrige conn.exitRight). Siden kabelen forlater flaten og møter
+    // neste på, er derfor conn.exitRight (fra motoren, Regel 9) — begge ender på den siden.
+    const R = !!conn.exitRight;
+    return _stairConnRouteBetween(stair,
+      { si: conn.fromSurf, pos: last.pos_cm, s: R ? hi(last) : lo(last), fwd: R },
+      { si: conn.toSurf, pos: first.pos_cm, s: R ? hi(first) : lo(first), fwd: !R }, ssOf);
+  }
+  return _stairConnRouteBetween(stair,
+    { si: conn.fromSurf, pos: last.pos_cm, s: last.isGoingRight ? hi(last) : lo(last), fwd: last.isGoingRight },
+    { si: conn.toSurf, pos: first.pos_cm, s: first.isGoingRight ? lo(first) : hi(first), fwd: first.isGoingRight }, ssOf);
 }
+// Navnet fra 186 (tegneren og testene).
+function _stairHsConnRoute(stair, conn, ssOf) { return _stairConnPlanRoute(stair, conn, ssOf); }
 
 // 186: hesteskotrinnenes CC-kjede over høyre arm, lest fra rutingen (Regel 9). Strengen i armen står
 // loddrett; x-posisjonen er senterlinjas ende ved bakkanten (_stairRunPath, siste punkt). Per trinn:
@@ -47998,9 +48026,24 @@ function _stairHsArmChain(stair, range, ssOf) {
   }
   return out.sort((a, b) => a.from - b.from || a.to - b.to);
 }
-// Tegner kjeden på y = −dimGapCm (over bakkanten). Tallene står over linja; et tall som ikke får plass
-// ved siden av naboen, løftes én rad (inntil fire rader) — ingen tall oppå hverandre. → boks i px | null.
-// Et tall som ikke får plass på noen av de fire radene, utelates (testen teller dem).
+// Tegner kjeden på y = −dimGapCm (over bakkanten). Tallene står på ÉN rad over linja.
+// 187 (svar 186/3): nese og opptrinn ved en trinngrense slås sammen til ett tall, «2 + 2» (nese på det
+// innerste trinnet + opptrinn på det neste), sentrert over grensen — ingen stabling i flere rader. Et tall
+// som ville truffet naboen, skyves sideveis innenfor sitt eget mål; får det fortsatt ikke plass, utelates
+// det (testen teller dem). → boks i px | null.
+// Grensesnittet til tegnerne (o.dimGapCm, P, retur-boksen) er som i 186.
+function _stairHsArmChainLabels(items) {
+  const R = _stairDimRound, out = [];
+  for (let k = 0; k < items.length; k++) {
+    const it = items[k], nx = items[k + 1];
+    if (it.kind === 'nose' && nx && nx.kind === 'riser' && Math.abs(nx.from - it.to) < 0.05) {
+      out.push({ from: it.from, to: nx.to, mid: it.to, kind: 'pair', label: R(it.to - it.from) + ' + ' + R(nx.to - nx.from), parts: [it, nx] });
+      k++; continue;
+    }
+    out.push({ from: it.from, to: it.to, kind: it.kind, label: R(it.to - it.from) + '', parts: [it] });
+  }
+  return out;
+}
 function _stairHsDrawArmChain(c, stair, range, P, o, ssOf) {
   const items = _stairHsArmChain(stair, range, ssOf);
   if (!items.length) return null;
@@ -48014,23 +48057,66 @@ function _stairHsDrawArmChain(c, stair, range, P, o, ssOf) {
   for (const x of xs) { const q = P(x, yC); c.moveTo(q.x, q.y - t); c.lineTo(q.x, q.y + t); }
   c.stroke();
   const box = { l: a.x, r: b.x, t: a.y - t, b: a.y + t };
-  const fh = Math.ceil(o.dimFontPx) + 1, placed = [];
-  const gapPx = Math.max(1, o.dimFontPx * 0.3);   // luft mellom to tall, så «2» og «9» ikke leses som «29»
   c.textAlign = 'center'; c.textBaseline = 'bottom';
-  // CC-tallene får første rad; de smale opptrinn-/nesetallene ved trinngrensene løftes ved behov.
-  const order = items.filter(it => it.kind === 'cc').concat(items.filter(it => it.kind !== 'cc'));
-  for (const it of order) {
-    const label = R(it.to - it.from) + '', w = c.measureText(label).width;
-    const pa = P(it.from, yC), pb = P(it.to, yC), cx = (pa.x + pb.x) / 2;
-    for (let row = 0; row < 4; row++) {
-      const bx = { l: cx - w / 2 - gapPx, r: cx + w / 2 + gapPx, t: pa.y - 2 - (row + 1) * fh, b: pa.y - 2 - row * fh };
-      if (placed.some(p => p.l < bx.r && bx.l < p.r && p.t < bx.b && bx.t < p.b)) continue;
-      placed.push(bx); c.fillText(label, cx, bx.b);
-      box.l = Math.min(box.l, bx.l); box.r = Math.max(box.r, bx.r); box.t = Math.min(box.t, bx.t);
-      break;
+  const labels = _stairHsArmChainLabels(items);
+  // Én plassering av alle tallene på raden med skriftstørrelse fpx. → { put: [{ it, bx, cx }], dropped }
+  const plan = fpx => {
+    c.font = fpx + 'px sans-serif';
+    const fh = Math.ceil(fpx) + 1, placed = [], put = [];
+    const gapPx = Math.max(1, fpx * 0.3);   // luft mellom to tall, så «2» og «9» ikke leses som «29»
+    // Finn en plass: sentrert først, så sideveis i kvarte tallbredder — aldri så langt at tallet forlater
+    // sitt eget mål. → { bx, cx } | null.
+    const tryPlace = (it, against) => {
+      const w = c.measureText(it.label).width;
+      const pa = P(it.from, yC), pb = P(it.to, yC), c0 = it.kind === 'pair' ? P(it.mid, yC).x : (pa.x + pb.x) / 2;
+      const lo = Math.min(pa.x, pb.x), hi = Math.max(pa.x, pb.x), yb = pa.y - 2;
+      const fits = cx => { const bx = { l: cx - w / 2 - gapPx, r: cx + w / 2 + gapPx, t: yb - fh, b: yb };
+        return against.some(p => p.l < bx.r && bx.l < p.r && p.t < bx.b && bx.t < p.b) ? null : bx; };
+      let bx = fits(c0), cx = c0;
+      for (let k = 1; !bx && k <= 6; k++) for (const sg of [1, -1]) {
+        const t = c0 + sg * k * w / 4;
+        if (t < lo - 0.01 || t > hi + 0.01) continue;
+        if ((bx = fits(t))) { cx = t; break; }
+      }
+      return bx ? { bx, cx } : null;
+    };
+    let dropped = 0;
+    const take = (it, q) => { placed.push(q.bx); put.push({ it, ...q }); };
+    // 1) Grense-parene («2 + 2») og ytterkantene — smale mål der tallet ellers ikke får plass.
+    for (const it of labels.filter(l => l.kind !== 'cc')) { const q = tryPlace(it, placed); if (q) take(it, q); else dropped++; }
+    // 2) CC-tallene trinn for trinn. Får ikke alle et trinns CC-tall plass hver for seg (smal CC i liten
+    //    målestokk), står de som ett tall over trinnets CC-strekk: «4 × 8.5» (like) eller «4 × 8.5–9» (ulike).
+    const bySi = new Map();
+    for (const it of labels.filter(l => l.kind === 'cc')) { const si = it.parts[0].si; if (!bySi.has(si)) bySi.set(si, []); bySi.get(si).push(it); }
+    for (const ccs of bySi.values()) {
+      const tmp = [], qs = [];
+      for (const it of ccs) { const q = tryPlace(it, placed.concat(tmp)); if (!q) break; tmp.push(q.bx); qs.push(q); }
+      if (qs.length === ccs.length) { ccs.forEach((it, k) => take(it, qs[k])); continue; }
+      const vals = ccs.map(it => it.parts[0].to - it.parts[0].from);
+      const lo = R(Math.min(...vals)), hi = R(Math.max(...vals));
+      const grp = { from: ccs[0].from, to: ccs[ccs.length - 1].to, kind: 'ccGroup', parts: ccs.map(it => it.parts[0]),
+        label: ccs.length + ' × ' + (lo === hi ? lo : lo + '–' + hi) };
+      const q = tryPlace(grp, placed); if (q) take(grp, q); else dropped++;
     }
+    return { put, dropped, fpx };
+  };
+  // 3) Får ikke alle tallene plass på raden (PDF: smal trapp, stor skrift i forhold til målestokken), prøves
+  //    hele kjeden med mindre skrift — ned til 60 %. Fortsatt én rad; den med færrest utelatte vinner.
+  let best = null;
+  for (const k of [1, 0.85, 0.72, 0.6]) {
+    const pl = plan(o.dimFontPx * k);
+    if (!best || pl.dropped < best.dropped) best = pl;
+    if (!pl.dropped) break;
+  }
+  c.font = best.fpx + 'px sans-serif';
+  const drawn = [];
+  for (const { it, bx, cx } of best.put) {
+    c.fillText(it.label, cx, bx.b);
+    drawn.push({ label: it.label, kind: it.kind, box: bx });
+    box.l = Math.min(box.l, bx.l); box.r = Math.max(box.r, bx.r); box.t = Math.min(box.t, bx.t);
   }
   c.restore();
+  box.labels = drawn; box.labelCount = labels.length; box.fontPx = best.fpx; box.dropped = best.dropped;
   return box;
 }
 
@@ -48250,7 +48336,7 @@ function _stairDrawToCanvasHs(stair, opts) {
     for (let pass = 0; pass < 3; pass++) {
       const f = fontsAt(L.px);
       let pt = 10, pb = padB, pl = padL, pr = padR;
-      if (hasChain) pt = Math.max(pt, (4 * L.px + 2 + 4 * (f.dimFontPx + 1) + 4) / L.px);   // fire rader tall
+      if (hasChain) pt = Math.max(pt, (4 * L.px + 2 + (f.dimFontPx + 1) + 4) / L.px);   // 187: én rad tall («2 + 2», ingen stabling)
       if (rows.length) {
         const sz = _stairHsTableSize(meas, rows, f.dimFontPx);
         if (anchor) {
@@ -48468,9 +48554,12 @@ function _drawStairPlan(stair) {
           const ay = oy + (stair.cableStartFromTop ? fromSurf.y_cm + fromSurf.d_cm : fromSurf.y_cm);
           const by = oy + (stair.cableStartFromTop ? toSurf.y_cm : toSurf.y_cm + toSurf.d_cm);
           const ax = ox + exitX, bx = ox + entryX;
-          // 186: rettvinklet rute (_stairConnRoute). Samme x på begge flater → én loddrett strek som før;
-          // ulik bredde (trinn 240 → repos 100, utgang til høyre) → loddrett, så vannrett inn til strengen.
-          const route = _stairConnRoute({ x: ax, y: ay }, { x: exitRight ? 1 : -1, y: 0 }, { x: bx, y: by }, { x: exitRight ? -1 : 1, y: 0 });
+          // 187 (svar 186/4): fra strengens ende rettvinklet til neste strengs start — samme rute som
+          // hesteskoen og PDF-en (_stairConnPlanRoute). Faller tilbake på den gamle (grensen) bare om
+          // løpene mangler.
+          const _r187 = _stairConnPlanRoute(stair, conn);
+          const route = _r187.length ? _r187.map(p => ({ x: ox + p.x, y: oy + p.y }))
+            : _stairConnRoute({ x: ax, y: ay }, { x: exitRight ? 1 : -1, y: 0 }, { x: bx, y: by }, { x: exitRight ? -1 : 1, y: 0 });
           // STEG 2 (Regel 11): et opptrinn kan også bli delt av en skjøt (fraksjon av conn.length_cm
           // per segment) — tegn hver del i sin kabels farge, interpolert langs ruten mellom flatene.
           const segs = conn.segments || [{ len_cm: conn.length_cm, cableIdx: conn.cableIdx }];
@@ -53301,6 +53390,7 @@ function generateStairCable(stair) {
   const pieces = [];
   let totalLen = 0;
   let prevExitRight = false;
+  const ssBy = {};   // 187: flatens innstillinger, til overgangens rute i plan (hestesko)
 
   for (let oi = 0; oi < surfOrder.length; oi++) {
     const si = surfOrder[oi];
@@ -53309,6 +53399,7 @@ function generateStairCable(stair) {
     // 102 (Regel 21): ALLE målene for flaten kommer nå fra ÉN kilde — sonens overstyring der den
     // finnes, ellers trappas verdi. Uten soner er dette nøyaktig de gamle verdiene.
     const ss = _stairSurfSettings(stair, si, zoneRanges);
+    ssBy[si] = ss;
     const maxCC = ss.maxCC_cm;
 
     // Regel 14 (Kenneth 18.08.2026): kabelen starter NEDERST, PÅ TRAPPENESEN (run-indeks 0), og
@@ -53430,6 +53521,24 @@ function generateStairCable(stair) {
       }
     }
     prevExitRight = exitRight;
+  }
+
+  // 187 (Kenneth 04.11.2026, svar 186/1): på en HESTESKOTRAPP ligger kabelen faktisk langs den
+  // rettvinklede ruten mellom strengendene (toppflaten og armen ligger på hver sin side av hjørnet).
+  // Overgangen er da opptrinnet + ruten i plan (VK: 17 + 38,8 cm). Samme rute som tegnes
+  // (_stairConnRouteBetween), så tegning, behov, Forslag, panel, måltabell og PDF er enige (Regel 9).
+  // Rette trapper: uendret — bare opptrinnet (ruten i plan måles i rapporten, ikke telt).
+  if (_stairIsHorseshoe(stair)) {
+    for (let k = 1; k < pieces.length - 1; k++) {
+      const p = pieces[k], a = pieces[k - 1], b = pieces[k + 1];
+      if (p.kind !== 'conn' || a.kind !== 'run' || b.kind !== 'run' || a.surfaceIdx !== p.fromSurf || b.surfaceIdx !== p.toSurf) continue;
+      const route = _stairConnRouteBetween(stair,
+        { si: a.surfaceIdx, pos: a.pos_cm, s: a.isGoingRight ? a.xEnd : a.xStart, fwd: a.isGoingRight },
+        { si: b.surfaceIdx, pos: b.pos_cm, s: b.isGoingRight ? b.xStart : b.xEnd, fwd: b.isGoingRight }, si => ssBy[si]);
+      const plan = _stairPolyLen(route);
+      p.riser_cm = p.len_cm; p.plan_cm = plan;
+      p.len_cm += plan; totalLen += plan;
+    }
   }
 
   const cables = stair.cables || [];
@@ -54204,9 +54313,19 @@ function _stairMarginProbe(stair) {
   // 185 (svar 184/5): i begge valg — «strenger skal aldri gå forbi hesteskoens hjørne».
   const armCap = _stairIsHorseshoe(stair) ? _stairHsArmCapCm(stair) : Infinity;
   const maxMargin75 = Math.min(minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC, minSurfW / 2 - 1, armCap);
+  // 187: hvor mye behovet faller per cm margin. Rette trapper: 2 × strenger, nøyaktig som før. Hestesko:
+  // overgangens rute i plan (187) går fra strengenden ved marginen, så den VOKSER med marginen (VK: 2 cm
+  // per cm) — stigningen måles på motoren selv (lineær så lenge strengendene ikke bytter side av hverandre).
+  let slope = 2 * totalStrands;
+  if (_stairIsHorseshoe(stair) && totalStrands > 0) {
+    const d = 5;
+    const p2 = generateStairCable({ ...stair, edgeMargin_cm: floorMargin + d, cables: [{ productId: null }] });
+    const sl = (neededAtFloor_cm - p2.totalCableLength_cm) / d;
+    if (p2.runs.length === probe.runs.length && sl > 0 && sl <= 2 * totalStrands + 0.5) slope = sl;
+  }
   return {
     ok: totalStrands > 0 && neededAtFloor_cm > 0,
-    floorMargin, totalStrands, neededAtFloor_cm, minSurfW, armCap, fillTop,
+    floorMargin, totalStrands, neededAtFloor_cm, minSurfW, armCap, fillTop, slope,
     // Fornuftig margintak for det FRIE flerkabel-søket: strenglengden må forbli klart positiv
     // (halve smaleste flate er geometrisk umulig å passere) OG marginen skal ikke bli urealistisk
     // bred (+15 cm fra brukerens gulv — et sett som krever mer bør vike for et annet sett).
@@ -54219,7 +54338,7 @@ function _stairMarginProbe(stair) {
     // Regel 12 + 15: marginen som får `sum_cm` til å gå opp — aldri under brukerens gulv, snappet
     // til hele mm. exactMargin beholdes for sorteringen i forslagsmotoren.
     solve(sum_cm) {
-      const exactMargin = floorMargin + (neededAtFloor_cm - sum_cm) / (2 * totalStrands);
+      const exactMargin = floorMargin + (neededAtFloor_cm - sum_cm) / slope;
       return { exactMargin, margin: Math.max(floorMargin, Math.round(exactMargin * 10) / 10) };
     },
   };
@@ -54260,7 +54379,7 @@ function _stairFitFixedSet(stair, productIds) {
   const { margin } = pr.solve(sum_cm);
   if (margin > pr.maxMargin75 + 0.01) {
     // Hvor mye kabel som mangler for å nå 75 %-grensen — tallet brukeren faktisk kan handle på.
-    const needAt75_cm = pr.neededAtFloor_cm - 2 * pr.totalStrands * (pr.maxMargin75 - pr.floorMargin);
+    const needAt75_cm = pr.neededAtFloor_cm - pr.slope * (pr.maxMargin75 - pr.floorMargin);
     // 184: det kan være hjørnet (armen), ikke 75 %, som stopper hesteskoen. 185: i begge valg.
     const forbiHjornet = margin > pr.armCap + 0.01 && pr.armCap <= pr.minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC;
     return { ok: false, edgeMargin_cm: pr.floorMargin, residual_cm: 0,
@@ -54436,9 +54555,10 @@ function _stairSolveExactCableSet(stair, opts) {
   const maxCables = wantEqualCount ? wantEqualCount : Math.min(opts.maxCables || 3, lens.length > 0 ? 3 : 0);
   const candidates = [];
 
+  const overSets = [];   // 187: sett som er lengre enn behovet ved gulvet (brukes bare når ingenting går opp)
   function tryCombo(combo) {
     const sum_cm = combo.reduce((a, b) => a + b, 0) * 100;
-    if (sum_cm > neededAtFloor_cm + 0.01) return; // ville krevd margin UNDER brukerens gulv (Regel 12)
+    if (sum_cm > neededAtFloor_cm + 0.01) { overSets.push({ lens: combo, sum_cm }); return; } // ville krevd margin UNDER brukerens gulv (Regel 12)
     // Regel 15 (Kenneth 19.08.2026, LÅST — overstyrer den tidligere fullpresisjons-tilnærmingen):
     // et byggbart mål montøren faktisk kan måle opp slår et matematisk eksakt mål. pr.solve snapper
     // til nærmeste hele millimeter — ALDRI under brukerens gulv (Regel 12) — og lar Regel 13s
@@ -54516,6 +54636,26 @@ function _stairSolveExactCableSet(stair, opts) {
     }
   }
 
+  // 187 (Kenneth 04.11.2026, svar 185/3): HESTESKO der alt kortere må forbi hjørnet (BRED 700 × 40: 60 m
+  // ville gitt 49,2 cm, armen er 42). Da foreslås det KORTESTE settet som er for langt med høyst 5 % —
+  // samme grense som det manuelle settet godtar (_stairFitFixedSet, _stairFitFromLengths), marginen
+  // står på gulvet og overskuddet vises gult/dempet («1,5 m til overs»). Bare når ingenting går opp;
+  // ellers er Forslag som før. Rette trapper: uendret (spørsmål i docs/187/SPØRSMÅL.md).
+  // Som ellers (084, Regel 19) er ÉN kabel forslag A når den finnes (BRED: 70 m), og det korteste settet
+  // totalt er B når det er et annet (testkatalogen: 20 + 49,7 = 69,7 m).
+  if (!candidates.length && !single && _stairIsHorseshoe(stair) && overSets.length) {
+    const ok5 = overSets.map(o => ({ ...o, f: _stairFitFromLengths(o.sum_cm / 100, neededAtFloor_cm / 100) }))
+      .filter(o => o.f.status !== 'error' && o.lens.every(L => toProduct(L)))
+      .sort((a, b) => (a.sum_cm - b.sum_cm) || (a.lens.length - b.lens.length));
+    if (ok5.length) {
+      const mkOver = o => ({ edgeMargin_cm: floorMargin, products: o.lens.map(toProduct), totalAvailable_m: Math.round(o.sum_cm) / 100,
+        residual_cm: Math.round((o.sum_cm - neededAtFloor_cm) * 100) / 100, fitStatus: o.f.status, overSet: true,
+        wideMargin: false, heatedWidth_cm: Math.round((minSurfW - 2 * floorMargin) * 10) / 10, minSurfW_cm: minSurfW, floorMargin_cm: floorMargin });
+      const shortest = mkOver(ok5[0]);
+      const one = ok5.find(o => o.lens.length === 1);
+      return { ok: true, ...shortest, single: one ? mkOver(one) : null, singleReason };
+    }
+  }
   if (!candidates.length) {
     if (wantEqualCount) {
       const wantLbl = stair.equalCableLengths !== false ? `${wantEqualCount} like kabler` : `${wantEqualCount} kabler`;
@@ -54675,6 +54815,8 @@ function _generateStairProposals(stair) {
         // 120: låst avstand — settets passform (ok / warn / error, samme terskler som 105).
         locked: !!set.locked,
         fitStatus: set.fitStatus || null,
+        // 187 (svar 185/3): hestesko der alt kortere må forbi hjørnet — korteste sett innenfor 5 % for langt.
+        overSet: !!set.overSet,
       };
       c.score = _scoreStairProposal(c);
       return c;
@@ -55885,7 +56027,9 @@ function _stairHorseshoeRegressionTest() {
     check('1: hesteskoen N = 5, CC 10', '5@10', u.length === 5 && r2(u[1].pos_cm - u[0].pos_cm) === 10, u.length + '@' + (u.length > 1 && r2(u[1].pos_cm - u[0].pos_cm)));
     check('1: t = 3/13/23/33/43', '3/13/23/33/43', u.map(r => r2(r.pos_cm)).join('/') === '3/13/23/33/43', u.map(r => r2(r.pos_cm)).join('/'));
     check('1: 612 + 652 + 692 + 732 + 772 = 3 460', '612/652/692/732/772', u.map(r => r2(runLen(r))).join('/') === '612/652/692/732/772', u.map(r => r2(runLen(r))).join('/'));
-    check('1: sum trinn 7 140 + 1 opptrinn 17 = 7 157', 7157, st.totalCableLength_cm === 7157 && st.connections.length === 1 && st.connections[0].length_cm === 17, st.totalCableLength_cm + ' / ' + st.connections.map(c => c.length_cm).join(','));
+    // 187 (svar 186/1): overgangen = opptrinnet 17 + ruten i plan (fra trinn 2 sin innerste streng ved bakkanten
+    // til toppflatens første streng, rettvinklet): 10 cm her (margin 5, opptrinn/nese 3). Før 187: 7 157.
+    check('1: sum trinn 7 140 + overgang 17 + 10 i plan = 7 167 (187)', 7167, st.totalCableLength_cm === 7167 && st.connections.length === 1 && r2(st.connections[0].length_cm) === 27 && r2(_stairPolyLen(_stairConnPlanRoute(st, st.connections[0]))) === 10, st.totalCableLength_cm + ' / ' + st.connections.map(c => r2(c.length_cm)).join(','));
     check('1: strenglengde(t) = Wi + 2·Di + 4t − 2·margin', true, u.every(r => Math.abs(runLen(r) - (470 + 140 + 4 * r.pos_cm - 10)) < 1e-6), u.map(r => r2(runLen(r) - (470 + 140 + 4 * r.pos_cm - 10))).join('/'));
 
     // ─── 2 — Fire hesteskotrinn: bredere og dypere nedover, bakkanten i ro, sammenhengende kabel ───
@@ -55940,7 +56084,8 @@ function _stairHorseshoeRegressionTest() {
     const props = _generateStairProposals(st);
     check('4: forslag A er én kabel, anbefalt', '1/true', props[0] && props[0].cableCount === 1 && props[0].recommended === true, props[0] && (props[0].cableCount + '/' + props[0].recommended));
     check('4: forslag A er 70 m (behov ved gulvet 71,57 m)', '70', props[0] && props[0].products.map(p => p.length_m).join('+') === '70', props[0] && props[0].products.map(p => p.length_m).join('+'));
-    check('4: sidemarginen løst til 11 cm (7157 − 2·13·6 = 7001)', 11, props[0] && props[0].edgeMargin_cm === 11, props[0] && props[0].edgeMargin_cm);
+    // 187: ruten i plan vokser 2 cm per cm margin, så behovet faller 2·13 − 2 = 24 cm per cm: 5 + (7167 − 7000)/24 = 11,96 → 12,0.
+    check('4: sidemarginen løst til 12 cm (187: 5 + (7167 − 7000) / (2·13 − 2) = 11,96)', 12, props[0] && props[0].edgeMargin_cm === 12, props[0] && props[0].edgeMargin_cm);
     if (props[0]) _applyStairProposal(st, props[0]);
     const fit = _stairCableSetFit(st);
     check('4: kabelen går opp (Passer), ingen udekkede løp', 'ok/0', fit.status === 'ok' && st.uncoveredRuns.length === 0, fit.status + '/' + st.uncoveredRuns.length);
@@ -56035,7 +56180,7 @@ function _stairHorseshoeRegressionTest() {
     // forskjellen er ≥ 1 cm — her 1,0 cm med testkatalogen (7001 cm rutet, 70 m kabel).
     check('7: toppflaten full streng = bredde − 2 × margin, og står i cellen', r1(tsf.w_cm - 2 * m7) + '', rows7[0].dims.strand[1] === tsf.w_cm - 2 * m7 && rows7[0].cells[2].split('–').pop() === r1(tsf.w_cm - 2 * m7) + '', rows7[0].cells[2] + ' (strenger ' + trs.map(r => r1(runLen(r))).join('/') + ')');
     check('7: hesteskoen «Avstand sider» = rutingen (bakkant → armens ende)', r1(m7) + '', rows7[1].cells[4] === r1(m7) + '' && runsOf(st, 0).every(r => r1(r.segments[0].start_cm) === r1(m7)), rows7[1].cells[4]);
-    check('7: hesteskoen strenglengde som spenn', '600–760', rows7[1].cells[2] === '600–760', rows7[1].cells[2]);
+    check('7: hesteskoen strenglengde som spenn (187: margin 12, før 11 → 600–760)', '598–758', rows7[1].cells[2] === '598–758', rows7[1].cells[2]);
     let P7 = paintTexts(st, 1.5);
     check('7: tabellen tegnes med radenes tekst', 'alle celler', rows7.every(r => r.cells.every(t => P7.texts.some(x => x.txt === t))) && !P7.texts.some(x => /^streng /.test(x.txt)), P7.texts.filter(x => /topp|^streng/.test(x.txt)).map(x => x.txt).join(','));
     // Låst sidemargin 10: tabellen følger med.
@@ -56113,8 +56258,21 @@ function _stairHorseshoeRegressionTest() {
         const xArm = pt.P(st.surfaces[3].hsInner[3].x, 0).x - 12;
         const mine = t => (t.b <= pt.bakkantY && t.l >= xArm) || (pt.box && t.t >= pt.box.t - 0.5 && t.b <= pt.box.b + 0.5 && t.l >= pt.box.l - 0.5 && t.r <= pt.box.r + 0.5);
         const pairs = []; for (let i = 0; i < pt.texts.length; i++) for (let j = i + 1; j < pt.texts.length; j++) if ((mine(pt.texts[i]) || mine(pt.texts[j])) && ov(pt.texts[i], pt.texts[j])) pairs.push(pt.texts[i].txt + '×' + pt.texts[j].txt);
-        const nItems = _stairHsArmChain(st).length, nDrawn = pt.texts.filter(t => t.b <= pt.bakkantY && t.l >= pt.P(st.surfaces[3].hsInner[3].x, 0).x - 12 && /^\d+(\.\d)?$/.test(t.txt)).length;
-        check(`186.3: fire trinn, skala ${sc}: ingen tekst overlapper (boks mot boks, ${pt.texts.length} tekster), alle kjedetall står`, `0 · ${nItems}`, pairs.length === 0 && nDrawn === nItems, (pairs.join(', ') || '0') + ' · ' + nDrawn);
+        // 187 (svar 186/3): nese + opptrinn ved trinngrensen er ett tall «2 + 2», alle på én rad.
+        //   CC-tallene på et trinn står hver for seg, eller (får de ikke plass på raden) som ett «N × cc». Ingen utelatt.
+        const chainTxt = t => t.b <= pt.bakkantY && t.l >= pt.P(st.surfaces[3].hsInner[3].x, 0).x - 12 && /^(\d+ × )?\d+(\.\d)?(( \+ |–)\d+(\.\d)?)?$/.test(t.txt);
+        const labs = _stairHsArmChainLabels(_stairHsArmChain(st)), dl = (pt.chain && pt.chain.labels) || [];
+        const nonCc = labs.filter(l => l.kind !== 'cc').length, sis = [...new Set(labs.filter(l => l.kind === 'cc').map(l => l.parts[0].si))];
+        const ccOk = sis.every(si => { const n = labs.filter(l => l.kind === 'cc' && l.parts[0].si === si).length;
+          const ind = dl.filter(d => d.kind === 'cc').length, grp = dl.filter(d => d.kind === 'ccGroup' && d.label.startsWith(n + ' × ')).length; return ind + grp > 0; });
+        const nGroups = dl.filter(d => d.kind === 'ccGroup').length, nInd = dl.filter(d => d.kind === 'cc').length;
+        const expectedCc = labs.filter(l => l.kind === 'cc').length;
+        const drawnT = pt.texts.filter(chainTxt), nDrawn = drawnT.length;
+        const allThere = dl.filter(d => d.kind !== 'cc' && d.kind !== 'ccGroup').length === nonCc && ccOk
+          && nInd + dl.filter(d => d.kind === 'ccGroup').reduce((a, d) => a + parseInt(d.label), 0) === expectedCc && nDrawn === dl.length;
+        check(`186.3: fire trinn, skala ${sc}: ingen tekst overlapper (boks mot boks, ${pt.texts.length} tekster), alle kjedetall står (187: «N × cc» teller N)`, `0 · ${nonCc} + ${expectedCc} CC`, pairs.length === 0 && allThere, (pairs.join(', ') || '0') + ` · ${dl.length} tall: ${nInd} CC hver for seg, ${nGroups} «N × cc»`);
+        const rowsY = [...new Set(drawnT.map(t => Math.round(t.b)))];
+        check(`187.4: fire trinn, skala ${sc}: kjeden på ÉN rad, grensene som «a + b» (3 stk)`, '1 rad · 3 par', rowsY.length === 1 && drawnT.filter(t => / \+ /.test(t.txt)).length === 3, rowsY.length + ' rad(er) · ' + drawnT.map(t => t.txt).join(' '));
       }
       let ud = mk({ topW_cm: 300, topD_cm: 60, count: 4, front_cm: 40, stepHeight_cm: 17, perStepDepth: true, depths_cm: [null, 45, null, 30] });
       chainCheck(ud, 'ulik dybde 40/45/40/30');
@@ -56142,8 +56300,9 @@ function _stairHorseshoeRegressionTest() {
       routeCheck(vkFill, 'Fyll toppflaten');
       routeCheck(st, 'fire trinn');
       routeCheck(ud, 'ulik dybde');
-      const lenBefore = vk.connections.map(cn => cn.length_cm).join(',');
-      check('186.5: kabellengden for overgangen er uendret (opptrinnet, Regel 5)', '17', lenBefore === '17', lenBefore);
+      // 187 (svar 186/1): overgangen teller nå opptrinnet + ruten i plan (samme rute som tegnes).
+      const vkPlan = _stairPolyLen(rv[0]);
+      check('186.5 → 187: kabellengden for overgangen = opptrinnet 17 + ruten i plan', r1(17 + vkPlan) + '', vk.connections.length === 1 && Math.abs(vk.connections[0].length_cm - 17 - vkPlan) < 1e-6, r1(vk.connections[0].length_cm) + ' (plan ' + r1(vkPlan) + ')');
       // Rette trapper: samme funksjon. Lik x → én loddrett strek (2 punkter, som før); 240 → 100 til høyre → rettvinklet uten å gå tilbake langs strengen.
       const r2p = _stairConnRoute({ x: 5, y: 30 }, { x: -1, y: 0 }, { x: 5, y: 60 }, { x: 1, y: 0 });
       check('186.6: rett trapp, lik x: to punkter (uendret tegning)', 2, r2p.length === 2, r2p.length);
@@ -56435,8 +56594,9 @@ function _stairHorseshoeRegressionTest() {
         check(`184.1: ${nm} — «Lik avstand» = uten felt`, 'lik', sig(st) === a && cells(st) === tA, sig(st) === a ? 'lik' : 'ULIK');
       }
       st = mk(VK31, EX); setCable(st, [98004]);
-      check('184.1: VK 31 valg 1 = skjermbildet (19,4 · 8 × 431,2 · 579,2–687,2)', '19.4 · 431.2 · 579.2–687.2',
-        st.edgeMargin_cm === 19.4 && _stairHsTableRows(st).map(r => r.cells[2]).join(' · ') === '431.2 · 579.2–687.2' && passer(st),
+      // 187: skjermbildet var 19,4 · 431,2 · 579,2–687,2. Med ruten i plan telt (38,8 cm ved 19,4) løses 60 m til 21,1.
+      check('184.1: VK 31 valg 1 = skjermbildet, 187: 21,1 · 8 × 427,8 · 575,8–683,8 (før 19,4 · 431,2 · 579,2–687,2)', '21.1 · 427.8 · 575.8–683.8',
+        st.edgeMargin_cm === 21.1 && _stairHsTableRows(st).map(r => r.cells[2]).join(' · ') === '427.8 · 575.8–683.8' && passer(st),
         st.edgeMargin_cm + ' · ' + _stairHsTableRows(st).map(r => r.cells[2]).join(' · '));
       const eqSig = sig(st), eqTab = cells(st);
       // 184.2 · valg 2: toppflaten ut til gulvet, hesteskoen løst så kabelen går opp.
@@ -56579,6 +56739,84 @@ function _stairHorseshoeRegressionTest() {
           document.getElementById('stair-modal-bg').remove();
         } finally { _stairHsB = sB; _stairHsBEditId = sI; }
       }
+
+      // ─── 187 · svar på 185 og 186 (Kenneth 04.11.2026) ───
+      const planOf = stt => stt.connections.map(cn => _stairPolyLen(_stairConnPlanRoute(stt, cn)));
+      const axis = rt => rt.length >= 2 && rt.every((p, i) => !i || Math.abs(p.x - rt[i - 1].x) < 1e-6 || Math.abs(p.y - rt[i - 1].y) < 1e-6);
+      // 187.1 (186/1) · VK 31 ved samme margin som skjermbildet (19,4): behovet øker med ruten i plan, 38,8.
+      st = mk(VK31, EX);
+      const g194 = generateStairCable({ ...st, edgeMargin_cm: 19.4, cables: [{ productId: null }] });
+      const runsSum = g194.runs.reduce((a, r) => a + runLen(r), 0);
+      check('187.1: VK 31 @ 19,4: behov = strenger + 17 + 38,8 (rettvinklet 21,4 + 17,4)', r1(runsSum + 17 + 38.8) + '',
+        Math.abs(g194.totalCableLength_cm - (runsSum + 17 + 38.8)) < 0.06 && Math.abs(g194.connections[0].length_cm - 55.8) < 1e-6, r1(g194.totalCableLength_cm) + ' (strenger ' + r1(runsSum) + ', overgang ' + r1(g194.connections[0].length_cm) + ')');
+      // 187.1 · 60 m manuelt og Forslag løser marginen med den nye stigningen (2·N − 2): avviket er under ett mm-snapp.
+      st = mk(VK31, EX); setCable(st, [98004]);
+      const prV = _stairMarginProbe(st);
+      check('187.1: VK 31: stigning = 2 · 12 strenger − 2 (ruten vokser 2 cm per cm)', '22', r1(prV.slope) === 22, r1(prV.slope) + ' (strenger ' + prV.totalStrands + ')');
+      check('187.1: VK 31, 60 m manuelt: 21,1, går opp (rest < 0,1 · stigning)', '21.1 · passer', st.edgeMargin_cm === 21.1 && passer(st) && Math.abs(st.totalCableLength_cm - 6000) <= prV.slope * 0.1 + 0.01, st.edgeMargin_cm + ' · ' + st.totalCableLength_cm);
+      // 187.1 · samme tall overalt: panel (fit + fordeling), måltabellens «Kabel»-kolonne + overgang, materialliste, PDF-blokk.
+      const consist = (stt, nm) => {
+        const brk = _stairCableLengthBreakdown(stt), blocks = _stairSoneGeometryBlocks(stt), pr = _stairProductRows(stt);
+        const cov = r1(stt.coveredCableLength_cm / 100), brkSum = r1(brk.reduce((a, b) => a + b.assignedLength_m, 0));
+        const overg = r1(brk.reduce((a, b) => a + b.connectionLength_m, 0)), planM = r1(stt.connections.reduce((a, c) => a + c.length_cm, 0) / 100);
+        const tabSum = r1(_stairHsTableRows(stt).reduce((a, r) => a + parseFloat(r.cells[5]), 0) + overg);
+        const blkSum = r1(blocks.reduce((a, b) => a + b.assignedLength_m, 0)), prSum = r1(pr.reduce((a, p) => a + (p.laidLength_m || 0), 0));
+        check(`187.1: ${nm}: panel / tabell + overgang / materialliste / PDF = samme lagte meter, overgangen med ruten i plan`, cov + ' · overg ' + planM,
+          brkSum === cov && Math.abs(tabSum - cov) <= 0.15 && blkSum === cov && prSum === cov && overg === planM, `panel ${brkSum} · tabell ${tabSum} · liste ${prSum} · PDF ${blkSum} · overg ${overg}/${planM}`);
+      };
+      consist(st, 'VK 31, 60 m');
+      // 187.1 · «Fyll toppflaten» og fire trinn regnes likt: hver overgang = opptrinnet + ruten i plan.
+      for (const [nm, hs] of [['VK 31 Fyll toppflaten', { ...VK31, marginMode: 'fillTop' }], ['fire trinn', { topW_cm: 300, topD_cm: 60, count: 4, front_cm: 40, stepHeight_cm: 17 }],
+        ['VK 31 Kabelstart Topp', VK31]]) {
+        st = mk(hs, nm.includes('Topp') && !nm.includes('Fyll') ? { ...EX, cableStartFromTop: true } : EX);
+        const pz = _generateStairProposals(st); if (pz[0]) _applyStairProposal(st, pz[0]);
+        const pl = planOf(st);
+        check(`187.1: ${nm}: hver overgang = 17 + ruten i plan`, pl.map(v => r1(17 + v)).join(','), st.connections.length > 0 && st.connections.every((c, i) => Math.abs(c.length_cm - 17 - pl[i]) < 1e-6) && passer(st), st.connections.map(c => r1(c.length_cm)).join(','));
+        consist(st, nm);
+      }
+      // 187.2 (185/3) · BRED: alt kortere må forbi hjørnet → korteste sett innenfor 5 %, én kabel først: 70 m, gult, «1.5 m til overs».
+      st = mk(BRED, EX);
+      const pBr = _generateStairProposals(st);
+      check('187.2: BRED: Forslag A = 70 m på gulvet, gult (2–5 %), 1,5 m til overs', '70 @ 2 · warn · +1.5 m',
+        pBr[0] && pBr[0].products.map(p => p.length_m).join('+') === '70' && pBr[0].edgeMargin_cm === 2 && pBr[0].overSet && pBr[0].fitStatus === 'warn' && Math.abs(pBr[0].marginResidual_cm - 147) < 5,
+        pBr.map(p => p.products.map(x => x.length_m).join('+') + '@' + p.edgeMargin_cm + '/' + p.fitStatus + '/' + r1(p.marginResidual_cm)).join(', ') || 'ingen');
+      check('187.2: BRED: Forslag B = korteste sett totalt (20 + 49,7 = 69,7, under 2 %)', '20+49.7 · ok', pBr[1] && pBr[1].products.map(p => p.length_m).join('+') === '20+49.7' && pBr[1].fitStatus === 'ok', pBr[1] && pBr[1].products.map(p => p.length_m).join('+') + '/' + pBr[1].fitStatus);
+      { _renderStairProposalPanel(st, pBr); const el = document.getElementById('stair-proposal-panel'); const t = el ? el.textContent : ''; if (el) el.remove();
+        check('187.2: BRED: kortet sier «Kortere kabler måtte gått forbi hjørnet — 1.5 m til overs»', 'tekst', t.includes('Kortere kabler måtte gått forbi hjørnet — 1.5 m til overs'), t.slice(0, 120)); }
+      if (pBr[0]) _applyStairProposal(st, pBr[0]);
+      const fB = _stairCableSetFit(st);
+      check('187.2: BRED valgt: panelet gult «1.5 m til overs», ingen streng forbi armen', 'warn · 1.5 m til overs', fB.status === 'warn' && fB.label === '1.5 m til overs' && runsOf(st, 0).every(r => r.segments[0].start_cm <= _stairHsArmCapCm(st) + 1e-6), fB.status + ' · ' + fB.label);
+      // Forslag er som før (ikke «for langt»-varianten) der et sett går opp.
+      for (const [nm, hs, ex] of [['VK 31', VK31, EX], ['VK 46', KENNETH, null], ['fire trinn', { topW_cm: 300, topD_cm: 60, count: 4, front_cm: 40, stepHeight_cm: 17 }, null]]) {
+        st = mk(hs, ex || undefined); const pp2 = _generateStairProposals(st);
+        check(`187.2: ${nm}: Forslag som før (ingen «for langt»-forslag)`, 'ingen overSet', pp2.length > 0 && pp2.every(p => !p.overSet && !(p.marginResidual_cm > 5)), pp2.map(p => p.products.map(x => x.length_m).join('+') + '@' + p.edgeMargin_cm).join(', '));
+      }
+      // 187.3 (185/2) · gulv 80 uten lås på VK: brukes som skrevet, ingen sperre.
+      st = mk(VK31, EX); setCable(st, [98004]); S.ui.selectedStairId = st.id;
+      _setStairEdgeMargin('80');
+      check('187.3: VK 31, gulv 80 uten lås: gulvet og utlegget på 80, ingen sperre', '80 · 80 · ingen lås', st.edgeMarginMin_cm === 80 && st.edgeMargin_cm === 80 && _stairLockedRawCm(st) == null && runsOf(st, 0).every(r => r1(r.segments[0].start_cm) === 80), st.edgeMarginMin_cm + ' · ' + st.edgeMargin_cm + ' · ' + runsOf(st, 0).map(r => r1(r.segments[0].start_cm)).join('/'));
+      // 187.5 (186/4) · rette trapper: overgangen fra strengens ende rettvinklet til neste strengs start; lengden uendret (17).
+      const mkR = (segs, extra) => { S.counters.nextStairId = 998701;
+        const sr = _createStairObj({ name: 'RETT', segments: segs, riserOffset_cm: 2, noseOffset_cm: 2, edgeMargin_cm: 5, edgeMarginMin_cm: 5, stepCC_cm: 10, landingCC_cm: 10, x_cm: 100, y_cm: 100, ...(extra || {}) });
+        S.stairs = [sr]; S.ui.selectedStairId = sr.id; return sr; };
+      for (const [nm, segs, ex] of [['8 trinn', [{ type: 'steps', width_cm: 120, stepDepth_cm: 30, stepHeight_cm: 17, stepCount: 8 }]],
+        ['8 trinn, topp-start', [{ type: 'steps', width_cm: 120, stepDepth_cm: 30, stepHeight_cm: 17, stepCount: 8 }], { cableStartFromTop: true }],
+        ['trinn 240 + repos 100', [{ type: 'steps', width_cm: 240, stepDepth_cm: 24, stepHeight_cm: 17, stepCount: 3 }, { type: 'landing', width_cm: 100, depth_cm: 120 }]],
+        ['trinn + repos + trinn', [{ type: 'steps', width_cm: 120, stepDepth_cm: 30, stepHeight_cm: 17, stepCount: 4 }, { type: 'landing', width_cm: 120, depth_cm: 120 }, { type: 'steps', width_cm: 120, stepDepth_cm: 30, stepHeight_cm: 17, stepCount: 4 }]]]) {
+        const sr = mkR(segs, ex);
+        const by = si => sr.runs.filter(r => r.surfaceIdx === si);
+        const lo = r => r.segments[0].start_cm, hi = r => r.segments[r.segments.length - 1].end_cm;
+        let ender = true;
+        const rts = sr.connections.map(cn => {
+          const rt = _stairConnPlanRoute(sr, cn), fr = by(cn.fromSurf), tr = by(cn.toSurf), a = fr[fr.length - 1], b = tr[0];
+          const sa = sr.surfaces[cn.fromSurf], sb = sr.surfaces[cn.toSurf];
+          // Tegnerne speiler en rett flate etter inngangssiden: kabelen går ut og inn på conn.exitRight-siden.
+          const A = { x: sa.x_cm + (cn.exitRight ? hi(a) : lo(a)), y: sa.y_cm + a.pos_cm }, B = { x: sb.x_cm + (cn.exitRight ? hi(b) : lo(b)), y: sb.y_cm + b.pos_cm };
+          if (Math.hypot(rt[0].x - A.x, rt[0].y - A.y) > 1e-6 || Math.hypot(rt[rt.length - 1].x - B.x, rt[rt.length - 1].y - B.y) > 1e-6) ender = false;
+          return rt; });
+        check(`187.5: rett, ${nm}: overgangen går fra strengens ende til neste strengs start, rettvinklet (${rts.length})`, 'ender · ingen skrå', rts.length > 0 && ender && rts.every(axis), rts.slice(0, 3).map(rt => rt.map(p => r1(p.x) + ',' + r1(p.y)).join('→')).join(' | '));
+        check(`187.5: rett, ${nm}: kabellengden for overgangen er fortsatt opptrinnet (17, ruten i plan telles ikke)`, '17', sr.connections.every(c => c.length_cm === 17), [...new Set(sr.connections.map(c => c.length_cm))].join(','));
+      }
     }
   } catch (e) {
     results.push({ name: 'unntak', ok: false, expected: 'ingen', got: String(e && e.message || e) });
@@ -56693,7 +56931,8 @@ function _renderStairProposalPanel(stair, proposals) {
     // Difference: product length vs needed length
     const diffM = Math.round((totalProductLen - p.totalCableLength_m) * 10) / 10;
     const diffLabel = diffM > 0 ? `${diffM} m til overs` : diffM < 0 ? `${Math.abs(diffM)} m for kort` : 'Eksakt';
-    const diffColor = diffM < 0 ? '#ef4444' : diffM > 3 ? '#f59e0b' : '#22c55e';
+    // 187: «for langt innenfor 5 %»-forslaget farges etter passformen (gult 2–5 %, som manuelt sett).
+    const diffColor = p.overSet ? (p.fitStatus === 'warn' ? '#f59e0b' : 'var(--muted)') : diffM < 0 ? '#ef4444' : diffM > 3 ? '#f59e0b' : '#22c55e';
 
     // Dybdemargin-variant (nese/opptrinn, Regel 2/3)
     const marginBadge = p.adjustedMargin ? `<div style="display:inline-block;background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.3);border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;color:var(--accent);margin-bottom:4px">Dybdemargin ${p.noseOffset_cm} cm</div>` : '';
@@ -56729,7 +56968,7 @@ function _renderStairProposalPanel(stair, proposals) {
       <div style="flex:1;background:var(--surface2);border:1px solid ${p.recommended ? '#4ea8ff' : 'var(--brd)'};border-radius:10px;padding:14px;min-width:200px;position:relative">
         ${p.recommended ? '<div style="position:absolute;top:-10px;left:12px;background:#4ea8ff;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px">★ Anbefalt</div>' : ''}
         <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:6px">Forslag ${String.fromCharCode(65 + i)}</div>
-        ${marginBadge}${lockBadge}${sideMarginBadge}
+        ${marginBadge}${lockBadge}${sideMarginBadge}${p.overSet ? `<div style="display:inline-block;background:${p.fitStatus === 'warn' ? 'rgba(245,158,11,.12)' : 'rgba(34,211,238,.1)'};border:1px solid ${p.fitStatus === 'warn' ? 'rgba(245,158,11,.35)' : 'rgba(34,211,238,.3)'};border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;color:${p.fitStatus === 'warn' ? '#f59e0b' : 'var(--accent)'};margin-bottom:4px">Kortere kabler måtte gått forbi hjørnet — ${diffLabel}</div>` : ''}
         <div style="font-size:12px;color:var(--muted);display:grid;gap:4px">
           ${cableDetailsHtml}
           ${singleHtml}
@@ -82009,6 +82248,13 @@ function _restoreProject(data) {
     // dagens utleggsmargin som gulv (kan være et tidligere forslags justerte verdi; brukeren
     // setter den ned igjen i «Avstand sider» om han vil).
     if (!(st.edgeMarginMin_cm > 0)) st.edgeMarginMin_cm = st.edgeMargin_cm;
+    // 187 (svar 186/1): hesteskotrappas overgang teller nå ruten i plan. Lagrede runs/connections/behov
+    // er fra før, så hesteskotrapper regnes om når prosjektet åpnes (margin, kabelsett og forslag står
+    // som lagret — bare behovet og fordelingen regnes på nytt). Uten produktkatalog (ennå ikke lastet)
+    // står de som lagret til neste endring. Lagrer ingenting (ingen pushUndo / autolagring).
+    if (_stairIsHorseshoe(st) && !st.noCable && HEATING_PRODUCTS.length) {
+      try { _regenerateStairCable(st); } catch (e) { console.warn("187: kunne ikke regne om hesteskotrapp", st.id, e); }
+    }
   }
   S.groups    = data.groups    || [];   // STEG 2 (etasje-vanntett): manglet helt fra før
   // STEG 2 (etasje-vanntett, Kenneth 19.08.2026): floatingDims manglet helt fra før. Gamle
@@ -87523,7 +87769,9 @@ function _stairDrawToCanvas(stair, opts) {
           const by = stair.cableStartFromTop ? toSurf.y_cm + toSurf.d_cm : toSurf.y_cm;
           // STEG 2 (Regel 11): del proporsjonalt hvis opptrinnet selv er splittet av en skjøt.
           const segs = conn.segments || [{ len_cm: conn.length_cm, cableIdx: conn.cableIdx }];
-          const route = _stairConnRoute({ x: ax, y: ay }, { x: exitRight ? 1 : -1, y: 0 }, { x: bx, y: by }, { x: exitRight ? -1 : 1, y: 0 });   // 186
+          // 187 (svar 186/4): samme rute som skjermen — strengens ende → neste strengs start.
+          const _r187 = _stairConnPlanRoute(stair, conn);
+          const route = _r187.length ? _r187 : _stairConnRoute({ x: ax, y: ay }, { x: exitRight ? 1 : -1, y: 0 }, { x: bx, y: by }, { x: exitRight ? -1 : 1, y: 0 });   // 186
           let tAcc = 0;
           for (const seg of segs) {
             const t0 = tAcc, t1 = tAcc + (conn.length_cm > 0 ? seg.len_cm / conn.length_cm : 1);
