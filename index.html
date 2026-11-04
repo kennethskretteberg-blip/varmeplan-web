@@ -49314,12 +49314,14 @@ function _setStairEdgeMargin(val) {
   // 111: ikke lenger et fast 20 cm-tak — bare det geometriske (se _stairMaxEdgeMarginCm).
   const tak = _stairMaxEdgeMarginCm(stair.surfaces, stair.width_cm);
   const cm = Math.round(Math.max(1, Math.min(tak, parseFloat(val) || 5)) * 10) / 10;
-  if (cm === stair.edgeMargin_cm && cm === stair.edgeMarginMin_cm && (!laast || cm === stair.edgeMarginLocked_cm)) return;
+  if (cm === stair.edgeMargin_cm && (cm === stair.edgeMarginMin_cm || (laast && _stairHsFillTop(stair))) && (!laast || cm === stair.edgeMarginLocked_cm)) return;
   pushUndo();
   // 084 (Regel 19): det brukeren taster er BÅDE utlegget nå og gulvet for alle senere forslag.
   // Et forslag skriver bare edgeMargin_cm (utlegget) og rører aldri edgeMarginMin_cm.
   stair.edgeMargin_cm = cm;
-  stair.edgeMarginMin_cm = cm;
+  // 184: i «Fyll toppflaten» med hengelås gjelder tallet bare HESTESKOEN — gulvet (toppflatens
+  // avstand) står som det var. Uten lås er tallet som før både utlegget og gulvet.
+  if (!(laast && _stairHsFillTop(stair))) stair.edgeMarginMin_cm = cm;
   // 120: med hengelås er tallet også den LÅSTE avstanden (brukes nøyaktig, Regel 22).
   if (laast) stair.edgeMarginLocked_cm = cm;
   _regenerateStairCable(stair);
@@ -49339,6 +49341,40 @@ function _setStairEdgeMarginLock(paa) {
   _regenerateStairCable(stair);
   _invalidateStairCache();
   _updateStairSettingsPanel(); updateCtxBar(); render();
+}
+
+// 184: bryteren «Lik avstand» / «Fyll toppflaten» (hesteskotrapp). Kabelen legges på nytt. Har trappa
+// et valgt forslag, løses marginen på nytt for SAMME kabelsett (samme vei som manuelt sett,
+// _stairFitFixedSet). Går settet ikke opp i det nye valget, blir det et manuelt sett — da viser panelet
+// grunnen rødt, og utlegget ligger på gulvet som for et manuelt sett som ikke går opp.
+function _setStairHsMarginMode(mode) {
+  const stair = S.stairs.find(s => s.id === S.ui.selectedStairId);
+  if (!stair || !_stairIsHorseshoe(stair)) return;
+  const ny = mode === 'fillTop' ? 'fillTop' : 'equal';
+  if ((_stairHsFillTop(stair) ? 'fillTop' : 'equal') === ny) return;
+  pushUndo();
+  stair.horseshoe = { ...(stair.horseshoe || {}), marginMode: ny };
+  _stairResolveMarginForSet(stair);
+  _regenerateStairCable(stair);
+  _invalidateStairCache();
+  _updateStairSettingsPanel(); updateCtxBar(); render();
+}
+// Løs sidemarginen på nytt for det valgte forslagets kabelsett (184). Låst avstand: ingenting å løse.
+function _stairResolveMarginForSet(stair) {
+  const prop = stair.selectedProposal;
+  if (!prop || _stairLockedMargin(stair) != null || stair.noCable) return;
+  stair.surfaces = _generateStairSurfaces(stair);
+  const ids = (stair.cables || []).map(c => c.productId);
+  if (!ids.length || ids.some(id => id == null)) return;
+  const fit = _stairFitFixedSet(stair, ids);
+  if (fit.ok) {
+    stair.edgeMargin_cm = fit.edgeMargin_cm;
+    stair.selectedProposal = stair.lastProposal = { ...prop, edgeMargin_cm: fit.edgeMargin_cm };
+  } else {
+    stair.lastProposal = prop;
+    stair.selectedProposal = null;
+  }
+  if (stair.proposals) stair.proposals = null;   // kortene var regnet for det andre valget
 }
 
 // Repos' EGEN dybdemargin (front/bak) — atskilt fra sidemarginen (_setStairEdgeMargin), jf.
@@ -49895,6 +49931,16 @@ function _renderStairSettingsPanel(stairId) {
           <span style="font-size:10px;color:var(--dim)">cm</span>
         </span>
       </div>
+      ${/* 184: bryteren for sidemargin på hesteskotrapp, rett over «Avstand sider». */''}
+      ${_stairIsHorseshoe(stair) ? (() => {
+        const ft = _stairHsFillTop(stair);
+        const btn = (val, txt, on) => `<button id="stair-hs-mm-${val}" onclick="event.stopPropagation();_setStairHsMarginMode('${val}')" style="flex:1 1 0;padding:3px 4px;border:1px solid ${on ? 'var(--accent)' : 'var(--brd)'};background:${on ? 'var(--accent)' : 'var(--surface2)'};color:${on ? '#fff' : 'var(--text)'};font-size:11px;font-weight:${on ? 600 : 400};cursor:pointer;border-radius:4px">${txt}</button>`;
+        const topM = ft ? _stairHsTopFillCm(stair) : null;
+        return `<div style="margin-bottom:6px">
+          <div style="display:flex;gap:4px" title="Hvordan sidemarginen fordeles på trinnene">${btn('equal', 'Lik avstand', !ft)}${btn('fillTop', 'Fyll toppflaten', ft)}</div>
+          ${ft ? `<div style="font-size:10px;color:var(--dim);margin-top:3px;line-height:1.35">Toppflaten legges ut til minsteavstanden. Hesteskotrinnene trekkes inn så kabelen går opp.<br><span id="stair-hs-mm-info">Toppflate ${_stairDimRound(topM)} cm · hestesko ${_stairDimRound(stair.edgeMargin_cm || 5)} cm</span></div>` : ''}
+        </div>`;
+      })() : ''}
       ${/* 120 (Regel 22 på trappenivå): hengelås. Låst = tallet brukes nøyaktig; av = som før
            (gulv for Forslag/manuelt). Tomt felt = låsen av. */''}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
@@ -52631,6 +52677,42 @@ function _generateHorseshoeSurfaces(stair) {
 // konturens lengde for en hestesko. Brukt av margintakene (75 %, geometrisk tak).
 function _stairSurfSpanCm(sf, fallbackW) { return (sf && (sf.span_cm || sf.w_cm)) || fallbackW || 120; }
 
+// ══ 184 · SIDEMARGIN PER HESTESKOTRAPP: «LIK AVSTAND» ELLER «FYLL TOPPFLATEN» (Kenneth 04.11.2026) ══
+// «1: Slik det er nå, der kabelen trekkes inn fra sidene like mye på alle trinn. 2: Topptrinnet fylles
+// helt ut til sidene, mens hesteskotrinnene tilpasses med avstand fra sidene.»
+//   stair.horseshoe.marginMode = 'equal' (mangler = 'equal', nøyaktig som før 184) | 'fillTop'.
+// I 'fillTop' legges toppflaten med trappas GULV (edgeMarginMin_cm, «din: X») og er ikke en del av
+// justeringsvariabelen. stair.edgeMargin_cm er da HESTESKOENS margin: Forslag, manuelt sett og låst
+// avstand (Regel 12/13/22) virker på den alene. Én krok i _stairSurfSettings, så motoren, tegningen,
+// måltabellen og PDF-en leser toppflatens margin fra samme sted (Regel 9).
+function _stairHsFillTop(stair) {
+  return _stairIsHorseshoe(stair) && !!stair.horseshoe && stair.horseshoe.marginMode === 'fillTop';
+}
+// Toppflatens faste margin i 'fillTop': gulvet UTEN låsen (låsen gjelder hesteskoen). Trappemotoren har
+// ingen produktminimum for sidemargin (InSnow har min_wall_margin_mm = 0), så gulvet står alene.
+function _stairHsTopFillCm(stair) {
+  return stair.edgeMarginMin_cm > 0 ? stair.edgeMarginMin_cm : (stair.edgeMargin_cm || 5);
+}
+// Flatene som sidemarginen er justeringsvariabel for: alle, eller bare hesteskoflatene i 'fillTop'.
+function _stairAdjSurfaces(stair) {
+  const surfs = (stair && stair.surfaces) || [];
+  return _stairHsFillTop(stair) ? surfs.filter(f => !f.hsTop) : surfs;
+}
+// Taket for hesteskoens margin i 'fillTop': armen til den innerste strengen på hvert hesteskotrinn
+// (bakkant → hjørnet, Di + opptrinnsavstand). Større margin ville flyttet strengens ende forbi hjørnet.
+function _stairHsArmCapCm(stair) {
+  let cap = Infinity;
+  (stair.surfaces || []).forEach((sf, si) => {
+    if (!sf || sf.shape !== 'u') return;
+    const ss = _stairSurfSettings(stair, si);
+    const path = _stairRunPath(stair, si, ss.depthStart_cm, ss);
+    if (path.length < 2) return;
+    const n = path.length;
+    cap = Math.min(cap, Math.hypot(path[1].x - path[0].x, path[1].y - path[0].y), Math.hypot(path[n - 1].x - path[n - 2].x, path[n - 1].y - path[n - 2].y));
+  });
+  return cap;
+}
+
 // Åpen polylinje forskjøvet utover med én avstand per kant (venstre normal (−uy, ux) for en
 // kontur som går med klokka på skjermen: ned venstre arm, langs fronten, opp høyre arm).
 // Endepunktene skjæres mot BAKLINJA (gjennom første og siste punkt), så strengen alltid ender på
@@ -52797,6 +52879,11 @@ function _stairSurfSettings(stair, si, zoneRanges) {
     riserOffset_cm: stair.riserOffset_cm ?? 2,
     landingMargin_cm: stair.landingMargin_cm ?? 5,
   };
+  // 184: «Fyll toppflaten» — toppflaten ligger fast på gulvet, hesteskoen bærer den løste marginen.
+  if (surf.hsTop && _stairHsFillTop(stair)) {
+    base.edgeMargin_cm = base.edgeMarginFloor_cm = _stairHsTopFillCm(stair);
+    base.topFill = true;
+  }
   const ranges = zoneRanges === undefined ? _stairZoneRanges(stair) : zoneRanges;
   if (ranges) {
     const zi = ranges.findIndex(r => si >= r.fromSurf && si <= r.toSurf);
@@ -53854,19 +53941,28 @@ function _stairMarginProbe(stair) {
   // cables:[{productId:null}] => ubegrenset kapasitet i _stairAllocateCables, altså hele, uklippet
   // ruten (samme prinsipp som matte-auto sin idealLenCm-probe).
   const probe = generateStairCable({ ...stair, edgeMargin_cm: floorMargin, cables: [{ productId: null }] });
-  const totalStrands = probe.runs.length;
+  // 184: i «Fyll toppflaten» står toppflaten fast på gulvet — bare hesteskostrengene blir 2·Δ kortere,
+  // og bare hesteskoflatene teller for taket. Valg 1 (og rette trapper): alle strenger, alle flater.
+  const fillTop = _stairHsFillTop(stair);
+  const adjSurfs = _stairAdjSurfaces(stair);
+  const totalStrands = fillTop ? probe.runs.filter(r => !((stair.surfaces || [])[r.surfaceIdx] || {}).hsTop).length : probe.runs.length;
   const neededAtFloor_cm = probe.totalCableLength_cm;
-  const minSurfW = Math.min(...(stair.surfaces || []).map(s => _stairSurfSpanCm(s, stair.width_cm)));   // 176: span (= w_cm for rette)
+  const minSurfW = Math.min(...adjSurfs.map(s => _stairSurfSpanCm(s, stair.width_cm)));   // 176: span (= w_cm for rette)
+  // 184: hesteskoens margin kan ikke gå forbi hjørnet (armen til innerste streng) — bare i 'fillTop'.
+  const armCap = fillTop ? _stairHsArmCapCm(stair) : Infinity;
+  const maxMargin75 = Math.min(minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC, minSurfW / 2 - 1, armCap);
   return {
     ok: totalStrands > 0 && neededAtFloor_cm > 0,
-    floorMargin, totalStrands, neededAtFloor_cm, minSurfW,
+    floorMargin, totalStrands, neededAtFloor_cm, minSurfW, armCap, fillTop,
     // Fornuftig margintak for det FRIE flerkabel-søket: strenglengden må forbli klart positiv
     // (halve smaleste flate er geometrisk umulig å passere) OG marginen skal ikke bli urealistisk
     // bred (+15 cm fra brukerens gulv — et sett som krever mer bør vike for et annet sett).
-    maxSaneMargin: Math.min(minSurfW / 2 - 1, floorMargin + 15),
+    // 184: i 'fillTop' er hesteskoens margin MENT å ligge langt over gulvet (den bærer hele
+    // justeringen alene), så +15-taket gjelder ikke der — bare 75 % og armen.
+    maxSaneMargin: fillTop ? maxMargin75 : Math.min(minSurfW / 2 - 1, floorMargin + 15),
     // Regel 19-taket: varmet bredde >= 75 % av smaleste flate, altså høyst 12,5 % per side. Gjelder
     // en-kabel-forslaget OG alle manuelle sett (Regel 20: «aldri under 75 % varmet bredde»).
-    maxMargin75: Math.min(minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC, minSurfW / 2 - 1),
+    maxMargin75,
     // Regel 12 + 15: marginen som får `sum_cm` til å gå opp — aldri under brukerens gulv, snappet
     // til hele mm. exactMargin beholdes for sorteringen i forslagsmotoren.
     solve(sum_cm) {
@@ -53912,9 +54008,13 @@ function _stairFitFixedSet(stair, productIds) {
   if (margin > pr.maxMargin75 + 0.01) {
     // Hvor mye kabel som mangler for å nå 75 %-grensen — tallet brukeren faktisk kan handle på.
     const needAt75_cm = pr.neededAtFloor_cm - 2 * pr.totalStrands * (pr.maxMargin75 - pr.floorMargin);
+    // 184: i «Fyll toppflaten» kan det være hjørnet (armen), ikke 75 %, som stopper hesteskoen.
+    const forbiHjornet = pr.fillTop && margin > pr.armCap + 0.01 && pr.armCap <= pr.minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC;
     return { ok: false, edgeMargin_cm: pr.floorMargin, residual_cm: 0,
       short: `${_stairLenTxt(Math.max(0, needAt75_cm - sum_cm))} for korte`,
-      reason: `Kablene er ${_stairLenTxt(Math.max(0, needAt75_cm - sum_cm))} for korte — ${margin.toFixed(1)} cm avstand fra sidene ville gitt under 75 % varmet bredde.` };
+      reason: forbiHjornet
+        ? `Kablene er ${_stairLenTxt(Math.max(0, needAt75_cm - sum_cm))} for korte — hesteskoen måtte fått ${margin.toFixed(1)} cm avstand fra sidene, og strengene ville gått forbi hjørnet (armen er ${_stairDimRound(pr.armCap)} cm).`
+        : `Kablene er ${_stairLenTxt(Math.max(0, needAt75_cm - sum_cm))} for korte — ${margin.toFixed(1)} cm avstand fra sidene ville gitt under 75 % varmet bredde.` };
   }
   // Regel 15: marginen er snappet til hele mm — regn behovet PÅ NYTT ved den snappede marginen for
   // å finne det virkelige (millimeterstore) restavviket, i stedet for å late som det er null.
@@ -53960,7 +54060,7 @@ function _stairFitLockedMargin(subStair, productIds) {
   const manglerLop = diff_cm < -5 && runLen > 0 ? Math.ceil(-diff_cm / runLen) : 0;
   // Regel 22: 75 %-grensen (Regel 19) gjelder IKKE en låst avstand — brukeren har valgt den selv.
   // Under 75 % varmet bredde er det en gul merknad, ikke en avvisning.
-  const minSurfW = Math.min(...(subStair.surfaces || []).map(s => _stairSurfSpanCm(s, subStair.width_cm)));   // 176
+  const minSurfW = Math.min(..._stairAdjSurfaces(subStair).map(s => _stairSurfSpanCm(s, subStair.width_cm)));   // 176 · 184: bare hesteskoen i «Fyll toppflaten»
   const heated = minSurfW - 2 * margin;
   const smal = heated > 0 && heated < minSurfW * 0.75;
   return {
@@ -54035,7 +54135,7 @@ function _stairSolveLockedCableSet(stair) {
   };
   // Varmet bredde ved den låste avstanden — én-kabel-kortet viser den (som 084), og uten disse
   // sto det «−12 av 0 cm» i kortet (målt).
-  const minSurfW = Math.min(...(stair.surfaces || []).map(sf => _stairSurfSpanCm(sf, stair.width_cm)));   // 176
+  const minSurfW = Math.min(..._stairAdjSurfaces(stair).map(sf => _stairSurfSpanCm(sf, stair.width_cm)));   // 176 · 184
   const mk = c => ({ ok: true, locked: true, edgeMargin_cm: margin, products: c.lens.map(toProduct),
     totalAvailable_m: Math.round(c.sum_cm) / 100, residual_cm: Math.round(c.diff_cm * 100) / 100,
     fitStatus: c.status, needed_cm: need_cm,
@@ -55916,6 +56016,90 @@ function _stairHorseshoeRegressionTest() {
       check('183.5: 20 trinn, fire overstyrte — fortsatt ingen overlapp', 'ingen', ov20.hits.length === 0, ov20.hits.join(', ') || `ingen (${ov20.T.length} tekster)`);
       document.getElementById('stair-modal-bg').remove();
     } finally { _stairHsB = savedB2; _stairHsBEditId = savedBId2; }
+
+    // ─── 184 · «Lik avstand» / «Fyll toppflaten» (Kenneth 04.11.2026) ───
+    // VK Hovedterrasse slik skjermbildet viser den: 470 × 70 + ett hesteskotrinn på 31, opptrinn/nese 2,
+    // maks CC 10, gulv 2 cm, 1 × 60 m → 8 × 431,2 og 4 × 579,2–687,2 ved avstand sider 19,4.
+    {
+      const VK31 = { topW_cm: 470, topD_cm: 70, count: 1, front_cm: 31, stepHeight_cm: 17 };
+      const EX = { riserOffset_cm: 2, noseOffset_cm: 2, edgeMargin_cm: 2, edgeMarginMin_cm: 2 };
+      const sig = s => JSON.stringify({ runs: s.runs.map(r => [r.surfaceIdx, r2(r.pos_cm), r.segments.map(g => [r2(g.start_cm), r2(g.end_cm)])]), tot: s.totalCableLength_cm, cov: s.coveredCableLength_cm, em: s.edgeMargin_cm });
+      const setCable = (s, ids) => { s.cables = ids.map((id, i) => ({ index: i, productId: id })); _stairApplyManualCables(s); };
+      const passer = s => _stairFitFromLengths(s.coveredCableLength_cm / 100, s.totalCableLength_cm / 100).status === 'ok';
+      const cells = s => _stairHsTableRows(s).map(r => r.cells[4]).join(' / ');
+      // 184.1 · valg 1: et felt 'equal' gir nøyaktig samme utlegg som et felt som mangler.
+      for (const [nm, hs] of [['VK 31', VK31], ['VK 46', KENNETH], ['fire trinn', { topW_cm: 300, topD_cm: 60, count: 4, front_cm: 40, stepHeight_cm: 17 }],
+        ['ulik dybde', { topW_cm: 300, topD_cm: 60, count: 4, front_cm: 40, stepHeight_cm: 17, perStepDepth: true, depths_cm: [null, 45, null, 30] }]]) {
+        st = mk(hs, EX); setCable(st, [98004]); const a = sig(st), tA = cells(st);
+        st = mk({ ...hs, marginMode: 'equal' }, EX); setCable(st, [98004]);
+        check(`184.1: ${nm} — «Lik avstand» = uten felt`, 'lik', sig(st) === a && cells(st) === tA, sig(st) === a ? 'lik' : 'ULIK');
+      }
+      st = mk(VK31, EX); setCable(st, [98004]);
+      check('184.1: VK 31 valg 1 = skjermbildet (19,4 · 8 × 431,2 · 579,2–687,2)', '19.4 · 431.2 · 579.2–687.2',
+        st.edgeMargin_cm === 19.4 && _stairHsTableRows(st).map(r => r.cells[2]).join(' · ') === '431.2 · 579.2–687.2' && passer(st),
+        st.edgeMargin_cm + ' · ' + _stairHsTableRows(st).map(r => r.cells[2]).join(' · '));
+      const eqSig = sig(st), eqTab = cells(st);
+      // 184.2 · valg 2: toppflaten ut til gulvet, hesteskoen løst så kabelen går opp.
+      _setStairHsMarginMode('fillTop');
+      const topRuns = runsOf(st, 1), uRuns = runsOf(st, 0);
+      check('184.2: lagret som horseshoe.marginMode = fillTop', 'fillTop', st.horseshoe.marginMode === 'fillTop', st.horseshoe.marginMode);
+      check('184.2: toppflaten 8 strenger × 466 (470 − 2·2), start 2', '8 × 466', topRuns.length === 8 && _stairHsTableRows(st)[0].cells[2] === '466' && topRuns.filter(r => r2(runLen(r)) === 466).length >= 7 && Math.min(...topRuns.map(r => r.segments[0].start_cm)) === 2, topRuns.length + ' × ' + _stairHsTableRows(st)[0].cells[2] + ' (kabelhale ' + topRuns.map(r => r2(runLen(r))).filter(v => v !== 466).join('/') + ')');
+      check('184.2: hesteskoen har større margin enn 19,4, 4 strenger, alle 2·Δ kortere', '> 19.4',
+        st.edgeMargin_cm > 19.4 && uRuns.length === 4 && uRuns.every(r => r1(r.segments[0].start_cm) === st.edgeMargin_cm), st.edgeMargin_cm + ' · ' + uRuns.map(r => r1(runLen(r))).join('/'));
+      check('184.2: kabelen går opp («Passer»), manuelt sett ok', 'Passer', passer(st) && st.manualFit && st.manualFit.ok && !(st.uncoveredRuns || []).length, st.coveredCableLength_cm + ' / ' + st.totalCableLength_cm);
+      check('184.2: måltabellen: toppflate 2, hestesko ny margin', '2 / ' + st.edgeMargin_cm, cells(st) === '2 / ' + r1(st.edgeMargin_cm), cells(st));
+      const td = _stairHsSurfDims(st, 1);
+      check('184.2: toppflaten kant → sving 2 på begge sider (rutingen)', '2/2', td && r1(td.left[0]) === 2 && r1(td.left[1]) === 2 && r1(td.right[0]) === 2 && r1(td.right[1]) === 2, td && [td.left, td.right].map(a => a.map(r1).join('–')).join('/'));
+      check('184.2: «(sider)» ved bakkanten = hesteskoens margin', st.edgeMargin_cm, _stairSurfSettings(st, 0).edgeMargin_cm === st.edgeMargin_cm && _stairSurfSettings(st, 1).edgeMargin_cm === 2, _stairSurfSettings(st, 0).edgeMargin_cm + ' / topp ' + _stairSurfSettings(st, 1).edgeMargin_cm);
+      const ftSig = sig(st);
+      // Forslag i valg 2: samme sett (1 × 60), samme hesteskomargin.
+      const pf = _generateStairProposals(st);
+      check('184.2: Forslag i valg 2 = 1 × 60 m med samme hesteskomargin', '60@' + st.edgeMargin_cm, pf.length && pf[0].products.map(p => p.length_m).join('+') === '60' && pf[0].edgeMargin_cm === st.edgeMargin_cm, pf.map(p => p.products.map(x => x.length_m).join('+') + '@' + p.edgeMargin_cm).join(', '));
+      // 184.3 · fram og tilbake: valg 1 gir de samme tallene som før byttet, valg 2 likeså.
+      _setStairHsMarginMode('equal');
+      check('184.3: tilbake til «Lik avstand» = som før byttet', 'lik', sig(st) === eqSig && cells(st) === eqTab, sig(st) === eqSig ? 'lik' : 'ULIK ' + cells(st));
+      _setStairHsMarginMode('fillTop');
+      check('184.3: «Fyll toppflaten» igjen = samme tall', 'lik', sig(st) === ftSig, sig(st) === ftSig ? 'lik' : 'ULIK');
+      // Med et valgt forslag: marginen løses på nytt for samme kabelsett, i begge retninger.
+      st = mk(VK31, EX); const pe = _generateStairProposals(st); _applyStairProposal(st, pe[0]);
+      const propEq = sig(st);
+      _setStairHsMarginMode('fillTop');
+      check('184.3: valgt forslag → «Fyll toppflaten» løser samme sett på nytt', 'forslag beholdt, ' + r1(54.1), !!st.selectedProposal && st.selectedProposal.edgeMargin_cm === st.edgeMargin_cm && sig(st) === ftSig, (st.selectedProposal ? 'forslag ' : 'manuelt ') + st.edgeMargin_cm);
+      _setStairHsMarginMode('equal');
+      check('184.3: … og tilbake gir forslagets utlegg igjen', 'lik', sig(st) === propEq && !!st.selectedProposal, sig(st) === propEq ? 'lik' : 'ULIK ' + st.edgeMargin_cm);
+      // Byggeren («Rediger hesteskotrapp» → Lagre) beholder valget.
+      _setStairHsMarginMode('fillTop');
+      { const sB = _stairHsB, sI = _stairHsBEditId; try { _showHsBuilder(st.id); _confirmHsBuilder(); } finally { _stairHsB = sB; _stairHsBEditId = sI; } }
+      check('184.3: lagre i hesteskobyggeren beholder «Fyll toppflaten»', 'fillTop', st.horseshoe.marginMode === 'fillTop', st.horseshoe.marginMode);
+      // 184.4 · et sett som ikke går opp i valg 2: hesteskoen måtte trekkes forbi armen.
+      HEATING_PRODUCTS.push({ id: 98100, category_id: 9800, active: true, product_family: 'InSnow 30T', name: 'InSnow 30T 1650W 55m', cable_length_m: 55, watt_per_m: 30, voltage: 230 });
+      try {
+        st = mk(VK31, EX); setCable(st, [98100]);
+        const eq55 = st.edgeMargin_cm;
+        _setStairHsMarginMode('fillTop');
+        const arm = _stairHsArmCapCm(st);
+        check('184.4: 55 m går opp i valg 1 (kontroll)', 'ok', eq55 > 2 && eq55 < 58.75, eq55);
+        check('184.4: armen til innerste streng = Di + opptrinnsavstand = 72', 72, r1(arm) === 72, r1(arm));
+        check('184.4: valg 2: «for korte … forbi hjørnet», ikke ok', 'for korte', st.manualFit && !st.manualFit.ok && /for korte/.test(st.manualFit.short) && /forbi hjørnet/.test(st.manualFit.reason), st.manualFit && st.manualFit.reason);
+        check('184.4: ingen streng forbi hjørnet (marginen ligger på gulvet)', '≤ 72', runsOf(st, 0).every(r => r.segments[0].start_cm <= arm + 1e-6) && st.edgeMargin_cm <= arm, runsOf(st, 0).map(r => r1(r.segments[0].start_cm)).join('/'));
+        check('184.4: udekket vises (stiplet rødt), status rød', 'error', (st.uncoveredRuns || []).length > 0 && _stairFitFromLengths(st.coveredCableLength_cm / 100, st.totalCableLength_cm / 100).status === 'error', (st.uncoveredRuns || []).length + ' udekket');
+        const pf4 = _generateStairProposals(st);
+        check('184.4: Forslag i valg 2 går aldri forbi armen', '≤ 72', pf4.length > 0 && pf4.every(p => p.edgeMargin_cm <= arm + 1e-6), pf4.map(p => p.products.map(x => x.length_m).join('+') + '@' + p.edgeMargin_cm).join(', '));
+      } finally { HEATING_PRODUCTS.splice(HEATING_PRODUCTS.findIndex(p => p.id === 98100), 1); }
+      // 184.5 · låst avstand 10 cm i valg 2: hesteskoen = 10, toppflaten = gulvet.
+      st = mk({ ...VK31, marginMode: 'fillTop' }, EX); setCable(st, [98004]);
+      st.edgeMarginLocked_cm = 10; _regenerateStairCable(st);
+      check('184.5: låst 10 → hestesko 10, toppflate 2', '2 / 10', cells(st) === '2 / 10' && _stairSurfSettings(st, 1).edgeMargin_cm === 2 && _stairSurfSettings(st, 0).edgeMargin_cm === 10, cells(st));
+      st.edgeMarginLocked_cm = null; _regenerateStairCable(st); _setStairEdgeMarginLock(true);
+      _setStairEdgeMargin('10');
+      check('184.5: via panelet (hengelås + tast 10): hestesko 10, gulvet står på 2', '2 / 10 · gulv 2', cells(st) === '2 / 10' && st.edgeMarginMin_cm === 2 && st.edgeMarginLocked_cm === 10, cells(st) + ' · gulv ' + st.edgeMarginMin_cm);
+      // Fire trinn med ulik dybde og toppflate i plan (178/182) virker med valg 2.
+      st = mk({ topW_cm: 300, topD_cm: 60, count: 4, front_cm: 40, stepHeight_cm: 17, perStepDepth: true, depths_cm: [null, 45, null, 30], topLevel: 'flush', marginMode: 'fillTop' }, EX);
+      const pff = _generateStairProposals(st); if (pff[0]) _applyStairProposal(st, pff[0]);
+      const tabF = _stairHsTableRows(st).map(r => r.cells[4]);
+      check('184.5: fire trinn, ulik dybde, i plan: toppflate 2, alle hesteskotrinn samme løste margin, går opp', '2 / m / m / m / m',
+        pff.length > 0 && tabF[0] === '2' && tabF.slice(1).every(v => v === r1(st.edgeMargin_cm) + '') && st.edgeMargin_cm > 2 && passer(st), tabF.join(' / '));
+    }
   } catch (e) {
     results.push({ name: 'unntak', ok: false, expected: 'ingen', got: String(e && e.message || e) });
   } finally {
@@ -56306,7 +56490,7 @@ function _regenerateStairCable(stair) {
     // 120: låst → ingen margin-løsning, bare «hvor godt passer settet» (samme hjelper som sonen,
     // _stairFitLockedMargin: for kort = udekkede løp stiplet rødt, for lang = «til overs»).
     stair.manualFit = !harSett ? null
-      : (_lockedCm != null ? _stairFitLockedMargin({ ...stair, edgeMargin_cm: _lockedCm, edgeMarginMin_cm: _lockedCm }, ids)
+      : (_lockedCm != null ? _stairFitLockedMargin({ ...stair, edgeMargin_cm: _lockedCm, ...(_stairHsFillTop(stair) ? {} : { edgeMarginMin_cm: _lockedCm }) }, ids)   /* 184: toppflaten beholder gulvet */
                            : _stairFitFixedSet(stair, ids));
     // Går settet ikke opp (Regel 11: for langt, kan ikke kortes — eller for kort), beholdes marginen
     // PÅ GULVET og utlegget tegnes som før, med grunnen vist rødt i panelet. edgeMarginMin_cm
@@ -67535,7 +67719,9 @@ function _confirmHsBuilder() {
       stair.x_cm += dx;
       for (const d of (stair.dims || [])) { d.p1.x -= dx; d.p2.x -= dx; }
     }
+    const _mm = stair.horseshoe && stair.horseshoe.marginMode;   // 184: valget hører til trappa, ikke byggeren
     stair.horseshoe = { ...hs };   // nytt objekt — angre-stakken deler ikke referansen
+    if (_mm) stair.horseshoe.marginMode = _mm;
     if (hs.depths_cm) stair.horseshoe.depths_cm = hs.depths_cm.slice();
     else delete stair.horseshoe.depths_cm;
     stair.segments = _stairHsSegments(p);
@@ -85164,7 +85350,7 @@ async function exportPDF(opts) {
 
         // Sone-niva felt (like for hele sonen uansett trinn-serie): dybdemarginer + sidemargin.
         doc.setFontSize(7.5); doc.setTextColor(80, 90, 110);
-        doc.text('Avstand opptrinn: ' + _cm1(sb.riserOffset_cm) + '   |   Avstand nese: ' + _cm1(sb.noseOffset_cm) + '   |   Avstand sider: ' + _cm1(sb.edgeMargin_cm), M, y);
+        doc.text('Avstand opptrinn: ' + _cm1(sb.riserOffset_cm) + '   |   Avstand nese: ' + _cm1(sb.noseOffset_cm) + '   |   Avstand sider: ' + (_stairHsFillTop(stair) ? ('toppflate ' + _cm1(_stairHsTopFillCm(stair)) + ', hestesko ' + _cm1(sb.edgeMargin_cm)) : _cm1(sb.edgeMargin_cm)), M, y);   // 184
         y += 4;
 
         // Trinn-serie-felt (N/CC/lengde/flateeffekt) - varierer disse innad i sonen, vis hver serie.
