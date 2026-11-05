@@ -47633,15 +47633,15 @@ function _stairGeometryDims(stair, view, range) {
     // Samme profil-aritmetikk som _drawStairSide (speilet høyde) — regnet på nytt her, ikke lest
     // derfra, fordi utskriften (_stairDrawSideToCanvas) ikke har tilgang til skjermfunksjonens lokale.
     let totalH = 0;
-    for (const s of surfs) totalH += _stairSideRiserCm(stair, s);   // 178: 0 over en toppflate i plan
-    const firstStepH = (surfs[0].type !== 'landing' ? surfs[0].stepHeight_cm : null) || stair.step_height_cm || 17;
+    for (let i = 0; i < surfs.length; i++) totalH += _stairSideRiserCm(stair, surfs, i);   // 178/191
+    const firstStepH = _stairGroundRiserCm(stair, surfs);   // 191: 0 når et repos ligger nederst (på bakken)
     const ground = totalH + firstStepH;
     let cx = 0, cumulH = 0, xFrom = null, xTo = 0;
     const depthItems = [], riserItems = [];
     // Opptrinn-kjeden følger tegningen: bakken → trinn 1, så ett opptrinn OVER hvert trinn (det
     // siste leder opp til etasjen/reposet over). 8 trinn tegnes altså med 9 opptrinn — det er
     // fysisk riktig for en trapp mellom to plan, og tallet skal stemme med det som tegnes.
-    if (rFrom === 0 && surfs[0].type !== 'landing') riserItems.push({ kind: 'tread', v: firstStepH, from: ground, to: totalH });
+    if (rFrom === 0 && firstStepH > 0) riserItems.push({ kind: 'tread', v: firstStepH, from: ground, to: totalH });
     for (let i = 0; i < surfs.length; i++) {
       const s = surfs[i], yTop = totalH - cumulH, inR = i >= rFrom && i <= rTo;
       if (inR) {
@@ -47649,11 +47649,10 @@ function _stairGeometryDims(stair, view, range) {
         xTo = cx + s.d_cm;
         depthItems.push({ kind: s.type === 'landing' ? 'landing' : 'tread', v: s.d_cm, from: cx, to: cx + s.d_cm });
       }
-      if (s.type !== 'landing') {
-        const sh = _stairSideRiserCm(stair, s);
-        if (inR && sh > 0) riserItems.push({ kind: 'tread', v: sh, from: yTop, to: yTop - sh });
-        cumulH += sh;
-      }
+      // 191 (Regel 24): også et repos har et opptrinn over seg når det står en flate over det.
+      const sh = _stairSideRiserCm(stair, surfs, i);
+      if (inR && sh > 0) riserItems.push({ kind: 'tread', v: sh, from: yTop, to: yTop - sh });
+      cumulH += sh;
       cx += s.d_cm;
     }
     if (xFrom == null) return dims;
@@ -48930,7 +48929,7 @@ function _drawStairSide(stair) {
   // som kabelstrenger/forbindelser/etiketter tegnes fra) følger automatisk med siden de leser
   // samme, nå speilede, verdi.
   let totalH = 0;
-  for (const surf of surfs) totalH += _stairSideRiserCm(stair, surf);   // 178: 0 over en toppflate i plan
+  for (let i = 0; i < surfs.length; i++) totalH += _stairSideRiserCm(stair, surfs, i);   // 178/191
 
   // In side view: x = depth position, y = height (cumulative step heights, speilet — se over)
   const pts = [];
@@ -48938,14 +48937,10 @@ function _drawStairSide(stair) {
   let cumulH = 0;
   const surfSideCoords = [];
 
-  for (const surf of surfs) {
-    if (surf.type === 'landing') {
-      pts.push({x: cx, y: totalH - cumulH});
-      surfSideCoords.push({ xStart: cx, yTop: totalH - cumulH, depth: surf.d_cm });
-      cx += surf.d_cm;
-      pts.push({x: cx, y: totalH - cumulH});
-    } else { // tread
-      const sh = _stairSideRiserCm(stair, surf);
+  for (let i = 0; i < surfs.length; i++) {
+    const surf = surfs[i];
+    { // trinn og repos likt (191, Regel 24: et repos har også et opptrinn over seg når en flate står over det)
+      const sh = _stairSideRiserCm(stair, surfs, i);
       pts.push({x: cx, y: totalH - cumulH});           // tread start
       surfSideCoords.push({ xStart: cx, yTop: totalH - cumulH, depth: surf.d_cm });
       cx += surf.d_cm;
@@ -48960,7 +48955,7 @@ function _drawStairSide(stair) {
   // Close the profile (go back along bottom, BELOW trinn 1 — som nå ligger ved den STØRSTE
   // lokale y-verdien, totalH, siden den er speilet til å ligge nederst på skjermen)
   const totalW = cx;
-  const firstStepH = (surfs[0].type !== 'landing' ? surfs[0].stepHeight_cm : null) || stair.step_height_cm || 17;
+  const firstStepH = _stairGroundRiserCm(stair, surfs);   // 191: et repos nederst ligger på bakken
   pts.push({x: cx, y: totalH + firstStepH}); // bottom-right
   pts.push({x: 0, y: totalH + firstStepH}); // bottom-left
 
@@ -49213,14 +49208,14 @@ function _stairDimSnap(p) {
     if (st.viewMode === 'side' || st.viewMode === 'both') {
       const sx0 = st.viewMode === 'both' ? ox + _stairPlanBounds(st).w + 20 : ox;   // samme forskyvning som drawStairs
       let totalH = 0;
-      for (const sf of surfs) totalH += _stairSideRiserCm(st, sf);   // 178
-      const firstStepH = (surfs[0].type !== 'landing' ? surfs[0].stepHeight_cm : null) || st.step_height_cm || 17;
+      for (let i = 0; i < surfs.length; i++) totalH += _stairSideRiserCm(st, surfs, i);   // 178/191
+      const firstStepH = _stairGroundRiserCm(st, surfs);
       const pts = [];
       let cx = 0, cumulH = 0;
-      for (const sf of surfs) {
-        const yTop = totalH - cumulH;
+      for (let i = 0; i < surfs.length; i++) {
+        const sf = surfs[i], yTop = totalH - cumulH;
         pts.push({ x: cx, y: yTop }); cx += sf.d_cm; pts.push({ x: cx, y: yTop });
-        const sh = _stairSideRiserCm(st, sf);
+        const sh = _stairSideRiserCm(st, surfs, i);
         if (sh > 0) { cumulH += sh; pts.push({ x: cx, y: totalH - cumulH }); }
       }
       pts.push({ x: cx, y: totalH + firstStepH }); pts.push({ x: 0, y: totalH + firstStepH });
@@ -52918,13 +52913,33 @@ function _stairIsHorseshoe(stair) { return !!stair && stair.design === 'horsesho
 // (profil, høydemål, grenser) og byggerens oppsummering bryr seg: kabelen regner kun opptrinnene
 // MELLOM flatene (Regel 5), aldri det over toppflaten.
 function _stairHsTopFlush(stair) { return _stairIsHorseshoe(stair) && !!stair.horseshoe && stair.horseshoe.topLevel === 'flush'; }
-// Opptrinnet sidevisningen tegner RETT OVER en flate (0 for repos og for en toppflate i plan med
-// øverste nivå). Felles for skjerm, PDF, mål, grenser og snapp, så de aldri blir uenige.
-function _stairSideRiserCm(stair, surf) {
-  if (!surf || surf.type === 'landing') return 0;
-  if (surf.hsTop && _stairHsTopFlush(stair)) return 0;
-  return surf.stepHeight_cm || stair.step_height_cm || 17;
+// 191 (Regel 24, Kenneth 05.11.2026): «Når man bygger en trapp, skal det alltid være et trinn ned
+// eller opp til et repos eller til en ny trapp.» Mellom to flater som ligger etter hverandre er det
+// ALLTID nøyaktig ett opptrinn — trinn → trinn, trinn → repos, repos → trinn og repos → repos.
+// Høyden på det opptrinnet:
+//   · under en flate som står på et trinn (trinn → trinn, trinn → repos): trinnet under — samme
+//     eierskap som før 191 («hver flate eier opptrinnet rett over seg»), så trapper uten repos er
+//     bit-identiske;
+//   · repos → trinn: NABOTRINNET, altså trinnet over reposet (før 191: 0 i tegningen og trappas
+//     standardhøyde i kabelen — de var uenige);
+//   · repos → repos: trappas standardhøyde.
+// lower = null: opptrinnet fra bakken (et trinn nederst har ett, et repos nederst ligger PÅ bakken).
+// upper = null: opptrinnet over øverste flate opp til etasjen (et trinn har ett — 178: «8 trinn
+// tegnes med 9 opptrinn»; et repos øverst ER øverste nivå; 178: en hesteskotopp i plan har ingen).
+// ÉN hjelper for tegning (skjerm, PDF, mål, grenser, snapp), byggeren og kabelen (Regel 9).
+function _stairRiserBetweenCm(stair, lower, upper) {
+  const std = (stair && stair.step_height_cm) || 17;
+  const h = sf => sf.stepHeight_cm || std;
+  if (!lower) return (upper && upper.type !== 'landing') ? h(upper) : 0;
+  if (lower.hsTop && _stairHsTopFlush(stair)) return 0;
+  if (lower.type !== 'landing') return h(lower);
+  if (!upper) return 0;
+  return upper.type !== 'landing' ? h(upper) : std;
 }
+// Opptrinnet sidevisningen tegner RETT OVER flate i (mot flate i + 1, eller etasjen over den øverste).
+function _stairSideRiserCm(stair, surfs, i) { return _stairRiserBetweenCm(stair, surfs[i], surfs[i + 1] || null); }
+// Opptrinnet fra bakken opp til nederste flate (0 når den nederste er et repos — det ligger på bakken).
+function _stairGroundRiserCm(stair, surfs) { return _stairRiserBetweenCm(stair, null, surfs[0] || null); }
 
 function _stairHsParams(stair) {
   const h = { ...STAIR_HS_DEFAULTS, ...((stair && stair.horseshoe) || {}) };
@@ -53151,8 +53166,8 @@ function _stairSideBounds(stair) {
   const surfs = stair.surfaces && stair.surfaces.length ? stair.surfaces : _generateStairSurfaces(stair);
   const totalDepth = surfs.reduce((s,f) => s + f.d_cm, 0);
   let totalHeight = 0;
-  for (const s of surfs) if (s.type === 'tread') totalHeight += _stairSideRiserCm(stair, s);   // 178
-  return { x: stair.x_cm, y: stair.y_cm, w: totalDepth, h: totalHeight + (surfs[0]?.stepHeight_cm || 17) };
+  for (let i = 0; i < surfs.length; i++) totalHeight += _stairSideRiserCm(stair, surfs, i);   // 178/191
+  return { x: stair.x_cm, y: stair.y_cm, w: totalDepth, h: totalHeight + _stairGroundRiserCm(stair, surfs) };
 }
 function _stairBounds(stair) {
   if (stair.viewMode === 'both') {
@@ -53526,8 +53541,9 @@ function generateStairCable(stair) {
       // Opptrinnet mellom si og nextSi er samme FYSISKE strekk uansett retning kabelen går det —
       // hver trapp-flate «eier» opptrinnet RETT OVER seg (stepHeight_cm), altså det LAVEST
       // indekserte av de to flatene, uavhengig av hvilken vei kabelen faktisk traverserer den.
-      const lowerSurf = surfs[Math.min(si, nextSi)];
-      const connLen = lowerSurf.stepHeight_cm || stair.step_height_cm || 17;
+      // 191 (Regel 24): samme hjelper som tegningen — repos → trinn er nabotrinnets høyde, ikke
+      // trappas standard (før 191 var kabel og tegning uenige der).
+      const connLen = _stairRiserBetweenCm(stair, surfs[Math.min(si, nextSi)], surfs[Math.max(si, nextSi)]);
       pieces.push({ kind: 'conn', fromSurf: si, toSurf: nextSi, len_cm: connLen, exitRight });
       totalLen += connLen;
       // 120 (Kenneth 21.10.2026, svar 104/1): alle soner starter på SAMME side som sone 1, så
@@ -53764,7 +53780,7 @@ function _stairCableLength(stair, runsPerStep, stepCC, landingCC, edgeMargin) {
 
     // Step-over connection to next surface
     if (si < surfs.length - 1) {
-      totalLen += surf.stepHeight_cm || stair.step_height_cm || 17;
+      totalLen += _stairRiserBetweenCm(stair, surf, surfs[si + 1]);   // 191: samme opptrinn som kabelen/tegningen
     }
   }
   return totalLen;
@@ -56260,6 +56276,57 @@ function _stairBuilderMoveRegressionTest110() {
 // forkanten / trinndybde» sammenlignes mellom de to visningene. Planens forkant for en flate er den
 // kanten som vender BORT fra neste flate i trappa (samme definisjon som «↓ Nederste trinn»-teksten
 // i _stairDrawToCanvas); sidevisningens forkant er alltid venstre ende (xStart).
+// 191 (Regel 24) — mellom et repos og et trinn er det alltid ett opptrinn. Låser tegning (profil,
+// høydekjede, grenser), byggeren og kabelens opptrinn mot ÉN hjelper (_stairRiserBetweenCm).
+// Kjøres fra konsollen: _stairReposRiserRegressionTest191(). Rører ikke lagring.
+function _stairReposRiserRegressionTest191() {
+  const saved = { stairs: S.stairs, nextStair: S.counters.nextStairId, segs: _stairBuilderSegs, alloc: _stairAllocateCables };
+  const results = [];
+  const check = (name, expected, got) => results.push({ name, ok: JSON.stringify(expected) === JSON.stringify(got), expected, got });
+  const T = (n, h) => ({ type: 'steps', stepCount: n, stepDepth_cm: 30, stepHeight_cm: h || 17, width_cm: 100 });
+  const L = () => ({ type: 'landing', depth_cm: 90, width_cm: 100 });
+  const mk = segs => { S.counters.nextStairId = 998191; return _createStairObj({ name: 'TEST191', width_cm: 100, step_depth_cm: 30, step_height_cm: 17,
+    edgeMargin_cm: 5, stepCC_cm: 10, landingCC_cm: 10, riserOffset_cm: 2, noseOffset_cm: 2, segments: JSON.parse(JSON.stringify(segs)) }); };
+  const cableRisers = st => { let cap = []; const orig = _stairAllocateCables;
+    window._stairAllocateCables = (pc, c) => { cap = pc.filter(p => p.kind === 'conn').map(p => p.riser_cm != null ? p.riser_cm : p.len_cm); return orig(pc, c); };
+    try { generateStairCable(st); } finally { window._stairAllocateCables = orig; } return cap; };
+  const side = st => st.surfaces.map((_, i) => _stairSideRiserCm(st, st.surfaces, i));
+  const builder = segs => { _stairBuilderSegs = JSON.parse(JSON.stringify(segs)); return _stairBuilderStats().totalHeight; };
+  try {
+    // 1: repos nederst + 6 trinn — reposet på bakken, trinn 1 ett opptrinn over det.
+    let st = mk([L(), T(6)]);
+    check('1 repos nederst: ingen opptrinn fra bakken', 0, _stairGroundRiserCm(st, st.surfaces));
+    check('1 repos nederst: opptrinn over reposet = 17', 17, side(st)[0]);
+    check('1 repos nederst: byggerens høyde (øverste trinn) 6 × 17', 102, builder([L(), T(6)]));
+    check('1 repos nederst: høydekjeden (bakken → etasjen over)', 119, _stairSideTotalHeightCm(st));
+    // 2: 4 trinn + repos + 4 trinn.
+    st = mk([T(4), L(), T(4)]);
+    check('2 4+R+4: opptrinn i profilen (ett per flate + fra bakken)', [17, 17, 17, 17, 17, 17, 17, 17, 17, 17], [_stairGroundRiserCm(st, st.surfaces), ...side(st)]);
+    check('2 4+R+4: byggerens høyde 9 × 17', 153, builder([T(4), L(), T(4)]));
+    check('2 4+R+4: kabelens 8 opptrinn mellom flater', [17, 17, 17, 17, 17, 17, 17, 17], cableRisers(st));
+    // 3: trinn med høyde 18 over reposet — 18 både i tegningen og i kabelen.
+    st = mk([T(4), L(), T(4, 18)]);
+    check('3 18 over repos: tegningen', 18, side(st)[4]);
+    check('3 18 over repos: kabelen', 18, cableRisers(st)[4]);
+    check('3 18 over repos: byggerens høyde 5 × 17 + 4 × 18', 157, builder([T(4), L(), T(4, 18)]));
+    // 4: repos øverst — ingen opptrinn over det.
+    st = mk([T(6), L()]);
+    check('4 repos øverst: 0 over reposet', 0, side(st)[6]);
+    check('4 repos øverst: byggerens høyde 7 × 17', 119, builder([T(6), L()]));
+    // To repos etter hverandre: ett opptrinn mellom dem, trappas standard.
+    st = mk([T(4), L(), L(), T(4, 18)]);
+    check('repos → repos: trappas standardhøyde', 17, side(st)[4]);
+    check('repos → repos → trinn 18', 18, side(st)[5]);
+    // Kabel og tegning bruker samme hjelper for hvert par.
+    check('kabel = tegning for hvert par', side(st).slice(0, -1), cableRisers(st));
+  } finally {
+    S.stairs = saved.stairs; S.counters.nextStairId = saved.nextStair; _stairBuilderSegs = saved.segs; window._stairAllocateCables = saved.alloc;
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_stairReposRiserRegressionTest191: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return results;
+}
+
 function _stairSideRegressionTest() {
   const saved = { stairs: S.stairs, sel: S.ui.selectedStairId, prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
     nextStair: S.counters.nextStairId, undoLen: _undoStack.length, autosave: window._performAutoSave };
@@ -69627,18 +69694,32 @@ function _stairBuilderRemoveSeg(idx) {
   _stairBuilderRefreshSegs();
 }
 
+// 191 (Regel 24): opptrinnet UNDER et repos i byggerens rekkefølge. Byggeren teller ett opptrinn
+// under hvert trinn (n trinn = n × høyde, som før); mellom et trinn og et repos over det står også
+// ett opptrinn — med trinnets høyde (samme flate eier det i tegningen, _stairRiserBetweenCm), eller
+// trappas standardhøyde mellom to repos. Et repos nederst ligger på bakken: 0. Repos → trinn er
+// allerede telt som trinnets eget opptrinn. Summen er altså høyden opp til øverste flate.
+function _stairBuilderLandingRiserCm(segs, i) {
+  if (i <= 0) return 0;
+  const prev = segs[i - 1];
+  const firstSteps = segs.find(sg => sg.type === 'steps');
+  const std = (firstSteps && firstSteps.stepHeight_cm) || 17;   // = stair.step_height_cm ved lagring
+  return _stairRiserBetweenCm({ step_height_cm: std },
+    prev.type === 'steps' ? { type: 'tread', stepHeight_cm: prev.stepHeight_cm } : { type: 'landing' }, { type: 'landing' });
+}
 function _stairBuilderStats() {
   let totalSteps = 0, totalHeight = 0, totalDepth = 0, landings = 0;
-  for (const seg of _stairBuilderSegs) {
+  _stairBuilderSegs.forEach((seg, i) => {
     if (seg.type === 'steps') {
       totalSteps += seg.stepCount;
       totalHeight += seg.stepCount * seg.stepHeight_cm;
       totalDepth += seg.stepCount * seg.stepDepth_cm;
     } else if (seg.type === 'landing') {
       landings++;
+      totalHeight += _stairBuilderLandingRiserCm(_stairBuilderSegs, i);   // 191
       totalDepth += seg.depth_cm;
     }
-  }
+  });
   return { totalSteps, totalHeight: Math.round(totalHeight), totalDepth: Math.round(totalDepth), landings };
 }
 
@@ -69653,14 +69734,15 @@ function _stairBuilderPreviewSVG() {
 
   // Calculate total dimensions
   let totalDepth = 0, totalHeight = 0;
-  for (const seg of segs) {
+  segs.forEach((seg, i) => {
     if (seg.type === 'steps') {
       totalDepth += seg.stepCount * seg.stepDepth_cm;
       totalHeight += seg.stepCount * seg.stepHeight_cm;
     } else {
       totalDepth += seg.depth_cm;
+      totalHeight += _stairBuilderLandingRiserCm(segs, i);   // 191
     }
-  }
+  });
   if (totalDepth === 0) return '';
 
   const svgW = 440, svgH = 120;
@@ -69683,7 +69765,10 @@ function _stairBuilderPreviewSVG() {
       }
     } else {
       const dx = seg.depth_cm * sc;
-      pathD += (pathD ? ' ' : 'M' + x + ',' + y + ' ') + `L${x+dx},${y}`;
+      // 191 (Regel 24): ett opptrinn opp til reposet når det står på et trinn (eller et repos).
+      const dy = _stairBuilderLandingRiserCm(segs, segs.indexOf(seg)) * sc;
+      pathD += (pathD ? ' ' : 'M' + x + ',' + y + ' ') + (dy > 0 ? `L${x},${y-dy} ` : '') + `L${x+dx},${y-dy}`;
+      y -= dy;
       x += dx;
     }
   }
@@ -88636,17 +88721,17 @@ function _stairDrawSideToCanvas(stair, opts) {
 
   // Profilkoordinater — identisk aritmetikk med _drawStairSide.
   let totalH = 0;
-  for (const surf of surfs) totalH += _stairSideRiserCm(stair, surf);   // 178: 0 over en toppflate i plan
-  const firstStepH = (surfs[0].type !== 'landing' ? surfs[0].stepHeight_cm : null) || stair.step_height_cm || 17;
+  for (let i = 0; i < surfs.length; i++) totalH += _stairSideRiserCm(stair, surfs, i);   // 178/191
+  const firstStepH = _stairGroundRiserCm(stair, surfs);   // 191: et repos nederst ligger på bakken
   const ground = totalH + firstStepH;
   const coords = [];   // per flate: xStart, yTop, depth, stepH
   let cx = 0, cumulH = 0;
-  for (const surf of surfs) {
-    const yTop = totalH - cumulH;
-    const sh = _stairSideRiserCm(stair, surf);
+  for (let i = 0; i < surfs.length; i++) {
+    const surf = surfs[i], yTop = totalH - cumulH;
+    const sh = _stairSideRiserCm(stair, surfs, i);
     coords.push({ xStart: cx, yTop, depth: surf.d_cm, stepH: sh });
     cx += surf.d_cm;
-    if (surf.type !== 'landing') cumulH += sh;
+    cumulH += sh;   // 191: også over et repos
   }
   const xFrom = coords[rFrom].xStart, xTo = coords[rTo].xStart + coords[rTo].depth;
   let yMin = Infinity;
@@ -88671,10 +88756,10 @@ function _stairDrawSideToCanvas(stair, opts) {
   // Profil for båndet: trinnflater + opptrinn, lukket langs bakken.
   const pts = [];
   for (let i = rFrom; i <= rTo; i++) {
-    const sc = coords[i], isLanding = surfs[i].type === 'landing';
+    const sc = coords[i];
     pts.push({ x: sc.xStart, y: sc.yTop });
     pts.push({ x: sc.xStart + sc.depth, y: sc.yTop });
-    if (!isLanding && sc.stepH > 0) pts.push({ x: sc.xStart + sc.depth, y: sc.yTop - sc.stepH });   // 178
+    if (sc.stepH > 0) pts.push({ x: sc.xStart + sc.depth, y: sc.yTop - sc.stepH });   // 178
   }
   pts.push({ x: xTo, y: ground }); pts.push({ x: xFrom, y: ground });
   c.beginPath();
