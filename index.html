@@ -49798,6 +49798,9 @@ function _setStairStepCC(val) {
   // Maks CC endret => ny geometri; forrige runsPerStep-cache er ikke lenger gyldig (Regel 7:
   // strengantall følger utelukkende maks CC + dybde, ikke det forrige valgte forslaget).
   stair.runsPerStep = null;
+  // 192: valgt forslag → kabelsettet beholdes og marginen løses på nytt for det nye taket. Går det ikke opp,
+  // står forslag og margin, og panelet viser «for kort» / «til overs» som før (samme vei som åpning, 188).
+  if (!_stairZoneRanges(stair)) _stairResolveMarginForSet(stair, { keepOnFail: true });
   _regenerateStairCable(stair);
   _invalidateStairCache();
   _updateStairSettingsPanel(); updateCtxBar(); render();
@@ -49812,6 +49815,8 @@ function _setStairLandingCC(val) {
   if (rounded === stair.landingCC_cm) return;
   pushUndo();
   stair.landingCC_cm = rounded;
+  // 192: samme vei som «Maks CC trinn» — valgt forslag beholder kabelsettet, marginen løses på nytt.
+  if (!_stairZoneRanges(stair)) _stairResolveMarginForSet(stair, { keepOnFail: true });
   _regenerateStairCable(stair);
   _invalidateStairCache();
   _updateStairSettingsPanel(); updateCtxBar(); render();
@@ -50297,13 +50302,13 @@ function _renderStairSettingsPanel(stairId) {
           <span style="font-size:10px;color:var(--dim)">cm</span>
         </span>
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between">
+      ${(stair.surfaces || []).some(f => f.type === 'landing') ? `<div style="display:flex;align-items:center;justify-content:space-between">
         <span>Maks CC repos</span>
         <span style="display:flex;align-items:center;gap:3px">
           <input type="number" min="3" max="${_stairMaxCcCm(stair, 'landing')}" step="0.5" value="${stair.landingCC_cm || stair.cableSpacing_cm || STAIR_DEFAULT_MAX_CC_CM}" style="width:48px;text-align:center;background:var(--surface2);border:1px solid var(--brd);border-radius:4px;color:var(--text);padding:2px;font-size:11px;font-family:'IBM Plex Mono',monospace" onchange="_setStairLandingCC(this.value)" onclick="event.stopPropagation()">
           <span style="font-size:10px;color:var(--dim)">cm</span>
         </span>
-      </div>
+      </div>` : ''}
     </div>
     ${!zonesActive ? `<div style="border-top:1px solid var(--brd);padding-top:8px;margin-bottom:8px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
@@ -53195,6 +53200,14 @@ const STAIR_MIN_DENSITY_WM2 = 250;
 // Delt av generateStairCable (byggeren), _stairCableLength (estimatoren/forslagsmotoren) og
 // getStairCableViolations, slik at de tre aldri igjen kan komme til ulikt antall strenger for samme
 // geometri.
+// 192: faktisk CC på FØRSTE repos med brukerens tak (effektive innstillinger per flate). 0 = ingen repos.
+function _stairLandingActualCC(stair) {
+  const surfs = stair.surfaces || [];
+  const li = surfs.findIndex(f => f.type === 'landing');
+  if (li < 0) return 0;
+  const ss = _stairSurfSettings(stair, li);
+  return _stairRunCount(ss.depthEnd_cm - ss.depthStart_cm, ss.maxCC_cm).actualCC;
+}
 function _stairRunCount(usableDepth, maxCC) {
   if (usableDepth <= 0 || maxCC <= 0) return { N: 1, actualCC: 0 };
   const N = Math.max(2, Math.ceil(usableDepth / maxCC - 1e-6) + 1);
@@ -55108,18 +55121,18 @@ function _generateStairProposals(stair) {
     // ÉN geometrisk riktig runsPerStep per margin-variant — aldri søkt fram for å passe en
     // katalogkabel (Regel 7). Landing-CC avledes fra samme maks, ikke fra step-CC-utfallet.
     const { N: runsPerStep, actualCC } = _stairRunCount(treadD, maxCC);
-    const landingCC = actualCC;   // 115: actualCC ligger per konstruksjon alt under maks
+    // 192: reposet følger brukerens EGET tak («Maks CC repos», stair.landingCC_cm), akkurat som trinnet følger
+    // «Maks CC trinn» — forslaget regner og viser repos-CC-en det taket faktisk gir (første repos), og skriver
+    // aldri over taket. Før 192 ble repos lagt med trinnets CC her og taket overskrevet i _applyStairProposal.
+    const landingCC = _stairLandingActualCC(stair);
 
     // Kabelsett + sidemargin løses EKSAKT sammen (Regel 11-13) — behovet fra runsPerStep/CC over
     // er allerede låst (Regel 7); dybdemarginene (nose/riser) er faste for denne varianten, kun
     // sidemarginen søkes for å treffe et faktisk katalogsett nøyaktig.
     const origNose = stair.noseOffset_cm, origRiser = stair.riserOffset_cm, origRunsPerStep = stair.runsPerStep;
-    // 188 (funn): repos-CC med også. _applyStairProposal legger reposet ut med forslagets landingCC (= trinnets
-    // CC), men settet ble løst med trappas egen landingCC_cm — reposet fikk flere strenger etter «Velg» enn i
-    // regnestykket (trinn + repos + trinn, 120: 49,7 m «Passer» @ 5,1 ble 2,2 m for kort). Nå regnes forslaget
-    // på det utlegget det faktisk gir.
-    const origLandingCC = stair.landingCC_cm;
-    stair.noseOffset_cm = mv.nose; stair.riserOffset_cm = mv.riser; stair.runsPerStep = runsPerStep; stair.landingCC_cm = landingCC;
+    // 188 (funn): settet skal løses på det utlegget «Velg» faktisk gir. 192: reposet legges med trappas egen
+    // landingCC_cm både her og etter «Velg» (_applyStairProposal rører den ikke lenger), så de er like uten overstyring.
+    stair.noseOffset_cm = mv.nose; stair.riserOffset_cm = mv.riser; stair.runsPerStep = runsPerStep;
     // 120 (Regel 22 på trappenivå): LÅST avstand → marginen er gitt, bare kabelsettet varierer.
     const _laast = _stairLockedMargin(stair) != null;
     const solved = _laast ? _stairSolveLockedCableSet(stair) : _stairSolveExactCableSet(stair);
@@ -55191,7 +55204,7 @@ function _generateStairProposals(stair) {
       if (solved.single && setKey(solved.single) !== setKey(solved)) variantSingle = mkCandidate(solved.single, true);
       else if (solved.single) { variantBest.singleCable = true; variantBest.wideMargin = !!solved.single.wideMargin; variantBest.heatedWidth_cm = solved.single.heatedWidth_cm; variantBest.minSurfW_cm = solved.single.minSurfW_cm; variantBest.score = _scoreStairProposal(variantBest); }
     }
-    stair.noseOffset_cm = origNose; stair.riserOffset_cm = origRiser; stair.runsPerStep = origRunsPerStep; stair.landingCC_cm = origLandingCC;
+    stair.noseOffset_cm = origNose; stair.riserOffset_cm = origRiser; stair.runsPerStep = origRunsPerStep;
     if (!solved.ok) { if (!firstFailReason) firstFailReason = solved.reason; if (solved.singleReason && !singleReason) singleReason = solved.singleReason; continue; }
     if (!solved.single && solved.singleReason && !singleReason && !isAdjustedMargin) singleReason = solved.singleReason;
 
@@ -55525,9 +55538,10 @@ function _stairManualSetRegressionTest() {
     // 188: ruten i plan telles også for rette trapper (+4 cm per overgang ved like brede trinn). Før 188: '70@12.4/1.6/4 | 25+49.7@5/-2/4', '78.7@8.4/-2/4 | 10+70@6.8/0/4', '45@10.8/0.8/4'.
     const A1 = '70@12.8/-0.8/4 | 5+70@5/0/4';
     const A2 = '78.7@8.9/2/4 | 10+70@7.3/4/4';
-    // 188 (funn): forslaget regnes nå med repos-CC-en det legger ut (trinnets 8,7, ikke 10). Før: 45 @ 10,8
-    // «Passer» i kortet, men 1,6 m for kort etter Velg. Nå: 49,7 @ 5,7, og utlegget sier «Passer».
-    const A3 = '49.7@5.7/-2.4/4';
+    // 188 (funn): forslaget regnes med repos-CC-en det legger ut. 192: det er nå brukerens eget tak (landingCC_cm 10
+    // her), ikke trinnets 8,7 — og «Velg» skriver ikke lenger taket over, så kort og utlegg er fortsatt like.
+    // Før 192: 49,7 @ 5,7. Før 188: 45 @ 10,8 (kortet sa «Passer», men 1,6 m for kort etter Velg).
+    const A3 = '45@11.1/-1.4/4';
     const withLanding = { landing_position: 'top', landing_depth_cm: 120, landingCC_cm: 10, landingMargin_cm: 5 };
     const gotA1 = sigOf(_generateStairProposals(mk(240, 8, 5)));
     const gotA2 = sigOf(_generateStairProposals(mk(210, 10, 5)));
@@ -56327,6 +56341,81 @@ function _stairReposRiserRegressionTest191() {
   return results;
 }
 
+// 192 — «Maks CC repos» er brukerens TAK, som «Maks CC trinn». Kjøres fra konsollen: _stairLandingCCRegressionTest192().
+// Trinn + repos (120, brukbar 110) + trinn; taket 10 → 6 → 15 gir N = ceil(110 / tak) + 1 (Regel 3/7) i tilstandene
+// (a) uten forslag, (b) valgt forslag, (c) manuelt sett, (d) låst avstand, (e) soner; Forslag bruker taket; angre; panelet.
+// Syntetisk katalog som _stairSideRegressionTest. Rører ikke lagring: S.stairs, katalog og angrestabel settes tilbake.
+function _stairLandingCCRegressionTest192() {
+  const saved = { stairs: S.stairs, sel: S.ui.selectedStairId, zone: S.ui.selectedStairZone, prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
+    nextStair: S.counters.nextStairId, undoLen: _undoStack.length, autosave: window._performAutoSave };
+  const results = [];
+  const check = (name, expected, got) => results.push({ name, ok: JSON.stringify(expected) === JSON.stringify(got), expected, got });
+  try {
+    window._performAutoSave = async () => {};
+    const LENS = [20, 30, 40.1, 49.7, 60, 70, 78.7, 89.1, 98, 106.9, 128.2, 139.9];
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push({ id: 9800, module_type: 'cable', name: 'TESTKABEL' });
+    HEATING_PRODUCTS.length = 0;
+    LENS.forEach((L, i) => HEATING_PRODUCTS.push({ id: 98000 + i, category_id: 9800, active: true, product_family: 'InSnow 30T',
+      name: `InSnow 30T ${Math.round(L * 30)}W ${L}m`, cable_length_m: L, watt_per_m: 30, voltage: 230 }));
+    const T = n => ({ type: 'steps', stepCount: n, stepDepth_cm: 30, stepHeight_cm: 17, width_cm: 100 });
+    const L = () => ({ type: 'landing', depth_cm: 120, width_cm: 100 });
+    const mk = (segs, extra) => { S.counters.nextStairId = 998192;
+      const st = _createStairObj({ name: 'TEST192', width_cm: 100, step_depth_cm: 30, step_height_cm: 17, edgeMargin_cm: 5, stepCC_cm: 10, landingCC_cm: 12,
+        cableSpacing_cm: 10, riserOffset_cm: 2, noseOffset_cm: 2, segments: segs || [T(4), L(), T(4)], ...(extra || {}) });
+      S.stairs = [st]; S.ui.selectedStairId = st.id; S.ui.selectedStairZone = null; _regenerateStairCable(st); return st; };
+    const reposN = st => { const li = st.surfaces.findIndex(f => f.type === 'landing'); return st.runs.filter(r => r.surfaceIdx === li).length; };
+    const felt = fn => { _updateStairSettingsPanel(); const el = [...document.querySelectorAll('input')].find(i => (i.getAttribute('onchange') || '').includes(fn)); return el ? el.value : null; };
+    const forventN = { 10: 12, 6: 20, 15: 9 };   // ceil(110 / tak) + 1
+    const stater = {
+      a: () => mk(),
+      b: () => { const st = mk(); st.proposals = _generateStairProposals(st); _applyStairProposal(st, st.proposals[0]); return st; },
+      c: () => { const st = mk(); st.cables = [{ index: 0, productId: 98005 }]; st.selectedProposal = null; _regenerateStairCable(st); return st; },
+      d: () => mk(null, { edgeMarginLocked_cm: 6 }),
+    };
+    for (const [k, f] of Object.entries(stater)) {
+      const st = f();
+      if (k === 'b') check('b: «Velg» skriver ikke over taket (12 står)', 12, st.landingCC_cm);
+      const sett0 = st.cables.map(c => c.productId).join('+');
+      for (const v of [10, 6, 15]) {
+        _setStairLandingCC(String(v));
+        check(`${k}: tak ${v} → N på reposet`, forventN[v], reposN(st));
+        check(`${k}: tak ${v} → feltet viser ${v}`, String(v), felt('_setStairLandingCC'));
+      }
+      if (k === 'b') check('b: valgt forslag og kabelsett beholdes', 'ja/' + sett0, (st.selectedProposal ? 'ja' : 'nei') + '/' + st.cables.map(c => c.productId).join('+'));
+    }
+    // (e) soner: sonens eget tak, trappas felt skjult når sonen er valgt.
+    { const st = mk(); st.segments[0].zone = 1; st.segments[1].zone = 1; st.segments[2].zone = 2; _regenerateStairCable(st); S.ui.selectedStairZone = 1;
+      for (const v of [10, 6, 15]) {
+        _setStairZoneLandingCC(1, String(v));
+        check(`e: sone 1 tak ${v} → N på reposet`, forventN[v], reposN(st));
+        check(`e: sone 1 tak ${v} → feltet viser ${v}`, String(v), felt('_setStairZoneLandingCC'));
+      } }
+    // Forslag etter endringen bruker brukerens tak (15 → 110 / 8 = 13,8), og «Velg» gir samme utlegg som kortet regnet.
+    { const st = mk(); _setStairLandingCC('15'); const p = _generateStairProposals(st)[0];
+      check('forslag: CC repos fra brukerens tak 15', 13.8, p && p.landingCC);
+      st.proposals = [p]; _applyStairProposal(st, p);
+      check('forslag: taket står etter «Velg»', 15, st.landingCC_cm);
+      check('forslag: N på reposet etter «Velg»', 9, reposN(st));
+      check('forslag: behovet etter «Velg» = kortets', p.totalCableLength_m, Math.round(st.totalCableLength_cm / 10) / 10); }
+    // Angre gir den gamle verdien tilbake.
+    { mk(); _setStairLandingCC('6'); undo(); const st = S.stairs[0];
+      check('angre: taket tilbake til 12', 12, st.landingCC_cm);
+      check('angre: N tilbake (ceil(110/12)+1)', 11, reposN(st)); }
+    // Panelet: «Maks CC repos» bare når trappa har repos.
+    mk([T(8)]); check('panel: uten repos — intet felt', null, felt('_setStairLandingCC'));
+    mk(); check('panel: med repos — feltet vises', '12', felt('_setStairLandingCC'));
+  } finally {
+    S.stairs = saved.stairs; S.ui.selectedStairId = saved.sel; S.ui.selectedStairZone = saved.zone; S.counters.nextStairId = saved.nextStair;
+    HEATING_PRODUCTS.length = 0; saved.prods.forEach(p => HEATING_PRODUCTS.push(p));
+    PRODUCT_CATEGORIES.length = 0; saved.cats.forEach(c => PRODUCT_CATEGORIES.push(c));
+    _undoStack.length = Math.min(_undoStack.length, saved.undoLen); window._performAutoSave = saved.autosave;
+    _invalidateStairCache(); _updateStairSettingsPanel();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_stairLandingCCRegressionTest192: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return results;
+}
+
 function _stairSideRegressionTest() {
   const saved = { stairs: S.stairs, sel: S.ui.selectedStairId, prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
     nextStair: S.counters.nextStairId, undoLen: _undoStack.length, autosave: window._performAutoSave };
@@ -56408,9 +56497,9 @@ function _applyStairProposal(stair, proposal) {
   // det var nettopp denne selv-forurensningen som låste forslagsmotoren til gårsdagens tetthet
   // neste gang den ble spurt om nye forslag (STEG 0-funn, spec-trapp-kabelutlegg.md Regel 7).
   // Strengantallet for TRINN gjenopprettes i stedet direkte via runsPerStep (se kommentar under) —
-  // stepCC_cm trengs ikke for det. landingCC_cm er derimot fortsatt eneste kilde repos-N leses fra
-  // (ingen tilsvarende cache for repos ennå), så den beholder skrivingen.
-  stair.landingCC_cm = proposal.landingCC;
+  // stepCC_cm trengs ikke for det.
+  // 192: heller ikke «Maks CC repos» (landingCC_cm) skrives over lenger — forslaget ble regnet med brukerens
+  // eget repos-tak (_generateStairProposals), og repos-N regnes rent geometrisk av det taket. Ingen cache trengs.
   // Lagre lop-per-trinn eksplisitt. generateStairCable utleder ellers N fra CC, og et
   // avrundet stepCC kan gi N-1 (f.eks. forslag "4 strenger" ble til 3). Med runsPerStep
   // lagret bruker byggeren det direkte for trinn -> forslaget og bygd resultat stemmer.
@@ -57712,7 +57801,7 @@ function _renderStairProposalPanel(stair, proposals) {
           ${p.overSet ? '' : `<div style="color:${diffColor};font-weight:600;font-size:11px">${diffLabel}</div>`}
           <div style="border-top:1px solid var(--brd);margin:4px 0"></div>
           <div>↔ CC trinn: <b>${p.stepCC} cm</b></div>
-          <div>↔ CC repos: <b>${p.landingCC} cm</b></div>
+          ${p.landingCC > 0 ? `<div>↔ CC repos: <b>${p.landingCC} cm</b></div>` : ''}
           <div>〰 ${p.runsPerStep} løp per trinn</div>
           <div><svg class="ic ic-zap" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg> ${p.totalWatt || 0} W</div>
           <!-- STEG 3 (Regel 16, Kenneth 19.08.2026): flateeffekt fra CC, ikke areal — "totalt"/"per
