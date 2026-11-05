@@ -2982,6 +2982,7 @@ const _SHORTCUTS = [
   { group: 'Presentasjonsmodus',    keys: ['dra'],                 what: 'Panorer' },                                           // :38293
   { group: 'Presentasjonsmodus',    keys: ['←', '→'],              what: 'Forrige / neste rom (når ett rom er åpnet i venstrepanelet)' }, // 138
   { group: 'Presentasjonsmodus',    keys: ['Esc'],                 what: 'Avslutt presentasjon' },                              // :41064
+  { group: 'Trapp: kabelforslag',   keys: ['↑', '↓'],              what: 'Bla i kabler (forrige / neste kabel i produktgruppa, med passform live)' }, // 188
 ];
 
 // Overlegg i samme stil som «Velg kunde» (_quickSetCustomer): sentrert boks, mørk bakgrunn,
@@ -49670,7 +49671,14 @@ function _setStairHsMarginMode(mode) {
   _updateStairSettingsPanel(); updateCtxBar(); render();
 }
 // Løs sidemarginen på nytt for det valgte forslagets kabelsett (184). Låst avstand: ingenting å løse.
-function _stairResolveMarginForSet(stair) {
+// 188 (svar 187/1 og 187/5): en lagret trapp når prosjektet åpnes (_restoreProject). Et valgt forslag løses
+// på nytt som et manuelt sett; så regnes utlegget om. Lagrer ingenting (ingen pushUndo / autolagring).
+function _stairReopen(st) {
+  if (st.selectedProposal && !_stairZoneRanges(st)) _stairResolveMarginForSet(st, { keepOnFail: true });
+  _regenerateStairCable(st);
+}
+// 188: opts.keepOnFail (åpning) — går settet ikke opp, står forslaget og marginen urørt.
+function _stairResolveMarginForSet(stair, opts) {
   const prop = stair.selectedProposal;
   if (!prop || _stairLockedMargin(stair) != null || stair.noCable) return;
   stair.surfaces = _generateStairSurfaces(stair);
@@ -49680,6 +49688,8 @@ function _stairResolveMarginForSet(stair) {
   if (fit.ok) {
     stair.edgeMargin_cm = fit.edgeMargin_cm;
     stair.selectedProposal = stair.lastProposal = { ...prop, edgeMargin_cm: fit.edgeMargin_cm };
+  } else if (opts && opts.keepOnFail) {
+    return;
   } else {
     stair.lastProposal = prop;
     stair.selectedProposal = null;
@@ -49932,6 +49942,8 @@ function _renderStairSettingsPanel(stairId) {
   const fitColor = (fitBad || fit.status === 'error') ? '#ef4444' : fit.status === 'warn' ? '#f59e0b' : '#22c55e';
   const fitIcon = (fitBad || fit.status === 'error') ? '🔴' : fit.status === 'warn' ? '🟡' : '🟢';
   const fitLabel = fitBad ? (_manFitEarly.short || 'Går ikke opp') : (fit.label || 'Passer');
+  // 188 (svar 187/4): kabel til overs (under 5 %) står tydelig — gult og større enn resten av linja.
+  const fitOver = !fitBad && fit.status !== 'error' && fit.diff_m >= 0.1;
 
   // Product family+voltage dropdown
   const allCable = HEATING_PRODUCTS.filter(p => { const c = PRODUCT_CATEGORIES.find(c2=>c2.id===p.category_id); return c && c.module_type==='cable' && p.active!==false && (p.cable_length_m||0)>0; });
@@ -50000,7 +50012,7 @@ function _renderStairSettingsPanel(stairId) {
     cableBreakdownHtml += `<div style="padding:6px 0 0;border-top:1px solid var(--brd);margin-top:2px">
       <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:1px"><span style="color:var(--dim)">Samlet behov</span><span>${fit.neededLength_m.toFixed(1)} m</span></div>
       <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px"><span style="color:var(--dim)">Samlet kabel</span><span>${fit.availableLength_m.toFixed(1)} m</span></div>
-      <div style="color:${fitColor};font-weight:600;font-size:10px">${fitIcon} ${esc(fitLabel)}</div>
+      ${fitOver ? `<div class="stair-fit-over" style="color:#f59e0b;font-weight:700;font-size:13px">🟡 ${esc(fitLabel)}</div>` : `<div style="color:${fitColor};font-weight:600;font-size:10px">${fitIcon} ${esc(fitLabel)}</div>`}
     </div>`;
   }
 
@@ -53527,18 +53539,28 @@ function generateStairCable(stair) {
   // rettvinklede ruten mellom strengendene (toppflaten og armen ligger på hver sin side av hjørnet).
   // Overgangen er da opptrinnet + ruten i plan (VK: 17 + 38,8 cm). Samme rute som tegnes
   // (_stairConnRouteBetween), så tegning, behov, Forslag, panel, måltabell og PDF er enige (Regel 9).
-  // Rette trapper: uendret — bare opptrinnet (ruten i plan måles i rapporten, ikke telt).
-  if (_stairIsHorseshoe(stair)) {
-    for (let k = 1; k < pieces.length - 1; k++) {
-      const p = pieces[k], a = pieces[k - 1], b = pieces[k + 1];
-      if (p.kind !== 'conn' || a.kind !== 'run' || b.kind !== 'run' || a.surfaceIdx !== p.fromSurf || b.surfaceIdx !== p.toSurf) continue;
-      const route = _stairConnRouteBetween(stair,
-        { si: a.surfaceIdx, pos: a.pos_cm, s: a.isGoingRight ? a.xEnd : a.xStart, fwd: a.isGoingRight },
-        { si: b.surfaceIdx, pos: b.pos_cm, s: b.isGoingRight ? b.xStart : b.xEnd, fwd: b.isGoingRight }, si => ssBy[si]);
-      const plan = _stairPolyLen(route);
-      p.riser_cm = p.len_cm; p.plan_cm = plan;
-      p.len_cm += plan; totalLen += plan;
-    }
+  // 188 (Kenneth 05.11.2026, svar 187/5): RETTE trapper teller også ruten i plan — Regel 5 er nå lik for
+  // alle trapper: overgang = opptrinn + ruten i plan. Med like brede trinn er ruten nese + opptrinn
+  // (4 cm på testtrappene); 240 → repos 100 med utgang høyre går 140 cm tvers over trinnet (147 cm).
+  // Rett trapp: run.isGoingRight er bare paritet inne i flaten — begge ender ligger på conn.exitRight-
+  // siden (samme regel som _stairConnPlanRoute, så tegning og lengde er enige). En overgang over en
+  // sonegrense tilhører ingen kabel (STEG 7/120) og får ingen rute.
+  const _zoneOf188 = zoneRanges ? (s => { const r = zoneRanges.find(z => s >= z.fromSurf && s <= z.toSurf); return r ? r.zone : null; }) : null;
+  for (let k = 1; k < pieces.length - 1; k++) {
+    const p = pieces[k], a = pieces[k - 1], b = pieces[k + 1];
+    if (p.kind !== 'conn' || a.kind !== 'run' || b.kind !== 'run' || a.surfaceIdx !== p.fromSurf || b.surfaceIdx !== p.toSurf) continue;
+    if (_zoneOf188 && _zoneOf188(p.fromSurf) !== _zoneOf188(p.toSurf)) continue;
+    const R = !!p.exitRight;
+    const route = _stairIsHorseshoe(stair)
+      ? _stairConnRouteBetween(stair,
+          { si: a.surfaceIdx, pos: a.pos_cm, s: a.isGoingRight ? a.xEnd : a.xStart, fwd: a.isGoingRight },
+          { si: b.surfaceIdx, pos: b.pos_cm, s: b.isGoingRight ? b.xStart : b.xEnd, fwd: b.isGoingRight }, si => ssBy[si])
+      : _stairConnRouteBetween(stair,
+          { si: a.surfaceIdx, pos: a.pos_cm, s: R ? a.xEnd : a.xStart, fwd: R },
+          { si: b.surfaceIdx, pos: b.pos_cm, s: R ? b.xEnd : b.xStart, fwd: !R }, si => ssBy[si]);
+    const plan = _stairPolyLen(route);
+    p.riser_cm = p.len_cm; p.plan_cm = plan;
+    p.len_cm += plan; totalLen += plan;
   }
 
   const cables = stair.cables || [];
@@ -54313,15 +54335,17 @@ function _stairMarginProbe(stair) {
   // 185 (svar 184/5): i begge valg — «strenger skal aldri gå forbi hesteskoens hjørne».
   const armCap = _stairIsHorseshoe(stair) ? _stairHsArmCapCm(stair) : Infinity;
   const maxMargin75 = Math.min(minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC, minSurfW / 2 - 1, armCap);
-  // 187: hvor mye behovet faller per cm margin. Rette trapper: 2 × strenger, nøyaktig som før. Hestesko:
-  // overgangens rute i plan (187) går fra strengenden ved marginen, så den VOKSER med marginen (VK: 2 cm
-  // per cm) — stigningen måles på motoren selv (lineær så lenge strengendene ikke bytter side av hverandre).
+  // 187: hvor mye behovet faller per cm margin. Hestesko: overgangens rute i plan går fra strengenden ved
+  // marginen, så den VOKSER med marginen (VK: 2 cm per cm) — stigningen måles på motoren selv (lineær så
+  // lenge strengendene ikke bytter side av hverandre). 188 (svar 187/5): rette trapper teller også ruten,
+  // så stigningen måles for alle. Står ruten stille (like brede trinn, 240 → repos 100: 140 cm uansett
+  // margin), er den målte stigningen 2 × strenger, og da brukes det tallet eksakt (som før 188).
   let slope = 2 * totalStrands;
-  if (_stairIsHorseshoe(stair) && totalStrands > 0) {
+  if (totalStrands > 0) {
     const d = 5;
     const p2 = generateStairCable({ ...stair, edgeMargin_cm: floorMargin + d, cables: [{ productId: null }] });
     const sl = (neededAtFloor_cm - p2.totalCableLength_cm) / d;
-    if (p2.runs.length === probe.runs.length && sl > 0 && sl <= 2 * totalStrands + 0.5) slope = sl;
+    if (p2.runs.length === probe.runs.length && sl > 0 && sl <= 2 * totalStrands + 0.5 && Math.abs(sl - 2 * totalStrands) > 1e-6) slope = sl;
   }
   return {
     ok: totalStrands > 0 && neededAtFloor_cm > 0,
@@ -54368,11 +54392,13 @@ function _stairFitFixedSet(stair, productIds) {
     const over_cm = Math.round((sum_cm - pr.neededAtFloor_cm) * 100) / 100;
     const f = _stairFitFromLengths(sum_cm / 100, pr.neededAtFloor_cm / 100);
     if (f.status === 'error') {
-      return { ok: false, edgeMargin_cm: pr.floorMargin, residual_cm: over_cm,
+      return { ok: false, edgeMargin_cm: pr.floorMargin, residual_cm: over_cm, over: true, overStatus: 'error',
+        neededAtFloor_cm: pr.neededAtFloor_cm, sum_cm, floorMargin_cm: pr.floorMargin,   // 188
         short: `${_stairLenTxt(over_cm)} for lange`,
         reason: `Kablene er ${_stairLenTxt(over_cm)} for lange — velg en kortere kabel.` };
     }
-    return { ok: true, edgeMargin_cm: pr.floorMargin, reason: null, residual_cm: over_cm,
+    return { ok: true, edgeMargin_cm: pr.floorMargin, reason: null, residual_cm: over_cm, over: true, overStatus: f.status,
+      neededAtFloor_cm: pr.neededAtFloor_cm, sum_cm, floorMargin_cm: pr.floorMargin,   // 188
       // 'ok' (<=2 %) vises dempet, 'warn' (2-5 %) gult. Begge er informasjon.
       noteStatus: f.status, note: `${_stairLenTxt(over_cm)} til overs` };
   }
@@ -54383,6 +54409,10 @@ function _stairFitFixedSet(stair, productIds) {
     // 184: det kan være hjørnet (armen), ikke 75 %, som stopper hesteskoen. 185: i begge valg.
     const forbiHjornet = margin > pr.armCap + 0.01 && pr.armCap <= pr.minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC;
     return { ok: false, edgeMargin_cm: pr.floorMargin, residual_cm: 0,
+      // 188: «Bla i kabler» — marginen settet MÅTTE hatt, grensen den går over, og mangelen ved grensen.
+      neededAtFloor_cm: pr.neededAtFloor_cm, sum_cm, floorMargin_cm: pr.floorMargin, wantMargin_cm: margin,
+      capMargin_cm: pr.maxMargin75, limit: forbiHjornet ? 'arm' : '75', armCap_cm: pr.armCap,
+      shortAtCap_cm: Math.max(0, needAt75_cm - sum_cm),
       short: `${_stairLenTxt(Math.max(0, needAt75_cm - sum_cm))} for korte`,
       reason: forbiHjornet
         ? `Kablene er ${_stairLenTxt(Math.max(0, needAt75_cm - sum_cm))} for korte — hesteskoen måtte fått ${margin.toFixed(1)} cm avstand fra sidene, og strengene ville gått forbi hjørnet (armen er ${_stairDimRound(pr.armCap)} cm).`
@@ -54392,7 +54422,152 @@ function _stairFitFixedSet(stair, productIds) {
   // å finne det virkelige (millimeterstore) restavviket, i stedet for å late som det er null.
   const geo = generateStairCable({ ...stair, edgeMargin_cm: margin, cables: [{ productId: null }] });
   return { ok: true, edgeMargin_cm: margin, reason: null,
+    neededAtFloor_cm: pr.neededAtFloor_cm, sum_cm, floorMargin_cm: pr.floorMargin,   // 188
     residual_cm: Math.round((sum_cm - geo.totalCableLength_cm) * 100) / 100 };
+}
+
+// ══ 188 · «BLA I KABLER» (Kenneth 05.11.2026) ══════════════════════════════════════════════════
+// Nederst i forslagsdialogen: ▲/▼ (og piltastene) blar gjennom ENKELTKABLER i trappas produktgruppe,
+// sortert etter lengde, fra kabelen nærmest behovet. For kabelen som vises står passformen live.
+// Tallene kommer fra SAMME løser som manuelt sett og Forslag (_stairFitFixedSet → _stairMarginProbe,
+// med stigningen fra 187) — ingen egen regnemåte (Regel 9). Å bla legger ikke ut noe; «Bruk denne
+// kabelen» legger kabelen ut som et manuelt sett (_stairApplyManualCables, samme vei som panelet).
+let _stairBrowse = null;   // { stairId, list: [produkt], idx } — bare mens dialogen er åpen, lagres aldri
+
+// Kablene i trappas produktgruppe (familie + spenning), korteste først — samme filter som panelets liste.
+function _stairBrowseCables(stair) {
+  const fam = stair.preferredFamily || 'InSnow 30T', volt = stair.preferredVoltage || 230;
+  return HEATING_PRODUCTS.filter(p => {
+    const cat = PRODUCT_CATEGORIES.find(c => c.id === p.category_id);
+    if (!cat || cat.module_type !== 'cable' || p.active === false || !(p.cable_length_m > 0)) return false;
+    return (p.product_family || p.name.split(' ').slice(0, 2).join(' ')) === fam && (p.voltage || 230) === volt;
+  }).sort((a, b) => a.cable_length_m - b.cable_length_m || a.id - b.id);
+}
+
+// Trappa slik den var FØR en forhåndsvisning i dialogen (det er den «Bruk denne kabelen» legger ut på).
+function _stairBrowseBasis(stair) {
+  const ps = stair._prePreviewState;
+  if (!ps) return stair;
+  const b = { ...stair, cables: ps.cables, stepCC_cm: ps.stepCC_cm, landingCC_cm: ps.landingCC_cm,
+    cableSpacing_cm: ps.cableSpacing_cm, cableProductId: ps.cableProductId,
+    noseOffset_cm: ps.noseOffset_cm, riserOffset_cm: ps.riserOffset_cm,
+    edgeMargin_cm: ps.edgeMargin_cm, edgeMarginMin_cm: ps.edgeMarginMin_cm, desiredCableCount: ps.desiredCableCount,
+    selectedProposal: ps.selectedProposal, runsPerStep: ('runsPerStep' in ps) ? ps.runsPerStep : stair.runsPerStep };
+  b.surfaces = _generateStairSurfaces(b);
+  return b;
+}
+
+// Passformen for ÉN kabel. → { kind: 'passer'|'kanPasse'|'gaarIkke'|'over'|'laast', status, text, margin_cm }
+//   status = 'ok' | 'warn' | 'error' (farge). margin_cm = marginen kabelen legges med ved «Bruk».
+function _stairBrowseCableInfo(stair, productId) {
+  const m1 = v => (Math.round(v * 10) / 10).toFixed(1);
+  const locked = _stairLockedMargin(stair);
+  if (locked != null) {
+    // 120: låst avstand — ingen margin-løsning, bare hvor godt kabelen passer ved den låste avstanden.
+    const f = _stairFitLockedMargin({ ...stair, edgeMargin_cm: locked, ...(_stairHsFillTop(stair) ? {} : { edgeMarginMin_cm: locked }) }, [productId]);
+    const r = f.residual_cm || 0;
+    const text = r < -0.5 ? `${_stairLenTxt(-r)} for kort ved låst avstand ${m1(locked)} cm`
+      : r > 0.5 ? `${_stairLenTxt(r)} til overs ved låst avstand ${m1(locked)} cm` : `Passer med ${m1(locked)} cm fra sidene (låst)`;
+    return { kind: 'laast', status: f.status || 'ok', text, margin_cm: locked };
+  }
+  const fit = _stairFitFixedSet(stair, [productId]);
+  if (fit.over) {
+    return { kind: 'over', status: fit.overStatus, margin_cm: fit.edgeMargin_cm,
+      text: `${_stairLenTxt(fit.residual_cm)} til overs` + (fit.overStatus === 'error' ? ' (over 5 %)' : '') };
+  }
+  if (!fit.ok && fit.wantMargin_cm != null) {
+    const grense = fit.limit === 'arm' ? `forbi hjørnet, armen er ${_stairDimRound(fit.armCap_cm)} cm` : 'under 75 % varmet bredde';
+    return { kind: 'gaarIkke', status: 'error', margin_cm: fit.floorMargin_cm,
+      text: `${_stairLenTxt(fit.shortAtCap_cm)} for kort ved største avstand (${m1(fit.capMargin_cm)} cm). Måtte trukket svingene inn ${m1(fit.wantMargin_cm)} cm, over grensen (${grense})` };
+  }
+  if (!fit.ok) return { kind: 'gaarIkke', status: 'error', margin_cm: null, text: fit.reason || 'Går ikke opp' };
+  const short_cm = Math.max(0, fit.neededAtFloor_cm - fit.sum_cm);
+  // «Passer» = innenfor panelets egen «Passer»-grense (≤ 2 % kortere enn behovet ved minste avstand).
+  const nesten = _stairFitFromLengths(fit.sum_cm / 100, fit.neededAtFloor_cm / 100).status === 'ok';
+  if (nesten) return { kind: 'passer', status: 'ok', margin_cm: fit.edgeMargin_cm, text: `Passer med ${m1(fit.edgeMargin_cm)} cm fra sidene` };
+  return { kind: 'kanPasse', status: 'ok', margin_cm: fit.edgeMargin_cm,
+    text: `${_stairLenTxt(short_cm)} for kort ved minste avstand (${m1(fit.floorMargin_cm)} cm). Passer hvis svingene trekkes inn ${m1(fit.edgeMargin_cm)} cm fra sidene` };
+}
+
+// Start på kabelen nærmest behovet (ved minste avstand, eller ved den låste avstanden).
+function _stairBrowseInit(stair) {
+  const basis = _stairBrowseBasis(stair);
+  const list = _stairBrowseCables(basis);
+  if (!list.length) { _stairBrowse = null; return; }
+  const locked = _stairLockedMargin(basis);
+  const need_cm = locked != null
+    ? generateStairCable({ ...basis, edgeMargin_cm: locked, cables: [{ productId: null }] }).totalCableLength_cm
+    : _stairMarginProbe(basis).neededAtFloor_cm;
+  let idx = 0;
+  list.forEach((p, i) => { if (Math.abs(p.cable_length_m * 100 - need_cm) < Math.abs(list[idx].cable_length_m * 100 - need_cm)) idx = i; });
+  _stairBrowse = { stairId: stair.id, list, idx, need_cm };
+}
+
+function _stairBrowseHtml(stair) {
+  if (_stairZoneRanges(stair)) return '';   // soner: hver sone har sin egen kabel (sonepanelet)
+  if (!_stairBrowse || _stairBrowse.stairId !== stair.id) _stairBrowseInit(stair);
+  if (!_stairBrowse) return '';
+  return `<div id="stair-browse" style="margin-top:14px;padding:10px 14px;background:var(--surface2);border:1px solid var(--brd);border-radius:8px">${_stairBrowseInnerHtml(stair)}</div>`;
+}
+
+function _stairBrowseInnerHtml(stair) {
+  const B = _stairBrowse, p = B.list[B.idx];
+  const info = _stairBrowseCableInfo(_stairBrowseBasis(stair), p.id);
+  B.info = info;
+  const col = info.status === 'error' ? '#ef4444' : info.status === 'warn' ? '#f59e0b' : info.kind === 'over' ? 'var(--muted)' : info.kind === 'kanPasse' ? 'var(--accent)' : '#22c55e';   // grønt bare for «Passer»
+  const btn = 'width:28px;height:24px;border-radius:5px;border:1px solid var(--brd);background:var(--bg);color:var(--text);cursor:pointer;font-size:12px;line-height:1';
+  const kanBrukes = info.margin_cm != null && !S.ui.readOnly && !S.ui.kundeMode;
+  return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="font-weight:600;font-size:13px;color:var(--text)">Bla i kabler</div>
+      <div style="display:flex;gap:4px">
+        <button id="stair-browse-up" title="Forrige (kortere) kabel · ↑" onclick="_stairBrowseStep(${stair.id},-1)" style="${btn}" ${B.idx === 0 ? 'disabled' : ''}>▲</button>
+        <button id="stair-browse-down" title="Neste (lengre) kabel · ↓" onclick="_stairBrowseStep(${stair.id},1)" style="${btn}" ${B.idx === B.list.length - 1 ? 'disabled' : ''}>▼</button>
+      </div>
+      <div style="font-size:13px;color:var(--text)"><b>${esc(p.name)}</b> <span style="color:var(--dim)">(${p.cable_length_m} m · ${B.idx + 1} av ${B.list.length})</span></div>
+      <div style="flex:1"></div>
+      <button id="stair-browse-use" onclick="_stairBrowseUse(${stair.id})" ${kanBrukes ? '' : 'disabled'} style="padding:6px 12px;border-radius:6px;border:1px solid var(--brd);background:var(--surface);color:var(--text);cursor:${kanBrukes ? 'pointer' : 'not-allowed'};font-size:12px;font-weight:600;opacity:${kanBrukes ? 1 : 0.5}">Bruk denne kabelen</button>
+    </div>
+    <div id="stair-browse-info" data-kind="${info.kind}" data-status="${info.status}" style="margin-top:6px;font-size:13px;font-weight:600;color:${col}">${esc(info.text)}</div>
+    <div style="margin-top:2px;font-size:11px;color:var(--dim)">Behov ved minste avstand: ${(B.need_cm / 100).toFixed(1)} m · piltastene ↑ ↓ blar også</div>`;
+}
+
+function _stairBrowseStep(stairId, d) {
+  const stair = S.stairs.find(s => s.id === stairId);
+  const B = _stairBrowse;
+  if (!stair || !B || B.stairId !== stairId) return;
+  const ni = Math.max(0, Math.min(B.list.length - 1, B.idx + d));
+  if (ni === B.idx) return;
+  B.idx = ni;
+  const el = document.getElementById('stair-browse');
+  if (el) el.innerHTML = _stairBrowseInnerHtml(stair);
+}
+
+// «Bruk denne kabelen»: en eventuell forhåndsvisning avbrytes først (tilbake til utgangspunktet linja
+// regnet på), så legges kabelen ut som et manuelt sett — samme vei som kabelvalget i panelet.
+function _stairBrowseUse(stairId) {
+  const stair = S.stairs.find(s => s.id === stairId);
+  const B = _stairBrowse;
+  if (!stair || !B || B.stairId !== stairId || S.ui.readOnly || S.ui.kundeMode) return;
+  const pid = B.list[B.idx].id;
+  if (stair._prePreviewState) _stairCancelPreview(stairId);
+  pushUndo();
+  stair.noCable = false;
+  stair.cables = [{ index: 0, productId: pid }];
+  _stairApplyManualCables(stair);
+  _stairBrowse = null;
+  const pnl = document.getElementById('stair-proposal-panel');
+  if (pnl) pnl.remove();
+  renderSidebar();
+}
+
+function _stairBrowseKey(e, stairId) {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const ae = document.activeElement;
+  if (ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable)) return;
+  if (!document.getElementById('stair-browse')) return;
+  e.preventDefault(); e.stopPropagation();
+  _stairBrowseStep(stairId, e.key === 'ArrowUp' ? -1 : 1);
 }
 
 // 105 (Regel 22): LÅST avstand — marginen er gitt, og det eneste som gjenstår er å si hvor godt
@@ -54599,11 +54774,13 @@ function _stairSolveExactCableSet(stair, opts) {
     return p ? { id: p.id, name: p.name, length_m: p.cable_length_m, watt: (p.watt_per_m || 0) * p.cable_length_m } : null;
   };
   let single = null, singleReason = null;
+  let overWhy = null;   // 188: hvorfor kortere kabler ikke gikk (kortet sier det): kortest | arm | 75
   if (!wantEqualCount && !opts.maxCables) {
     const fitting = lens.filter(L => L * 100 <= neededAtFloor_cm + 0.01);
     const longest = lens[lens.length - 1];
     const needM = (neededAtFloor_cm / 100).toFixed(1);
     if (!fitting.length) {
+      overWhy = "kortest";
       singleReason = `1 kabel: behovet (${needM} m) er kortere enn korteste kabel (${lens[0]} m)`;
     } else {
       const L1 = fitting[fitting.length - 1];
@@ -54617,7 +54794,9 @@ function _stairSolveExactCableSet(stair, opts) {
         // Er problemet at selv LENGSTE kabel er for kort, si det (Kenneths ord: «behovet (128 m)
         // er lengre enn lengste kabel (115 m)»); ellers er det marginen som er problemet.
         // 185: på hestesko kan det være hjørnet (armen) og ikke 75 % som stopper.
-        const grunn = (margin > pr.armCap + 0.01 && pr.armCap <= minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC)
+        const _forbi = margin > pr.armCap + 0.01 && pr.armCap <= minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC;
+        overWhy = _forbi ? "arm" : "75";
+        const grunn = _forbi
           ? `strengene ville gått forbi hjørnet, armen er ${_stairDimRound(pr.armCap)} cm` : 'under 75 % varmet bredde';
         singleReason = L1 === longest
           ? `1 kabel: behovet (${needM} m) er lengre enn lengste kabel (${longest} m) — ${prod1.name} ville gitt ${margin.toFixed(1)} cm kantavstand (${grunn})`
@@ -54640,16 +54819,17 @@ function _stairSolveExactCableSet(stair, opts) {
   // ville gitt 49,2 cm, armen er 42). Da foreslås det KORTESTE settet som er for langt med høyst 5 % —
   // samme grense som det manuelle settet godtar (_stairFitFixedSet, _stairFitFromLengths), marginen
   // står på gulvet og overskuddet vises gult/dempet («1,5 m til overs»). Bare når ingenting går opp;
-  // ellers er Forslag som før. Rette trapper: uendret (spørsmål i docs/187/SPØRSMÅL.md).
+  // ellers er Forslag som før. 188 (svar 187/4): gjelder ALLE trapper, også rette (der er det 75 %-grensen
+  // eller «korteste kabel er lengre enn behovet» som stopper).
   // Som ellers (084, Regel 19) er ÉN kabel forslag A når den finnes (BRED: 70 m), og det korteste settet
   // totalt er B når det er et annet (testkatalogen: 20 + 49,7 = 69,7 m).
-  if (!candidates.length && !single && _stairIsHorseshoe(stair) && overSets.length) {
+  if (!candidates.length && !single && overSets.length) {
     const ok5 = overSets.map(o => ({ ...o, f: _stairFitFromLengths(o.sum_cm / 100, neededAtFloor_cm / 100) }))
       .filter(o => o.f.status !== 'error' && o.lens.every(L => toProduct(L)))
       .sort((a, b) => (a.sum_cm - b.sum_cm) || (a.lens.length - b.lens.length));
     if (ok5.length) {
       const mkOver = o => ({ edgeMargin_cm: floorMargin, products: o.lens.map(toProduct), totalAvailable_m: Math.round(o.sum_cm) / 100,
-        residual_cm: Math.round((o.sum_cm - neededAtFloor_cm) * 100) / 100, fitStatus: o.f.status, overSet: true,
+        residual_cm: Math.round((o.sum_cm - neededAtFloor_cm) * 100) / 100, fitStatus: o.f.status, overSet: true, overWhy,
         wideMargin: false, heatedWidth_cm: Math.round((minSurfW - 2 * floorMargin) * 10) / 10, minSurfW_cm: minSurfW, floorMargin_cm: floorMargin });
       const shortest = mkOver(ok5[0]);
       const one = ok5.find(o => o.lens.length === 1);
@@ -54767,7 +54947,12 @@ function _generateStairProposals(stair) {
     // er allerede låst (Regel 7); dybdemarginene (nose/riser) er faste for denne varianten, kun
     // sidemarginen søkes for å treffe et faktisk katalogsett nøyaktig.
     const origNose = stair.noseOffset_cm, origRiser = stair.riserOffset_cm, origRunsPerStep = stair.runsPerStep;
-    stair.noseOffset_cm = mv.nose; stair.riserOffset_cm = mv.riser; stair.runsPerStep = runsPerStep;
+    // 188 (funn): repos-CC med også. _applyStairProposal legger reposet ut med forslagets landingCC (= trinnets
+    // CC), men settet ble løst med trappas egen landingCC_cm — reposet fikk flere strenger etter «Velg» enn i
+    // regnestykket (trinn + repos + trinn, 120: 49,7 m «Passer» @ 5,1 ble 2,2 m for kort). Nå regnes forslaget
+    // på det utlegget det faktisk gir.
+    const origLandingCC = stair.landingCC_cm;
+    stair.noseOffset_cm = mv.nose; stair.riserOffset_cm = mv.riser; stair.runsPerStep = runsPerStep; stair.landingCC_cm = landingCC;
     // 120 (Regel 22 på trappenivå): LÅST avstand → marginen er gitt, bare kabelsettet varierer.
     const _laast = _stairLockedMargin(stair) != null;
     const solved = _laast ? _stairSolveLockedCableSet(stair) : _stairSolveExactCableSet(stair);
@@ -54817,6 +55002,7 @@ function _generateStairProposals(stair) {
         fitStatus: set.fitStatus || null,
         // 187 (svar 185/3): hestesko der alt kortere må forbi hjørnet — korteste sett innenfor 5 % for langt.
         overSet: !!set.overSet,
+        overWhy: set.overWhy || null,   // 188: kortets forklaring (kortest | arm | 75)
       };
       c.score = _scoreStairProposal(c);
       return c;
@@ -54834,7 +55020,7 @@ function _generateStairProposals(stair) {
       if (solved.single && setKey(solved.single) !== setKey(solved)) variantSingle = mkCandidate(solved.single, true);
       else if (solved.single) { variantBest.singleCable = true; variantBest.wideMargin = !!solved.single.wideMargin; variantBest.heatedWidth_cm = solved.single.heatedWidth_cm; variantBest.minSurfW_cm = solved.single.minSurfW_cm; variantBest.score = _scoreStairProposal(variantBest); }
     }
-    stair.noseOffset_cm = origNose; stair.riserOffset_cm = origRiser; stair.runsPerStep = origRunsPerStep;
+    stair.noseOffset_cm = origNose; stair.riserOffset_cm = origRiser; stair.runsPerStep = origRunsPerStep; stair.landingCC_cm = origLandingCC;
     if (!solved.ok) { if (!firstFailReason) firstFailReason = solved.reason; if (solved.singleReason && !singleReason) singleReason = solved.singleReason; continue; }
     if (!solved.single && solved.singleReason && !singleReason && !isAdjustedMargin) singleReason = solved.singleReason;
 
@@ -54910,30 +55096,33 @@ function _stairRegressionTest() {
     let props = _generateStairProposals(st);
     check('1: to forslag', 2, props.length === 2, props.length);
     check('1: A er én kabel', 1, props[0] && props[0].cableCount === 1, props[0] && props[0].cableCount);
-    check('1: A er 70 m (nærmeste kortere, behov 74,7 m)', '70', props[0] && setOf(props[0]) === '70', props[0] && setOf(props[0]));
-    check('1: A kantavstand 12,4 cm', 12.4, props[0] && Math.abs(props[0].edgeMargin_cm - 12.4) < 0.01, props[0] && props[0].edgeMargin_cm);
+    // 188: ruten i plan telles også for rette trapper (+4 cm per overgang ved like brede trinn): behovet 74,72 → 75,00 m, så A løses til 12,8 (før 12,4) og B blir 5 + 70.
+    check('1: A er 70 m (nærmeste kortere, behov 75,0 m)', '70', props[0] && setOf(props[0]) === '70', props[0] && setOf(props[0]));
+    check('1: A kantavstand 12,8 cm (188, før 12,4)', 12.8, props[0] && Math.abs(props[0].edgeMargin_cm - 12.8) < 0.01, props[0] && props[0].edgeMargin_cm);
     check('1: A anbefalt', true, props[0] && props[0].recommended === true, props[0] && props[0].recommended);
-    check('1: A varmet bredde 215,2 av 240', 215.2, props[0] && Math.abs(props[0].heatedWidth_cm - 215.2) < 0.01, props[0] && props[0].heatedWidth_cm);
-    check('1: A uten gult merke (12,4 < 5+15)', false, props[0] && props[0].wideMargin === false, props[0] && props[0].wideMargin);
-    check('1: B er flerkabelsett (25+49,7 ved gulvet)', '25+49.7', props[1] && setOf(props[1]) === '25+49.7', props[1] && setOf(props[1]));
+    check('1: A varmet bredde 214,4 av 240 (188, før 215,2)', 214.4, props[0] && Math.abs(props[0].heatedWidth_cm - 214.4) < 0.01, props[0] && props[0].heatedWidth_cm);
+    check('1: A uten gult merke (12,8 < 5+15)', false, props[0] && props[0].wideMargin === false, props[0] && props[0].wideMargin);
+    check('1: B er flerkabelsett (188: 5+70 ved gulvet, før 25+49,7)', '5+70', props[1] && setOf(props[1]) === '5+70', props[1] && setOf(props[1]));
     check('1: B kantavstand = gulvet 5', 5, props[1] && props[1].edgeMargin_cm === 5, props[1] && props[1].edgeMargin_cm);
     // Velg A: utlegget får 12,4, gulvet står på 5, lengden går opp mot 70 m
     st.proposals = props; _applyStairProposal(st, props[0]);
-    check('1: etter Velg: edgeMargin_cm = 12,4', 12.4, Math.abs(st.edgeMargin_cm - 12.4) < 0.01, st.edgeMargin_cm);
+    check('1: etter Velg: edgeMargin_cm = 12,8 (188)', 12.8, Math.abs(st.edgeMargin_cm - 12.8) < 0.01, st.edgeMargin_cm);
     check('1: etter Velg: edgeMarginMin_cm fortsatt 5', 5, st.edgeMarginMin_cm === 5, st.edgeMarginMin_cm);
     check('1: etter Velg: utlegget bruker 70 m ± 5 cm', 7000, Math.abs(st.totalCableLength_cm - 7000) <= 5, st.totalCableLength_cm);
 
     // ─── 2 — forslag på nytt etter Velg: samme A (gulvet har ikke krøpet) ───
     const props2 = _generateStairProposals(st);
-    check('2: samme A etter ny runde', '70 @ 12.4', props2[0] && setOf(props2[0]) === '70' && Math.abs(props2[0].edgeMargin_cm - 12.4) < 0.01,
+    check('2: samme A etter ny runde', '70 @ 12.8', props2[0] && setOf(props2[0]) === '70' && Math.abs(props2[0].edgeMargin_cm - 12.8) < 0.01,
       props2[0] && setOf(props2[0]) + ' @ ' + props2[0].edgeMargin_cm);
-    check('2: B fortsatt ved gulvet 5 (ikke 12,4)', 5, props2[1] && props2[1].edgeMargin_cm === 5, props2[1] && props2[1].edgeMargin_cm);
+    check('2: B fortsatt ved gulvet 5 (ikke 12,8)', 5, props2[1] && props2[1].edgeMargin_cm === 5, props2[1] && props2[1].edgeMargin_cm);
     // Og skrallen fra før: med edgeMargin_cm 12,5 og INTET gulv-felt må gulvet bli 12,5 (migrering)
     const legacy = mk(240, 8, 12.5); delete legacy.edgeMarginMin_cm;
     check('2: eldre trapp uten gulv-felt bruker edgeMargin_cm som gulv', 12.5, _stairFloorMargin(legacy) === 12.5, _stairFloorMargin(legacy));
 
     // ─── 3 — smal trapp (100 cm): nærmeste kortere gir > 12,5 cm per side → ingen én-kabel-kort ───
-    st = mk(100, 8, 5);
+    // 188: 8 trinn fikk 28 cm mer behov (30,2 m), og da går 30 m opp ved 5,3 cm. 5 trinn (18,8 m) er
+    // fortsatt trappa der nærmeste kortere (15 m) ville gitt under 75 %.
+    st = mk(100, 5, 5);
     props = _generateStairProposals(st);
     check('3: ingen én-kabel-forslag', 0, !props.some(p => p.singleCable), props.filter(p => p.singleCable).length);
     check('3: grå forklaring nevner 75 %', true, /75 %/.test(props.singleReason || ''), props.singleReason);
@@ -55126,9 +55315,12 @@ function _stairManualSetRegressionTest() {
 
     // ═══ A · Forslag uendret (Test 1) — tre former, låste fasitverdier ════════════════════
     // Verdiene er målt ETTER utflyttingen og var identiske FØR den (kjørt mot 64876ef).
-    const A1 = '70@12.4/1.6/4 | 25+49.7@5/-2/4';
-    const A2 = '78.7@8.4/-2/4 | 10+70@6.8/0/4';
-    const A3 = '45@10.8/0.8/4';
+    // 188: ruten i plan telles også for rette trapper (+4 cm per overgang ved like brede trinn). Før 188: '70@12.4/1.6/4 | 25+49.7@5/-2/4', '78.7@8.4/-2/4 | 10+70@6.8/0/4', '45@10.8/0.8/4'.
+    const A1 = '70@12.8/-0.8/4 | 5+70@5/0/4';
+    const A2 = '78.7@8.9/2/4 | 10+70@7.3/4/4';
+    // 188 (funn): forslaget regnes nå med repos-CC-en det legger ut (trinnets 8,7, ikke 10). Før: 45 @ 10,8
+    // «Passer» i kortet, men 1,6 m for kort etter Velg. Nå: 49,7 @ 5,7, og utlegget sier «Passer».
+    const A3 = '49.7@5.7/-2.4/4';
     const withLanding = { landing_position: 'top', landing_depth_cm: 120, landingCC_cm: 10, landingMargin_cm: 5 };
     const gotA1 = sigOf(_generateStairProposals(mk(240, 8, 5)));
     const gotA2 = sigOf(_generateStairProposals(mk(210, 10, 5)));
@@ -55140,9 +55332,9 @@ function _stairManualSetRegressionTest() {
     // ═══ B · _stairFitFixedSet — fast sett løser marginen som Forslag ═════════════════════
     let st = mk(240, 8, 5);
     const probe = _stairMarginProbe(st);
-    // Forslag A ovenfor valgte 70 m og løste 12,4 cm. Samme sett gjennom hjelperen MÅ gi samme tall.
+    // Forslag A ovenfor valgte 70 m og løste 12,8 cm (188; før 12,4). Samme sett gjennom hjelperen MÅ gi samme tall.
     const fit70 = _stairFitFixedSet(st, [pidFor(70)]);
-    check('B1: 70 m gir samme margin som Forslag A', 12.4, fit70.ok && Math.abs(fit70.edgeMargin_cm - 12.4) < 0.001, fit70.edgeMargin_cm);
+    check('B1: 70 m gir samme margin som Forslag A', 12.8, fit70.ok && Math.abs(fit70.edgeMargin_cm - 12.8) < 0.001, fit70.edgeMargin_cm);
     // For langt: lengste kabel (139,9 m) er mye mer enn behovet ved gulvet (over 5 %).
     const tooLong = _stairFitFixedSet(st, [pidFor(139.9)]);
     check('B2: sett over 5 % for langt avvises (Regel 11)', false, tooLong.ok === false, tooLong.ok);
@@ -55161,8 +55353,11 @@ function _stairManualSetRegressionTest() {
     check('B2g: marginen står på gulvet', 5, smallOver.edgeMargin_cm === 5, smallOver.edgeMargin_cm);
     // Grensen oppover: på DENNE trappa (gulv 5, behov 74,72 m) er 78,7 m 5,06 % over — altså
     // akkurat utenfor, og fortsatt rød. Målt, ikke gjettet.
-    const justOver = _stairFitFixedSet(st, [pidFor(78.7)]);
-    const justPct = (78.7 - needFloor_m) / 78.7 * 100;
+    // 188: behovet er 28 cm større (75,00 m), så 78,7 m er 4,7 % over på gulv 5. Grensen måles nå på
+    // gulv 5,5 (behov 74,68 m → 5,11 %).
+    const st55 = mk(240, 8, 5.5);
+    const justOver = _stairFitFixedSet(st55, [pidFor(78.7)]);
+    const justPct = (78.7 - _stairMarginProbe(st55).neededAtFloor_cm / 100) / 78.7 * 100;
     check('B2h: 78,7 m er like over 5 %', true, justPct > 5 && justPct < 5.5, Math.round(justPct * 100) / 100 + ' %');
     check('B2i: like over 5 % er fortsatt rød', false, justOver.ok === false, justOver.ok);
     // 2-5 %: gul merknad, men fortsatt ok:true. Samme kabel på en trapp med gulv 4 (behov
@@ -55201,7 +55396,9 @@ function _stairManualSetRegressionTest() {
       rows.map(r => r.productLength_m).join(',') === '10,20,40.1', rows.map(r => r.productLength_m).join(','));
     // Hele settet legges ut (70,1 m), og det som står igjen udekket er kun mm-snappingens restavvik
     // (Regel 15: ett snapp = 2 x strenger x 1 mm, her 6,4 cm) — ikke en hale av uvarmet trapp.
-    check('C8: hele settet er lagt ut', 7010, Math.abs(st.coveredCableLength_cm - 7010) < 0.5, st.coveredCableLength_cm);
+    // 188: med ruten i plan havner mm-snappet på den andre siden (kabelen 2,8 cm lengre enn behovet): hele
+    // behovet er dekket, og settet er lagt ut på høyst ett mm-snapp nær.
+    check('C8: hele settet er lagt ut (innenfor ett mm-snapp)', 7010, Math.abs(st.coveredCableLength_cm - 7010) <= 2 * probe.totalStrands * 0.1 + 0.01, st.coveredCableLength_cm);
     check('C8b: udekket rest er under ett mm-snapp', true, (st.totalCableLength_cm - st.coveredCableLength_cm) <= 2 * probe.totalStrands * 0.1 + 0.01,
       Math.round((st.totalCableLength_cm - st.coveredCableLength_cm) * 10) / 10);
     check('C9: lik CC på alle flater', 1, (() => { const by = {}; for (const r of st.runs) (by[r.surfaceIdx] ||= []).push(r.pos_cm);
@@ -55297,7 +55494,8 @@ function _stairZoneRegressionTest102() {
     // ═══ A · auto-soner: fasit målt mot b47a65d (101), FØR 102 ════════════════════════════
     let st = mkZoned();
     // Fasiten er MÅLT på b47a65d (før 102) med nøyaktig denne geometrien — ikke gjettet.
-    const AUTO = '1:30@12.8/-1.4 | 2:25@15.7/-0.4 | 3:45@13/-1';
+    // 188: ruten i plan telles også for rette trapper (+4 cm per overgang ved like brede trinn). Før 188: '1:30@12.8/-1.4 | 2:25@15.7/-0.4 | 3:45@13/-1' (sone 2 er ett repos, ingen overgang).
+    const AUTO = '1:30@13.2/-0.6 | 2:25@15.7/-0.4 | 3:45@13.4/-1.8';
     check('A1: auto-sonene uendret', AUTO, sig(st) === AUTO, sig(st));
     check('A2: ingen feil', null, st.zoneError === null && st.zoneIssues == null, [st.zoneError, st.zoneIssues]);
     const AUTO_N = nPerSurf(st);
@@ -55309,9 +55507,9 @@ function _stairZoneRegressionTest102() {
     check('B1: sone 3 fikk valgt kabel', 40.1, (HEATING_PRODUCTS.find(p => p.id === st.cables[2].productId) || {}).cable_length_m === 40.1,
       (HEATING_PRODUCTS.find(p => p.id === st.cables[2].productId) || {}).cable_length_m);
     check('B2: sone 3 er merket manuell', true, st.cables[2].manual === true, st.cables[2].manual);
-    check('B3: sone 3 fikk løst egen margin (23,2)', 23.2, Math.abs(st.cables[2].edgeMargin_cm - 23.2) < 0.001, st.cables[2].edgeMargin_cm);
-    check('B4: sone 1 og 2 helt uendret', '1:30@12.8/-1.4 | 2:25@15.7/-0.4',
-      sig(st).split(' | ').slice(0, 2).join(' | ') === '1:30@12.8/-1.4 | 2:25@15.7/-0.4', sig(st).split(' | ').slice(0, 2).join(' | '));
+    check('B3: sone 3 fikk løst egen margin (23,6; 188, før 23,2)', 23.6, Math.abs(st.cables[2].edgeMargin_cm - 23.6) < 0.001, st.cables[2].edgeMargin_cm);
+    check('B4: sone 1 og 2 helt uendret', AUTO.split(' | ').slice(0, 2).join(' | '),
+      sig(st).split(' | ').slice(0, 2).join(' | ') === AUTO.split(' | ').slice(0, 2).join(' | '), sig(st).split(' | ').slice(0, 2).join(' | '));
     check('B5: marginen skrev ALDRI tilbake til gulvet (084)', 5, _stairFloorMargin(st) === 5, _stairFloorMargin(st));
     _setStairZoneProduct(3, '');   // tilbake til auto
     check('B6: «Tilbake til auto» gir auto-svaret', AUTO, sig(st) === AUTO, sig(st));
@@ -55502,8 +55700,8 @@ function _stairZoneRegressionTest102() {
       [ssP.edgeMargin_cm, ssP.stepCC_cm, ssP.noseOffset_cm, ssP.riserOffset_cm].join('/'));
     check('G2: ingen sone funnet', null, ssP.zone === null, ssP.zone);
     const propsP = _generateStairProposals(plain);
-    check('G3: forslagsmotoren uendret (70 m @ 12,4)', '70@12.4',
-      propsP[0] && propsP[0].products.map(p => p.length_m).join('+') === '70' && Math.abs(propsP[0].edgeMargin_cm - 12.4) < 0.01,
+    check('G3: forslagsmotoren uendret (70 m @ 12,8; 188, før 12,4)', '70@12.8',
+      propsP[0] && propsP[0].products.map(p => p.length_m).join('+') === '70' && Math.abs(propsP[0].edgeMargin_cm - 12.8) < 0.01,
       propsP[0] && propsP[0].products.map(p => p.length_m).join('+') + '@' + propsP[0].edgeMargin_cm);
 
     // ═══ J · 120: samme startside, «Antall kabler» i sonen, auto 2 kabler, låst/auto på trappenivå ═══
@@ -55547,7 +55745,8 @@ function _stairZoneRegressionTest102() {
     check('J2: etter: ingen sidebrudd i noen sone', '0/0', etterJ.every(x => x.brudd === 0), etterJ.map(x => x.brudd).join('/'));
     check('J3: alle soner starter på samme side som sone 1 (venstre) — start og første flate', true,
       etterJ.every(x => x.start === 'V' && x.inn === 'V'), etterJ.map(x => x.start + x.inn).join(','));
-    check('J4: koster ingenting — total lengde uendret (4850)', totFoer, zj.totalCableLength_cm === totFoer && totFoer === 4850, zj.totalCableLength_cm);
+    // 188: 4850 + ruten i plan (9 cm) — lik med og uten den gamle kjeden.
+    check('J4: koster ingenting — total lengde uendret (4859; før 188 4850)', totFoer, zj.totalCableLength_cm === totFoer && totFoer === 4859, zj.totalCableLength_cm);
     zj = mkZ(segsJ, { stepCC_cm: 13, cableSpacing_cm: 13, cableStartFromTop: true });
     check('J5: også med «Kabelstart: Topp»', true, sideMaal(zj).every(x => x.brudd === 0 && x.inn === 'V'), JSON.stringify(sideMaal(zj)));
     st = mkZoned();
@@ -55564,8 +55763,8 @@ function _stairZoneRegressionTest102() {
       _stairZoneProductIds(st, 3).map(id => (HEATING_PRODUCTS.find(p => p.id === id) || {}).cable_length_m).join());
     _setStairZoneCableRow(3, 0, pidFor(25)); _setStairZoneCableRow(3, 1, pidFor(25));
     const j3 = st.cables.filter(c => c.zone === 3);
-    check('J9: ...og begge legges ut (25 + 25 m mot behov ~48,9 m ved gulvet)', true,
-      j3.length === 2 && j3.every(c => c.length_cm > 2000) && Math.abs(j3[0].length_cm + j3[1].length_cm - 4885) < 20,
+    check('J9: ...og begge legges ut (25 + 25 m mot behov ~49,05 m ved gulvet; 188, før ~48,9)', true,
+      j3.length === 2 && j3.every(c => c.length_cm > 2000) && Math.abs(j3[0].length_cm + j3[1].length_cm - 4905) < 20,
       j3.map(c => c.length_cm).join('+'));
     _setStairZoneCableCount(3, 1);
     check('J10: 1 fjerner bakfra', 1, _stairZoneProductIds(st, 3).length === 1, _stairZoneProductIds(st, 3).length);
@@ -55596,8 +55795,8 @@ function _stairZoneRegressionTest102() {
     const lp = _createStairObj({ name: 'TESTLAAS', width_cm: 240, step_depth_cm: 32, step_height_cm: 16, step_count: 8,
       edgeMargin_cm: 5, stepCC_cm: 10, cableSpacing_cm: 10, riserOffset_cm: 2, noseOffset_cm: 2 });
     S.stairs = [lp]; S.ui.selectedStairId = lp.id;
-    check('J17: migrering — en trapp uten feltet er auto og gir G3-forslaget (70 @ 12,4)', '70@12.4',
-      lp.edgeMarginLocked_cm === undefined && _stairLockedMargin(lp) == null && _generateStairProposals(lp)[0].products.map(p => p.length_m).join('+') + '@' + _generateStairProposals(lp)[0].edgeMargin_cm === '70@12.4',
+    check('J17: migrering — en trapp uten feltet er auto og gir G3-forslaget (70 @ 12,8)', '70@12.8',
+      lp.edgeMarginLocked_cm === undefined && _stairLockedMargin(lp) == null && _generateStairProposals(lp)[0].products.map(p => p.length_m).join('+') + '@' + _generateStairProposals(lp)[0].edgeMargin_cm === '70@12.8',
       _generateStairProposals(lp)[0] && _generateStairProposals(lp)[0].edgeMargin_cm);
     _setStairEdgeMarginLock(true);
     check('J18: hengelås på: låst = tallet i feltet (5)', 5, lp.edgeMarginLocked_cm === 5 && _stairFloorMargin(lp) === 5, lp.edgeMarginLocked_cm);
@@ -55607,13 +55806,15 @@ function _stairZoneRegressionTest102() {
     const pL = _generateStairProposals(lp);
     check('J20: Forslag med låst 6: alle kandidater ved 6 cm, merket låst, bare settet varierer', true,
       pL.length === 2 && pL.every(p => p.edgeMargin_cm === 6 && p.locked === true) && pL[0].recommended === true
-      && pL[0].products.map(p => p.length_m).join('+') === '25+49.7' && pL[1].products.map(p => p.length_m).join('+') === '70',
+      // 188: behovet ved 6 cm er 74,77 m (før 74,5): B er nå 78,7 m (5,0 % for lang), ikke 70 m.
+      && pL[0].products.map(p => p.length_m).join('+') === '25+49.7' && pL[1].products.map(p => p.length_m).join('+') === '78.7',
       pL.map(p => p.products.map(x => x.length_m).join('+') + '@' + p.edgeMargin_cm + (p.locked ? 'L' : '')).join(' | '));
-    check('J21: ...med passform (A ≤ 2 % = ok, B 70 m er > 5 % for kort = error)', 'ok/error',
-      pL[0].fitStatus === 'ok' && pL[1].fitStatus === 'error' && pL[1].marginResidual_cm < 0, pL.map(p => p.fitStatus).join('/'));
+    check('J21: ...med passform (A ≤ 2 % = ok, B 78,7 m er > 5 % for lang = error; 188)', 'ok/error',
+      pL[0].fitStatus === 'ok' && pL[1].fitStatus === 'error' && pL[1].marginResidual_cm > 0, pL.map(p => p.fitStatus).join('/'));
     check('J22: aldri samme sett to ganger', true, pL[0].products.map(x => x.length_m).join('+') !== pL[1].products.map(x => x.length_m).join('+'), 'duplikat');
     check('J23: forslagskortet viser låsen', true, /Avstand sider låst/.test(String(_renderStairProposalPanel)) && /lockBadge/.test(String(_renderStairProposalPanel)), 'ikke koblet');
-    _applyStairProposal(lp, pL[1]);   // 70 m ved låst 6 → for kort
+    // 188: B er ikke lenger 70 m — samme valgte forslag med 70 m (for kort ved låst 6) bygges av B.
+    _applyStairProposal(lp, { ...pL[1], products: [{ ...pL[1].products[0], id: pidFor(70), length_m: 70 }] });   // 70 m ved låst 6 → for kort
     check('J24: valgt forslag med låst avstand: utlegget ligger på 6 cm og det som mangler tegnes stiplet', true,
       lp.edgeMargin_cm === 6 && lp.uncoveredRuns.length > 0 && _stairCableSetFit(lp).status === 'error', lp.edgeMargin_cm + '/' + lp.uncoveredRuns.length);
     lp.cables = [{ index: 0, productId: pidFor(70) }]; lp.selectedProposal = null; _stairApplyManualCables(lp);
@@ -55623,9 +55824,9 @@ function _stairZoneRegressionTest102() {
     check('J26: panelet viser 🔒 låst og rød melding', true,
       (() => { const h = _renderStairSettingsPanel(lp.id); return /🔒 låst/.test(h) && /_setStairEdgeMarginLock\(false\)/.test(h) && /for kort/.test(h) && /avstand sider låst/.test(h); })(), 'mangler');
     _setStairEdgeMarginLock(false);
-    check('J27: lås av: gulvet står (6), marginen løses igjen (12,4 for 70 m), forslaget er som før', true,
-      lp.edgeMarginLocked_cm === null && _stairFloorMargin(lp) === 6 && Math.abs(lp.edgeMargin_cm - 12.4) < 0.01 && lp.manualFit && lp.manualFit.ok && !lp.manualFit.locked
-      && _generateStairProposals(lp)[0].edgeMargin_cm === 12.4 && _generateStairProposals(lp).every(p => !p.locked),
+    check('J27: lås av: gulvet står (6), marginen løses igjen (12,8 for 70 m; 188, før 12,4), forslaget er som før', true,
+      lp.edgeMarginLocked_cm === null && _stairFloorMargin(lp) === 6 && Math.abs(lp.edgeMargin_cm - 12.8) < 0.01 && lp.manualFit && lp.manualFit.ok && !lp.manualFit.locked
+      && _generateStairProposals(lp)[0].edgeMargin_cm === 12.8 && _generateStairProposals(lp).every(p => !p.locked),
       [lp.edgeMarginLocked_cm, _stairFloorMargin(lp), lp.edgeMargin_cm].join('/'));
     _setStairEdgeMarginLock(true); _setStairEdgeMargin('');
     check('J28: tomt felt = låsen av', null, lp.edgeMarginLocked_cm === null, lp.edgeMarginLocked_cm);
@@ -56782,7 +56983,8 @@ function _stairHorseshoeRegressionTest() {
         pBr.map(p => p.products.map(x => x.length_m).join('+') + '@' + p.edgeMargin_cm + '/' + p.fitStatus + '/' + r1(p.marginResidual_cm)).join(', ') || 'ingen');
       check('187.2: BRED: Forslag B = korteste sett totalt (20 + 49,7 = 69,7, under 2 %)', '20+49.7 · ok', pBr[1] && pBr[1].products.map(p => p.length_m).join('+') === '20+49.7' && pBr[1].fitStatus === 'ok', pBr[1] && pBr[1].products.map(p => p.length_m).join('+') + '/' + pBr[1].fitStatus);
       { _renderStairProposalPanel(st, pBr); const el = document.getElementById('stair-proposal-panel'); const t = el ? el.textContent : ''; if (el) el.remove();
-        check('187.2: BRED: kortet sier «Kortere kabler måtte gått forbi hjørnet — 1.5 m til overs»', 'tekst', t.includes('Kortere kabler måtte gått forbi hjørnet — 1.5 m til overs'), t.slice(0, 120)); }
+        // 188 (svar 187/4): overskuddet står for seg selv, stort og gult, og forklaringen under.
+        check('187.2 → 188: BRED: kortet sier «1.5 m til overs» (stort, gult) og «Kortere kabler måtte gått forbi hjørnet»', 'tekst', t.includes('1.5 m til oversKortere kabler måtte gått forbi hjørnet'), t.replace(/\s+/g, ' ').slice(0, 160)); }
       if (pBr[0]) _applyStairProposal(st, pBr[0]);
       const fB = _stairCableSetFit(st);
       check('187.2: BRED valgt: panelet gult «1.5 m til overs», ingen streng forbi armen', 'warn · 1.5 m til overs', fB.status === 'warn' && fB.label === '1.5 m til overs' && runsOf(st, 0).every(r => r.segments[0].start_cm <= _stairHsArmCapCm(st) + 1e-6), fB.status + ' · ' + fB.label);
@@ -56815,8 +57017,101 @@ function _stairHorseshoeRegressionTest() {
           if (Math.hypot(rt[0].x - A.x, rt[0].y - A.y) > 1e-6 || Math.hypot(rt[rt.length - 1].x - B.x, rt[rt.length - 1].y - B.y) > 1e-6) ender = false;
           return rt; });
         check(`187.5: rett, ${nm}: overgangen går fra strengens ende til neste strengs start, rettvinklet (${rts.length})`, 'ender · ingen skrå', rts.length > 0 && ender && rts.every(axis), rts.slice(0, 3).map(rt => rt.map(p => r1(p.x) + ',' + r1(p.y)).join('→')).join(' | '));
-        check(`187.5: rett, ${nm}: kabellengden for overgangen er fortsatt opptrinnet (17, ruten i plan telles ikke)`, '17', sr.connections.every(c => c.length_cm === 17), [...new Set(sr.connections.map(c => c.length_cm))].join(','));
+        // 188 (svar 187/5): ruten i plan telles også for rette trapper — overgangen = opptrinnet 17 + ruten som tegnes.
+        check(`187.5 → 188: rett, ${nm}: overgangen = opptrinnet 17 + ruten i plan (den som tegnes)`, rts.map(rt => r1(17 + _stairPolyLen(rt))).join(','), sr.connections.every((c, i) => Math.abs(c.length_cm - 17 - _stairPolyLen(rts[i])) < 1e-6), sr.connections.map(c => r1(c.length_cm)).join(','));
       }
+
+      // ─── 188 · svar på 187 (Kenneth 05.11.2026) ───
+      // 188.1 (187/1) · et valgt forslag løses på nytt ved åpning. VK 31 lagret med forslaget før 187 (60 m @ 19,4):
+      // 187 åpnet den «0.4 m for kort»; nå løses marginen til 21,1 og forslaget står.
+      st = mk(VK31, EX); { const pv = _generateStairProposals(st); _applyStairProposal(st, pv[0]); }
+      st.edgeMargin_cm = 19.4; st.selectedProposal = { ...st.selectedProposal, edgeMargin_cm: 19.4 }; _regenerateStairCable(st);
+      const for1881 = _stairCableSetFit(st).label;
+      _stairReopen(st);
+      check('188.1: VK 31 lagret med forslaget @ 19,4: åpnes løst på nytt (21,1, Passer, forslaget står)', '0.4 m for kort → 21.1 · Passer',
+        for1881 === '0.4 m for kort' && st.edgeMargin_cm === 21.1 && passer(st) && !!st.selectedProposal && st.selectedProposal.edgeMargin_cm === 21.1 && !(st.uncoveredRuns || []).length,
+        for1881 + ' → ' + st.edgeMargin_cm + ' · ' + _stairCableSetFit(st).label);
+      // 188.1 · går settet ikke opp etter omregningen, står forslaget og marginen som lagret (avviket vises som før):
+      // rett 8 trinn 120 med 30 m @ 15 (forslaget før 188) trenger nå 15,4 — over 75 %-taket (15).
+      { const sr = mkR([{ type: 'steps', width_cm: 120, stepDepth_cm: 30, stepHeight_cm: 17, stepCount: 8 }]);
+        sr.cables = [{ index: 0, productId: 98001 }]; sr.cableProductId = 98001; sr.edgeMargin_cm = 15;
+        sr.selectedProposal = { products: [{ id: 98001, length_m: 30 }], edgeMargin_cm: 15, runsPerStep: sr.runsPerStep }; _regenerateStairCable(sr);
+        _stairReopen(sr);
+        const fr = _stairCableSetFit(sr);
+        check('188.1: valgt forslag som ikke går opp etter omregningen: marginen og forslaget står, avviket vises', '15 · forslag · for kort',
+          sr.edgeMargin_cm === 15 && !!sr.selectedProposal && /for kort/.test(fr.label) && sr.uncoveredRuns.length > 0, sr.edgeMargin_cm + ' · ' + (sr.selectedProposal ? 'forslag' : 'manuelt') + ' · ' + fr.label); }
+      // 188.2 (187/5) · rette trapper: behovet = strenger + overganger, og hver overgang = opptrinn + ruten i plan.
+      for (const [nm, segs, plan] of [['8 trinn 120 (like brede)', [{ type: 'steps', width_cm: 120, stepDepth_cm: 30, stepHeight_cm: 17, stepCount: 8 }], '4'],
+        ['240 (1 trinn, d 24) → repos 100', [{ type: 'steps', width_cm: 240, stepDepth_cm: 24, stepHeight_cm: 17, stepCount: 1 }, { type: 'landing', width_cm: 100, depth_cm: 120 }], '147']]) {
+        const sr = mkR(segs);
+        const g = generateStairCable({ ...sr, cables: [{ productId: null }] });
+        const runs = g.runs.reduce((a, r) => a + runLen(r), 0), pl = planOf(sr);
+        check(`188.2: rett, ${nm}: ruten i plan ${plan} cm per overgang, og behovet = strenger + 17 + ruten`, plan,
+          [...new Set(pl.map(r1))].join('/') === plan && Math.abs(g.totalCableLength_cm - runs - 17 * g.connections.length - pl.reduce((a, v) => a + v, 0)) < 0.06,
+          [...new Set(pl.map(r1))].join('/') + ' · behov ' + r1(g.totalCableLength_cm) + ' = ' + r1(runs) + ' + ' + 17 * g.connections.length + ' + ' + r1(pl.reduce((a, v) => a + v, 0)));
+      }
+      // 188.3 (187/4) · «for langt innenfor 5 %» gjelder også rette trapper: 120 × 6 trinn, gulv 2 (behov 28,9 m) —
+      // 20 m ville gitt under 75 % varmet bredde, så Forslag A er 30 m på gulvet, gult, 1,1 m til overs.
+      { const sr = mkR([{ type: 'steps', width_cm: 120, stepDepth_cm: 30, stepHeight_cm: 17, stepCount: 6 }], { edgeMargin_cm: 2, edgeMarginMin_cm: 2 });
+        const pr = _generateStairProposals(sr);
+        check('188.3: rett 120 × 6: Forslag A = 30 m @ 2, «til overs», gult (2–5 %), grunn 75 %', '30 @ 2 · warn · 75',
+          pr[0] && pr[0].products.map(p => p.length_m).join('+') === '30' && pr[0].edgeMargin_cm === 2 && pr[0].overSet && pr[0].fitStatus === 'warn' && pr[0].overWhy === '75',
+          pr.map(p => p.products.map(x => x.length_m).join('+') + ' @ ' + p.edgeMargin_cm + ' · ' + p.fitStatus + ' · ' + p.overWhy).join(' | ') || 'ingen');
+        _renderStairProposalPanel(sr, pr); const el = document.getElementById('stair-proposal-panel');
+        const ov = el && el.querySelector('.stair-prop-over'); const tx = ov ? ov.textContent.replace(/\s+/g, ' ').trim() : '';
+        const big = ov && ov.firstElementChild ? ov.firstElementChild.style : {};
+        if (el) el.remove();
+        check('188.3: kortet: «1.1 m til overs» stort og gult, «Kortere kabler ville gitt under 75 % varmet bredde»', '1.1 m til overs · 15px · gul',
+          tx === '1.1 m til oversKortere kabler ville gitt under 75 % varmet bredde' && big.fontSize === '15px' && /245, 158, 11|f59e0b/i.test(big.color), tx + ' · ' + big.fontSize + ' · ' + big.color);
+        if (pr[0]) _applyStairProposal(sr, pr[0]);
+        const h = _renderStairSettingsPanel(sr.id);
+        check('188.3: panelet: «1.1 m til overs» gult og større (13px)', 'stair-fit-over · 1.1 m til overs',
+          /class="stair-fit-over" style="color:#f59e0b;font-weight:700;font-size:13px">🟡 1\.1 m til overs</.test(h), (h.match(/stair-fit-over[^<]*</) || ['mangler'])[0]); }
+      // 188.4 · «Bla i kabler» på VK 31: starter på kabelen nærmest behovet (60 m), og listen har alle fire slagene.
+      st = mk(VK31, EX);
+      { _stairBrowse = null; _stairBrowseInit(st);
+        const B = _stairBrowse, kinds = B.list.map(p => _stairBrowseCableInfo(st, p.id));
+        check('188.4: Bla starter på 60 m (nærmest behovet 64,2 m), listen = produktgruppa sortert', '60 · ' + LENS.join(','),
+          B.list[B.idx].cable_length_m === 60 && B.list.map(p => p.cable_length_m).join(',') === LENS.join(','), B.list[B.idx].cable_length_m + ' · ' + B.list.map(p => p.cable_length_m).join(','));
+        check('188.4: minst én «til overs», én «passer hvis … N cm» og én «går ikke»', 'over · kanPasse · gaarIkke',
+          kinds.some(k => k.kind === 'over') && kinds.some(k => k.kind === 'kanPasse') && kinds.some(k => k.kind === 'gaarIkke'), kinds.map((k, i) => B.list[i].cable_length_m + ':' + k.kind).join(' '));
+        // Samme løser som manuelt sett (Regel 9): marginen i linja = _stairFitFixedSet.
+        check('188.4: tallene = manuelt sett (_stairFitFixedSet) for hver kabel som passer', 'like',
+          B.list.every((p, i) => !['passer', 'kanPasse'].includes(kinds[i].kind) || kinds[i].margin_cm === _stairFitFixedSet(st, [p.id]).edgeMargin_cm), 'ulike');
+        const i60 = B.idx;
+        check('188.4: 60 m: «4.2 m for kort ved minste avstand (2.0 cm). Passer hvis svingene trekkes inn 21.1 cm fra sidene»', 'tekst',
+          kinds[i60].text === '4.2 m for kort ved minste avstand (2.0 cm). Passer hvis svingene trekkes inn 21.1 cm fra sidene', kinds[i60].text);
+        check('188.4: 70 m: «5.8 m til overs (over 5 %)», rød', 'error', kinds[i60 + 1].kind === 'over' && kinds[i60 + 1].status === 'error' && /^5\.8 m til overs/.test(kinds[i60 + 1].text), kinds[i60 + 1].text + ' · ' + kinds[i60 + 1].status);
+        check('188.4: 49,7 m: «går ikke», mangelen ved største avstand og marginen over grensen', 'gaarIkke', kinds[i60 - 1].kind === 'gaarIkke' && /^[\d.]+ m for kort ved største avstand \([\d.]+ cm\)\. Måtte trukket svingene inn [\d.]+ cm, over grensen \((forbi hjørnet|under 75 %)/.test(kinds[i60 - 1].text), kinds[i60 - 1].text);
+        // I dialogen: piltastene blar, ▲/▼ er knappene, og å bla legger ikke ut noe.
+        const sig0 = JSON.stringify([st.cables, st.edgeMargin_cm, st.runs.length]);
+        const pv = _generateStairProposals(st); _renderStairProposalPanel(st, pv);
+        const pnl = document.getElementById('stair-proposal-panel');
+        const txt = () => (document.getElementById('stair-browse-info') || {}).textContent || '';
+        const kindNow = () => (document.getElementById('stair-browse-info') || { dataset: {} }).dataset.kind;
+        const t60 = txt();
+        pnl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+        const tNed = txt(), kNed = kindNow();
+        pnl.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }));
+        document.getElementById('stair-browse-up').click();
+        const kOpp = kindNow();
+        document.getElementById('stair-browse-down').click();
+        check('188.4: dialogen: ↓ = 70 m til overs, ↑ ▲ = 49,7 m går ikke, ▼ tilbake til 60 m; ingenting lagt ut', 'over · gaarIkke · 60',
+          kNed === 'over' && kOpp === 'gaarIkke' && txt() === t60 && t60 === kinds[i60].text && JSON.stringify([st.cables, st.edgeMargin_cm, st.runs.length]) === sig0, kNed + ' · ' + kOpp + ' · ' + txt().slice(0, 40));
+        // Forhåndsvis et forslag og så «Bruk denne kabelen»: forhåndsvisningen avbrytes, kabelen legges ut som manuelt sett.
+        _stairPreviewProposal(st.id, 0);
+        const undo0 = _undoStack.length;
+        document.getElementById('stair-browse-use').click();
+        const f = _stairCableSetFit(st);
+        check('188.4: «Bruk denne kabelen» (60 m): manuelt sett med samme margin som linja (21,1), Passer, dialogen lukket, angre', '60 · 21.1 · Passer',
+          st.cables.length === 1 && st.cables[0].productId === 98004 && !st.selectedProposal && st.edgeMargin_cm === kinds[i60].margin_cm && st.edgeMargin_cm === 21.1
+          && st.manualFit && st.manualFit.ok && f.label === 'Passer' && !document.getElementById('stair-proposal-panel') && !st._prePreviewState && _undoStack.length === undo0 + 1,
+          st.cables.map(c => c.productId).join(',') + ' · ' + st.edgeMargin_cm + ' · ' + f.label); }
+      // 188.5 · Avbryt etter forhåndsvisning setter også runsPerStep tilbake (før 188 ble forslagets strengantall stående).
+      st = mk(VK31, EX);
+      { const rps0 = st.runsPerStep, pv = _generateStairProposals(st); st.proposals = pv; _stairPreviewProposal(st.id, 0); const rpsPrev = st.runsPerStep; _stairCancelPreview(st.id);
+        check('188.5: Avbryt etter forhåndsvisning: runsPerStep tilbake', String(rps0), (st.runsPerStep ?? null) === (rps0 ?? null) && rpsPrev != null, rps0 + ' → ' + rpsPrev + ' → ' + st.runsPerStep); }
+      check('188.6: hurtigtast-panelet har ↑/↓ «Bla i kabler»', 'rad', _SHORTCUTS.some(r => /Bla i kabler/.test(r.what) && r.keys.join() === '↑,↓'), 'mangler');
     }
   } catch (e) {
     results.push({ name: 'unntak', ok: false, expected: 'ingen', got: String(e && e.message || e) });
@@ -56852,6 +57147,7 @@ function _stairPreviewProposal(stairId, idx) {
       desiredCableCount: stair.desiredCableCount,
       selectedProposal: stair.selectedProposal || null,
       lastProposal: stair.lastProposal || null,
+      runsPerStep: stair.runsPerStep == null ? null : stair.runsPerStep,   // 188: Avbryt satte den ikke tilbake
     }));
   }
   _applyStairProposal(stair, stair.proposals[idx]);
@@ -56887,6 +57183,7 @@ function _stairCancelPreview(stairId) {
     noseOffset_cm: ps.noseOffset_cm, riserOffset_cm: ps.riserOffset_cm,
     edgeMargin_cm: ps.edgeMargin_cm, edgeMarginMin_cm: ps.edgeMarginMin_cm,
     desiredCableCount: ps.desiredCableCount, selectedProposal: ps.selectedProposal, lastProposal: ps.lastProposal });
+  if ('runsPerStep' in ps) stair.runsPerStep = ps.runsPerStep;   // 188
   delete stair._prePreviewState;
   delete stair._activeProposalIdx;
   _regenerateStairCable(stair);
@@ -56932,7 +57229,11 @@ function _renderStairProposalPanel(stair, proposals) {
     const diffM = Math.round((totalProductLen - p.totalCableLength_m) * 10) / 10;
     const diffLabel = diffM > 0 ? `${diffM} m til overs` : diffM < 0 ? `${Math.abs(diffM)} m for kort` : 'Eksakt';
     // 187: «for langt innenfor 5 %»-forslaget farges etter passformen (gult 2–5 %, som manuelt sett).
-    const diffColor = p.overSet ? (p.fitStatus === 'warn' ? '#f59e0b' : 'var(--muted)') : diffM < 0 ? '#ef4444' : diffM > 3 ? '#f59e0b' : '#22c55e';
+    // 188 (svar 187/4): overskuddet skal stå TYDELIG — gult og i større skrift, uansett om det er under 2 %.
+    const diffColor = p.overSet ? '#f59e0b' : diffM < 0 ? '#ef4444' : diffM > 3 ? '#f59e0b' : '#22c55e';
+    const overWhyTxt = p.overWhy === 'arm' ? 'Kortere kabler måtte gått forbi hjørnet'
+      : p.overWhy === '75' ? 'Kortere kabler ville gitt under 75 % varmet bredde'
+      : p.overWhy === 'kortest' ? 'Korteste kabel er lengre enn behovet' : 'Ingen kortere sett går opp';
 
     // Dybdemargin-variant (nese/opptrinn, Regel 2/3)
     const marginBadge = p.adjustedMargin ? `<div style="display:inline-block;background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.3);border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;color:var(--accent);margin-bottom:4px">Dybdemargin ${p.noseOffset_cm} cm</div>` : '';
@@ -56968,12 +57269,12 @@ function _renderStairProposalPanel(stair, proposals) {
       <div style="flex:1;background:var(--surface2);border:1px solid ${p.recommended ? '#4ea8ff' : 'var(--brd)'};border-radius:10px;padding:14px;min-width:200px;position:relative">
         ${p.recommended ? '<div style="position:absolute;top:-10px;left:12px;background:#4ea8ff;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px">★ Anbefalt</div>' : ''}
         <div style="font-weight:600;font-size:14px;color:var(--text);margin-bottom:6px">Forslag ${String.fromCharCode(65 + i)}</div>
-        ${marginBadge}${lockBadge}${sideMarginBadge}${p.overSet ? `<div style="display:inline-block;background:${p.fitStatus === 'warn' ? 'rgba(245,158,11,.12)' : 'rgba(34,211,238,.1)'};border:1px solid ${p.fitStatus === 'warn' ? 'rgba(245,158,11,.35)' : 'rgba(34,211,238,.3)'};border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;color:${p.fitStatus === 'warn' ? '#f59e0b' : 'var(--accent)'};margin-bottom:4px">Kortere kabler måtte gått forbi hjørnet — ${diffLabel}</div>` : ''}
+        ${marginBadge}${lockBadge}${sideMarginBadge}${p.overSet ? `<div class="stair-prop-over" style="background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.45);border-radius:6px;padding:5px 8px;margin-bottom:6px"><div style="font-size:15px;font-weight:700;color:#f59e0b">${diffLabel}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">${overWhyTxt}</div></div>` : ''}
         <div style="font-size:12px;color:var(--muted);display:grid;gap:4px">
           ${cableDetailsHtml}
           ${singleHtml}
           <div style="font-size:11px;color:var(--dim)">Beregnet behov: <b>${p.totalCableLength_m} m</b></div>
-          <div style="color:${diffColor};font-weight:600;font-size:11px">${diffLabel}</div>
+          ${p.overSet ? '' : `<div style="color:${diffColor};font-weight:600;font-size:11px">${diffLabel}</div>`}
           <div style="border-top:1px solid var(--brd);margin:4px 0"></div>
           <div>↔ CC trinn: <b>${p.stepCC} cm</b></div>
           <div>↔ CC repos: <b>${p.landingCC} cm</b></div>
@@ -57029,13 +57330,15 @@ function _renderStairProposalPanel(stair, proposals) {
       </button>
     </div>`;
 
-  const html = `<div id="stair-proposal-panel" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding-top:60px;background:rgba(0,0,0,0.45)" onclick="if(event.target===this){_stairCancelPreview(${stair.id});this.remove()}">
+  _stairBrowse = null;   // 188: ny dialog → start på kabelen nærmest behovet
+  const html = `<div id="stair-proposal-panel" tabindex="-1" onkeydown="_stairBrowseKey(event,${stair.id})" style="outline:none;position:fixed;inset:0;z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding-top:60px;background:rgba(0,0,0,0.45)" onclick="if(event.target===this){_stairCancelPreview(${stair.id});this.remove()}">
     <div id="stair-proposal-inner" style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(920px,96vw);max-height:88vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.4);cursor:default;position:relative">
       <div style="cursor:move;padding-bottom:8px;margin:-20px -24px 12px;padding:12px 24px;border-radius:12px 12px 0 0;user-select:none" onmousedown="_startDragProposalPanel(event,'stair-proposal-inner')">
         <h3 style="margin:0;font-size:16px;color:var(--text)"><svg class="ic ic-zap" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></svg> Kabelforslag for ${esc(stair.name || 'Trapp')}</h3>
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">${cardsHtml}</div>
       ${proposals.singleReason ? `<div style="margin-top:10px;font-size:11px;color:var(--dim)">Ingen én-kabel-løsning: ${esc(proposals.singleReason)}</div>` : ''}
+      ${_stairBrowseHtml(stair)}
       <div id="stair-proposal-active" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(78,168,255,.08);border:1px solid rgba(78,168,255,.3);border-radius:8px;font-size:13px;color:var(--text)"></div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
         <button onclick="_stairCancelPreview(${stair.id});document.getElementById('stair-proposal-panel').remove()" style="padding:8px 16px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px">Avbryt</button>
@@ -57044,6 +57347,7 @@ function _renderStairProposalPanel(stair, proposals) {
     </div>
   </div>`;
   document.body.insertAdjacentHTML('beforeend', html);
+  try { document.getElementById('stair-proposal-panel').focus({ preventScroll: true }); } catch (e) {}   // 188: piltastene
 }
 
 /**
@@ -82252,8 +82556,12 @@ function _restoreProject(data) {
     // er fra før, så hesteskotrapper regnes om når prosjektet åpnes (margin, kabelsett og forslag står
     // som lagret — bare behovet og fordelingen regnes på nytt). Uten produktkatalog (ennå ikke lastet)
     // står de som lagret til neste endring. Lagrer ingenting (ingen pushUndo / autolagring).
-    if (_stairIsHorseshoe(st) && !st.noCable && HEATING_PRODUCTS.length) {
-      try { _regenerateStairCable(st); } catch (e) { console.warn("187: kunne ikke regne om hesteskotrapp", st.id, e); }
+    // 188 (svar 187/1 og 187/5): ALLE trapper regnes om (rette teller nå også ruten i plan), og et VALGT
+    // FORSLAG løses på nytt som et manuelt sett: samme kabelsett, marginen løst så kabelen går opp
+    // (_stairResolveMarginForSet, samme vei som «Fyll toppflaten»-byttet i 184). Går settet ikke opp,
+    // står forslaget og marginen som lagret, og avviket vises som før. Låst avstand og soner: bare omregning.
+    if (!st.noCable && HEATING_PRODUCTS.length) {
+      try { _stairReopen(st); } catch (e) { console.warn("188: kunne ikke regne om trapp", st.id, e); }
     }
   }
   S.groups    = data.groups    || [];   // STEG 2 (etasje-vanntett): manglet helt fra før
