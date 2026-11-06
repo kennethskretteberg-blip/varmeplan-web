@@ -1,0 +1,14 @@
+195 · VAKSINE (midlertidig — tilbakestilles med vaksine-tilbake.txt): to innførte feil som den
+nye testen SKAL fange. (A) avbrutt dialog stopper ikke eksporten, (B) vakten rydder ikke fila.
+
+@@@ FINN
+    if (valg.cancelled) { lev.cancelled = true; return; }
+@@@ SETT
+    if (valg.cancelled) { lev.cancelled = true; }
+@@@ SLUTT
+
+@@@ FINN
+      if (lev.handle) { await _pdfDiscardHandle(lev.handle); lev.handle = null; }
+@@@ SETT
+      if (lev.handle) { lev.handle = null; }
+@@@ SLUTT

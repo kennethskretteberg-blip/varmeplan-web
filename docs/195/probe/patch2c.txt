@@ -1,0 +1,47 @@
+195 · patch 2c: regresjonstesten, del 3 (valget av, standard, bart kall, feilveier).
+
+@@@ FINN
+    //195-TEST-DEL-3
+@@@ SETT
+
+    // ── 3. Valget av: dagens nedlasting ─────────────────────────────────────────────────────
+    pickerSvar = () => mkHandle('skal-ikke-brukes.pdf');
+    const ok3 = await kjør({ savePicker: false });
+    check('3: valget av → ingen dialog, doc.save som før', '0 / 1', ok3 === true && pickerKall.length === 0 && saveKall.length === 1 && /^varmeplan_.+_rev1\.pdf$/.test(saveKall[0] || ''), pickerKall.length + ' / ' + saveKall.length + ' ' + saveKall[0]);
+    check('3: revisjon og status som før', '1 / 1', S.project.revision === 1 && statusKall.length === 1, S.project.revision + ' / ' + statusKall.length);
+    check('3: ingen «PDF lagret»-melding (nettleseren viser nedlastingen selv)', 0, egne().length === 0, JSON.stringify(toasts));
+
+    // ── 4. Uten `lev` følger vakten brukerens valg ──────────────────────────────────────────
+    _currentProfile = { prefs: { pdfSavePicker: false } };
+    await kjør(undefined);
+    check('4: profilen sier av → ingen dialog', '0 / 1', pickerKall.length === 0 && saveKall.length === 1, pickerKall.length + ' / ' + saveKall.length);
+    _currentProfile = null;
+    const h4 = mkHandle('standard.pdf'); pickerSvar = () => h4;
+    await kjør(undefined);
+    check('4: ingen lagret verdi → på som standard', '1 / 0', pickerKall.length === 1 && saveKall.length === 0 && !!h4.skrevet, pickerKall.length + ' / ' + saveKall.length);
+
+    // ── 5. Bart exportPDF(opts) — slik alle eldre tester kaller — åpner aldri dialogen ──────
+    await kjør('bart');
+    check('5: exportPDF(opts) uten levering → doc.save', '0 / 1', pickerKall.length === 0 && saveKall.length === 1, pickerKall.length + ' / ' + saveKall.length);
+
+    // ── 6. Dialogen lar seg ikke åpne (klikket for gammelt) → vanlig nedlasting ─────────────
+    pickerSvar = () => { throw feil('SecurityError'); };
+    const ok6 = await kjør({ savePicker: true });
+    check('6: SecurityError → nedlasting, ingen feilmelding', '1 / 0', ok6 === true && saveKall.length === 1 && egne().length === 0 && S.project.revision === 1, saveKall.length + ' / ' + JSON.stringify(toasts));
+
+    // ── 7. Byggingen feiler ETTER at fila er valgt → den tomme fila fjernes ─────────────────
+    const h7 = mkHandle('tom.pdf'); pickerSvar = () => h7;
+    window._pdfStampBranding = () => { throw new Error('VAKSINE 195'); };
+    const ok7 = await kjør({ savePicker: true });
+    window._pdfStampBranding = saved.stamp;
+    check('7: eksporten meldes som feilet', false, ok7 === false && toasts.some(t => t[1] === 'error' && /VAKSINE 195/.test(t[0])), ok7 + ' ' + JSON.stringify(toasts));
+    check('7: den tomme fila er fjernet, ingen nedlasting', true, h7.fjernet === true && h7.skrevet === null && saveKall.length === 0, h7.fjernet + ' / ' + saveKall.length);
+    check('7: ingen revisjon, ingen status', '0 / 0', S.project.revision === 0 && statusKall.length === 0, S.project.revision + ' / ' + statusKall.length);
+
+    // ── 8. Skrivingen feiler → fila fjernes, PDF-en lastes ned likevel ──────────────────────
+    const h8 = mkHandle('nektet.pdf', true); pickerSvar = () => h8;
+    const ok8 = await kjør({ savePicker: true });
+    check('8: skrivefeil → nedlasting + varsel, tom fil fjernet', '1 / true', ok8 === true && saveKall.length === 1 && h8.fjernet === true && toasts.some(t => t[1] === 'warning'), saveKall.length + ' / ' + h8.fjernet + ' ' + JSON.stringify(toasts));
+    check('8: revisjonen telt opp (PDF-en ble levert)', 1, S.project.revision === 1, S.project.revision);
+    //195-TEST-DEL-4
+@@@ SLUTT

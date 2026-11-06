@@ -1,0 +1,59 @@
+195 · patch 2a: regresjonstesten, del 1 (oppsett og stubber).
+
+@@@ FINN
+  catch (e) { console.warn('[PDF] kunne ikke fjerne den tomme fila:', e); }
+}
+@@@ SETT
+  catch (e) { console.warn('[PDF] kunne ikke fjerne den tomme fila:', e); }
+}
+
+// 195 — regresjon for «Lagre som». Kjøres fra konsollen: await _pdfSavePickerRegressionTest195().
+// Nettleserens egen dialog kan ikke styres fra en test, så showSaveFilePicker byttes ut med en
+// stubb som gir et håndtak i minnet. Resten er ekte: exportPDF bygger hele PDF-en hver gang.
+async function _pdfSavePickerRegressionTest195() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const saved = {
+    rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats,
+    matPaths: S.matPaths, plates: S.plates, aluboard: S.aluboard, zones: S.zones, hindrings: S.hindrings,
+    stairs: S.stairs, floors: S.floors, project: S.project,
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId,
+    autoSave: window._performAutoSave, sched: window._scheduleAutoSave, toast: window._showToast,
+    modal: window.showAccessoriesModal, branding: window._pdfBranding, stamp: window._pdfStampBranding,
+    jsPDF: window.jspdf && window.jspdf.jsPDF, status: window._setProjectStatus,
+    writeProf: window._writeProfileRow, guard: window.exportPDFGuarded,
+    hadPicker: 'showSaveFilePicker' in window, picker: window.showSaveFilePicker,
+    prof: _currentProfile, user: _currentUser, pid: _supabaseProjectId,
+    undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
+  };
+  let lsSaved = null; try { lsSaved = localStorage.getItem(PDF_SAVE_PICKER_LS_KEY); } catch (e) {}
+  const dlg0 = document.getElementById('export-dialog');
+  const dlgSaved = dlg0 ? dlg0.style.display : null;
+  let saveKall = [], pickerKall = [], statusKall = [], toasts = [], profKall = [], guardKall = [];
+  let pickerSvar = null;   // funksjon: gir et håndtak, eller kaster som nettleseren ville gjort
+  const feil = navn => Object.assign(new Error(navn), { name: navn });
+  const mkHandle = (navn, nektSkriv) => {
+    const h = { name: navn, skrevet: null, lukket: false, fjernet: false,
+      createWritable: async () => {
+        if (nektSkriv) throw feil('NotAllowedError');
+        return { write: async b => { h.skrevet = b; }, close: async () => { h.lukket = true; }, abort: async () => {} };
+      },
+      remove: async () => { h.fjernet = true; } };
+    return h;
+  };
+  // Initial-påminnelsen («Legg inn initialer …») kommer fra filnavnbyggeren og er ikke vår.
+  const egne = () => toasts.filter(t => !/^Legg inn initialer/.test(t[0]));
+  try {
+    window._performAutoSave = () => Promise.resolve(); window._scheduleAutoSave = () => {};
+    window._showToast = (m, t) => { toasts.push([String(m), t || '']); };
+    window.showAccessoriesModal = () => Promise.resolve({ items: [] });
+    window._pdfBranding = () => Promise.resolve(null);
+    window._setProjectStatus = async (...a) => { statusKall.push(a); return { ok: true }; };
+    window._writeProfileRow = async f => { profKall.push(JSON.parse(JSON.stringify(f))); return null; };
+    window.showSaveFilePicker = async o => { pickerKall.push(o); return pickerSvar(); };
+    const EkteJsPDF = saved.jsPDF;
+    window.jspdf.jsPDF = function (...a) { const d = new EkteJsPDF(...a); d.save = function (n) { saveKall.push(n); return d; }; return d; };
+    _currentProfile = null; _currentUser = null; _supabaseProjectId = 'test-195';
+    try { localStorage.removeItem(PDF_SAVE_PICKER_LS_KEY); } catch (e) {}
+    //195-TEST-DEL-2
+@@@ SLUTT

@@ -1,0 +1,60 @@
+195 · patch 1b: vakten (exportPDFGuarded) og seksjonshodet med preferansen.
+
+@@@ FINN
+function exportPDFGuarded(opts) { return _runExport('PDF', () => exportPDF(opts)); }
+function exportMaterialListXLSXGuarded() { return _runExport('Materiallista', () => _exportMaterialListXLSX()); }
+@@@ SETT
+// 195: `lev` = leveringen. Uten argument følger den brukerens valg («Velg navn og mappe ved
+// lagring»). Feiler byggingen ETTER at brukeren har valgt fil, fjernes den tomme fila her.
+function exportPDFGuarded(opts, lev) {
+  lev = lev || { savePicker: _pdfSavePickerOn() };
+  return _runExport('PDF', async () => {
+    try { await exportPDF(opts, lev); }
+    catch (e) {
+      if (lev.handle) { await _pdfDiscardHandle(lev.handle); lev.handle = null; }
+      throw e;
+    }
+  });
+}
+function exportMaterialListXLSXGuarded() { return _runExport('Materiallista', () => _exportMaterialListXLSX()); }
+
+// ══ 195 · PDF: VELG NAVN OG MAPPE VED LAGRING (Fredrik via Kenneth 06.11.2026) ════════════════
+// «Savner en mulighet for å velge lagringsbane når man genererer PDF.» Før 195 gikk hoved-PDF-en
+// alltid gjennom jsPDFs doc.save (skjult <a download>) → rett i nedlastingsmappa med ferdig navn.
+// Nå: nettleserens egen «Lagre som» (File System Access API, samme mønster som exportProjectFile)
+// der den finnes — Chrome og Edge på PC/Mac. Safari, Firefox og mobil har ikke API-et og går
+// dagens vei, uendret.
+//
+// REKKEFØLGE (STEG 0.4, målt): dialogen åpnes FØRST, PDF-en bygges etterpå. showSaveFilePicker
+// krever et ferskt brukerklikk, og Chrome regner klikket som gyldig i 5 s (målt: 4,8 s går, 5,5 s
+// avvises med SecurityError). Et stort prosjekt (40 rom, 59 sider) bygges på under 1 s, men foran
+// byggingen ligger to nettverkskall uten tidsgrense (org-logo, kartfliser), og plantegninger og
+// trege maskiner kommer i tillegg. Med dialogen først spiller byggetiden ingen rolle.
+// Prisen: fila finnes på disken fra brukeren trykker «Lagre». Feiler byggingen etterpå, fjernes
+// den igjen (exportPDFGuarded over → _pdfDiscardHandle).
+//
+// Valget er per BRUKER: profiles.prefs.pdfSavePicker (samme sted som pdfLabelScale), med
+// localStorage som reserve for den som ikke er innlogget. Standard PÅ. Mappa huskes av
+// NETTLESEREN (id: 'varmeplan-pdf') — ingen egne mappehåndtak i IndexedDB.
+// Regresjon: await _pdfSavePickerRegressionTest195().
+const PDF_SAVE_PICKER_LS_KEY = 'varmeplan_pdf_save_picker';
+const PDF_SAVE_PICKER_ID = 'varmeplan-pdf';
+const PDF_SAVE_FALLBACK_INFO = 'Fila lagres i nedlastingsmappa. Vil du velge mappe hver gang, kan du slå på ‹Spør hvor filer skal lagres› i nettleserens innstillinger.';
+// `typeof`, ikke `in`: testene slår API-et av ved å sette egenskapen til undefined.
+function _pdfSavePickerSupported() { return typeof window.showSaveFilePicker === 'function'; }
+// Brukerens ØNSKE (uavhengig av nettleser): profilen vinner når den har en verdi, så denne
+// nettleserens localStorage, ellers PÅ.
+function _pdfSavePickerPref() {
+  const prof = (_currentProfile && _currentProfile.prefs) || null;
+  if (prof && typeof prof.pdfSavePicker === 'boolean') return prof.pdfSavePicker;
+  try {
+    const v = localStorage.getItem(PDF_SAVE_PICKER_LS_KEY);
+    if (v === '0') return false;
+    if (v === '1') return true;
+  } catch (e) { /* lagring utilgjengelig — standardverdien under */ }
+  return true;
+}
+// Skal DENNE eksporten åpne lagre-dialogen? Ønsket OG at nettleseren kan.
+function _pdfSavePickerOn() { return _pdfSavePickerSupported() && _pdfSavePickerPref(); }
+//195-FORTSETTER
+@@@ SLUTT

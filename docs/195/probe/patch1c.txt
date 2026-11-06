@@ -1,0 +1,52 @@
+195 · patch 1c: lagring av valget, lagre-dialogen, skriving og rydding.
+
+@@@ FINN
+//195-FORTSETTER
+@@@ SETT
+// Lagrer valget når det er ENDRET. Profilraden skrives i bakgrunnen og blokkerer aldri eksporten;
+// de andre prefs-nøklene (folie-avstand, veggmargin, labelstørrelse) følger med uendret.
+function _pdfSetSavePickerPref(on) {
+  on = !!on;
+  if (on === _pdfSavePickerPref()) return;
+  try { localStorage.setItem(PDF_SAVE_PICKER_LS_KEY, on ? '1' : '0'); } catch (e) { /* privat modus */ }
+  if (_currentProfile && _currentUser && _currentUser.id) {
+    _currentProfile.prefs = { ...(_currentProfile.prefs || {}), pdfSavePicker: on };
+    Promise.resolve(_writeProfileRow({ prefs: _currentProfile.prefs }))
+      .then(err => { if (err) console.warn('[PDF] valget «velg navn og mappe» ble ikke lagret i profilen:', err.message || err); })
+      .catch(e => console.warn('[PDF] valget «velg navn og mappe» ble ikke lagret i profilen:', e));
+  }
+}
+// Åpner nettleserens lagre-dialog med navnet ferdig utfylt. Tre utfall:
+//   handle             brukeren valgte navn og mappe
+//   cancelled: true    brukeren avbrøt (AbortError) — eksporten skal stoppe STILLE
+//   handle: null       dialogen lot seg ikke åpne (klikket for gammelt, innebygd ramme, policy)
+//                      → kalleren faller tilbake på vanlig nedlasting. Ingen død knapp.
+// `startIn: 'downloads'` gjelder bare FØRSTE gang; deretter åpner nettleseren mappa den husker
+// for `id`.
+async function _pdfPickSaveTarget(suggestedName) {
+  try {
+    const handle = await window.showSaveFilePicker({
+      id: PDF_SAVE_PICKER_ID,
+      startIn: 'downloads',
+      suggestedName,
+      types: [{ description: 'PDF-dokument', accept: { 'application/pdf': ['.pdf'] } }],
+    });
+    return { handle };
+  } catch (e) {
+    if (e && e.name === 'AbortError') return { cancelled: true };
+    console.warn('[PDF] lagre-dialogen kunne ikke åpnes — vanlig nedlasting i stedet:', e);
+    return { handle: null };
+  }
+}
+async function _pdfWriteToHandle(handle, blob) {
+  const w = await handle.createWritable();
+  try { await w.write(blob); await w.close(); }
+  catch (e) { try { await w.abort(); } catch (_) { /* allerede lukket */ } throw e; }
+}
+// Fjerner fila brukeren valgte når det likevel ikke ble noen PDF (bygging eller skriving feilet).
+// handle.remove() finnes i Chrome/Edge 110+; mangler den, blir en tom fil liggende.
+async function _pdfDiscardHandle(handle) {
+  try { if (handle && typeof handle.remove === 'function') await handle.remove(); }
+  catch (e) { console.warn('[PDF] kunne ikke fjerne den tomme fila:', e); }
+}
+@@@ SLUTT

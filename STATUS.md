@@ -6,7 +6,7 @@ Oppdateres på slutten av hver økt. Leses av prosjektoversikten.
 - **Mappe:** `~/Code/varmeplan-web`
 - **Fase:** bygger
 - **Sist oppdatert:** 06.11.2026
-- **Sist gjort:** 194 (`main`, ikke pushet): kartet uten kant. Nye kart er flislag fra Kartverkets WMTS rett i nettleseren (CORS `*` målt, PDF-toDataURL virker, 32 nye tester + ekte flis i PDF). Dra og zoom fritt; kredit tegnes av klienten; prosjektraden går fra ~2 MB til ~0,5 kB per kart. Gamle bilde-prosjekter uendret. Eiendomsgrenser/terrengskygge finnes ikke i flismodus (spørsmål 1). Rapport i docs/194/.
-- **Neste steg:** Kenneth ser på `docs/194/RAPPORT.md` og svarer på `docs/194/SPØRSMÅL.md` (særlig 1 og 3). Push 190–194 når godkjent.
+- **Sist gjort:** 195 (`main`, ikke pushet): PDF — velg navn og mappe ved lagring. I Chrome/Edge åpner «Generer PDF» nettleserens «Lagre som» med dagens filnavn ferdig utfylt (dialogen åpnes først, PDF-en bygges etterpå — et klikk gjelder i 5 s, målt); mappa huskes av nettleseren. Safari/Firefox/mobil laster ned som før, med en forklaring i PDF-dialogen. Avkrysning «Velg navn og mappe ved lagring» i PDF-dialogen, på som standard, husket per bruker (`profiles.prefs.pdfSavePicker`). Avbryt er stille (ingen fil, ingen revisjon, ingen status). Ny `_pdfSavePickerRegressionTest195` (43), de åtte PDF-/profil-testene grønne med like tall. Selve lagre-dialogen på skjermen er IKKE prøvd (testnettleseren har ingen skjerm) — håndsjekk i rapporten. Rapport i docs/195/. Før det: 194 kartet uten kant (flislag).
+- **Neste steg:** Kenneth gjør håndsjekken nederst i `docs/195/RAPPORT.md` (to minutter i Chrome) og svarer på `docs/195/SPØRSMÅL.md` (særlig 2 og 5). 194: se `docs/194/RAPPORT.md` og svar på `docs/194/SPØRSMÅL.md` (særlig 1 og 3). Push 190–195 når godkjent.
 - **Blokkert av:** ingenting
 - **Live:** https://varmeplan.no

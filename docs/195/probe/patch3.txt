@@ -1,0 +1,19 @@
+195 · patch 3: to kommentarer presisert (ingen kodeendring).
+
+@@@ FINN
+// Prisen: fila finnes på disken fra brukeren trykker «Lagre». Feiler byggingen etterpå, fjernes
+// den igjen (exportPDFGuarded over → _pdfDiscardHandle).
+@@@ SETT
+// Prisen: Chrome oppretter fila (tom) idet brukeren trykker «Lagre», og tømmer en eksisterende fil
+// brukeren velger å erstatte. Feiler byggingen etterpå, fjernes den tomme fila igjen
+// (exportPDFGuarded over → _pdfDiscardHandle; målt mot et ekte filhåndtak i OPFS).
+// ⚠ At fila opprettes allerede i dialogen er kjent Chrome-oppførsel, IKKE målt i 195 — den
+// native dialogen kan ikke styres fra testene (headless Chrome svarer AbortError straks).
+@@@ SLUTT
+
+@@@ FINN
+// identiske selv om minuttet tikker over mens dialogen står åpen. PDF-en lager sitt i selve lagringen.
+@@@ SETT
+// identiske selv om minuttet tikker over mens dialogen står åpen. PDF-en lager sitt i selve lagringen
+// (195: med «Lagre som» lages navnet idet lagre-dialogen åpnes — det er det foreslåtte navnet).
+@@@ SLUTT

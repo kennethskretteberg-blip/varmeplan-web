@@ -1,0 +1,53 @@
+195 · patch 2d: regresjonstesten, del 4 (PDF-dialogen, profilen, kundelenka).
+
+@@@ FINN
+    //195-TEST-DEL-4
+@@@ SETT
+
+    // ── 9. PDF-dialogen: avkrysning der API-et finnes, og valget huskes ─────────────────────
+    nytt(); _currentProfile = null;
+    _showExportDialog();
+    let cb = document.getElementById('exp-savepicker');
+    check('9: avkrysningen vises, på som standard', 'på', !!cb && cb.checked === true && !document.getElementById('exp-savepicker-info'), cb ? cb.checked : 'mangler');
+    check('9: teksten', 'Velg navn og mappe ved lagring', !!cb && cb.parentElement.textContent.trim() === 'Velg navn og mappe ved lagring', cb && cb.parentElement.textContent.trim());
+    window.exportPDFGuarded = (o, l) => { guardKall.push([o, l, _pdfSavePickerOn()]); return Promise.resolve(true); };
+    cb.checked = false; _runExportPDF();
+    check('9: av i dialogen → eksporten går uten lagre-dialog', false, guardKall.length === 1 && guardKall[0][2] === false, JSON.stringify(guardKall.map(g => g[2])));
+    let lsNaa = null; try { lsNaa = localStorage.getItem(PDF_SAVE_PICKER_LS_KEY); } catch (e) {}
+    check('9: valget huskes (ikke innlogget → denne nettleseren)', '0', lsNaa === '0' && _pdfSavePickerPref() === false, lsNaa);
+    _showExportDialog(); cb = document.getElementById('exp-savepicker');
+    check('9: neste gang står avkrysningen av', false, !!cb && cb.checked === false, cb && cb.checked);
+    cb.checked = true; _runExportPDF();
+    check('9: på igjen huskes', true, _pdfSavePickerPref() === true && guardKall.length === 2 && guardKall[1][2] === true, _pdfSavePickerPref());
+
+    // ── 10. Innlogget: valget lagres i profilen, de andre prefs-nøklene beholdes ─────────────
+    _currentProfile = { prefs: { pdfLabelScale: 1.25, foilGapCm: 2 } }; _currentUser = { id: 'u-195' }; profKall = [];
+    _pdfSetSavePickerPref(false);
+    await Promise.resolve();
+    const pr10 = (profKall[0] && profKall[0].prefs) || {};
+    check('10: profilraden skrevet med alle nøkler', 'pdfLabelScale 1.25, foilGapCm 2, pdfSavePicker false', profKall.length === 1 && pr10.pdfSavePicker === false && pr10.pdfLabelScale === 1.25 && pr10.foilGapCm === 2, JSON.stringify(profKall));
+    check('10: gjelder straks', false, _pdfSavePickerPref() === false && _pdfSavePickerOn() === false, _pdfSavePickerPref());
+    _pdfSetSavePickerPref(false);
+    check('10: uendret valg skriver ikke på nytt', 1, profKall.length === 1, profKall.length);
+    check('10: profil-dialogen beholder nøkkelen når den lagrer', 'sprer gamle prefs', /\.\.\.\(\(_currentProfile && _currentProfile\.prefs\) \|\| \{\}\)/.test(String(_saveProfile)), 'mangler');
+    _currentProfile = null; _currentUser = null;
+
+    // ── 11. Kundelenka laster ned som før ───────────────────────────────────────────────────
+    guardKall = []; _presentDownloadPDF();
+    check('11: kundelenka ber ikke om lagre-dialog', false, guardKall.length === 1 && !!guardKall[0][1] && guardKall[0][1].savePicker === false, JSON.stringify(guardKall.map(g => g[1])));
+    window.exportPDFGuarded = saved.guard;
+
+    // ── 12. Nettleser uten API-et (Safari, Firefox, mobil) ──────────────────────────────────
+    try { localStorage.removeItem(PDF_SAVE_PICKER_LS_KEY); } catch (e) {}
+    window.showSaveFilePicker = undefined;
+    check('12: uten API → aldri lagre-dialog', false, _pdfSavePickerSupported() === false && _pdfSavePickerOn() === false, _pdfSavePickerOn());
+    const ok12 = await kjør({ savePicker: true });
+    check('12: eksporten laster ned som før', 1, ok12 === true && saveKall.length === 1 && S.project.revision === 1, saveKall.length);
+    _showExportDialog();
+    const info = document.getElementById('exp-savepicker-info');
+    check('12: ingen avkrysning, men forklaringen', PDF_SAVE_FALLBACK_INFO, !document.getElementById('exp-savepicker') && !!info && info.textContent === PDF_SAVE_FALLBACK_INFO, info ? info.textContent : 'mangler');
+    guardKall = []; window.exportPDFGuarded = (o, l) => { guardKall.push([o, l]); return Promise.resolve(true); };
+    _runExportPDF();
+    check('12: «Generer PDF» virker uten avkrysningen, og valget røres ikke', 1, guardKall.length === 1 && _pdfSavePickerPref() === true, guardKall.length);
+    //195-TEST-DEL-5
+@@@ SLUTT

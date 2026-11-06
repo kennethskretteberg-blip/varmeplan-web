@@ -1,0 +1,53 @@
+195 · patch 1d: exportPDF — dialogen først, skriving til valgt fil til slutt.
+
+@@@ FINN
+async function exportPDF(opts) {
+@@@ SETT
+async function exportPDF(opts, lev) {
+@@@ SLUTT
+
+@@@ FINN
+  const accessoryItems = accessoryResult.items || [];
+  await _pdfBranding();   // last inn org-logo (co-brand) iht. flagg — stemples før save
+@@@ SETT
+  const accessoryItems = accessoryResult.items || [];
+  // 195: lagre-dialogen åpnes HER — rett etter brukerens siste klikk («Generer PDF» eller knappen
+  // i tilbehørsvinduet) og FØR nettverkskallene og byggingen under, ellers kan klikket bli for
+  // gammelt (5 s) og dialogen avvist. Bare når kalleren ber om det (`lev.savePicker`, satt av
+  // exportPDFGuarded) — et bart exportPDF(opts)-kall, som i alle testene, går rett til doc.save.
+  // Navnet er dagens (_exportFileName), med klokkeslettet fra nå i stedet for fra lagringen.
+  let saveHandle = null;
+  if (lev && lev.savePicker && _pdfSavePickerSupported()) {
+    const _revNavn = ((S.project && typeof S.project.revision === 'number') ? S.project.revision : 0) + 1;
+    const valg = await _pdfPickSaveTarget(_exportFileName('Varmeplan', 'pdf', _revNavn));
+    // Avbrutt = stille: ingen fil, ingen melding, ingen revisjon og ingen statusovergang.
+    if (valg.cancelled) { lev.cancelled = true; return; }
+    saveHandle = lev.handle = valg.handle;
+  }
+  await _pdfBranding();   // last inn org-logo (co-brand) iht. flagg — stemples før save
+@@@ SLUTT
+
+@@@ FINN
+  doc.save(_exportFileName('Varmeplan', 'pdf', rev));
+  // 113: FØRST nå er eksporten et faktum — da, og bare da, telles revisjonen opp.
+@@@ SETT
+  // 195: valgte brukeren navn og mappe i lagre-dialogen (øverst i funksjonen), skrives PDF-en dit.
+  // Ellers — valget av, API-et mangler, eller dialogen lot seg ikke åpne — dagens doc.save, uendret.
+  let _lagretSom = null;
+  if (saveHandle) {
+    try {
+      await _pdfWriteToHandle(saveHandle, doc.output('blob'));
+      _lagretSom = saveHandle.name || 'PDF';
+    } catch (e) {
+      // Skrivingen feilet (mappa er borte, ingen tilgang, full disk). Brukeren skal likevel få
+      // PDF-en: fjern den tomme fila og last ned på vanlig måte.
+      console.warn('[PDF] kunne ikke skrive til valgt fil — laster ned i stedet:', e);
+      await _pdfDiscardHandle(saveHandle);
+      if (typeof _showToast === 'function') _showToast('Kunne ikke skrive til valgt mappe — PDF-en ble lastet ned i stedet.', 'warning');
+    }
+    lev.handle = null;   // fila er skrevet eller fjernet — vakten i exportPDFGuarded skal ikke røre den
+  }
+  if (!_lagretSom) doc.save(_exportFileName('Varmeplan', 'pdf', rev));
+  else if (typeof _showToast === 'function') _showToast('PDF lagret: ' + _lagretSom, 'success');
+  // 113: FØRST nå er eksporten et faktum — da, og bare da, telles revisjonen opp.
+@@@ SLUTT

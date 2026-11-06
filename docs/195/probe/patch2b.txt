@@ -1,0 +1,55 @@
+195 · patch 2b: regresjonstesten, del 2 (velg fil, avbryt, valget av, standard, bart kall).
+
+@@@ FINN
+    //195-TEST-DEL-2
+@@@ SETT
+    const pts = [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 300 }, { x: 0, y: 300 }];
+    const nytt = () => {
+      S.rooms = [{ id: 995101, floorId: null, partId: null, name: 'Stue', points: pts.map(p => ({ ...p })),
+        walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [] }];
+      S.cables = []; S.mats = []; S.matPaths = []; S.plates = []; S.aluboard = []; S.foilFree = []; S.strips = [];
+      S.zones = []; S.hindrings = []; S.stairs = []; S.floors = []; S.ui.activeFloorId = null; S.ui.activePartId = null;
+      S.project = { name: 'LAGRE-SOM-TEST', parts: [], revision: 0, lastExportedAt: null, createdAt: Date.now() };
+      if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+      _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+      saveKall = []; pickerKall = []; statusKall = []; toasts = []; profKall = [];
+    };
+    // pricing: true → en vellykket eksport skal gi statusovergangen under_arbeid → tilbud_sendt.
+    const OPTS = { cover: true, summary: true, floorplan: false, rooms: [995101], stairs: [], roomTable: true,
+      stairTable: false, materialList: false, resistance: false, cableTable: false, pricing: true, discount: 0,
+      showDGDB: false, docs: false, signature: false, freeText: '' };
+    const kjør = async lev => {
+      nytt();
+      if (lev === 'bart') { await exportPDF({ ...OPTS }); return true; }
+      return saved.guard({ ...OPTS }, lev);
+    };
+
+    // ── 1. Brukeren velger navn og mappe ────────────────────────────────────────────────────
+    const h1 = mkHandle('mitt-navn.pdf'); pickerSvar = () => h1;
+    const ok1 = await kjør({ savePicker: true });
+    const o1 = pickerKall[0] || {};
+    const pdfAcc = o1.types && o1.types[0] && o1.types[0].accept && o1.types[0].accept['application/pdf'];
+    check('1: eksporten gikk gjennom', true, ok1 === true, ok1);
+    check('1: lagre-dialogen åpnet én gang', 1, pickerKall.length === 1, pickerKall.length);
+    check('1: foreslått navn er dagens filnavn (rev1)', 'varmeplan_…_ÅÅÅÅMMDD-TTMM_…_rev1.pdf', /^varmeplan_.+_\d{8}-\d{4}_.+_rev1\.pdf$/.test(o1.suggestedName || ''), o1.suggestedName);
+    check('1: filtype PDF', '.pdf', !!pdfAcc && pdfAcc.length === 1 && pdfAcc[0] === '.pdf', JSON.stringify(o1.types));
+    check('1: mappa huskes av nettleseren (id)', 'varmeplan-pdf', o1.id === 'varmeplan-pdf', o1.id);
+    check('1: doc.save ikke kalt', 0, saveKall.length === 0, saveKall.length);
+    const hode1 = (h1.skrevet instanceof Blob) ? await h1.skrevet.slice(0, 5).text() : '';
+    check('1: PDF-en er skrevet til valgt fil og lukket', '%PDF- / application/pdf', hode1 === '%PDF-' && h1.skrevet.type === 'application/pdf' && h1.skrevet.size > 1000 && h1.lukket, hode1 + ' / ' + (h1.skrevet && h1.skrevet.type) + ' / ' + (h1.skrevet && h1.skrevet.size));
+    check('1: fila er ikke fjernet', false, h1.fjernet === false, h1.fjernet);
+    check('1: revisjonen telt opp', 1, S.project.revision === 1 && S.project.lastExportedAt > 0, S.project.revision);
+    check('1: status → tilbud_sendt', 1, statusKall.length === 1 && statusKall[0][1].sales_status === 'tilbud_sendt', statusKall.length);
+    check('1: kvittering med valgt navn', 'PDF lagret: mitt-navn.pdf', egne().length === 1 && egne()[0][0] === 'PDF lagret: mitt-navn.pdf', JSON.stringify(toasts));
+
+    // ── 2. Avbryt i dialogen: stille ────────────────────────────────────────────────────────
+    pickerSvar = () => { throw feil('AbortError'); };
+    const lev2 = { savePicker: true };
+    const ok2 = await kjør(lev2);
+    check('2: avbrutt er ikke en feil', true, ok2 === true && lev2.cancelled === true, ok2);
+    check('2: ingen fil (verken valgt fil eller nedlasting)', 0, saveKall.length === 0, saveKall.length);
+    check('2: ingen melding', 0, egne().length === 0, JSON.stringify(toasts));
+    check('2: revisjonen urørt', 0, S.project.revision === 0 && S.project.lastExportedAt === null, S.project.revision);
+    check('2: ingen statusovergang', 0, statusKall.length === 0, statusKall.length);
+    //195-TEST-DEL-3
+@@@ SLUTT

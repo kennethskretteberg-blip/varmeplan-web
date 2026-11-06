@@ -1,0 +1,33 @@
+195 · patch 2e: regresjonstesten, del 5 (gjenoppretting).
+
+@@@ FINN
+    //195-TEST-DEL-5
+@@@ SETT
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree,
+      cables: saved.cables, mats: saved.mats, matPaths: saved.matPaths, plates: saved.plates,
+      aluboard: saved.aluboard, zones: saved.zones, hindrings: saved.hindrings, stairs: saved.stairs,
+      floors: saved.floors, project: saved.project });
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId;
+    window._performAutoSave = saved.autoSave; window._scheduleAutoSave = saved.sched; window._showToast = saved.toast;
+    window.showAccessoriesModal = saved.modal; window._pdfBranding = saved.branding; window._pdfStampBranding = saved.stamp;
+    window._setProjectStatus = saved.status; window._writeProfileRow = saved.writeProf; window.exportPDFGuarded = saved.guard;
+    // `delete` der API-et aldri fantes: exportProjectFile spør med `in`, og en egenskap som står
+    // igjen som undefined ville lurt den.
+    if (saved.hadPicker) window.showSaveFilePicker = saved.picker; else delete window.showSaveFilePicker;
+    if (window.jspdf) window.jspdf.jsPDF = saved.jsPDF;
+    _currentProfile = saved.prof; _currentUser = saved.user; _supabaseProjectId = saved.pid;
+    try { if (lsSaved == null) localStorage.removeItem(PDF_SAVE_PICKER_LS_KEY); else localStorage.setItem(PDF_SAVE_PICKER_LS_KEY, lsSaved); } catch (e) {}
+    if (saved.undoLen != null) _undoStack.length = saved.undoLen;
+    const dlg = document.getElementById('export-dialog'); if (dlg) dlg.style.display = dlgSaved == null ? 'none' : dlgSaved;
+    if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_pdfSavePickerRegressionTest195: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return { ok: allOk, results };
+}
+@@@ SLUTT

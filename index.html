@@ -10157,7 +10157,9 @@ function _drawRoomTexture(room, spec) {
 
 // ── Steg 3: delelenke (?present=<token>) + PDF ─────────────────────────────
 function _presentDownloadPDF() {
-  if (typeof exportPDFGuarded === 'function') exportPDFGuarded();
+  // 195: kundelenka har ingen PDF-dialog og dermed ingen måte å slå av «velg navn og mappe» på,
+  // og kunden er ikke brukeren valget tilhører — her lastes PDF-en ned som før.
+  if (typeof exportPDFGuarded === 'function') exportPDFGuarded(undefined, { savePicker: false });
   else _showToast && _showToast('PDF-eksport er ikke tilgjengelig.');
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84117,6 +84119,13 @@ function _showExportDialog() {
               color:#fff;font-size:11px;cursor:pointer;white-space:nowrap">Bruk ${_esc(_myDisplayName())}</button>` : ''}
           </div>` : ''}
         </div>
+        <!-- 195: «Lagre som». Avkrysningen vises bare der nettleseren har showSaveFilePicker
+             (Chrome/Edge på PC/Mac); ellers en kort forklaring på hvor fila havner. -->
+        <div class="exp-group">
+          ${_pdfSavePickerSupported()
+            ? `<label class="exp-check" title="Nettleseren spør hvor PDF-en skal lagres, og åpner samme mappe neste gang"><input type="checkbox" id="exp-savepicker"${_pdfSavePickerPref() ? ' checked' : ''}> Velg navn og mappe ved lagring</label>`
+            : `<div id="exp-savepicker-info" style="font-size:11px;color:var(--muted);line-height:1.5">${PDF_SAVE_FALLBACK_INFO}</div>`}
+        </div>
         <div style="display:flex;gap:8px;margin-top:12px">
           <button class="adm-btn ghost" onclick="document.getElementById('export-dialog').style.display='none'" style="flex:1">Avbryt</button>
           <button class="adm-btn primary" onclick="_runExportPDF()" style="flex:1">Generer PDF</button>
@@ -84698,6 +84707,10 @@ function _runExportPDF() {
   // forhåndsutfylles (ikke låses) neste gang eksportdialogen åpnes. Et tomt felt lagres som tomt.
   S.project.freeText = opts.freeText;
   if (typeof _scheduleAutoSave === 'function') _scheduleAutoSave();
+  // 195: «Velg navn og mappe ved lagring» huskes per bruker (ikke per prosjekt). Avkrysningen
+  // finnes bare der nettleseren har lagre-dialogen; ellers røres ikke det lagrede valget.
+  const _spEl = document.getElementById('exp-savepicker');
+  if (_spEl) _pdfSetSavePickerPref(_spEl.checked);
   document.getElementById('export-dialog').style.display = 'none';
   exportPDFGuarded(opts);
 }
@@ -84726,8 +84739,317 @@ async function _runExport(hva, fn) {
 }
 // De to inngangene resten av appen skal bruke. Kall ALDRI exportPDF/_exportMaterialListXLSX
 // direkte fra en knapp — da er vi tilbake til det stille unntaket.
-function exportPDFGuarded(opts) { return _runExport('PDF', () => exportPDF(opts)); }
+// 195: `lev` = leveringen. Uten argument følger den brukerens valg («Velg navn og mappe ved
+// lagring»). Feiler byggingen ETTER at brukeren har valgt fil, fjernes den tomme fila her.
+function exportPDFGuarded(opts, lev) {
+  lev = lev || { savePicker: _pdfSavePickerOn() };
+  return _runExport('PDF', async () => {
+    try { await exportPDF(opts, lev); }
+    catch (e) {
+      if (lev.handle) { await _pdfDiscardHandle(lev.handle); lev.handle = null; }
+      throw e;
+    }
+  });
+}
 function exportMaterialListXLSXGuarded() { return _runExport('Materiallista', () => _exportMaterialListXLSX()); }
+
+// ══ 195 · PDF: VELG NAVN OG MAPPE VED LAGRING (Fredrik via Kenneth 06.11.2026) ════════════════
+// «Savner en mulighet for å velge lagringsbane når man genererer PDF.» Før 195 gikk hoved-PDF-en
+// alltid gjennom jsPDFs doc.save (skjult <a download>) → rett i nedlastingsmappa med ferdig navn.
+// Nå: nettleserens egen «Lagre som» (File System Access API, samme mønster som exportProjectFile)
+// der den finnes — Chrome og Edge på PC/Mac. Safari, Firefox og mobil har ikke API-et og går
+// dagens vei, uendret.
+//
+// REKKEFØLGE (STEG 0.4, målt): dialogen åpnes FØRST, PDF-en bygges etterpå. showSaveFilePicker
+// krever et ferskt brukerklikk, og Chrome regner klikket som gyldig i 5 s (målt: 4,8 s går, 5,5 s
+// avvises med SecurityError). Et stort prosjekt (40 rom, 59 sider) bygges på under 1 s, men foran
+// byggingen ligger to nettverkskall uten tidsgrense (org-logo, kartfliser), og plantegninger og
+// trege maskiner kommer i tillegg. Med dialogen først spiller byggetiden ingen rolle.
+// Prisen: Chrome oppretter fila (tom) idet brukeren trykker «Lagre», og tømmer en eksisterende fil
+// brukeren velger å erstatte. Feiler byggingen etterpå, fjernes den tomme fila igjen
+// (exportPDFGuarded over → _pdfDiscardHandle; målt mot et ekte filhåndtak i OPFS).
+// ⚠ At fila opprettes allerede i dialogen er kjent Chrome-oppførsel, IKKE målt i 195 — den
+// native dialogen kan ikke styres fra testene (headless Chrome svarer AbortError straks).
+//
+// Valget er per BRUKER: profiles.prefs.pdfSavePicker (samme sted som pdfLabelScale), med
+// localStorage som reserve for den som ikke er innlogget. Standard PÅ. Mappa huskes av
+// NETTLESEREN (id: 'varmeplan-pdf') — ingen egne mappehåndtak i IndexedDB.
+// Regresjon: await _pdfSavePickerRegressionTest195().
+const PDF_SAVE_PICKER_LS_KEY = 'varmeplan_pdf_save_picker';
+const PDF_SAVE_PICKER_ID = 'varmeplan-pdf';
+const PDF_SAVE_FALLBACK_INFO = 'Fila lagres i nedlastingsmappa. Vil du velge mappe hver gang, kan du slå på ‹Spør hvor filer skal lagres› i nettleserens innstillinger.';
+// `typeof`, ikke `in`: testene slår API-et av ved å sette egenskapen til undefined.
+function _pdfSavePickerSupported() { return typeof window.showSaveFilePicker === 'function'; }
+// Brukerens ØNSKE (uavhengig av nettleser): profilen vinner når den har en verdi, så denne
+// nettleserens localStorage, ellers PÅ.
+function _pdfSavePickerPref() {
+  const prof = (_currentProfile && _currentProfile.prefs) || null;
+  if (prof && typeof prof.pdfSavePicker === 'boolean') return prof.pdfSavePicker;
+  try {
+    const v = localStorage.getItem(PDF_SAVE_PICKER_LS_KEY);
+    if (v === '0') return false;
+    if (v === '1') return true;
+  } catch (e) { /* lagring utilgjengelig — standardverdien under */ }
+  return true;
+}
+// Skal DENNE eksporten åpne lagre-dialogen? Ønsket OG at nettleseren kan.
+function _pdfSavePickerOn() { return _pdfSavePickerSupported() && _pdfSavePickerPref(); }
+// Lagrer valget når det er ENDRET. Profilraden skrives i bakgrunnen og blokkerer aldri eksporten;
+// de andre prefs-nøklene (folie-avstand, veggmargin, labelstørrelse) følger med uendret.
+function _pdfSetSavePickerPref(on) {
+  on = !!on;
+  if (on === _pdfSavePickerPref()) return;
+  try { localStorage.setItem(PDF_SAVE_PICKER_LS_KEY, on ? '1' : '0'); } catch (e) { /* privat modus */ }
+  if (_currentProfile && _currentUser && _currentUser.id) {
+    _currentProfile.prefs = { ...(_currentProfile.prefs || {}), pdfSavePicker: on };
+    Promise.resolve(_writeProfileRow({ prefs: _currentProfile.prefs }))
+      .then(err => { if (err) console.warn('[PDF] valget «velg navn og mappe» ble ikke lagret i profilen:', err.message || err); })
+      .catch(e => console.warn('[PDF] valget «velg navn og mappe» ble ikke lagret i profilen:', e));
+  }
+}
+// Åpner nettleserens lagre-dialog med navnet ferdig utfylt. Tre utfall:
+//   handle             brukeren valgte navn og mappe
+//   cancelled: true    brukeren avbrøt (AbortError) — eksporten skal stoppe STILLE
+//   handle: null       dialogen lot seg ikke åpne (klikket for gammelt, innebygd ramme, policy)
+//                      → kalleren faller tilbake på vanlig nedlasting. Ingen død knapp.
+// `startIn: 'downloads'` gjelder bare FØRSTE gang; deretter åpner nettleseren mappa den husker
+// for `id`.
+async function _pdfPickSaveTarget(suggestedName) {
+  try {
+    const handle = await window.showSaveFilePicker({
+      id: PDF_SAVE_PICKER_ID,
+      startIn: 'downloads',
+      suggestedName,
+      types: [{ description: 'PDF-dokument', accept: { 'application/pdf': ['.pdf'] } }],
+    });
+    return { handle };
+  } catch (e) {
+    if (e && e.name === 'AbortError') return { cancelled: true };
+    console.warn('[PDF] lagre-dialogen kunne ikke åpnes — vanlig nedlasting i stedet:', e);
+    return { handle: null };
+  }
+}
+async function _pdfWriteToHandle(handle, blob) {
+  const w = await handle.createWritable();
+  try { await w.write(blob); await w.close(); }
+  catch (e) { try { await w.abort(); } catch (_) { /* allerede lukket */ } throw e; }
+}
+// Fjerner fila brukeren valgte når det likevel ikke ble noen PDF (bygging eller skriving feilet).
+// handle.remove() finnes i Chrome/Edge 110+; mangler den, blir en tom fil liggende.
+async function _pdfDiscardHandle(handle) {
+  try { if (handle && typeof handle.remove === 'function') await handle.remove(); }
+  catch (e) { console.warn('[PDF] kunne ikke fjerne den tomme fila:', e); }
+}
+
+// 195 — regresjon for «Lagre som». Kjøres fra konsollen: await _pdfSavePickerRegressionTest195().
+// Nettleserens egen dialog kan ikke styres fra en test, så showSaveFilePicker byttes ut med en
+// stubb som gir et håndtak i minnet. Resten er ekte: exportPDF bygger hele PDF-en hver gang.
+async function _pdfSavePickerRegressionTest195() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const saved = {
+    rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats,
+    matPaths: S.matPaths, plates: S.plates, aluboard: S.aluboard, zones: S.zones, hindrings: S.hindrings,
+    stairs: S.stairs, floors: S.floors, project: S.project,
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId,
+    autoSave: window._performAutoSave, sched: window._scheduleAutoSave, toast: window._showToast,
+    modal: window.showAccessoriesModal, branding: window._pdfBranding, stamp: window._pdfStampBranding,
+    jsPDF: window.jspdf && window.jspdf.jsPDF, status: window._setProjectStatus,
+    writeProf: window._writeProfileRow, guard: window.exportPDFGuarded,
+    hadPicker: 'showSaveFilePicker' in window, picker: window.showSaveFilePicker,
+    prof: _currentProfile, user: _currentUser, pid: _supabaseProjectId,
+    undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
+  };
+  let lsSaved = null; try { lsSaved = localStorage.getItem(PDF_SAVE_PICKER_LS_KEY); } catch (e) {}
+  const dlg0 = document.getElementById('export-dialog');
+  const dlgSaved = dlg0 ? dlg0.style.display : null;
+  let saveKall = [], pickerKall = [], statusKall = [], toasts = [], profKall = [], guardKall = [];
+  let pickerSvar = null;   // funksjon: gir et håndtak, eller kaster som nettleseren ville gjort
+  const feil = navn => Object.assign(new Error(navn), { name: navn });
+  const mkHandle = (navn, nektSkriv) => {
+    const h = { name: navn, skrevet: null, lukket: false, fjernet: false,
+      createWritable: async () => {
+        if (nektSkriv) throw feil('NotAllowedError');
+        return { write: async b => { h.skrevet = b; }, close: async () => { h.lukket = true; }, abort: async () => {} };
+      },
+      remove: async () => { h.fjernet = true; } };
+    return h;
+  };
+  // Initial-påminnelsen («Legg inn initialer …») kommer fra filnavnbyggeren og er ikke vår.
+  const egne = () => toasts.filter(t => !/^Legg inn initialer/.test(t[0]));
+  try {
+    window._performAutoSave = () => Promise.resolve(); window._scheduleAutoSave = () => {};
+    window._showToast = (m, t) => { toasts.push([String(m), t || '']); };
+    window.showAccessoriesModal = () => Promise.resolve({ items: [] });
+    window._pdfBranding = () => Promise.resolve(null);
+    window._setProjectStatus = async (...a) => { statusKall.push(a); return { ok: true }; };
+    window._writeProfileRow = async f => { profKall.push(JSON.parse(JSON.stringify(f))); return null; };
+    window.showSaveFilePicker = async o => { pickerKall.push(o); return pickerSvar(); };
+    const EkteJsPDF = saved.jsPDF;
+    window.jspdf.jsPDF = function (...a) { const d = new EkteJsPDF(...a); d.save = function (n) { saveKall.push(n); return d; }; return d; };
+    _currentProfile = null; _currentUser = null; _supabaseProjectId = 'test-195';
+    try { localStorage.removeItem(PDF_SAVE_PICKER_LS_KEY); } catch (e) {}
+    const pts = [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 300 }, { x: 0, y: 300 }];
+    const nytt = () => {
+      S.rooms = [{ id: 995101, floorId: null, partId: null, name: 'Stue', points: pts.map(p => ({ ...p })),
+        walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [] }];
+      S.cables = []; S.mats = []; S.matPaths = []; S.plates = []; S.aluboard = []; S.foilFree = []; S.strips = [];
+      S.zones = []; S.hindrings = []; S.stairs = []; S.floors = []; S.ui.activeFloorId = null; S.ui.activePartId = null;
+      S.project = { name: 'LAGRE-SOM-TEST', parts: [], revision: 0, lastExportedAt: null, createdAt: Date.now() };
+      if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+      _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+      saveKall = []; pickerKall = []; statusKall = []; toasts = []; profKall = [];
+    };
+    // pricing: true → en vellykket eksport skal gi statusovergangen under_arbeid → tilbud_sendt.
+    const OPTS = { cover: true, summary: true, floorplan: false, rooms: [995101], stairs: [], roomTable: true,
+      stairTable: false, materialList: false, resistance: false, cableTable: false, pricing: true, discount: 0,
+      showDGDB: false, docs: false, signature: false, freeText: '' };
+    const kjør = async lev => {
+      nytt();
+      if (lev === 'bart') { await exportPDF({ ...OPTS }); return true; }
+      return saved.guard({ ...OPTS }, lev);
+    };
+
+    // ── 1. Brukeren velger navn og mappe ────────────────────────────────────────────────────
+    const h1 = mkHandle('mitt-navn.pdf'); pickerSvar = () => h1;
+    const ok1 = await kjør({ savePicker: true });
+    const o1 = pickerKall[0] || {};
+    const pdfAcc = o1.types && o1.types[0] && o1.types[0].accept && o1.types[0].accept['application/pdf'];
+    check('1: eksporten gikk gjennom', true, ok1 === true, ok1);
+    check('1: lagre-dialogen åpnet én gang', 1, pickerKall.length === 1, pickerKall.length);
+    check('1: foreslått navn er dagens filnavn (rev1)', 'varmeplan_…_ÅÅÅÅMMDD-TTMM_…_rev1.pdf', /^varmeplan_.+_\d{8}-\d{4}_.+_rev1\.pdf$/.test(o1.suggestedName || ''), o1.suggestedName);
+    check('1: filtype PDF', '.pdf', !!pdfAcc && pdfAcc.length === 1 && pdfAcc[0] === '.pdf', JSON.stringify(o1.types));
+    check('1: mappa huskes av nettleseren (id)', 'varmeplan-pdf', o1.id === 'varmeplan-pdf', o1.id);
+    check('1: doc.save ikke kalt', 0, saveKall.length === 0, saveKall.length);
+    const hode1 = (h1.skrevet instanceof Blob) ? await h1.skrevet.slice(0, 5).text() : '';
+    check('1: PDF-en er skrevet til valgt fil og lukket', '%PDF- / application/pdf', hode1 === '%PDF-' && h1.skrevet.type === 'application/pdf' && h1.skrevet.size > 1000 && h1.lukket, hode1 + ' / ' + (h1.skrevet && h1.skrevet.type) + ' / ' + (h1.skrevet && h1.skrevet.size));
+    check('1: fila er ikke fjernet', false, h1.fjernet === false, h1.fjernet);
+    check('1: revisjonen telt opp', 1, S.project.revision === 1 && S.project.lastExportedAt > 0, S.project.revision);
+    check('1: status → tilbud_sendt', 1, statusKall.length === 1 && statusKall[0][1].sales_status === 'tilbud_sendt', statusKall.length);
+    check('1: kvittering med valgt navn', 'PDF lagret: mitt-navn.pdf', egne().length === 1 && egne()[0][0] === 'PDF lagret: mitt-navn.pdf', JSON.stringify(toasts));
+
+    // ── 2. Avbryt i dialogen: stille ────────────────────────────────────────────────────────
+    pickerSvar = () => { throw feil('AbortError'); };
+    const lev2 = { savePicker: true };
+    const ok2 = await kjør(lev2);
+    check('2: avbrutt er ikke en feil', true, ok2 === true && lev2.cancelled === true, ok2);
+    check('2: ingen fil (verken valgt fil eller nedlasting)', 0, saveKall.length === 0, saveKall.length);
+    check('2: ingen melding', 0, egne().length === 0, JSON.stringify(toasts));
+    check('2: revisjonen urørt', 0, S.project.revision === 0 && S.project.lastExportedAt === null, S.project.revision);
+    check('2: ingen statusovergang', 0, statusKall.length === 0, statusKall.length);
+
+    // ── 3. Valget av: dagens nedlasting ─────────────────────────────────────────────────────
+    pickerSvar = () => mkHandle('skal-ikke-brukes.pdf');
+    const ok3 = await kjør({ savePicker: false });
+    check('3: valget av → ingen dialog, doc.save som før', '0 / 1', ok3 === true && pickerKall.length === 0 && saveKall.length === 1 && /^varmeplan_.+_rev1\.pdf$/.test(saveKall[0] || ''), pickerKall.length + ' / ' + saveKall.length + ' ' + saveKall[0]);
+    check('3: revisjon og status som før', '1 / 1', S.project.revision === 1 && statusKall.length === 1, S.project.revision + ' / ' + statusKall.length);
+    check('3: ingen «PDF lagret»-melding (nettleseren viser nedlastingen selv)', 0, egne().length === 0, JSON.stringify(toasts));
+
+    // ── 4. Uten `lev` følger vakten brukerens valg ──────────────────────────────────────────
+    _currentProfile = { prefs: { pdfSavePicker: false } };
+    await kjør(undefined);
+    check('4: profilen sier av → ingen dialog', '0 / 1', pickerKall.length === 0 && saveKall.length === 1, pickerKall.length + ' / ' + saveKall.length);
+    _currentProfile = null;
+    const h4 = mkHandle('standard.pdf'); pickerSvar = () => h4;
+    await kjør(undefined);
+    check('4: ingen lagret verdi → på som standard', '1 / 0', pickerKall.length === 1 && saveKall.length === 0 && !!h4.skrevet, pickerKall.length + ' / ' + saveKall.length);
+
+    // ── 5. Bart exportPDF(opts) — slik alle eldre tester kaller — åpner aldri dialogen ──────
+    await kjør('bart');
+    check('5: exportPDF(opts) uten levering → doc.save', '0 / 1', pickerKall.length === 0 && saveKall.length === 1, pickerKall.length + ' / ' + saveKall.length);
+
+    // ── 6. Dialogen lar seg ikke åpne (klikket for gammelt) → vanlig nedlasting ─────────────
+    pickerSvar = () => { throw feil('SecurityError'); };
+    const ok6 = await kjør({ savePicker: true });
+    check('6: SecurityError → nedlasting, ingen feilmelding', '1 / 0', ok6 === true && saveKall.length === 1 && egne().length === 0 && S.project.revision === 1, saveKall.length + ' / ' + JSON.stringify(toasts));
+
+    // ── 7. Byggingen feiler ETTER at fila er valgt → den tomme fila fjernes ─────────────────
+    const h7 = mkHandle('tom.pdf'); pickerSvar = () => h7;
+    window._pdfStampBranding = () => { throw new Error('VAKSINE 195'); };
+    const ok7 = await kjør({ savePicker: true });
+    window._pdfStampBranding = saved.stamp;
+    check('7: eksporten meldes som feilet', false, ok7 === false && toasts.some(t => t[1] === 'error' && /VAKSINE 195/.test(t[0])), ok7 + ' ' + JSON.stringify(toasts));
+    check('7: den tomme fila er fjernet, ingen nedlasting', true, h7.fjernet === true && h7.skrevet === null && saveKall.length === 0, h7.fjernet + ' / ' + saveKall.length);
+    check('7: ingen revisjon, ingen status', '0 / 0', S.project.revision === 0 && statusKall.length === 0, S.project.revision + ' / ' + statusKall.length);
+
+    // ── 8. Skrivingen feiler → fila fjernes, PDF-en lastes ned likevel ──────────────────────
+    const h8 = mkHandle('nektet.pdf', true); pickerSvar = () => h8;
+    const ok8 = await kjør({ savePicker: true });
+    check('8: skrivefeil → nedlasting + varsel, tom fil fjernet', '1 / true', ok8 === true && saveKall.length === 1 && h8.fjernet === true && toasts.some(t => t[1] === 'warning'), saveKall.length + ' / ' + h8.fjernet + ' ' + JSON.stringify(toasts));
+    check('8: revisjonen telt opp (PDF-en ble levert)', 1, S.project.revision === 1, S.project.revision);
+
+    // ── 9. PDF-dialogen: avkrysning der API-et finnes, og valget huskes ─────────────────────
+    nytt(); _currentProfile = null;
+    _showExportDialog();
+    let cb = document.getElementById('exp-savepicker');
+    check('9: avkrysningen vises, på som standard', 'på', !!cb && cb.checked === true && !document.getElementById('exp-savepicker-info'), cb ? cb.checked : 'mangler');
+    check('9: teksten', 'Velg navn og mappe ved lagring', !!cb && cb.parentElement.textContent.trim() === 'Velg navn og mappe ved lagring', cb && cb.parentElement.textContent.trim());
+    window.exportPDFGuarded = (o, l) => { guardKall.push([o, l, _pdfSavePickerOn()]); return Promise.resolve(true); };
+    cb.checked = false; _runExportPDF();
+    check('9: av i dialogen → eksporten går uten lagre-dialog', false, guardKall.length === 1 && guardKall[0][2] === false, JSON.stringify(guardKall.map(g => g[2])));
+    let lsNaa = null; try { lsNaa = localStorage.getItem(PDF_SAVE_PICKER_LS_KEY); } catch (e) {}
+    check('9: valget huskes (ikke innlogget → denne nettleseren)', '0', lsNaa === '0' && _pdfSavePickerPref() === false, lsNaa);
+    _showExportDialog(); cb = document.getElementById('exp-savepicker');
+    check('9: neste gang står avkrysningen av', false, !!cb && cb.checked === false, cb && cb.checked);
+    cb.checked = true; _runExportPDF();
+    check('9: på igjen huskes', true, _pdfSavePickerPref() === true && guardKall.length === 2 && guardKall[1][2] === true, _pdfSavePickerPref());
+
+    // ── 10. Innlogget: valget lagres i profilen, de andre prefs-nøklene beholdes ─────────────
+    _currentProfile = { prefs: { pdfLabelScale: 1.25, foilGapCm: 2 } }; _currentUser = { id: 'u-195' }; profKall = [];
+    _pdfSetSavePickerPref(false);
+    await Promise.resolve();
+    const pr10 = (profKall[0] && profKall[0].prefs) || {};
+    check('10: profilraden skrevet med alle nøkler', 'pdfLabelScale 1.25, foilGapCm 2, pdfSavePicker false', profKall.length === 1 && pr10.pdfSavePicker === false && pr10.pdfLabelScale === 1.25 && pr10.foilGapCm === 2, JSON.stringify(profKall));
+    check('10: gjelder straks', false, _pdfSavePickerPref() === false && _pdfSavePickerOn() === false, _pdfSavePickerPref());
+    _pdfSetSavePickerPref(false);
+    check('10: uendret valg skriver ikke på nytt', 1, profKall.length === 1, profKall.length);
+    check('10: profil-dialogen beholder nøkkelen når den lagrer', 'sprer gamle prefs', /\.\.\.\(\(_currentProfile && _currentProfile\.prefs\) \|\| \{\}\)/.test(String(_saveProfile)), 'mangler');
+    _currentProfile = null; _currentUser = null;
+
+    // ── 11. Kundelenka laster ned som før ───────────────────────────────────────────────────
+    guardKall = []; _presentDownloadPDF();
+    check('11: kundelenka ber ikke om lagre-dialog', false, guardKall.length === 1 && !!guardKall[0][1] && guardKall[0][1].savePicker === false, JSON.stringify(guardKall.map(g => g[1])));
+    window.exportPDFGuarded = saved.guard;
+
+    // ── 12. Nettleser uten API-et (Safari, Firefox, mobil) ──────────────────────────────────
+    try { localStorage.removeItem(PDF_SAVE_PICKER_LS_KEY); } catch (e) {}
+    window.showSaveFilePicker = undefined;
+    check('12: uten API → aldri lagre-dialog', false, _pdfSavePickerSupported() === false && _pdfSavePickerOn() === false, _pdfSavePickerOn());
+    const ok12 = await kjør({ savePicker: true });
+    check('12: eksporten laster ned som før', 1, ok12 === true && saveKall.length === 1 && S.project.revision === 1, saveKall.length);
+    _showExportDialog();
+    const info = document.getElementById('exp-savepicker-info');
+    check('12: ingen avkrysning, men forklaringen', PDF_SAVE_FALLBACK_INFO, !document.getElementById('exp-savepicker') && !!info && info.textContent === PDF_SAVE_FALLBACK_INFO, info ? info.textContent : 'mangler');
+    guardKall = []; window.exportPDFGuarded = (o, l) => { guardKall.push([o, l]); return Promise.resolve(true); };
+    _runExportPDF();
+    check('12: «Generer PDF» virker uten avkrysningen, og valget røres ikke', 1, guardKall.length === 1 && _pdfSavePickerPref() === true, guardKall.length);
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree,
+      cables: saved.cables, mats: saved.mats, matPaths: saved.matPaths, plates: saved.plates,
+      aluboard: saved.aluboard, zones: saved.zones, hindrings: saved.hindrings, stairs: saved.stairs,
+      floors: saved.floors, project: saved.project });
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId;
+    window._performAutoSave = saved.autoSave; window._scheduleAutoSave = saved.sched; window._showToast = saved.toast;
+    window.showAccessoriesModal = saved.modal; window._pdfBranding = saved.branding; window._pdfStampBranding = saved.stamp;
+    window._setProjectStatus = saved.status; window._writeProfileRow = saved.writeProf; window.exportPDFGuarded = saved.guard;
+    // `delete` der API-et aldri fantes: exportProjectFile spør med `in`, og en egenskap som står
+    // igjen som undefined ville lurt den.
+    if (saved.hadPicker) window.showSaveFilePicker = saved.picker; else delete window.showSaveFilePicker;
+    if (window.jspdf) window.jspdf.jsPDF = saved.jsPDF;
+    _currentProfile = saved.prof; _currentUser = saved.user; _supabaseProjectId = saved.pid;
+    try { if (lsSaved == null) localStorage.removeItem(PDF_SAVE_PICKER_LS_KEY); else localStorage.setItem(PDF_SAVE_PICKER_LS_KEY, lsSaved); } catch (e) {}
+    if (saved.undoLen != null) _undoStack.length = saved.undoLen;
+    const dlg = document.getElementById('export-dialog'); if (dlg) dlg.style.display = dlgSaved == null ? 'none' : dlgSaved;
+    if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_pdfSavePickerRegressionTest195: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return { ok: allOk, results };
+}
 
 // 181 — «Varmekabler – oversikt» i PDF-en: én rad per kabel (innendørs), summer, sidebryting med
 // tabellhode, siden bare når prosjektet har innendørs kabel og valget er på, og valget i dialogen.
@@ -86242,7 +86564,8 @@ function _profileInitialsForFile() {
   return 'XX';
 }
 // `stamp` fryses av den som åpner en dialog (Visma), slik at forhåndsvist navn og skrevet fil er
-// identiske selv om minuttet tikker over mens dialogen står åpen. PDF-en lager sitt i selve lagringen.
+// identiske selv om minuttet tikker over mens dialogen står åpen. PDF-en lager sitt i selve lagringen
+// (195: med «Lagre som» lages navnet idet lagre-dialogen åpnes — det er det foreslåtte navnet).
 function _docFileName(type, ext, extra, stamp) {
   const proj = S.project || {};
   const kunde = _safeName(_projectCustomerName(), 'Ukjent-kunde');
@@ -86316,7 +86639,7 @@ function _pdfSuperscriptPatch(doc) {
   return doc;
 }
 
-async function exportPDF(opts) {
+async function exportPDF(opts, lev) {
   opts = opts || { cover:true, summary:true, floorplan:S.rooms.length > 1, rooms:S.rooms.map(r=>r.id), stairs:(S.stairs||[]).map(s=>s.id), roomTable:true, stairTable:true, materialList:true, resistance:true, cableTable:true, pricing:false, discount:0, showDGDB:false, docs:false, signature:false, freeText:'' };
   if (!window.jspdf) { alert('PDF-bibliotek ikke lastet. Prøv igjen.'); return; }
   // Foil-accessories modal — gathers tilbehør quantities before render.
@@ -86324,6 +86647,19 @@ async function exportPDF(opts) {
   const accessoryResult = await showAccessoriesModal();
   if (!accessoryResult) return;
   const accessoryItems = accessoryResult.items || [];
+  // 195: lagre-dialogen åpnes HER — rett etter brukerens siste klikk («Generer PDF» eller knappen
+  // i tilbehørsvinduet) og FØR nettverkskallene og byggingen under, ellers kan klikket bli for
+  // gammelt (5 s) og dialogen avvist. Bare når kalleren ber om det (`lev.savePicker`, satt av
+  // exportPDFGuarded) — et bart exportPDF(opts)-kall, som i alle testene, går rett til doc.save.
+  // Navnet er dagens (_exportFileName), med klokkeslettet fra nå i stedet for fra lagringen.
+  let saveHandle = null;
+  if (lev && lev.savePicker && _pdfSavePickerSupported()) {
+    const _revNavn = ((S.project && typeof S.project.revision === 'number') ? S.project.revision : 0) + 1;
+    const valg = await _pdfPickSaveTarget(_exportFileName('Varmeplan', 'pdf', _revNavn));
+    // Avbrutt = stille: ingen fil, ingen melding, ingen revisjon og ingen statusovergang.
+    if (valg.cancelled) { lev.cancelled = true; return; }
+    saveHandle = lev.handle = valg.handle;
+  }
   await _pdfBranding();   // last inn org-logo (co-brand) iht. flagg — stemples før save
   await _tilesPreloadForPdf();   // 194: _renderRoomToImage er synkron — kartflisene må ligge i cache
   const { jsPDF } = window.jspdf;
@@ -88176,7 +88512,24 @@ async function exportPDF(opts) {
 
   // Save — 015: varmeplan_{kunde}_{merking}_{ÅÅÅÅMMDD-TTMM}_{initialer}_P{nr}_rev{N}.pdf, samme
   // navnebygger (`_docFileName`) som Visma-fila. Se _exportFileName over.
-  doc.save(_exportFileName('Varmeplan', 'pdf', rev));
+  // 195: valgte brukeren navn og mappe i lagre-dialogen (øverst i funksjonen), skrives PDF-en dit.
+  // Ellers — valget av, API-et mangler, eller dialogen lot seg ikke åpne — dagens doc.save, uendret.
+  let _lagretSom = null;
+  if (saveHandle) {
+    try {
+      await _pdfWriteToHandle(saveHandle, doc.output('blob'));
+      _lagretSom = saveHandle.name || 'PDF';
+    } catch (e) {
+      // Skrivingen feilet (mappa er borte, ingen tilgang, full disk). Brukeren skal likevel få
+      // PDF-en: fjern den tomme fila og last ned på vanlig måte.
+      console.warn('[PDF] kunne ikke skrive til valgt fil — laster ned i stedet:', e);
+      await _pdfDiscardHandle(saveHandle);
+      if (typeof _showToast === 'function') _showToast('Kunne ikke skrive til valgt mappe — PDF-en ble lastet ned i stedet.', 'warning');
+    }
+    lev.handle = null;   // fila er skrevet eller fjernet — vakten i exportPDFGuarded skal ikke røre den
+  }
+  if (!_lagretSom) doc.save(_exportFileName('Varmeplan', 'pdf', rev));
+  else if (typeof _showToast === 'function') _showToast('PDF lagret: ' + _lagretSom, 'success');
   // 113: FØRST nå er eksporten et faktum — da, og bare da, telles revisjonen opp.
   S.project.revision = rev;
   S.project.lastExportedAt = Date.now();
@@ -91347,7 +91700,10 @@ async function _saveProfile() {
       if (!el || String(el.value).trim() === '') return null;
       const v = parseFloat(String(el.value).replace(',', '.'));
       return isFinite(v) && v >= 0 ? v : null; };
-    const _prefs = { foilGapCm: _num('pf-foil-gap'), wallMarginCm: _num('pf-wall-margin'),
+    // 195: nøkler profil-dialogen ikke eier (pdfSavePicker settes i PDF-dialogen) beholdes — før
+    // ble hele `prefs` skrevet på nytt med bare de tre feltene under.
+    const _prefs = { ...((_currentProfile && _currentProfile.prefs) || {}),
+                     foilGapCm: _num('pf-foil-gap'), wallMarginCm: _num('pf-wall-margin'),
                      pdfLabelScale: _pfLabelScale };   // 051
     // Slår også gjennom med én gang i denne økta (frø for nye rom).
     if (_prefs.foilGapCm != null) S.varmefolie.gapCm = _prefs.foilGapCm;

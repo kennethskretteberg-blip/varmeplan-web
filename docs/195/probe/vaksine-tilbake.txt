@@ -1,0 +1,13 @@
+195 · tilbakestiller vaksine.txt.
+
+@@@ FINN
+    if (valg.cancelled) { lev.cancelled = true; }
+@@@ SETT
+    if (valg.cancelled) { lev.cancelled = true; return; }
+@@@ SLUTT
+
+@@@ FINN
+      if (lev.handle) { lev.handle = null; }
+@@@ SETT
+      if (lev.handle) { await _pdfDiscardHandle(lev.handle); lev.handle = null; }
+@@@ SLUTT

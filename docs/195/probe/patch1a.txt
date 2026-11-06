@@ -1,0 +1,49 @@
+195 · patch 1a: profil-prefs beholdes, kundelenka, PDF-dialogen, _runExportPDF.
+
+@@@ FINN
+    const _prefs = { foilGapCm: _num('pf-foil-gap'), wallMarginCm: _num('pf-wall-margin'),
+                     pdfLabelScale: _pfLabelScale };   // 051
+@@@ SETT
+    // 195: nøkler profil-dialogen ikke eier (pdfSavePicker settes i PDF-dialogen) beholdes — før
+    // ble hele `prefs` skrevet på nytt med bare de tre feltene under.
+    const _prefs = { ...((_currentProfile && _currentProfile.prefs) || {}),
+                     foilGapCm: _num('pf-foil-gap'), wallMarginCm: _num('pf-wall-margin'),
+                     pdfLabelScale: _pfLabelScale };   // 051
+@@@ SLUTT
+
+@@@ FINN
+  if (typeof exportPDFGuarded === 'function') exportPDFGuarded();
+@@@ SETT
+  // 195: kundelenka har ingen PDF-dialog og dermed ingen måte å slå av «velg navn og mappe» på,
+  // og kunden er ikke brukeren valget tilhører — her lastes PDF-en ned som før.
+  if (typeof exportPDFGuarded === 'function') exportPDFGuarded(undefined, { savePicker: false });
+@@@ SLUTT
+
+@@@ FINN
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="adm-btn ghost" onclick="document.getElementById('export-dialog').style.display='none'" style="flex:1">Avbryt</button>
+          <button class="adm-btn primary" onclick="_runExportPDF()" style="flex:1">Generer PDF</button>
+@@@ SETT
+        <!-- 195: «Lagre som». Avkrysningen vises bare der nettleseren har showSaveFilePicker
+             (Chrome/Edge på PC/Mac); ellers en kort forklaring på hvor fila havner. -->
+        <div class="exp-group">
+          ${_pdfSavePickerSupported()
+            ? `<label class="exp-check" title="Nettleseren spør hvor PDF-en skal lagres, og åpner samme mappe neste gang"><input type="checkbox" id="exp-savepicker"${_pdfSavePickerPref() ? ' checked' : ''}> Velg navn og mappe ved lagring</label>`
+            : `<div id="exp-savepicker-info" style="font-size:11px;color:var(--muted);line-height:1.5">${PDF_SAVE_FALLBACK_INFO}</div>`}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="adm-btn ghost" onclick="document.getElementById('export-dialog').style.display='none'" style="flex:1">Avbryt</button>
+          <button class="adm-btn primary" onclick="_runExportPDF()" style="flex:1">Generer PDF</button>
+@@@ SLUTT
+
+@@@ FINN
+  document.getElementById('export-dialog').style.display = 'none';
+  exportPDFGuarded(opts);
+@@@ SETT
+  // 195: «Velg navn og mappe ved lagring» huskes per bruker (ikke per prosjekt). Avkrysningen
+  // finnes bare der nettleseren har lagre-dialogen; ellers røres ikke det lagrede valget.
+  const _spEl = document.getElementById('exp-savepicker');
+  if (_spEl) _pdfSetSavePickerPref(_spEl.checked);
+  document.getElementById('export-dialog').style.display = 'none';
+  exportPDFGuarded(opts);
+@@@ SLUTT
