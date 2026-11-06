@@ -1,0 +1,81 @@
+199 · patch 8: regresjonstesten — del B (skriveren).
+
+@@@ FINN
+    let r = await _setProjectVismaNo('p1', { offer: ' 12345 ' });
+    t('B1 eget prosjekt: tilbudsnr. lagret, renset', r.ok && rows[0].visma_offer_no === '12345', rows[0].visma_offer_no);
+@@@ SETT
+    let r = await _setProjectVismaNo('p1', { offer: ' 104 455 ' });
+    t('B1 eget prosjekt: tilbudsnr. lagret, renset («104 455» → «104455»)', r.ok && rows[0].visma_offer_no === '104455', rows[0].visma_offer_no);
+@@@ SLUTT
+
+@@@ FINN
+    r = await _setProjectVismaNo('p1', { order: 'ORD 67' });
+    t('B4 ordrenr. lagret, tilbudsnr. står', r.ok && rows[0].visma_order_no === 'ORD 67' && rows[0].visma_offer_no === '12345');
+@@@ SETT
+    r = await _setProjectVismaNo('p1', { order: '200001' });
+    t('B4 ordrenr. lagret, tilbudsnr. står', r.ok && rows[0].visma_order_no === '200001' && rows[0].visma_offer_no === '104455');
+@@@ SLUTT
+
+@@@ FINN
+    r = await _setProjectVismaNo('p2', { offer: 'X' });
+@@@ SETT
+    r = await _setProjectVismaNo('p2', { offer: '123456' });
+@@@ SLUTT
+
+@@@ FINN
+    r = await _setProjectVismaNo('finnes-ikke', { offer: 'X' });
+@@@ SETT
+    r = await _setProjectVismaNo('finnes-ikke', { offer: '123456' });
+@@@ SLUTT
+
+@@@ FINN
+    r = await _setProjectVismaNo('p1', { offer: 'X' });
+    const rOpen = await _vismaNoOpen('p1', ['offer']);
+@@@ SETT
+    r = await _setProjectVismaNo('p1', { offer: '123456' });
+    const rOpen = await _vismaNoOpen('p1', ['offer']);
+@@@ SLUTT
+
+@@@ FINN
+    r = await _setProjectVismaNo('p1', { offer: 'X' });
+    t('B9 feil fra Supabase leses og meldes', !r.ok && r.reason === 'error' && /nettverk nede/.test(_vismaNoErrText(r)) && rows[0].visma_offer_no === null, _vismaNoErrText(r));
+@@@ SETT
+    r = await _setProjectVismaNo('p1', { offer: '123456' });
+    t('B9 feil fra Supabase leses og meldes', !r.ok && r.reason === 'error' && /nettverk nede/.test(_vismaNoErrText(r)) && rows[0].visma_offer_no === null, _vismaNoErrText(r));
+    // 199: skriveren er bakstoppen — en ugyldig verdi lagres aldri, uansett hvem som kaller.
+    rows = mkRows(true); rows[0].visma_offer_no = '104455'; db = nyOkt(rows);
+    const avvist = [];
+    for (const v of ['12345', '1234567', '12a456', '2026-7719', 'T-2026/0042 b']) {
+      const ra = await _setProjectVismaNo('p1', { offer: v });
+      avvist.push(!ra.ok && ra.reason === 'invalid' && ra.field === 'offer' && /Tilbudsnr\. skal være 6 siffer/.test(_vismaNoErrText(ra)));
+    }
+    t('B10 skriveren avviser alt som ikke er 6 siffer (ingenting skrevet, gammel verdi står)', avvist.every(Boolean) && db.vismaSkriv().length === 0 && rows[0].visma_offer_no === '104455', avvist);
+    r = await _setProjectVismaNo('p1', { offer: '104456', order: '12345' });
+    t('B11 ett ugyldig felt stopper hele skrivet (heller ikke det gyldige lagres)', !r.ok && r.reason === 'invalid' && r.field === 'order' && db.vismaSkriv().length === 0 && rows[0].visma_offer_no === '104455', r.reason);
+    _userOrg.erp_format = '';
+    r = await _setProjectVismaNo('p1', { offer: '104456' });
+    _userOrg.erp_format = 'visma_paste,gbao10';
+    t('B12 bedrift uten Visma: skriveren nekter (no-visma)', !r.ok && r.reason === 'no-visma' && db.vismaSkriv().length === 0, r.reason);
+@@@ SLUTT
+
+@@@ FINN
+    t('C3 feltet tar maks 30 tegn', ov().querySelector('#visma-no-offer').maxLength === 30);
+    ov().querySelector('#visma-no-offer').value = ' 555010 ';
+@@@ SETT
+    t('C3 talltastatur (inputmode=numeric) og maxlength 7 (6 siffer + ett mellomrom)', ov().querySelector('#visma-no-offer').maxLength === 7
+      && ov().querySelector('#visma-no-offer').getAttribute('inputmode') === 'numeric', ov().querySelector('#visma-no-offer').maxLength);
+    t('C3b gammel verdi som ikke er 6 siffer: vises som før, meldingen står under feltet, «Lagre» er ikke sperret (feltet er urørt)',
+      ov().querySelector('#visma-no-msg-offer').style.display !== 'none' && ov().querySelector('#visma-no-msg-offer').textContent === 'Tilbudsnr. skal være 6 siffer'
+      && !ov().querySelector('#visma-no-save').disabled);
+    ov().querySelector('#visma-no-offer').value = ' 555 010 ';
+@@@ SLUTT
+
+@@@ FINN
+    await _vismaNoOpen('p1', ['offer']); ov().querySelector('#visma-no-offer').value = 'NY';
+    r = await ov()._vismaSave();
+    t('C15 lagring feiler: dialogen står, feilen vises, verdien er ikke tapt', !r.ok && !!ov() && ov().querySelector('#visma-no-offer').value === 'NY'
+@@@ SETT
+    await _vismaNoOpen('p1', ['offer']); ov().querySelector('#visma-no-offer').value = '123456';
+    r = await ov()._vismaSave();
+    t('C15 lagring feiler: dialogen står, feilen vises, verdien er ikke tapt', !r.ok && !!ov() && ov().querySelector('#visma-no-offer').value === '123456'
+@@@ SLUTT

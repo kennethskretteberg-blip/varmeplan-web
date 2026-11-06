@@ -1,0 +1,76 @@
+199 · patch 9: tellingen til rapporten (_vismaNoAudit199), testens lagre/gjenopprett av filteret, F10.
+
+@@@ FINN
+// 198-regresjon. Minne-mock av _db (romtegner_projects, med eller uten Visma-kolonnene) — ingen
+@@@ SETT
+// 199: telling til rapporten — LESER bare. Kjør i konsollen som innlogget: await _vismaNoAudit199()
+// Blant prosjektene denne brukeren kan se: numre som ikke er nøyaktig 6 siffer (fritekst fra 198),
+// og numre på prosjekter hos bedrifter uten Visma (vises og er søkbare, men kan ikke redigeres).
+async function _vismaNoAudit199() {
+  if (!_db) return { ok:false, reason:'no-db' };
+  const byId = new Map();
+  for (const k of Object.keys(_VISMA_NO_FIELDS)) {
+    const { data, error } = await _db.from('romtegner_projects').select('id, name, project_no, org_id, deleted_at, ' + _VISMA_NO_COLS).not(_VISMA_NO_FIELDS[k].col, 'is', null);
+    if (error) return { ok:false, reason: _vismaNoMissingColumn(error) ? 'no-column' : 'error', message:error.message };
+    (data || []).forEach(r => byId.set(r.id, r));
+  }
+  let orgs = [];
+  try { const o = await _db.from('organizations').select('id, name, erp_format'); orgs = o.data || []; } catch (e) {}
+  const org = id => orgs.find(o => o.id === id) || null;
+  const seks = v => !v || (String(v).length === VISMA_NO_DIGITS && /^[0-9]+$/.test(String(v)));   // strengt: ingen rens
+  const linje = r => ({ prosjektnr: _fmtProjectNo(r.project_no), navn: r.name, bedrift: (org(r.org_id) || {}).name || r.org_id || '(ingen)',
+    tilbudsnr: r.visma_offer_no, ordrenr: r.visma_order_no, papirkurv: !!r.deleted_at });
+  const alle = [...byId.values()].filter(r => r.visma_offer_no || r.visma_order_no);
+  const ikke6 = alle.filter(r => !seks(r.visma_offer_no) || !seks(r.visma_order_no));
+  const uten = alle.filter(r => { const o = org(r.org_id); return !!o && !String(o.erp_format || '').trim(); });
+  const ukjent = alle.filter(r => !org(r.org_id)).length;
+  const ut = { ok:true, medNummer: alle.length, ikke6siffer: ikke6.map(linje), utenVisma: uten.map(linje), ukjentBedrift: ukjent };
+  console.log('199: prosjekter med nummer:', ut.medNummer, '· ikke 6 siffer:', ikke6.length, '· hos bedrift uten Visma:', uten.length, '· bedrift ikke synlig for deg:', ukjent);
+  if (ikke6.length) console.table(ut.ikke6siffer);
+  if (uten.length) console.table(ut.utenVisma);
+  return ut;
+}
+
+// 198-regresjon. Minne-mock av _db (romtegner_projects, med eller uten Visma-kolonnene) — ingen
+@@@ SLUTT
+
+@@@ FINN
+    mark: window._markProjectDirty, sched: window._scheduleAutoSave, rend: window.render, sb: window._renderSbProjInfo };
+  const ME = 'org-cenika', OTHER = 'org-elektro';
+@@@ SETT
+    mark: window._markProjectDirty, sched: window._scheduleAutoSave, rend: window.render, sb: window._renderSbProjInfo };
+  // 199: testen bygger statusfilteret om (Visma-valgene) — det settes tilbake slik det sto.
+  const selF = document.getElementById('dash-filter-status');
+  const savedSel = selF ? { html: selF.innerHTML, mode: selF.dataset.mode, visma: selF.dataset.visma, val: selF.value } : null;
+  const ME = 'org-cenika', OTHER = 'org-elektro';
+@@@ SLUTT
+
+@@@ FINN
+    S.ui.readOnly = saved.ro; _supabaseProjectId = saved.pid; S.project = saved.project;
+  }
+  const pass = results.filter(x => x.ok).length;
+  console.log(`_vismaNoRegressionTest198: ${pass}/${results.length}`);
+@@@ SETT
+    S.ui.readOnly = saved.ro; _supabaseProjectId = saved.pid; S.project = saved.project;
+    if (selF && savedSel) {
+      selF.innerHTML = savedSel.html; selF.value = savedSel.val;
+      if (savedSel.mode != null) selF.dataset.mode = savedSel.mode; else delete selF.dataset.mode;
+      if (savedSel.visma != null) selF.dataset.visma = savedSel.visma; else delete selF.dataset.visma;
+    }
+  }
+  const pass = results.filter(x => x.ok).length;
+  console.log(`_vismaNoRegressionTest198: ${pass}/${results.length}`);
+@@@ SLUTT
+
+@@@ FINN
+    t('F10 bedrift uten Visma: ikke noe hint, men et nummer som finnes vises', _plVismaNoHtml({ ...p1, _vismaOfferNo: '', _vismaOrderNo: '' }, false) === '' && /Tilbud 555010/.test(_plVismaNoHtml(p1, false)));
+@@@ SETT
+    t('F10 bedrift uten Visma: ikke noe hint, men et nummer som finnes vises (uten klikk)', _plVismaNoHtml({ ...p1, _vismaOfferNo: '', _vismaOrderNo: '' }, false) === ''
+      && /Tilbud 555010/.test(_plVismaNoHtml(p1, false)) && !/onclick/.test(_plVismaNoHtml(p1, false)));
+@@@ SLUTT
+
+@@@ FINN
+    t('F5 søk på ordrenr. (små/store bokstaver)', sok('700009') === 'p1', sok('700009'));
+@@@ SETT
+    t('F5 søk på ordrenr. (også del av nummeret)', sok('700009') === 'p1' && sok('7000') === 'p1', sok('700009'));
+@@@ SLUTT

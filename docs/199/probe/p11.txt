@@ -1,0 +1,53 @@
+199 · patch 11: regresjonstesten — del J (samme nummer på et annet prosjekt).
+
+@@@ FINN
+    // 199-FLERE
+@@@ SETT
+
+    // ── J. 199 (spm 7): samme nummer på et annet prosjekt i samme organisasjon ──────────────
+    const mkDup = () => {
+      const rs = mkRows(true);
+      const x = (id, name, no, o) => ({ ...rs[0], id, name, project_no: no, ...o });
+      rs.push(x('p3', 'Rev B', 378, { visma_offer_no: '104455', visma_order_no: '300300' }));
+      rs.push(x('p4', 'Slettet', 379, { visma_offer_no: '777777', deleted_at: '2026-11-02T00:00:00Z' }));
+      return rs;
+    };
+    rows = mkDup(); db = nyOkt(rows);
+    await _vismaNoOpen('p1', ['offer']); skrivI('offer', '104455'); r = await ov()._vismaSave();
+    t('J1 lagres likevel + gul melding med riktig prosjekt', r.ok && rows[0].visma_offer_no === '104455' && !ov() && !!toastEl() && toastEl().classList.contains('warn')
+      && toastEl().textContent === 'Lagret. Tilbudsnr. 104455 står også på #0378 Rev B', toastEl() && toastEl().textContent);
+    const opp = db.dupOppslag().slice(-1)[0] || { filters: [] };
+    const harF = (k, v, kind) => opp.filters.some(f => f[0] === k && f[1] === v && f[2] === kind);
+    t('J2 sjekket mot databasen: ett oppslag — samme type, samme organisasjon, ikke seg selv, ikke papirkurven', db.dupOppslag().length === 1
+      && harF('visma_offer_no', '104455', false) && harF('org_id', ME, false) && harF('id', 'p1', 'neq') && harF('deleted_at', null, true), JSON.stringify(opp.filters));
+    rydd();
+    await _vismaNoOpen('p1', ['offer']); skrivI('offer', '900001'); r = await ov()._vismaSave();
+    t('J3 samme nummer i en ANNEN organisasjon: lagret, ingen gul melding', r.ok && rows[0].visma_offer_no === '900001' && !!toastEl() && !toastEl().classList.contains('warn')
+      && toastEl().textContent === 'Tilbudsnr. lagret', toastEl() && toastEl().textContent);
+    rydd();
+    await _vismaNoOpen('p1', ['order']); skrivI('order', '104455'); r = await ov()._vismaSave();
+    t('J4 samme siffer, men annen type (ordrenr. mot tilbudsnr.): ingen gul melding', r.ok && rows[0].visma_order_no === '104455' && !toastEl().classList.contains('warn'), toastEl().textContent);
+    rydd();
+    await _vismaNoOpen('p1', ['offer']); skrivI('offer', '777777'); r = await ov()._vismaSave();
+    t('J5 nummeret står bare på et prosjekt i papirkurven: ingen gul melding', r.ok && rows[0].visma_offer_no === '777777' && !toastEl().classList.contains('warn'), toastEl().textContent);
+    rydd();
+    await _vismaNoOpen('p1', ['offer', 'order']); skrivI('offer', '104455'); skrivI('order', '300300'); r = await ov()._vismaSave();
+    t('J6 begge numrene finnes fra før: begge nevnes', r.ok && toastEl().textContent === 'Lagret. Tilbudsnr. 104455 står også på #0378 Rev B · Ordrenr. 300300 står også på #0378 Rev B', toastEl().textContent);
+    rydd();
+    rows = mkDup(); db = nyOkt(rows, { dupFail: true });
+    await _vismaNoOpen('p1', ['offer']); skrivI('offer', '104455'); r = await ov()._vismaSave();
+    t('J7 oppslaget feiler: nummeret er lagret, vanlig kvittering, ingen krasj', r.ok && rows[0].visma_offer_no === '104455' && !!toastEl() && toastEl().textContent === 'Tilbudsnr. lagret', toastEl() && toastEl().textContent);
+    rydd();
+    rows = mkDup(); rows.push({ ...rows[2], id: 'p5', name: 'Rev C', project_no: 380 }); db = nyOkt(rows);
+    const dd = await _vismaNoFindDuplicates('p1', { offer: '104455' });
+    t('J8 flere treff: det første + «og flere»', dd.length === 1 && dd[0].projects.length === 2 && /Rev B og flere$/.test(_vismaNoDuplicateText(dd[0])), dd.length && _vismaNoDuplicateText(dd[0]));
+    t('J9 tomt nummer (fjernet) slås ikke opp', (await _vismaNoFindDuplicates('p1', { offer: null })).length === 0 && db.dupOppslag().length === 1);
+    rows = mkDup(); db = nyOkt(rows); _supabaseProjectId = 'p1';
+    _wfKundeModal(); await vent(lastet);
+    document.getElementById('wf-k-visma-order').value = '300300';
+    _wfKundeSave();
+    await vent(() => toastEl() && toastEl().classList.contains('warn'));
+    t('J10 «Kunde & prosjektinfo»: lagret + gul melding', rows[0].visma_order_no === '300300' && !!toastEl() && toastEl().textContent === 'Lagret. Ordrenr. 300300 står også på #0378 Rev B', toastEl() && toastEl().textContent);
+    rydd();
+    // 199-FLERE
+@@@ SLUTT

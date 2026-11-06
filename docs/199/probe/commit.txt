@@ -1,0 +1,19 @@
+199: Visma-numre — bare for Visma-bedrifter, 6 siffer, Vunnet spør om tilbudsnr. når det mangler, varsel ved samme nummer, filter for manglende numre
+
+Svar på docs/198/SPØRSMÅL.md (Kenneth 06.11.2026). Ingen ny SQL.
+
+- Spm 1: _vismaNoOrgUsesVisma() (organizations.erp_format) styrer felt ved statusendring, felt i
+  «Kunde & prosjektinfo», hint og klikk i lista, knappen i PDF-meldingen og filtervalgene. Et nummer
+  som alt finnes hos en bedrift uten Visma, vises og er søkbart, men kan ikke redigeres.
+- Spm 4: Vunnet (også «Vi fikk jobben») viser Tilbudsnr. + Ordrenr. når tilbudsnr. mangler.
+- Spm 8: nøyaktig 6 siffer. Mellomrom fjernes, melding under feltet og sperret «Lagre» ellers,
+  inputmode=numeric. _setProjectVismaNo avviser ugyldige verdier. Gamle verdier endres ikke.
+- Spm 7: samme nummer (samme type) på et annet prosjekt i samme organisasjon lagres, med gul melding.
+  Ett oppslag mot databasen per lagret nummer.
+- Spm 10: filtervalgene «Tilbud sendt uten tilbudsnr.» og «Vunnet uten ordrenr.».
+- _vismaNoAudit199() (konsollen, leser bare) teller gamle verdier som ikke er 6 siffer.
+- _vismaNoRegressionTest198 oppdatert: 119/119. De 65 andre testene gir samme tall som på HEAD.
+
+Rapport, spørsmål og bilder i docs/199.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>

@@ -1,0 +1,46 @@
+199 · patch 12: regresjonstesten — del K (uten Visma), L (filtrene), M (tellingen), P («Kunde & prosjektinfo»).
+
+@@@ FINN
+    // 199-FLERE
+@@@ SETT
+
+    // ── K. 199 (spm 1): bedrift uten Visma — ingenting å fylle inn, et gammelt nummer vises ─
+    rows = mkRows(true); rows[0].visma_offer_no = '104455'; db = nyOkt(rows);
+    _userOrg.erp_format = '';
+    await _quickSetStatus('p1', 'tilbud_sendt', null); await sov(40);
+    const k1 = rows[0].sales_status === 'tilbud_sendt' && !ov() && !toastEl();
+    await _quickSetStatus('p1', 'under_arbeid', null); await _plWeGotTheJob('p1'); await sov(40);
+    t('K1 Tilbud sendt, Vunnet og «Vi fikk jobben»: status lagres, ingen felt og ingen melding', k1 && rows[0].sales_status === 'vunnet' && !ov() && !toastEl());
+    r = await _vismaNoOpen('p1', ['offer', 'order']);
+    t('K2 feltet kan ikke åpnes (no-visma), ingenting lest fra databasen', !r.ok && r.reason === 'no-visma' && !ov());
+    list = await _fetchProjectList();
+    const kp = list.find(x => x.id === 'p1');
+    h = _plVismaNoHtml(kp, false);
+    t('K3 lista: det gamle nummeret vises — uten klikk og uten hint', /Tilbud 104455/.test(h) && !/onclick/.test(h) && !/pl-visma-add/.test(h), h);
+    t('K4 … og er søkbart', _filterProjectsList(list, { search: '104455', status: '' }).map(x => x.id).join(',') === 'p1');
+    t('K5 ingen hint når nummeret mangler', _plVismaNoHtml({ ...kp, _vismaOfferNo: '', _salesStatus: 'tilbud_sendt' }, false) === '');
+    _supabaseProjectId = 'p1'; _wfKundeModal(); await sov(60);
+    t('K6 «Kunde & prosjektinfo»: ingen felt', !document.getElementById('wf-k-visma') && !!document.getElementById('wf-kunde-modal'));
+    rydd();
+    _vismaNoOfferSentToast('p1');
+    t('K7 PDF-meldingen: uten «Legg inn tilbudsnr.»-knappen', !!toastEl() && !toastEl().querySelector('button'), toastEl() && toastEl().textContent);
+    rydd();
+    const verdier = o => o.map(x => x[0]).join(',');
+    t('K8 ingen filtervalg uten Visma', !/uten_/.test(verdier(_plStatusOpts('supplier', false))) && !/uten_/.test(verdier(_plStatusOpts('stages', false))));
+    t('K9 Visma-bedrift: valgene står under statusen de hører til (installatør: foran Papirkurv)',
+      verdier(_plStatusOpts('supplier', true)) === 'active,,under_arbeid,tilbud_sendt,uten_tilbudsnr,vunnet,uten_ordrenr,tapt,ferdig,trash'
+      && verdier(_plStatusOpts('stages', true)) === 'stage,,tapt,uten_tilbudsnr,uten_ordrenr,trash'
+      && _plStatusOpts('supplier', true).some(x => x[1] === 'Tilbud sendt uten tilbudsnr.') && _plStatusOpts('supplier', true).some(x => x[1] === 'Vunnet uten ordrenr.'), verdier(_plStatusOpts('supplier', true)));
+    if (selF) {
+      const valg = () => [...selF.options].map(o => o.value).join(',');
+      _plSyncStatusSelect();
+      const utenV = !/uten_/.test(valg());
+      _userOrg.erp_format = 'visma_paste,gbao10'; selF.value = 'tapt'; _plSyncStatusSelect();
+      t('K10 statusfilteret i lista: uten Visma ingen valg; med Visma kommer de, og valget brukeren sto på beholdes', utenV && /uten_tilbudsnr/.test(valg()) && /uten_ordrenr/.test(valg()) && selF.value === 'tapt', valg());
+      selF.value = 'uten_ordrenr'; _vismaNoDisabled = true; _plSyncStatusSelect();
+      t('K11 kolonnene mangler: valgene forsvinner, filteret faller tilbake til «Aktive»', !/uten_/.test(valg()) && selF.value === 'active', valg() + ' → ' + selF.value);
+      _vismaNoDisabled = false;
+    }
+    _userOrg.erp_format = 'visma_paste,gbao10';
+    // 199-FLERE
+@@@ SLUTT

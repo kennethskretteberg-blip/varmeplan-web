@@ -1,0 +1,89 @@
+199 · patch 2: bare Visma-bedrifter, skriveren avviser ugyldig, Vunnet tar med tilbudsnr.
+
+@@@ FINN
+// Bruker bedriften Visma? (organizations.erp_format satt.) Styrer bare det grå «+ Tilbudsnr.»-hintet
+// i lista — feltet ved statusendring og et nummer som alt finnes, vises for alle.
+function _vismaNoOrgUsesVisma() {
+@@@ SETT
+// Bruker bedriften Visma? (organizations.erp_format satt.) 199: styrer ALT — felt ved statusendring,
+// felt i «Kunde & prosjektinfo», hint og klikk i lista, knappen i PDF-meldingen og filtervalgene.
+// Uten Visma er det eneste som står igjen, at et nummer som alt finnes, vises og er søkbart.
+function _vismaNoOrgUsesVisma() {
+@@@ SLUTT
+
+@@@ FINN
+// Kan numrene redigeres for dette prosjektet? Nei for delte prosjekter og når kolonnene mangler.
+function _vismaNoEditable(projectId) {
+  if (_vismaNoDisabled || !_db || !projectId) return false;
+@@@ SETT
+// Kan numrene redigeres for dette prosjektet? Nei for bedrifter uten Visma (199), for delte
+// prosjekter og når kolonnene mangler.
+function _vismaNoEditable(projectId) {
+  if (_vismaNoDisabled || !_db || !projectId || !_vismaNoOrgUsesVisma()) return false;
+@@@ SLUTT
+
+@@@ FINN
+  if (_vismaNoEditorBlocked()) return { ok:false, reason:'read-only' };
+  if (_vismaNoDisabled) return { ok:false, reason:'no-column' };
+  const meta = await _projectOwnerMetaFor(projectId);
+  if (meta && _projectIsShared(meta)) return { ok:false, reason:'shared' };
+  const row = {};
+  for (const k of Object.keys(_VISMA_NO_FIELDS)) if (vals && k in vals) row[_VISMA_NO_FIELDS[k].col] = _vismaNoClean(vals[k]);
+@@@ SETT
+  if (_vismaNoEditorBlocked()) return { ok:false, reason:'read-only' };
+  if (!_vismaNoOrgUsesVisma()) return { ok:false, reason:'no-visma' };   // 199: bare Visma-bedrifter
+  if (_vismaNoDisabled) return { ok:false, reason:'no-column' };
+  const meta = await _projectOwnerMetaFor(projectId);
+  if (meta && _projectIsShared(meta)) return { ok:false, reason:'shared' };
+  const row = {};
+  for (const k of Object.keys(_VISMA_NO_FIELDS)) if (vals && k in vals) {
+    // 199: bakstopp — dialogene sperrer «Lagre», men en ugyldig verdi skal ikke kunne lagres herfra heller.
+    if (!_vismaNoValid(vals[k])) return { ok:false, reason:'invalid', field:k, message:_vismaNoInvalidText(k) };
+    row[_VISMA_NO_FIELDS[k].col] = _vismaNoClean(vals[k]);
+  }
+@@@ SLUTT
+
+@@@ FINN
+  if (r && r.reason === 'read-only') return 'Prosjektet er skrivebeskyttet — nummeret ble ikke lagret.';
+@@@ SETT
+  if (r && r.reason === 'read-only') return 'Prosjektet er skrivebeskyttet — nummeret ble ikke lagret.';
+  if (r && r.reason === 'invalid') return (r.message || 'Nummeret skal være ' + VISMA_NO_DIGITS + ' siffer') + ' — ikke lagret.';
+  if (r && r.reason === 'no-visma') return 'Tilbudsnr. og ordrenr. gjelder bare bedrifter som bruker Visma.';
+@@@ SLUTT
+
+@@@ FINN
+  const meta = _projectOwnerMeta.get(projectId);
+  if (meta && _projectIsShared(meta)) return null;       // delt: numrene er eierens
+  if (_vismaNoDisabled) { _vismaNoMissingNotice(true); return null; }
+  return _vismaNoOpen(projectId, [which], { afterStatus: newStatus });
+}
+@@@ SETT
+  if (!_vismaNoOrgUsesVisma()) return null;              // 199: uten Visma — ingen felt, ingen melding
+  const meta = _projectOwnerMeta.get(projectId);
+  if (meta && _projectIsShared(meta)) return null;       // delt: numrene er eierens
+  if (_vismaNoDisabled) { _vismaNoMissingNotice(true); return null; }
+  // 199 (spm 4): Vunnet ber også om tilbudsnr. når det mangler — avgjøres i _vismaNoOpen, mot den
+  // ferske verdien fra databasen.
+  return _vismaNoOpen(projectId, [which], { afterStatus: newStatus, offerIfMissing: which === 'order' });
+}
+@@@ SLUTT
+
+@@@ FINN
+    return { ok:false, reason:'read-only' };
+  }
+  const cur = await _vismaNoRead(projectId);
+@@@ SETT
+    return { ok:false, reason:'read-only' };
+  }
+  if (!_vismaNoOrgUsesVisma()) return { ok:false, reason:'no-visma' };   // 199
+  const cur = await _vismaNoRead(projectId);
+@@@ SLUTT
+
+@@@ FINN
+  _vismaNoDialog(projectId, fields, cur, opts);
+  return { ok:true };
+@@@ SETT
+  if (opts.offerIfMissing && !cur.offer && !fields.includes('offer')) fields = ['offer', ...fields];
+  _vismaNoDialog(projectId, fields, cur, opts);
+  return { ok:true };
+@@@ SLUTT

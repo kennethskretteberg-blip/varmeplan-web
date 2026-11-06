@@ -1,0 +1,74 @@
+199 · patch 10: regresjonstesten — del I (Vunnet med begge felt) og N (6 siffer i dialogen).
+
+@@@ FINN
+    t('H6 uten migrasjon: feltene er skjult', !document.getElementById('wf-k-visma'));
+    rydd();
+@@@ SETT
+    t('H6 uten migrasjon: feltene er skjult', !document.getElementById('wf-k-visma'));
+    rydd();
+
+    // ── I. 199 (spm 4): Vunnet uten tilbudsnr. → begge feltene ──────────────────────────────
+    rows = mkRows(true); db = nyOkt(rows);
+    const felt = () => [...ov().querySelectorAll('input')].map(i => i.id).join(',');
+    await _quickSetStatus('p1', 'vunnet', null); await vent(ov);
+    t('I1 Vunnet uten tilbudsnr.: begge feltene, Tilbudsnr. først og i fokus', rows[0].sales_status === 'vunnet' && felt() === 'visma-no-offer,visma-no-order'
+      && document.activeElement === ov().querySelector('#visma-no-offer') && /Numrene er valgfrie/.test(ov().textContent), felt());
+    ov().querySelector('#visma-no-offer').value = '104455'; ov().querySelector('#visma-no-order').value = '200 001';
+    await ov()._vismaSave();
+    t('I2 begge lagres, i ett skriv', rows[0].visma_offer_no === '104455' && rows[0].visma_order_no === '200001' && db.vismaSkriv().length === 1 && !ov());
+    rydd();
+    await _quickSetStatus('p1', 'under_arbeid', null); await _quickSetStatus('p1', 'vunnet', null); await vent(ov);
+    t('I3 Vunnet MED tilbudsnr.: bare Ordrenr., som i 198', felt() === 'visma-no-order', felt());
+    rydd();
+    rows = mkRows(true); db = nyOkt(rows);
+    await _plWeGotTheJob('p1'); await vent(ov);
+    t('I4 «Vi fikk jobben» uten tilbudsnr.: begge feltene', felt() === 'visma-no-offer,visma-no-order', felt());
+    ov().querySelector('#visma-no-order').value = '200002';
+    await ov()._vismaSave();
+    t('I5 bare ordrenr. fylt inn: lagret, tilbudsnr. står tomt, ingen sperre', rows[0].visma_order_no === '200002' && rows[0].visma_offer_no === null && !ov());
+    rydd();
+    await _quickSetStatus('p1', 'tilbud_sendt', null); await vent(ov);
+    t('I6 Tilbud sendt: fortsatt bare Tilbudsnr.', felt() === 'visma-no-offer', felt());
+    rydd();
+
+    // ── N. 199 (spm 8): nøyaktig 6 siffer i dialogen ────────────────────────────────────────
+    rows = mkRows(true); db = nyOkt(rows);
+    await _vismaNoOpen('p1', ['offer', 'order']);
+    const skrivI = (k, v) => { const el = ov().querySelector('#visma-no-' + k); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+    const meld = k => ov().querySelector('#visma-no-msg-' + k).style.display !== 'none';
+    const sperret = () => ov().querySelector('#visma-no-save').disabled;
+    const ugyldige = [];
+    for (const v of ['12345', '1234567', '12a456']) {
+      skrivI('offer', v);
+      const s1 = meld('offer') && !meld('order') && sperret() && ov().querySelector('#visma-no-msg-offer').textContent === 'Tilbudsnr. skal være 6 siffer';
+      const rr = await ov()._vismaSave();
+      ugyldige.push(s1 && rr.reason === 'invalid' && !!ov());
+    }
+    t('N1 «12345», «1234567», «12a456»: melding under feltet, «Lagre» sperret, ingenting lagret', ugyldige.every(Boolean) && db.vismaSkriv().length === 0 && rows[0].visma_offer_no === null, ugyldige);
+    ov().querySelector('#visma-no-offer').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await sov(30);
+    t('N2 Enter lagrer heller ikke en ugyldig verdi', !!ov() && db.vismaSkriv().length === 0);
+    skrivI('offer', '104 455');
+    t('N3 «104 455»: ingen melding, «Lagre» åpen', !meld('offer') && !sperret());
+    await ov()._vismaSave();
+    t('N4 … og lagres som «104455»', rows[0].visma_offer_no === '104455' && !ov(), rows[0].visma_offer_no);
+    await _vismaNoOpen('p1', ['offer', 'order']);
+    skrivI('offer', '');
+    t('N5 tomt felt er lov', !meld('offer') && !sperret());
+    await ov()._vismaSave();
+    t('N6 … og fjerner nummeret', rows[0].visma_offer_no === null && !ov());
+    rows = mkRows(true); rows[0].visma_offer_no = 'T-2026/0042 b'; db = nyOkt(rows);
+    await _vismaNoOpen('p1', ['offer', 'order']);
+    t('N7 gammel verdi (fritekst fra 198): vises uendret, meldingen står, «Lagre» er ikke sperret', ov().querySelector('#visma-no-offer').value === 'T-2026/0042 b' && meld('offer') && !sperret());
+    skrivI('order', '200001');
+    await ov()._vismaSave();
+    const plN = (db.vismaSkriv().slice(-1)[0] || {}).payload || {};
+    t('N8 det andre feltet lagres; den gamle verdien røres ikke', rows[0].visma_order_no === '200001' && rows[0].visma_offer_no === 'T-2026/0042 b'
+      && JSON.stringify(Object.keys(plN)) === '["visma_order_no"]', Object.keys(plN));
+    await _vismaNoOpen('p1', ['offer']);
+    skrivI('offer', 'T-2026/0042');
+    t('N9 gammel verdi endret til noe annet ugyldig: sperret', meld('offer') && sperret());
+    skrivI('offer', '104455'); await ov()._vismaSave();
+    t('N10 … rettet til 6 siffer: lagret', rows[0].visma_offer_no === '104455' && !ov(), rows[0].visma_offer_no);
+    rydd();
+    // 199-FLERE
+@@@ SLUTT

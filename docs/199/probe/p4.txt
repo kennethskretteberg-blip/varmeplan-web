@@ -1,0 +1,72 @@
+199 · patch 4: varsel om samme nummer, «mangler»-definisjonen, lista uten redigering for bedrifter uten Visma.
+
+@@@ FINN
+// Lista tegnes på nytt bare når den faktisk vises (cachen er alt tømt av _setProjectVismaNo).
+@@@ SETT
+// 199 (spm 7): står samme nummer (samme type) på et ANNET prosjekt i SAMME organisasjon? Spør
+// databasen — lista som er lastet kan være gammel, og en kollega kan ha lagt inn nummeret nå.
+// Ett lite kall per nummer som nettopp ble lagret (vanligvis ett). Papirkurven telles ikke.
+// Feiler kallet, sier vi ingenting: nummeret er alt lagret, og varselet er en hjelp, ikke en sperre.
+async function _vismaNoFindDuplicates(projectId, vals) {
+  const out = [];
+  if (!_db || !projectId) return out;
+  const meta = await _projectOwnerMetaFor(projectId);
+  if (!meta) return out;                                   // ukjent eier → kan ikke avgrense til organisasjonen
+  for (const k of Object.keys(_VISMA_NO_FIELDS)) {
+    const v = (vals && k in vals) ? _vismaNoClean(vals[k]) : null;
+    if (!v) continue;
+    try {
+      let q = _db.from('romtegner_projects').select('id, name, project_no')
+        .eq(_VISMA_NO_FIELDS[k].col, v).neq('id', projectId).is('deleted_at', null);
+      // Prosjekt uten organisasjon (privat): sammenlign bare med eierens egne private prosjekter.
+      q = meta.org_id ? q.eq('org_id', meta.org_id) : q.is('org_id', null).eq('user_id', meta.user_id);
+      const { data, error } = await q.order('updated_at', { ascending: false }).limit(3);
+      if (error || !data || !data.length) continue;
+      out.push({ field: k, value: v, projects: data });
+    } catch (e) { /* varselet er valgfritt */ }
+  }
+  return out;
+}
+function _vismaNoDuplicateText(d) {
+  const p = d.projects[0], no = _fmtProjectNo(p.project_no);
+  return _VISMA_NO_FIELDS[d.field].word + ' ' + d.value + ' står også på ' + (no ? '#' + no + ' ' : '') + (p.name || 'Uten navn')
+    + (d.projects.length > 1 ? ' og flere' : '');
+}
+// Kalles ETTER at nummeret er lagret. Bytter den grønne kvitteringen med en gul melding når
+// nummeret finnes fra før. Sperrer aldri (revisjon eller kopi kan være riktig).
+async function _vismaNoWarnDuplicates(projectId, vals) {
+  const d = await _vismaNoFindDuplicates(projectId, vals);
+  if (d.length) _vismaNoToast('Lagret. ' + d.map(_vismaNoDuplicateText).join(' · '), null, true, 10000);
+  return d;
+}
+
+// 199 (spm 10): hvilket nummer MANGLER for prosjektets status? 'offer' (Tilbud sendt uten
+// tilbudsnr.), 'order' (Vunnet uten ordrenr.) eller null. ÉN definisjon for hintet i raden og for
+// filtervalgene. Delte prosjekter og rader uten kolonnene mangler aldri noe (der kan ingenting fylles inn).
+function _vismaNoMissing(p) {
+  if (!p || p._sharedIn || p._deletedAt || !p._vismaNoKnown || _vismaNoDisabled) return null;
+  const st = p._salesStatus || 'under_arbeid';
+  if (st === 'tilbud_sendt' && !p._vismaOfferNo) return 'offer';
+  if (st === 'vunnet' && !p._vismaOrderNo) return 'order';
+  return null;
+}
+
+// Lista tegnes på nytt bare når den faktisk vises (cachen er alt tømt av _setProjectVismaNo).
+@@@ SLUTT
+
+@@@ FINN
+  if (inTrash) return bits.length ? `<span class="pl-visma-no" style="cursor:default" title="${esc(tit.join(' · '))}">${linje()}</span>` : '';
+  let focus = '';
+  if (_vismaNoOrgUsesVisma()) {
+    const st = p._salesStatus || 'under_arbeid';
+    if (st === 'tilbud_sendt' && !p._vismaOfferNo) { bits.push('<span class="pl-visma-add">+ Tilbudsnr.</span>'); focus = 'offer'; }
+    if (st === 'vunnet' && !p._vismaOrderNo) { bits.push('<span class="pl-visma-add">+ Ordrenr.</span>'); focus = 'order'; }
+  }
+  if (!bits.length) return '';
+@@@ SETT
+  // Papirkurven og (199) bedrifter uten Visma: et nummer som finnes, vises — uten hint og uten klikk.
+  if (inTrash || !_vismaNoOrgUsesVisma()) return bits.length ? `<span class="pl-visma-no" style="cursor:default" title="${esc(tit.join(' · '))}">${linje()}</span>` : '';
+  const focus = _vismaNoMissing(p) || '';
+  if (focus) bits.push('<span class="pl-visma-add">+ ' + _VISMA_NO_FIELDS[focus].word + '</span>');
+  if (!bits.length) return '';
+@@@ SLUTT

@@ -1,0 +1,36 @@
+{
+ "utenVisma": {
+  "valg": [
+   "Aktive",
+   "Alle statuser",
+   "Under arbeid",
+   "Tilbud sendt",
+   "Vunnet",
+   "Tapt",
+   "Ferdige leveranser",
+   "Papirkurv"
+  ],
+  "numreVist": [
+   "Tilbud 104482",
+   "Tilbud 104455 · Ordre 207719",
+   "Tilbud 104391"
+  ],
+  "hint": 0,
+  "klikkbare": 0,
+  "p5status": "tilbud_sendt",
+  "dialogEtterStatus": false,
+  "melding": false,
+  "sokTreff": [
+   "Kontorbygg 2. etasje"
+  ]
+ },
+ "prosjektinfo": {
+  "tilbudsnr": "104391",
+  "ordrenr": "2077",
+  "meldinger": [
+   "Ordrenr. skal være 6 siffer"
+  ],
+  "lagreSperret": true,
+  "inputmode": "numeric"
+ }
+}

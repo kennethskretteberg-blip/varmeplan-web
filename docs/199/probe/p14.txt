@@ -1,0 +1,13 @@
+199 · patch 14: to gamle testlinjer som fortsatt brukte 198-reglene.
+
+@@@ FINN
+    r = await _setProjectVismaNo('p1', { offer: '1' });
+@@@ SETT
+    r = await _setProjectVismaNo('p1', { offer: '123456' });
+@@@ SLUTT
+
+@@@ FINN
+!fo.disabled && fo.maxLength === 30, fo && fo.value);
+@@@ SETT
+!fo.disabled && fo.maxLength === 7, fo && fo.value);
+@@@ SLUTT

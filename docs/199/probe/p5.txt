@@ -1,0 +1,85 @@
+199 · patch 5: «Kunde & prosjektinfo» — talltastatur, melding under feltet, sperret Lagre, varsel.
+
+@@@ FINN
+  const inp = k => `<div class="dash-create-field" style="flex:1;min-width:0"><label>${_VISMA_NO_FIELDS[k].label}</label><input id="wf-k-visma-${k}" class="dash-create-input" maxlength="${VISMA_NO_MAX}" autocomplete="off" spellcheck="false" disabled placeholder="Henter …"></div>`;
+  return `<div id="wf-k-visma" style="display:flex;gap:10px;margin-bottom:16px">${inp('offer')}${inp('order')}</div>`;
+}
+@@@ SETT
+  const inp = k => `<div class="dash-create-field" style="flex:1;min-width:0"><label>${_VISMA_NO_FIELDS[k].label}</label><input id="wf-k-visma-${k}" class="dash-create-input" inputmode="numeric" maxlength="${VISMA_NO_MAX}" autocomplete="off" spellcheck="false" disabled placeholder="Henter …" oninput="_wfVismaNoCheck()"><div id="wf-k-visma-msg-${k}" style="display:none;font-size:11.5px;color:#f87171;margin-top:4px">${_vismaNoInvalidText(k)}</div></div>`;
+  return `<div id="wf-k-visma" style="display:flex;gap:10px;align-items:flex-start;margin-bottom:16px">${inp('offer')}${inp('order')}</div>`;
+}
+// 199: 6 siffer også her. Meldingen står under feltet så lenge innholdet ikke er 6 siffer (også en
+// gammel verdi som bare vises); modalens «Lagre» sperres når et ENDRET felt er ugyldig. Returnerer
+// true når det er lov å lagre. _wfKundeSave spør også (bakstopp for Enter / kall utenom knappen).
+function _wfVismaNoCheck() {
+  const box = document.getElementById('wf-k-visma');
+  let block = false;
+  if (box && box.dataset.loaded === '1') for (const k of Object.keys(_VISMA_NO_FIELDS)) {
+    const el = document.getElementById('wf-k-visma-' + k); if (!el) continue;
+    const st = _vismaNoFieldState(el.value, el.dataset.orig || '');
+    const msg = document.getElementById('wf-k-visma-msg-' + k); if (msg) msg.style.display = st.valid ? 'none' : '';
+    if (st.blocks && !el.disabled) block = true;
+  }
+  const btn = document.getElementById('wf-k-save');
+  if (btn) { btn.disabled = block; btn.style.opacity = block ? '.5' : ''; btn.style.cursor = block ? 'not-allowed' : ''; }
+  return !block;
+}
+@@@ SLUTT
+
+@@@ FINN
+    el.value = cur[k]; el.dataset.orig = cur[k]; el.placeholder = ''; el.disabled = laast;
+  }
+  box.dataset.loaded = '1';
+}
+@@@ SETT
+    el.value = cur[k]; el.dataset.orig = cur[k]; el.placeholder = ''; el.disabled = laast;
+  }
+  box.dataset.loaded = '1';
+  _wfVismaNoCheck();   // 199: en gammel verdi som ikke er 6 siffer får meldingen med en gang
+}
+@@@ SLUTT
+
+@@@ FINN
+    const el = document.getElementById('wf-k-visma-' + k); if (!el) continue;
+    const v = _vismaNoClean(el.value);
+    if ((v || '') !== (el.dataset.orig || '')) vals[k] = v;
+  }
+  if (!Object.keys(vals).length) return null;
+  return _setProjectVismaNo(pid, vals).then(r => {
+    if (r && r.ok) _vismaNoToast(_vismaNoSavedText(vals));
+    else _vismaNoToast(_vismaNoErrText(r), null, true);
+    return r;
+  });
+@@@ SETT
+    const el = document.getElementById('wf-k-visma-' + k); if (!el) continue;
+    const st = _vismaNoFieldState(el.value, el.dataset.orig || '');
+    if (st.changed) vals[k] = st.value;
+  }
+  if (!Object.keys(vals).length) return null;
+  return _setProjectVismaNo(pid, vals).then(async r => {
+    if (r && r.ok) { _vismaNoToast(_vismaNoSavedText(vals)); await _vismaNoWarnDuplicates(pid, vals); }   // 199: gul melding ved samme nummer
+    else _vismaNoToast(_vismaNoErrText(r), null, true);
+    return r;
+  });
+@@@ SLUTT
+
+@@@ FINN
+      <button class="dash-create-btn" onclick="_wfKundeSave()">Lagre</button>
+@@@ SETT
+      <button id="wf-k-save" class="dash-create-btn" onclick="_wfKundeSave()">Lagre</button>
+@@@ SLUTT
+
+@@@ FINN
+  if (S.ui && S.ui.readOnly) { _lockToast(); return; }
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  if (!S.project) S.project = {};
+  S.project.contact_name = g('wf-k-contact') || null;
+@@@ SETT
+  if (S.ui && S.ui.readOnly) { _lockToast(); return; }
+  // 199: et tilbudsnr./ordrenr. som er endret til noe annet enn 6 siffer, stopper lagringen
+  // (meldingen står under feltet). Ingenting lagres halvveis.
+  if (typeof _wfVismaNoCheck === 'function' && !_wfVismaNoCheck()) return;
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  if (!S.project) S.project = {};
+  S.project.contact_name = g('wf-k-contact') || null;
+@@@ SLUTT

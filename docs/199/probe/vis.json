@@ -1,0 +1,81 @@
+{
+ "oppsett": {
+  "rader": 6,
+  "valg": [
+   "Aktive",
+   "Alle statuser",
+   "Under arbeid",
+   "Tilbud sendt",
+   "Tilbud sendt uten tilbudsnr.",
+   "Vunnet",
+   "Vunnet uten ordrenr.",
+   "Tapt",
+   "Ferdige leveranser",
+   "Papirkurv"
+  ]
+ },
+ "vunnet": {
+  "felt": [
+   "Tilbudsnr. (Visma)",
+   "Ordrenr. (Visma)"
+  ],
+  "verdier": [
+   "",
+   ""
+  ],
+  "meldinger": [],
+  "lagreSperret": false,
+  "fokus": "visma-no-offer"
+ },
+ "femSiffer": {
+  "felt": [
+   "Tilbudsnr. (Visma)",
+   "Ordrenr. (Visma)"
+  ],
+  "verdier": [
+   "10445",
+   ""
+  ],
+  "meldinger": [
+   "Tilbudsnr. skal være 6 siffer"
+  ],
+  "lagreSperret": true,
+  "fokus": "visma-no-offer"
+ },
+ "etterKlikkPaaSperret": {
+  "dialogStaar": true,
+  "lagret": ""
+ },
+ "foerLagre": {
+  "felt": [
+   "Tilbudsnr. (Visma)",
+   "Ordrenr. (Visma)"
+  ],
+  "verdier": [
+   "104 455",
+   "207720"
+  ],
+  "meldinger": [],
+  "lagreSperret": false,
+  "fokus": "visma-no-order"
+ },
+ "varsel": {
+  "tekst": "Lagret. Tilbudsnr. 104455 står også på #0380 Rehab bad og gang, Storgata 4",
+  "gul": true
+ },
+ "lagret": [
+  "104455",
+  "207720",
+  "vunnet"
+ ],
+ "oppslag": [
+  "romtegner_projects:select:visma_offer_no=104455&id!=p6&deleted_at=null&org_id=org-cenika",
+  "romtegner_projects:select:visma_order_no=207720&id!=p6&deleted_at=null&org_id=org-cenika"
+ ],
+ "utenTilbudsnr": [
+  "Elektro Service Hallingdal Hytte Geilo, garasje og bod#0379 "
+ ],
+ "utenOrdrenr": [
+  "GK Norge AS Kontorbygg 2. etasje#0378 FH Under arbeidTilbud "
+ ]
+}

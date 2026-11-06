@@ -1,0 +1,14 @@
+199 · patch 15: et nummer som bare vises (papirkurv, bedrift uten Visma) skal ikke se klikkbart ut ved hover.
+
+@@@ FINN
+.pl-visma-no:hover{color:var(--accent)}
+@@@ SETT
+.pl-visma-no:hover{color:var(--accent)}
+.pl-visma-no.pl-visma-ro,.pl-visma-no.pl-visma-ro:hover{color:var(--dim);cursor:default}
+@@@ SLUTT
+
+@@@ FINN
+  if (inTrash || !_vismaNoOrgUsesVisma()) return bits.length ? `<span class="pl-visma-no" style="cursor:default" title=
+@@@ SETT
+  if (inTrash || !_vismaNoOrgUsesVisma()) return bits.length ? `<span class="pl-visma-no pl-visma-ro" title=
+@@@ SLUTT

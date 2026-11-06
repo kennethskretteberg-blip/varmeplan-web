@@ -1,0 +1,103 @@
+199 · patch 3: dialogen — talltastatur, melding under feltet, sperret Lagre, varsel om samme nummer.
+
+@@@ FINN
+  const sub = opts.afterStatus
+    ? 'Statusen er lagret. Nummeret er valgfritt, og kan legges inn eller rettes senere.'
+    : 'Valgfritt. Tomt felt fjerner nummeret.';
+@@@ SETT
+  const sub = opts.afterStatus
+    ? 'Statusen er lagret. ' + (fields.length > 1 ? 'Numrene er valgfrie' : 'Nummeret er valgfritt') + ', og kan legges inn eller rettes senere.'
+    : 'Valgfritt. Tomt felt fjerner nummeret.';
+@@@ SLUTT
+
+@@@ FINN
+      <input id="visma-no-${k}" type="text" maxlength="${VISMA_NO_MAX}" autocomplete="off" spellcheck="false" value="${esc(cur[k] || '')}" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:14px;box-sizing:border-box">`).join('');
+@@@ SETT
+      <input id="visma-no-${k}" type="text" inputmode="numeric" maxlength="${VISMA_NO_MAX}" autocomplete="off" spellcheck="false" value="${esc(cur[k] || '')}" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:14px;box-sizing:border-box">
+      <div id="visma-no-msg-${k}" style="display:none;font-size:12px;color:#f87171;margin-top:4px">${_vismaNoInvalidText(k)}</div>`).join('');
+@@@ SLUTT
+
+@@@ FINN
+  const skip = () => { close(); if (opts.afterStatus) _vismaNoRefresh(); };
+  const save = async () => {
+    const vals = {};
+    for (const k of fields) {
+      const v = _vismaNoClean(wrap.querySelector('#visma-no-' + k).value);
+      if ((v || '') !== (cur[k] || '')) vals[k] = v;
+    }
+    const keys = Object.keys(vals);
+    if (!keys.length) { skip(); return { ok:true, unchanged:true }; }
+    const btn = wrap.querySelector('#visma-no-save'); btn.disabled = true;
+    const r = await _setProjectVismaNo(projectId, vals);
+    if (!r || !r.ok) {
+      btn.disabled = false;
+      const err = wrap.querySelector('#visma-no-err');
+      err.textContent = _vismaNoErrText(r); err.style.display = '';
+      return r;
+    }
+    close();
+    _vismaNoToast(_vismaNoSavedText(vals));
+    _vismaNoRefresh();
+    return r;
+  };
+  wrap._vismaSave = save;   // testene (og bare de) trykker «Lagre» uten å gå via DOM-hendelser
+@@@ SETT
+  const skip = () => { close(); if (opts.afterStatus) _vismaNoRefresh(); };
+  // 199: 6 siffer. Meldingen står under feltet så lenge innholdet ikke er 6 siffer (også for en
+  // gammel verdi fra 198 som bare vises). «Lagre» sperres når et ENDRET felt er ugyldig.
+  const check = () => {
+    let block = false;
+    for (const k of fields) {
+      const el = wrap.querySelector('#visma-no-' + k);
+      const st = _vismaNoFieldState(el.value, cur[k] || '');
+      wrap.querySelector('#visma-no-msg-' + k).style.display = st.valid ? 'none' : '';
+      el.style.borderColor = st.valid ? 'var(--border)' : '#f87171';
+      if (st.blocks) block = true;
+    }
+    const btn = wrap.querySelector('#visma-no-save');
+    btn.disabled = block; btn.style.opacity = block ? '.5' : ''; btn.style.cursor = block ? 'not-allowed' : 'pointer';
+    return !block;
+  };
+  const save = async () => {
+    if (!check()) return { ok:false, reason:'invalid' };
+    const vals = {};
+    for (const k of fields) {
+      const st = _vismaNoFieldState(wrap.querySelector('#visma-no-' + k).value, cur[k] || '');
+      if (st.changed) vals[k] = st.value;
+    }
+    const keys = Object.keys(vals);
+    if (!keys.length) { skip(); return { ok:true, unchanged:true }; }
+    const btn = wrap.querySelector('#visma-no-save'); btn.disabled = true;
+    const r = await _setProjectVismaNo(projectId, vals);
+    if (!r || !r.ok) {
+      check();
+      const err = wrap.querySelector('#visma-no-err');
+      err.textContent = _vismaNoErrText(r); err.style.display = '';
+      return r;
+    }
+    close();
+    _vismaNoToast(_vismaNoSavedText(vals));
+    _vismaNoRefresh();
+    await _vismaNoWarnDuplicates(projectId, vals);   // 199: gul melding hvis nummeret står på et annet prosjekt
+    return r;
+  };
+  wrap.addEventListener('input', check);
+  check();
+  wrap._vismaSave = save;   // testene (og bare de) trykker «Lagre» uten å gå via DOM-hendelser
+@@@ SLUTT
+
+@@@ FINN
+  setTimeout(() => { if (el.isConnected) { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); } }, action ? 10000 : (warn ? 7000 : 3000));
+  return el;
+}
+@@@ SETT
+  setTimeout(() => { if (el.isConnected) { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); } }, ms || (action ? 10000 : (warn ? 7000 : 3000)));
+  return el;
+}
+@@@ SLUTT
+
+@@@ FINN
+function _vismaNoToast(msg, action, warn) {
+@@@ SETT
+function _vismaNoToast(msg, action, warn, ms) {
+@@@ SLUTT

@@ -1,0 +1,55 @@
+199 · patch 1: konstanter, rens, gyldighet.
+
+@@@ FINN
+//   • Batch-endring spør aldri (ett nummer passer ikke for mange prosjekter).
+let _vismaNoDisabled = false;   // true = kolonnene finnes ikke i databasen
+let _vismaNoNagged = false;     // «databasen er ikke oppdatert» ved statusendring: én gang per økt
+const VISMA_NO_MAX = 30;
+@@@ SETT
+//   • Batch-endring spør aldri (ett nummer passer ikke for mange prosjekter).
+// 199 (Kenneths svar på 198, 06.11.2026):
+//   • BARE for Visma-bedrifter (_vismaNoOrgUsesVisma). Uten Visma: ingen felt, hint, knapp eller
+//     filtervalg. Et nummer som alt står der, VISES og er søkbart, men kan ikke redigeres.
+//   • Nøyaktig 6 siffer (VISMA_NO_DIGITS). Mellomrom fjernes før sjekk. Ugyldig verdi lagres aldri
+//     (skriveren avviser den). Gamle fritekst-verdier fra 198 står urørt til noen retter dem.
+//   • Vunnet uten tilbudsnr. → dialogen viser begge feltene (tilbudsnr. først).
+//   • Samme nummer på et annet prosjekt i samme organisasjon → lagres, men gul melding.
+//   • To filtervalg: «Tilbud sendt uten tilbudsnr.» og «Vunnet uten ordrenr.».
+let _vismaNoDisabled = false;   // true = kolonnene finnes ikke i databasen
+let _vismaNoNagged = false;     // «databasen er ikke oppdatert» ved statusendring: én gang per økt
+const VISMA_NO_DIGITS = 6;      // 199: tilbudsnr. og ordrenr. i Visma er nøyaktig 6 siffer
+const VISMA_NO_MAX = 7;         // feltets maxlength: 6 siffer + plass til ett mellomrom («104 455»)
+@@@ SLUTT
+
+@@@ FINN
+// Rens: kontrolltegn bort, mellomrom-rekker → ett mellomrom, trim, maks 30 tegn. Bokstaver og tall
+// er lov (Visma-numre er ikke alltid rene siffer). Tomt → null (kolonnen tømmes).
+function _vismaNoClean(v) {
+  const s = String(v == null ? '' : v).replace(/\p{Cc}/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, VISMA_NO_MAX).trim();
+  return s || null;
+}
+@@@ SETT
+// Rens (199): ALLE mellomrom og kontrolltegn fjernes («104 455» → «104455»). Tomt → null (kolonnen
+// tømmes). Rensen kutter ikke og retter ikke — om resultatet er et gyldig nummer, avgjør
+// _vismaNoValid. (198 tillot fritekst på 30 tegn; Kenneth 06.11: nøyaktig 6 siffer.)
+function _vismaNoClean(v) {
+  const s = String(v == null ? '' : v).replace(/[\s\p{Cc}]+/gu, '');
+  return s || null;
+}
+// Gyldig = tomt eller nøyaktig 6 siffer etter rens.
+function _vismaNoValid(v) {
+  const s = _vismaNoClean(v);
+  return s === null || (s.length === VISMA_NO_DIGITS && /^[0-9]+$/.test(s));
+}
+function _vismaNoInvalidText(k) { return _VISMA_NO_FIELDS[k].word + ' skal være ' + VISMA_NO_DIGITS + ' siffer'; }
+// Ett felt i en dialog: hva (om noe) skal skrives, og er det lov? orig = verdien slik den sto i
+// databasen da feltet ble fylt. Et URØRT felt skrives aldri og sperrer aldri — slik blir en gammel
+// fritekst-verdi fra 198 stående til noen faktisk retter den (meldingen vises likevel under feltet).
+function _vismaNoFieldState(raw, orig) {
+  raw = String(raw == null ? '' : raw); orig = String(orig == null ? '' : orig);
+  const v = _vismaNoClean(raw);
+  const changed = raw !== orig && (v || '') !== orig;
+  const valid = _vismaNoValid(raw);
+  return { value: v, changed, valid, blocks: changed && !valid };
+}
+@@@ SLUTT

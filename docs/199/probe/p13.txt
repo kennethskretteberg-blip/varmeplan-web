@@ -1,0 +1,54 @@
+199 · patch 13: regresjonstesten — del L (filtrene), M (tellingen), P («Kunde & prosjektinfo», 6 siffer).
+
+@@@ FINN
+    // 199-FLERE
+@@@ SETT
+
+    // ── L. 199 (spm 10): filtrene ───────────────────────────────────────────────────────────
+    const fp = (id, st, o) => ({ id, name: id, _salesStatus: st, _vismaNoKnown: true, _vismaOfferNo: '', _vismaOrderNo: '', ...o });
+    const fl = [fp('a', 'tilbud_sendt'), fp('b', 'tilbud_sendt', { _vismaOfferNo: '104455' }), fp('c', 'vunnet', { _vismaOfferNo: '104455' }),
+      fp('d', 'vunnet', { _vismaOrderNo: '200001' }), fp('e', 'vunnet', { _deliveryStatus: 'ferdig' }), fp('f', 'tilbud_sendt', { _sharedIn: true }),
+      fp('g', 'tilbud_sendt', { _deletedAt: '2026-11-01' }), fp('h', 'under_arbeid'), fp('i', 'tapt'), fp('j', 'vunnet', { _sharedIn: true })];
+    const idsL = s => _filterProjectsList(fl, { status: s }).map(p => p.id).sort().join('');
+    t('L1 «Tilbud sendt uten tilbudsnr.»: bare egne, ikke papirkurv', idsL('uten_tilbudsnr') === 'a', idsL('uten_tilbudsnr'));
+    t('L2 «Vunnet uten ordrenr.»: også ferdige leveranser, ikke delte', idsL('uten_ordrenr') === 'ce', idsL('uten_ordrenr'));
+    t('L3 filteret og hintet i raden er samme definisjon', fl.every(p => (_vismaNoMissing(p) !== null) === /pl-visma-add/.test(_plVismaNoHtml(p, !!p._deletedAt))));
+    const gamle = [idsL('tilbud_sendt'), idsL('vunnet'), idsL(''), idsL('trash'), idsL('active'), idsL('tapt'), idsL('ferdig')].join('|');
+    t('L4 de gamle filtervalgene gir det samme som før', gamle === 'abf|cdej|abcdefhij|g|abcdfhj|i|e', gamle);
+    t('L5 søk virker sammen med filteret', _filterProjectsList(fl, { status: 'uten_ordrenr', search: '104455' }).map(p => p.id).join('') === 'c');
+    _vismaNoDisabled = true;
+    t('L6 kolonnene mangler: filtrene gir ingenting (og krasjer ikke)', idsL('uten_tilbudsnr') === '' && idsL('uten_ordrenr') === '');
+    _vismaNoDisabled = false;
+
+    // ── M. 199: tellingen til rapporten (_vismaNoAudit199) ──────────────────────────────────
+    rows = mkRows(true); rows[0].visma_offer_no = 'T-2026/0042 b'; rows[0].visma_order_no = '200001';
+    rows.push({ ...rows[0], id: 'p6', name: 'Elektro-prosjekt', org_id: 'org-uten', project_no: 381, visma_offer_no: '104455', visma_order_no: null });
+    db = nyOkt(rows, { orgs: [{ id: ME, name: 'Cenika', erp_format: 'visma_paste,gbao10' }, { id: 'org-uten', name: 'Elektro AS', erp_format: null }] });
+    const au = await _vismaNoAudit199();
+    t('M1 teller numre som ikke er 6 siffer og numre hos bedrift uten Visma — uten å skrive', au.ok && au.medNummer === 3 && au.ikke6siffer.length === 1
+      && au.ikke6siffer[0].tilbudsnr === 'T-2026/0042 b' && au.utenVisma.length === 1 && au.utenVisma[0].navn === 'Elektro-prosjekt' && au.ukjentBedrift === 1
+      && !db.calls.some(c => c.op === 'update'), JSON.stringify(au).slice(0, 400));
+
+    // ── P. 199: «Kunde & prosjektinfo» — 6 siffer, sperret «Lagre» ──────────────────────────
+    rows = mkRows(true); rows[0].visma_offer_no = 'GML-1'; db = nyOkt(rows); _supabaseProjectId = 'p1';
+    S.project = { name: 'Test 199', description: 'Gate 1' };
+    _wfKundeModal(); await vent(lastet);
+    const wf = k => document.getElementById('wf-k-visma-' + k);
+    const wfMeld = k => document.getElementById('wf-k-visma-msg-' + k).style.display !== 'none';
+    const wfSkriv = (k, v) => { wf(k).value = v; wf(k).dispatchEvent(new Event('input', { bubbles: true })); };
+    const lagreKnapp = () => document.getElementById('wf-k-save');
+    t('P1 talltastatur og maxlength; gammel verdi vises med melding, «Lagre» åpen', wf('offer').getAttribute('inputmode') === 'numeric' && wf('offer').maxLength === 7
+      && wf('offer').value === 'GML-1' && wfMeld('offer') && !wfMeld('order') && !lagreKnapp().disabled);
+    wfSkriv('order', '12345'); document.getElementById('wf-k-addr').value = 'Gate 2';
+    const p2a = wfMeld('order') && lagreKnapp().disabled;
+    n0 = db.vismaSkriv().length;
+    _wfKundeSave(); await sov(40);
+    t('P2 ugyldig ordrenr.: melding, «Lagre» sperret, modalen står, INGENTING lagret (heller ikke adressen)', p2a && !!document.getElementById('wf-kunde-modal')
+      && db.vismaSkriv().length === n0 && S.project.description === 'Gate 1' && rows[0].visma_order_no === null);
+    wfSkriv('order', '200 001');
+    const p3a = !wfMeld('order') && !lagreKnapp().disabled;
+    _wfKundeSave(); await vent(() => rows[0].visma_order_no === '200001');
+    t('P3 rettet til «200 001»: lagres som «200001», resten av skjemaet lagres, gammel verdi urørt', p3a && rows[0].visma_order_no === '200001' && rows[0].visma_offer_no === 'GML-1'
+      && S.project.description === 'Gate 2' && !document.getElementById('wf-kunde-modal'), rows[0].visma_order_no);
+    rydd();
+@@@ SLUTT

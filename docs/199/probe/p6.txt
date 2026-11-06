@@ -1,0 +1,70 @@
+199 · patch 6: filtervalgene «Tilbud sendt uten tilbudsnr.» og «Vunnet uten ordrenr.».
+
+@@@ FINN
+    } else if (status === 'ferdig') {
+      out = out.filter(p => p._deliveryStatus === 'ferdig');
+    } else if (SALES.includes(status)) {
+@@@ SETT
+    } else if (status === 'ferdig') {
+      out = out.filter(p => p._deliveryStatus === 'ferdig');
+    } else if (status === 'uten_tilbudsnr' || status === 'uten_ordrenr') {
+      // 199: oppfølgingsfiltrene — samme definisjon som «+ Tilbudsnr.» / «+ Ordrenr.» i raden.
+      const want = status === 'uten_tilbudsnr' ? 'offer' : 'order';
+      out = out.filter(p => _vismaNoMissing(p) === want);
+    } else if (SALES.includes(status)) {
+@@@ SLUTT
+
+@@@ FINN
+function _plSyncStatusSelect() {
+  const sel = document.getElementById('dash-filter-status');
+  if (!sel) return;
+  const mode = _plUseStages() ? 'stages' : 'supplier';
+  if (sel.dataset.mode === mode) return;
+  const opts = mode === 'stages' ? _PL_STATUS_OPTS_STAGES : _PL_STATUS_OPTS_SUPPLIER;
+  sel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  sel.value = mode === 'stages' ? 'stage' : 'active';
+  sel.dataset.mode = mode;
+}
+@@@ SETT
+// 199 (spm 10): to oppfølgingsvalg, BARE for Visma-bedrifter (og bare når kolonnene finnes).
+// Leverandør: hvert valg står rett under statusen det hører til. Installatør: foran Papirkurv.
+const _PL_STATUS_OPTS_VISMA = [['uten_tilbudsnr','Tilbud sendt uten tilbudsnr.','tilbud_sendt'],['uten_ordrenr','Vunnet uten ordrenr.','vunnet']];
+function _plStatusOpts(mode, visma) {
+  const base = mode === 'stages' ? _PL_STATUS_OPTS_STAGES : _PL_STATUS_OPTS_SUPPLIER;
+  if (!visma) return base;
+  const out = [];
+  for (const o of base) {
+    if (mode === 'stages' && o[0] === 'trash') _PL_STATUS_OPTS_VISMA.forEach(x => out.push([x[0], x[1]]));
+    out.push(o);
+    if (mode !== 'stages') _PL_STATUS_OPTS_VISMA.filter(x => x[2] === o[0]).forEach(x => out.push([x[0], x[1]]));
+  }
+  return out;
+}
+function _plSyncStatusSelect() {
+  const sel = document.getElementById('dash-filter-status');
+  if (!sel) return;
+  const mode = _plUseStages() ? 'stages' : 'supplier';
+  const visma = (_vismaNoOrgUsesVisma() && !_vismaNoDisabled) ? '1' : '';
+  if (sel.dataset.mode === mode && (sel.dataset.visma || '') === visma) return;
+  const sameMode = sel.dataset.mode === mode, prev = sel.value;
+  const opts = _plStatusOpts(mode, !!visma);
+  sel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  // Byttet visningen (leverandør ↔ installatør): standardvalget, som før. Kom eller forsvant bare
+  // Visma-valgene (bedriften ble lastet, kolonnene manglet): behold det brukeren står på hvis det finnes.
+  sel.value = (sameMode && opts.some(o => o[0] === prev)) ? prev : (mode === 'stages' ? 'stage' : 'active');
+  sel.dataset.mode = mode;
+  sel.dataset.visma = visma;
+}
+@@@ SLUTT
+
+@@@ FINN
+    empty.textContent = (statusFilter === 'stage' && !document.getElementById('dash-search')?.value)
+      ? EMPTY_STAGE[_plStage] : (statusFilter === 'stage' ? 'Ingen treff.' : empty.dataset.orig);
+@@@ SETT
+    // 199: oppfølgingsfiltrene sier hva som er tomt — «ingen mangler nummer» er gode nyheter.
+    const EMPTY_VISMA = { uten_tilbudsnr: 'Ingen sendte tilbud mangler tilbudsnr.', uten_ordrenr: 'Ingen vunne prosjekter mangler ordrenr.' };
+    const _sok199 = document.getElementById('dash-search')?.value;
+    empty.textContent = EMPTY_VISMA[statusFilter] ? (_sok199 ? 'Ingen treff.' : EMPTY_VISMA[statusFilter])
+      : (statusFilter === 'stage' && !_sok199)
+      ? EMPTY_STAGE[_plStage] : (statusFilter === 'stage' ? 'Ingen treff.' : empty.dataset.orig);
+@@@ SLUTT

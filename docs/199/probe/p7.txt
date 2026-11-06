@@ -1,0 +1,68 @@
+199 · patch 7: regresjonstesten — mock (neq/not/limit/organizations), rader, del A.
+
+@@@ FINN
+      const st = { op: 'select', cols: '', filters: [], payload: null };
+      const match = r => st.filters.every(([k, v, is]) => is ? (r[k] ?? null) === null : r[k] === v);
+      const exec = async () => {
+        calls.push({ table, op: st.op, cols: st.cols, payload: st.payload });
+        if (table !== 'romtegner_projects') return
+@@@ SETT
+      const st = { op: 'select', cols: '', filters: [], payload: null };
+      const match = r => st.filters.every(([k, v, is]) => is === 'neq' ? r[k] !== v : is === 'notnull' ? (r[k] ?? null) !== null
+        : is ? (r[k] ?? null) === null : r[k] === v);
+      const exec = async () => {
+        calls.push({ table, op: st.op, cols: st.cols, payload: st.payload, filters: st.filters.slice() });
+        if (table === 'organizations' && o.orgs) return { data: o.orgs.map(x => ({ ...x })), error: null };
+        // 199: o.dupFail → oppslaget «står nummeret på et annet prosjekt?» feiler (kjennes på neq-filteret).
+        if (o.dupFail && st.op === 'select' && st.filters.some(f => f[2] === 'neq')) return { data: null, error: { code: '500', message: 'oppslag nede' } };
+        if (table !== 'romtegner_projects') return
+@@@ SLUTT
+
+@@@ FINN
+        eq(k, v) { st.filters.push([k, v, false]); return q; }, is(k) { st.filters.push([k, null, true]); return q; },
+        update(p) { st.op = 'update'; st.payload = p; return q; },
+        maybeSingle: async () => { const r = await exec(); return r.error ? r : { data: (r.data || [])[0] || null, error: null }; },
+        single: async () => { const r = await exec(); return r.error ? r : { data: (r.data || [])[0] || null, error: null }; },
+        then(res, rej) { return exec().then(res, rej); },
+      };
+      return q;
+    };
+    return { from: builder, calls, vismaSkriv: () => calls.filter(c => c.op === 'update' && visma(c.payload)) };
+@@@ SETT
+        eq(k, v) { st.filters.push([k, v, false]); return q; }, is(k) { st.filters.push([k, null, true]); return q; },
+        neq(k, v) { st.filters.push([k, v, 'neq']); return q; }, not(k) { st.filters.push([k, null, 'notnull']); return q; }, limit() { return q; },
+        update(p) { st.op = 'update'; st.payload = p; return q; },
+        maybeSingle: async () => { const r = await exec(); return r.error ? r : { data: (r.data || [])[0] || null, error: null }; },
+        single: async () => { const r = await exec(); return r.error ? r : { data: (r.data || [])[0] || null, error: null }; },
+        then(res, rej) { return exec().then(res, rej); },
+      };
+      return q;
+    };
+    return { from: builder, calls, vismaSkriv: () => calls.filter(c => c.op === 'update' && visma(c.payload)),
+      dupOppslag: () => calls.filter(c => c.op === 'select' && (c.filters || []).some(f => f[2] === 'neq')) };
+@@@ SLUTT
+
+@@@ FINN
+    if (kol) { a.visma_offer_no = null; a.visma_order_no = null; b.visma_offer_no = 'EIER-1'; b.visma_order_no = null; }
+@@@ SETT
+    if (kol) { a.visma_offer_no = null; a.visma_order_no = null; b.visma_offer_no = '900001'; b.visma_order_no = null; }
+@@@ SLUTT
+
+@@@ FINN
+    t('A1 trim', _vismaNoClean('  12345  ') === '12345', _vismaNoClean('  12345  '));
+    t('A2 bokstaver og tegn er lov', _vismaNoClean('T-2026/0042 b') === 'T-2026/0042 b', _vismaNoClean('T-2026/0042 b'));
+    t('A3 mellomrom/tab/linjeskift → ett mellomrom', _vismaNoClean(' AB \t 12\n3 ') === 'AB 12 3', _vismaNoClean(' AB \t 12\n3 '));
+    t('A4 maks 30 tegn', _vismaNoClean('1234567890'.repeat(4)).length === 30, _vismaNoClean('1234567890'.repeat(4)).length);
+@@@ SETT
+    t('A1 trim', _vismaNoClean('  123456  ') === '123456', _vismaNoClean('  123456  '));
+    t('A2 mellomrom inni fjernes («104 455» → «104455»), også tab og linjeskift', _vismaNoClean('104 455') === '104455' && _vismaNoClean(' 1\t04 4\n55 ') === '104455', _vismaNoClean('104 455'));
+    t('A3 gyldig: nøyaktig 6 siffer (også med mellomrom), eller tomt', _vismaNoValid('104455') && _vismaNoValid('104 455') && _vismaNoValid('000001')
+      && _vismaNoValid('') && _vismaNoValid('   ') && _vismaNoValid(null));
+    t('A4 ugyldig: 5 siffer, 7 siffer, bokstav, tegn', !_vismaNoValid('12345') && !_vismaNoValid('1234567') && !_vismaNoValid('12a456')
+      && !_vismaNoValid('2026-7719') && !_vismaNoValid('12345.') && !_vismaNoValid('-12345'));
+    const fs1 = _vismaNoFieldState('T-2026/0042 b', 'T-2026/0042 b'), fs2 = _vismaNoFieldState('12345', ''), fs3 = _vismaNoFieldState(' 104 455 ', ''),
+      fs4 = _vismaNoFieldState('', 'GML-1'), fs5 = _vismaNoFieldState(' 104455', '104455');
+    t('A6 feltstatus: urørt gammel verdi sperrer ikke (men er ugyldig); endret ugyldig sperrer; gyldig renses; tomt fjerner; bare mellomrom = urørt',
+      !fs1.changed && !fs1.valid && !fs1.blocks && fs2.changed && fs2.blocks && fs3.changed && !fs3.blocks && fs3.value === '104455'
+      && fs4.changed && !fs4.blocks && fs4.value === null && !fs5.changed, JSON.stringify([fs1, fs2, fs3, fs4, fs5]));
+@@@ SLUTT
