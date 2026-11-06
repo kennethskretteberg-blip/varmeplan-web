@@ -28918,13 +28918,135 @@ function _geoRegressionTest() {
   console[ok ? 'log' : 'error']('_geoRegressionTest (synkron del): ' + (ok ? 'BESTÅTT' : 'FEILET'), results);
   // 139: adresseliste/tjenestestatus/nøkkel er asynkrone (stubbet fetch, 250 ms-debounce) — de
   // logges når de er ferdige. `await _geoRegressionTest().async` gir alt samlet.
-  const async = _geoAddrRegressionTest(results).then(() => _geoCenterRegressionTest(results)).then(() => _geoOneStepRegressionTest(results)).then(() => _geoScaleRegressionTest(results)).then(() => {
+  const _tm0 = _roofTileMode; _roofTileMode = false;   // 194: de eldre testene stubber /roof/background (bildeveien)
+  const async = _geoAddrRegressionTest(results).then(() => _geoCenterRegressionTest(results)).then(() => _geoOneStepRegressionTest(results)).then(() => _geoScaleRegressionTest(results)).then(() => { _roofTileMode = _tm0; return _geoTileRegressionTest194(results); }).then(() => {
     const alle = results.every(r => r.ok);
     console[alle ? 'log' : 'error']('_geoRegressionTest (alt, inkl. 139): ' + (alle ? 'BESTÅTT' : 'FEILET') +
       ' (' + results.filter(r => r.ok).length + '/' + results.length + ')', results.filter(r => !r.ok));
     return { ok: alle, results };
   });
   return { ok, results, async };
+}
+
+// 194: flislaget. Fem ting låses: (1) riktig flis for en kjent koordinat, (2) nivåvalget, (3) målestokk/plassering
+// etter panorering og zoom (flisens skjermrekt = w2s av _geoToWorld-hjørnene), (4) PDF-bildet lages (toDataURL
+// kaster ikke — lerretet er ikke tainted) med ekte Kartverket-flis, (5) kreditering + lagring/gamle prosjekter.
+// Nettkall (4) hoppes over med tydelig melding hvis Kartverket ikke nås — de andre er helt uten nett.
+async function _geoTileRegressionTest194(results) {
+  const check = (name, expected, cond, got) => results.push({ name: '194: ' + name, expected, got, ok: !!cond });
+  const E = 233598.159, N = 6682393.678;   // Steinliveien 1
+  const lagret = { bgs: S.bgs, geo: S.geo, view: { ...S.view }, pdf: S.ui._pdfMode, rooms: S.rooms, floors: S.floors,
+                   aktiv: S.ui.activeFloorId, part: S.ui.activePartId, cache: new Map(_tileCache), cw: canvas.width, ch: canvas.height };
+  try {
+    // (1) flis for kjent koordinat — formelen skrevet ut på nytt, med ScaleDenominator fra capabilities
+    for (const [z, sd] of [[16, 1180.5943], [18, 295.1486]]) {
+      const span = sd * 0.00028 * 256;
+      const forvent = { col: Math.floor((E + 2500000) / span), row: Math.floor((9045984 - N) / span) };
+      const fikk = _tileIndex(E, N, z);
+      check(`flis nivå ${z}: rad/kolonne mot formelen`, `${forvent.row}/${forvent.col}`, fikk.row === forvent.row && fikk.col === forvent.col, `${fikk.row}/${fikk.col}`);
+      check(`flisside nivå ${z} = ${span.toFixed(3)} m`, span.toFixed(2), Math.abs(_tileSpanM(z) - span) < 0.01, _tileSpanM(z));
+    }
+    check('flis-URL = {nivå}/{rad}/{kolonne}', 'cache.kartverket.no/…/utm33n/16/7/9.png', _tileUrl('topo', 16, 7, 9) === 'https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/utm33n/16/7/9.png', _tileUrl('topo', 16, 7, 9));
+    // (2) nivåvalg
+    check('nivå: 0,5 m/px → 16', 16, _tilePickLevel(0.5) === 16, _tilePickLevel(0.5));
+    check('nivå: 0,01 m/px → 18 (finest)', 18, _tilePickLevel(0.01) === 18, _tilePickLevel(0.01));
+    check('nivå: 500 m/px → 6 (grovest)', 6, _tilePickLevel(500) === 6, _tilePickLevel(500));
+    check('nivå: akkurat 0,3306 m/px → 16', 16, _tilePickLevel(_tileMPerPx(16)) === 16, _tilePickLevel(_tileMPerPx(16)));
+
+    // (3) plassering etter panorering/zoom. Fliser fylles med falske lerret og tegnes i _pdfMode (ingen nettkall).
+    S.ui._pdfMode = true;
+    S.floors = []; S.rooms = [];
+    const bg = _installTileBackground('t194', { east: E, north: N }, 'Test');
+    S.bgs = { t194: bg };
+    check('tile-bakgrunn: _bgIsGeo og _bgIsTiles', 'true/true', _bgIsGeo(bg) && _bgIsTiles(bg), _bgIsGeo(bg) + '/' + _bgIsTiles(bg));
+    check('vindu: SV-hjørne = (0,0), 200 m', '0,0 / 20000', (() => { const w = _geoToWorld(bg, bg.geo.east0, bg.geo.north0); return w.x === 0 && w.y === 0 && bg.widthCm === 20000; })(), '');
+    canvas.width = 1000; canvas.height = 700;
+    const fake = document.createElement('canvas'); fake.width = fake.height = 256;
+    for (const v of [{ zoom: 0.3, panX: 9000, panY: -4000 }, { zoom: 1.7, panX: -2500, panY: 3100 }, { zoom: 0.004, panX: 150000, panY: -90000 }]) {
+      S.view.zoom = v.zoom; S.view.panX = v.panX; S.view.panY = v.panY;
+      const geom = _tilesDraw(bg);                       // første kall: bare for å få tilområdet
+      for (let r = geom.r0; r <= geom.r1; r++) for (let c = geom.c0; c <= geom.c1; c++)
+        _tileCache.set(_tileKey('topo', geom.z, r, c), { img: fake, st: 'ok', t: 0, frame: 0, cbs: [] });
+      const kall = [], orig = ctx.drawImage;
+      ctx.drawImage = function (im, ...a) { if (im === fake) kall.push(a); return orig.call(this, im, ...a); };
+      try { _tilesDraw(bg); } finally { delete ctx.drawImage; }
+      const span = _tileSpanM(geom.z), r = geom.r0, c = geom.c0;
+      const nw = w2s(_geoToWorld(bg, TILE_ORIGIN_E + c * span, TILE_ORIGIN_N - r * span).x, _geoToWorld(bg, TILE_ORIGIN_E + c * span, TILE_ORIGIN_N - r * span).y);
+      const k0 = kall.find(a => a.length === 4);   // drawImage(img, dx, dy, dw, dh)
+      check(`zoom ${v.zoom}: flisene tegnes (nivå ${geom.z}, ${kall.length} stk)`, '>0', kall.length > 0, kall.length);
+      check(`zoom ${v.zoom}: øvre venstre flis ligger på w2s(_geoToWorld)`, `${nw.x.toFixed(1)},${nw.y.toFixed(1)}`, k0 && Math.abs(k0[0] - nw.x) <= 1 && Math.abs(k0[1] - nw.y) <= 1, k0 && `${k0[0]},${k0[1]}`);
+      const sc = S.view.zoom * BASE_SCALE, forventPx = span * 100 * sc;
+      check(`zoom ${v.zoom}: flisbredde i piksler = flisside × skala`, forventPx.toFixed(1), k0 && Math.abs(k0[2] - forventPx) <= 3, k0 && k0[2]);   // hele piksler + 0,5 px overlapp mot sømmer
+    }
+    // kjent avstand: 100 m øst-vest = 10 000 cm = 10 000 × zoom × BASE_SCALE piksler, uavhengig av nivå
+    S.view.zoom = 0.9; S.view.panX = 12345; S.view.panY = -777;
+    { const a = w2s(_geoToWorld(bg, E, N).x, _geoToWorld(bg, E, N).y), b = w2s(_geoToWorld(bg, E + 100, N).x, _geoToWorld(bg, E + 100, N).y);
+      check('100 m øst = 10 000 cm × zoom × BASE_SCALE px, også etter panorering', (10000 * 0.9 * BASE_SCALE).toFixed(1), Math.abs((b.x - a.x) - 10000 * 0.9 * BASE_SCALE) < 0.01 && Math.abs(b.y - a.y) < 1e-9, (b.x - a.x)); }
+    // utenfor det nominelle vinduet: ingen «kartet slutter her»
+    S.view.panX = bg.originX + bg.widthCm * 5; S.view.panY = bg.originY - bg.heightCm * 5;
+    check('langt utenfor vinduet: _geoViewOffMap = false', false, _geoViewOffMap() === false && !_geoViewOffMap(), _geoViewOffMap());
+    check('_minZoom for flislag er løsnet (< 0,02)', '< 0.02', GEO_TILE_MIN_ZOOM < 0.02, GEO_TILE_MIN_ZOOM);
+
+    // (5a) kreditering: tegnes av klienten, og står i geo
+    S.ui._pdfMode = false; canvas.width = 600; canvas.height = 300; ctx.clearRect(0, 0, 600, 300);
+    const tekster = [], oft = ctx.fillText;
+    ctx.fillText = function (t, ...a) { tekster.push(String(t)); return oft.call(this, t, ...a); };
+    try { _tilesDrawCredit(bg); } finally { delete ctx.fillText; }
+    check('kreditering «© Kartverket (CC BY 4.0)» tegnes på lerretet', '© Kartverket (CC BY 4.0)', tekster.includes('© Kartverket (CC BY 4.0)'), tekster.join('|'));
+    S.ui._pdfMode = true; tekster.length = 0; canvas.width = 2000; canvas.height = 1400;
+    ctx.fillText = function (t, ...a) { tekster.push(String(t)); return oft.call(this, t, ...a); };
+    try { _tilesDrawCredit(bg); } finally { delete ctx.fillText; }
+    check('kreditering tegnes også i PDF-modus', '1 stk', tekster.length === 1, tekster.length);
+
+    // (5b) lagring: ingen bilde i prosjektraden, bare geo; gammelt bilde-prosjekt lagres som før
+    const px1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const gammel = Object.assign(_newBgObj(), { img: new Image(), dataUrl: px1, widthCm: 8000, heightCm: 8000, originX: 0, originY: -8000, locked: true,
+      geo: { epsg: 25833, east0: E - 40, north0: N - 40, widthM: 80, heightM: 80, mPerPx: 0.05, layers: ['topo'], attribution: '© Kartverket (CC BY 4.0)', fetchedAt: '2026-09-24T10:00:00Z' } });
+    S.bgs = { t194: bg, g194: gammel };
+    const data = JSON.parse(JSON.stringify(_buildSaveData()));
+    check('lagret: flislag med geo.tiles, uten dataUrl', 'topo/null', data.bgs.t194 && data.bgs.t194.geo.tiles.layer === 'topo' && !data.bgs.t194.dataUrl, JSON.stringify(data.bgs.t194 && data.bgs.t194.geo.tiles));
+    check('lagret: flislaget er under 1 kB', '< 1000 B', JSON.stringify(data.bgs.t194).length < 1000, JSON.stringify(data.bgs.t194).length);
+    check('lagret: gammelt prosjekt beholder dataUrl uendret', 'ja', data.bgs.g194 && data.bgs.g194.dataUrl === px1 && !data.bgs.g194.geo.tiles, '');
+    check('_bgIsTiles skiller: gammelt = false, nytt = true', 'false/true', !_bgIsTiles(gammel) && _bgIsTiles(bg), '');
+
+    // (4) PDF: ekte flis fra Kartverket → _renderRoomToImage → toDataURL. Dette er testen som betyr noe.
+    S.ui._pdfMode = false; canvas.width = lagret.cw; canvas.height = lagret.ch;
+    _tileCache.clear();
+    const FID = 't194';
+    S.bgs = { [FID]: bg }; S.floors = [{ id: FID, name: 'T', partId: null }];
+    const pts = [{ x: 9800, y: -10200 }, { x: 10300, y: -10200 }, { x: 10300, y: -9800 }, { x: 9800, y: -9800 }];
+    S.rooms = [{ id: 994001, floorId: FID, partId: null, name: 'Kartrom', points: pts, walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [] }];
+    S.ui.activeFloorId = FID; S.ui.activePartId = null;
+    _rebuildActiveFloorRoomIds && _rebuildActiveFloorRoomIds();
+    let nett = true;
+    try { await _tilesPreloadForPdf(); } catch (e) { nett = false; }
+    const lastet = [..._tileCache.values()].filter(e => e.st === 'ok').length;
+    if (!lastet) { nett = false; results.push({ name: '194: PDF med kartbakgrunn (ekte flis) — HOPPET OVER, Kartverket ikke nådd', expected: 'flis lastet', got: '0 fliser', ok: true, skipped: true }); }
+    if (nett) {
+      let url = null, feil = null;
+      try { url = _renderRoomToImage(S.rooms[0], { focusRoom: true, targetWidthMm: 180 }).url; } catch (e) { feil = e.name + ': ' + e.message; }
+      check(`PDF med kartbakgrunn: toDataURL gir et bilde (${lastet} fliser lastet)`, 'data:image/jpeg', !feil && typeof url === 'string' && url.startsWith('data:image/jpeg') && url.length > 5000, feil || (url && url.length));
+      let url2 = null, feil2 = null;
+      try { url2 = _renderFloorToImage(S.floors[0], { box: null }).url; } catch (e) { feil2 = e.name + ': ' + e.message; }
+      check('plantegning (etasjebilde) med kartbakgrunn: toDataURL gir et bilde', 'data:image/jpeg', !feil2 && typeof url2 === 'string' && url2.startsWith('data:image/jpeg'), feil2 || (url2 && url2.length));
+      // bildet skal faktisk inneholde kart, ikke bare hvitt: sjekk at JPEG-en ikke er (nær) enfarget
+      const cv = document.createElement('canvas'), im = new Image();
+      await new Promise(res => { im.onload = res; im.onerror = res; im.src = url || ''; });
+      if (im.naturalWidth) {
+        cv.width = 64; cv.height = 64; const cx = cv.getContext('2d'); cx.drawImage(im, 0, 0, 64, 64);
+        const d = cx.getImageData(0, 0, 64, 64).data; let mn = 255, mx = 0;
+        for (let i = 0; i < d.length; i += 4) { const l = (d[i] + d[i + 1] + d[i + 2]) / 3; mn = Math.min(mn, l); mx = Math.max(mx, l); }
+        check('PDF-bildet inneholder kartinnhold (ikke enfarget)', 'kontrast > 20', mx - mn > 20, mx - mn);
+      }
+    }
+  } catch (e) {
+    results.push({ name: '194: uventet unntak', expected: 'ingen', got: e && e.stack || String(e), ok: false });
+  } finally {
+    S.bgs = lagret.bgs; S.geo = lagret.geo; S.view = lagret.view; S.ui._pdfMode = lagret.pdf; S.rooms = lagret.rooms; S.floors = lagret.floors;
+    S.ui.activeFloorId = lagret.aktiv; S.ui.activePartId = lagret.part; canvas.width = lagret.cw; canvas.height = lagret.ch;
+    _tileCache.clear(); lagret.cache.forEach((v, k) => _tileCache.set(k, v));
+    try { _rebuildActiveFloorRoomIds && _rebuildActiveFloorRoomIds(); } catch (e) {}
+  }
 }
 
 // 168: MÅLESTOKK for alle tre utsnitt (80/120/200 m). Kenneth målte «ca. 1 m» på noe som var ≥ 5 m, og
@@ -65025,11 +65147,16 @@ function drawBgImage() {
     ctx.save();
     ctx.globalAlpha = bg.opacity;
     const _bcx = sx + sw / 2, _bcy = sy + sh / 2;
-    ctx.translate(_bcx, _bcy);
-    if (bg.rotation) ctx.rotate(bg.rotation * Math.PI / 180);
-    if (bg.flipX || bg.flipY) ctx.scale(bg.flipX ? -1 : 1, bg.flipY ? -1 : 1);
-    ctx.drawImage(bg.img, -sw / 2, -sh / 2, sw, sh);
+    if (_bgIsTiles(bg)) {
+      _tilesDraw(bg);   // 194: flislag — tegner hele lerretet, ikke bare det nominelle vinduet
+    } else {
+      ctx.translate(_bcx, _bcy);
+      if (bg.rotation) ctx.rotate(bg.rotation * Math.PI / 180);
+      if (bg.flipX || bg.flipY) ctx.scale(bg.flipX ? -1 : 1, bg.flipY ? -1 : 1);
+      ctx.drawImage(bg.img, -sw / 2, -sh / 2, sw, sh);
+    }
     ctx.restore();
+    if (_bgIsTiles(bg)) _tilesDrawCredit(bg);   // 194: lisenskrav, tegnes av klienten (også i PDF-bildet)
 
     if (bg.calibrating) {
       const ARM = 14;
@@ -76892,7 +77019,7 @@ function fitAll() {
 const GEO_MIN_ZOOM = 0.02;
 function _minZoom() {
   const bg = S.bgs && S.bgs[S.ui.activeFloorId];
-  return _bgIsGeo(bg) ? GEO_MIN_ZOOM : 0.2;
+  return _bgIsTiles(bg) ? GEO_TILE_MIN_ZOOM : _bgIsGeo(bg) ? GEO_MIN_ZOOM : 0.2;   // 194: flislaget har ingen kant — bare nivåene setter grensen
 }
 function _fitViewToBg(bg) {
   if (!bg || !(bg.widthCm > 0) || !(bg.heightCm > 0) || !canvas) return;
@@ -77379,7 +77506,7 @@ function _ctxBarItems() {
     if (_bgIsGeo(bg)) {
       const g = bg.geo;
       return `<span class="ctxbar-lbl">${IC('map',14)} Kart</span>
-        <span style="font-size:11px;color:var(--dim);padding:0 4px;font-family:var(--font-mono)">${g.widthM} × ${g.heightM} m</span>
+        <span style="font-size:11px;color:var(--dim);padding:0 4px;font-family:var(--font-mono)">${g.tiles ? 'Flytt og zoom fritt' : g.widthM + ' × ' + g.heightM + ' m'}</span>
         <span style="font-size:11px;color:var(--dim);padding:0 4px">${esc(g.attribution || '© Kartverket')}</span>
         <span class="tc-sep"></span>
         <label class="snap-chip" style="gap:4px;cursor:pointer" title="Vis/skjul"><input type="checkbox" ${bg.visible!==false?'checked':''} onchange="toggleBgVisible(this.checked);renderSidebar()" onclick="event.stopPropagation()"> Vis</label>
@@ -80194,6 +80321,190 @@ function _worldToGeo(bg, wx, wy) {
 /** Er dette en kart-bakgrunn (ikke en importert plantegning)? Styrer ctxbar og lås. */
 function _bgIsGeo(bg) { return !!(bg && bg.geo && bg.geo.epsg); }
 
+// ═══ 194 · FLISLAG — kartet uten kant ═════════════════════════════════════════════════════════
+// Et flisbasert kart er en vanlig geo-bakgrunn (`bg.geo` med east0/north0 = SV-hjørnet av et nominelt
+// 200 m-vindu), men uten lagret bilde: `bg.geo.tiles = { layer }` og `bg.img` = en 1×1-plassholder
+// (så alle de ~40 `bg.img`-vaktene i appen fortsatt ser «en bakgrunn»). Selve kartet tegnes av
+// _tilesDraw fra Kartverkets WMTS, rett fra nettleseren — målt i STEG 0 (docs/194/RAPPORT.md):
+// `access-control-allow-origin: *`, og lerretet blir IKKE tainted med crossOrigin='anonymous', så
+// PDF-eksportens toDataURL virker. Gamle prosjekter har `bg.dataUrl` og ingen `geo.tiles`: de tegnes
+// som før (_bgIsTiles skiller dem). Geometrien (_geoToWorld) er helt uendret — vindu og verden er de samme.
+//
+// Flisrutenettet (EPSG:25833, målt 24.09.2026 i varmeplan-roof/app/geo/wmts.py):
+//   origo øverst til venstre (−2 500 000, 9 045 984), 256 px, m/px = ScaleDenominator × 0,00028,
+//   nivå 14 = 4722,3772 og halveres per nivå (6…18 finnes hos Kartverket, målt med curl).
+//   rad = (9 045 984 − nord) ÷ flisside, kolonne = (øst + 2 500 000) ÷ flisside, rad teller NEDOVER.
+let _roofTileMode = true;   // false = gammel vei (ett ferdig bilde fra /roof/background); brukes av de eldre testene
+const TILE_ORIGIN_E = -2500000, TILE_ORIGIN_N = 9045984, TILE_PX = 256;
+const TILE_MIN_LEVEL = 6, TILE_MAX_LEVEL = 18, TILE_MPX_L14 = 4722.3772 * 0.00028;
+const TILE_MAX_PER_FRAME = 200, TILE_MAX_INFLIGHT = 8, TILE_CACHE_MAX = 700, TILE_RETRY_MS = 15000;
+const GEO_TILE_MIN_ZOOM = 0.0003;   // ≈ 30 km over 1000 px (nivå 10); nivåvalget holder flis-antallet per bilde nede uansett
+const TILE_ATTRIBUTION = '© Kartverket (CC BY 4.0)';
+function _tileMPerPx(z) { return TILE_MPX_L14 * Math.pow(2, 14 - z); }
+function _tileSpanM(z) { return _tileMPerPx(z) * TILE_PX; }
+/** Groveste nivå som fortsatt er finere enn (eller lik) det skjermen viser — samme regel som pick_level i wmts.py. */
+function _tilePickLevel(mPerPx) {
+  for (let z = TILE_MIN_LEVEL; z <= TILE_MAX_LEVEL; z++) if (_tileMPerPx(z) <= mPerPx) return z;
+  return TILE_MAX_LEVEL;
+}
+function _tileIndex(east, north, z) {
+  const span = _tileSpanM(z);
+  return { col: Math.floor((east - TILE_ORIGIN_E) / span), row: Math.floor((TILE_ORIGIN_N - north) / span) };
+}
+function _bgIsTiles(bg) { return !!(bg && bg.geo && bg.geo.tiles); }
+const _TILE_IMG = (() => { const c = document.createElement('canvas'); c.width = c.height = 1;
+  try { Object.defineProperty(c, 'naturalWidth', { value: 1600 }); Object.defineProperty(c, 'naturalHeight', { value: 1600 }); } catch (e) {}
+  return c; })();
+
+const _tileCache = new Map();   // «lag/z/rad/kol» → { img, st: 'load'|'ok'|'err', t, frame, keep, cbs }
+let _tileQueue = [], _tileInflight = 0, _tileFrame = 0, _tileRenderPending = false;
+function _tileKey(l, z, r, c) { return l + '/' + z + '/' + r + '/' + c; }
+function _tileGet(l, z, r, c) { const e = _tileCache.get(_tileKey(l, z, r, c)); return e && e.st === 'ok' ? e.img : null; }
+function _tileUrl(l, z, r, c) { return `https://cache.kartverket.no/v1/wmts/1.0.0/${l}/default/utm33n/${z}/${r}/${c}.png`; }
+function _tileRequest(l, z, r, c, keep, defer) {
+  const key = _tileKey(l, z, r, c);
+  let e = _tileCache.get(key);
+  if (e) {
+    if (e.st === 'err' && Date.now() - e.t > TILE_RETRY_MS) _tileCache.delete(key); else { e.frame = _tileFrame; if (keep) e.keep = true; return e; }
+  }
+  e = { img: null, st: 'load', t: Date.now(), frame: _tileFrame, keep: !!keep, cbs: [], l, z, r, c };
+  _tileCache.set(key, e); _tileQueue.push(e);
+  if (!defer) _tilePump();
+  return e;
+}
+function _tileDone(e, ok) {
+  e.st = ok ? 'ok' : 'err'; e.t = Date.now(); _tileInflight--;
+  const cbs = e.cbs; e.cbs = [];
+  cbs.forEach(f => f());
+  _tilePump();
+  if (!_tileRenderPending) { _tileRenderPending = true; requestAnimationFrame(() => { _tileRenderPending = false; markDirty(); }); }
+}
+function _tilePump() {
+  while (_tileInflight < TILE_MAX_INFLIGHT && _tileQueue.length) {
+    const e = _tileQueue.pop();                                   // nyeste først
+    if (!e.keep && e.frame < _tileFrame - 1) { _tileCache.delete(_tileKey(e.l, e.z, e.r, e.c)); continue; }   // ikke lenger i bildet
+    _tileInflight++;
+    const im = new Image(); im.crossOrigin = 'anonymous';         // uten denne blir lerretet tainted og PDF dør
+    im.onload = () => { e.img = im; _tileDone(e, true); };
+    im.onerror = () => { _tileDone(e, false); };
+    im.src = _tileUrl(e.l, e.z, e.r, e.c);
+  }
+  if (_tileCache.size > TILE_CACHE_MAX) {
+    for (const [k, e] of _tileCache) {
+      if (_tileCache.size <= TILE_CACHE_MAX * 0.8) break;
+      if (e.st !== 'load' && !e.keep && e.frame < _tileFrame - 1) _tileCache.delete(k);
+    }
+  }
+}
+/** Lover om en flis (brukes av PDF-forhåndslastingen) — oppfylles også ved feil, så eksport aldri henger. */
+function _tileLoadP(l, z, r, c) {
+  return new Promise(res => {
+    const e = _tileRequest(l, z, r, c, true);
+    if (e.st === 'ok' || e.st === 'err') res(); else e.cbs.push(res);
+  });
+}
+/** Tegner flisene som dekker lerretet. Kalles fra drawBgImage innenfor bakgrunnens globalAlpha. */
+function _tilesDraw(bg) {
+  const g = bg.geo, layer = (g.tiles && g.tiles.layer) || 'topo';
+  const sc = S.view.zoom * BASE_SCALE, W = canvas.width, H = canvas.height;
+  const pdf = !!(S.ui && S.ui._pdfMode);
+  if (!pdf) _tileFrame++;
+  let z = _tilePickLevel(0.01 / sc);
+  const wx0 = S.view.panX - W / 2 / sc, wx1 = S.view.panX + W / 2 / sc;
+  const wy0 = S.view.panY - H / 2 / sc, wy1 = S.view.panY + H / 2 / sc;
+  const eW = g.east0 + wx0 / 100, eE = g.east0 + wx1 / 100, nN = g.north0 - wy0 / 100, nS = g.north0 - wy1 / 100;
+  let c0, c1, r0, r1, span;
+  for (;;) {
+    span = _tileSpanM(z);
+    c0 = Math.max(0, Math.floor((eW - TILE_ORIGIN_E) / span)); c1 = Math.floor((eE - TILE_ORIGIN_E) / span);
+    r0 = Math.max(0, Math.floor((TILE_ORIGIN_N - nN) / span)); r1 = Math.floor((TILE_ORIGIN_N - nS) / span);
+    if ((c1 - c0 + 1) * (r1 - r0 + 1) <= TILE_MAX_PER_FRAME || z <= TILE_MIN_LEVEL) break;
+    z--;
+  }
+  const solid = !(bg.opacity < 1);   // 0,5 px overlapp skjuler sømmer, men ville gitt mørke striper under dimming
+  const ov = solid ? 0.5 : 0;
+  const mid = { c: (c0 + c1) / 2, r: (r0 + r1) / 2 };
+  const wanted = [];
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    const xw = (TILE_ORIGIN_E + c * span - g.east0) * 100, yw = (g.north0 - (TILE_ORIGIN_N - r * span)) * 100;
+    const x = (xw - S.view.panX) * sc + W / 2, y = (yw - S.view.panY) * sc + H / 2, ts = span * 100 * sc;
+    const dx = Math.floor(x), dy = Math.floor(y), dw = Math.ceil(x + ts + ov) - dx, dh = Math.ceil(y + ts + ov) - dy;
+    const img = _tileGet(layer, z, r, c);
+    if (img) { ctx.drawImage(img, dx, dy, dw, dh); continue; }
+    // Mangler flisen: nærmeste lastede forelder (grovere nivå) skaleres opp, så kartet aldri blinker tomt.
+    let done = false;
+    for (let k = 1; k <= z - TILE_MIN_LEVEL && !done; k++) {
+      const pi = _tileGet(layer, z - k, r >> k, c >> k);
+      if (!pi) continue;
+      const n = 1 << k, sz = TILE_PX / n;
+      ctx.drawImage(pi, (c - ((c >> k) << k)) * sz, (r - ((r >> k) << k)) * sz, sz, sz, dx, dy, dw, dh);
+      done = true;
+    }
+    if (!done) { ctx.fillStyle = pdf ? '#ffffff' : '#e8eaed'; ctx.fillRect(dx, dy, dw, dh); }
+    if (!pdf) wanted.push({ r, c, d: Math.hypot(r - mid.r, c - mid.c) });
+  }
+  if (!pdf) {
+    wanted.sort((a, b) => b.d - a.d);   // lengst fra midten først; _tilePump tar fra enden = midten først
+    for (const w of wanted) _tileRequest(layer, z, w.r, w.c, false, true);
+    _tilePump();
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const e = _tileCache.get(_tileKey(layer, z, r, c)); if (e) e.frame = _tileFrame; }
+  }
+  return { z, c0, c1, r0, r1 };
+}
+/** Krediteringen er et lisenskrav (CC BY 4.0). Tegnes av klienten, over alt kartet, også i PDF-bildet. */
+function _tilesDrawCredit(bg) {
+  const txt = (bg.geo && bg.geo.attribution) || TILE_ATTRIBUTION;
+  const pdf = !!(S.ui && S.ui._pdfMode);
+  const fs = pdf ? Math.max(14, Math.round(canvas.width / 70)) : 11;
+  ctx.save();
+  ctx.font = fs + 'px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+  const w = ctx.measureText(txt).width, pad = Math.round(fs * 0.35);
+  const x = canvas.width - pad, y = canvas.height - pad;
+  ctx.fillStyle = 'rgba(255,255,255,0.78)'; ctx.fillRect(x - w - pad, y - fs - pad, w + pad * 2, fs + pad * 2);
+  ctx.fillStyle = '#222'; ctx.fillText(txt, x, y);
+  ctx.restore();
+}
+/** PDF-eksporten er synkron (tegner på hovedlerretet): flisene den trenger MÅ ligge i cache først. */
+async function _tilesPreloadForPdf() {
+  const jobs = [];
+  for (const [k, bg] of Object.entries(S.bgs || {})) {
+    if (!_bgIsTiles(bg)) continue;
+    const pts = (S.rooms || []).filter(r => String(r.floorId) === String(k)).flatMap(r => r.points || []);
+    if (!pts.length) continue;
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y), pad = 500;
+    const w = _worldToGeo(bg, Math.min(...xs) - pad, Math.max(...ys) + pad), e = _worldToGeo(bg, Math.max(...xs) + pad, Math.min(...ys) - pad);
+    const layer = bg.geo.tiles.layer || 'topo';
+    for (const z of [TILE_MAX_LEVEL, TILE_MAX_LEVEL - 1, TILE_MAX_LEVEL - 2, 14]) {
+      const a = _tileIndex(w.east, e.north, z), b = _tileIndex(e.east, w.north, z);
+      if ((b.col - a.col + 1) * (b.row - a.row + 1) > 80) continue;
+      for (let r = Math.max(0, a.row); r <= b.row; r++) for (let c = Math.max(0, a.col); c <= b.col; c++) jobs.push(_tileLoadP(layer, z, r, c));
+    }
+  }
+  if (jobs.length) await Promise.race([Promise.all(jobs), new Promise(res => setTimeout(res, 12000))]);
+}
+/** Installerer et flisbasert kart sentrert på (east, north). Ingen bilde lagres — bare hvor kartet står. */
+function _installTileBackground(floorId, pt, label) {
+  const bg = S.bgs[floorId] || _newBgObj();
+  S.bgs[floorId] = bg;
+  bg.img = _TILE_IMG; bg.dataUrl = null;
+  bg.fileName = 'Kart ' + (label || ''); bg.pageNumber = null;
+  bg._srcW = 1600; bg._srcH = 1600;
+  delete bg.paperWidthCm; delete bg.paperHeightCm;
+  const SIZE_M = 200;   // nominelt vindu: «Tilpass til visning», kartets SV-origo og alle _geoToWorld-regnestykker er som før
+  bg.widthCm = SIZE_M * 100; bg.heightCm = SIZE_M * 100;
+  bg.originX = 0; bg.originY = -bg.heightCm;
+  bg.rotation = 0; bg.flipX = false; bg.flipY = false;
+  bg.opacity = 1.0; bg.visible = true; bg.locked = true;
+  bg.calibrating = false; bg.calPts = []; bg._needsCalibration = false;
+  bg.geo = {
+    epsg: 25833, east0: pt.east - SIZE_M / 2, north0: pt.north - SIZE_M / 2,
+    widthM: SIZE_M, heightM: SIZE_M, mPerPx: _tileMPerPx(TILE_MAX_LEVEL),
+    layers: ['topo'], tiles: { layer: 'topo', v: 1 },
+    attribution: TILE_ATTRIBUTION, fetchedAt: new Date().toISOString(),
+  };
+  return bg;
+}
+
 // ═══ 006: BYGNINGSOMRISS SOM VEKTORLAG, SNAPPING, HELNING ═════════════════════════════════════
 // Omrisset tegnes som VEKTOR oppå kartbildet (ikke brent inn i bildet, med vilje) — da kan det
 // snappes til, klikkes på og vises i riktig farge etter kilde/sikkerhet.
@@ -80271,7 +80582,7 @@ function _polyDistanceCm(a, b) {
 let _geoOffMap = false;
 function _geoViewOffMap() {
   const bg = S.bgs && S.bgs[S.ui.activeFloorId];
-  if (!_bgIsGeo(bg)) return false;
+  if (!_bgIsGeo(bg) || _bgIsTiles(bg)) return false;   // 194: flislaget har ingen kant; meldingen gjelder bare gamle bilde-utsnitt
   return S.view.panX < bg.originX || S.view.panX > bg.originX + bg.widthCm ||
          S.view.panY < bg.originY || S.view.panY > bg.originY + bg.heightCm;
 }
@@ -80851,10 +81162,19 @@ async function _roofFetchBackground() {
     const layers = ['topo'];
     if (d.eiendom) layers.push('eiendom');
     if (d.hillshade) layers.push('hillshade');
-    const res = await _roofApi.background({
-      east: pt.east, north: pt.north, size_m: d.sizeM, px: 1600, layers: layers.join(','),
-    }, _roofDlgStatus);
-    const bg = _installGeoBackground(d.floorId, res.geo, res.png_base64, d.address);
+    // 194: flisbasert kart (standard) trenger ikke /roof/background — flisene hentes av tegneflaten mens
+    // brukeren drar. Eiendomsgrenser/terrengskygge finnes ikke som WMTS-lag og ignoreres her (se SPØRSMÅL).
+    // Gammel vei (ett ferdig bilde) beholdes bak _roofTileMode=false for de eldre testene.
+    let res, bg;
+    if (_roofTileMode) {
+      bg = _installTileBackground(d.floorId, pt, d.address);
+      res = { geo: { width_m: bg.geo.widthM, height_m: bg.geo.heightM, layers: bg.geo.layers } };
+    } else {
+      res = await _roofApi.background({
+        east: pt.east, north: pt.north, size_m: d.sizeM, px: 1600, layers: layers.join(','),
+      }, _roofDlgStatus);
+      bg = _installGeoBackground(d.floorId, res.geo, res.png_base64, d.address);
+    }
 
     // Vektorene (omriss/kandidater) lagres i verdens-cm — 006 bruker dem til snapping.
     if (!S.geo) S.geo = {};
@@ -80886,7 +81206,7 @@ async function _roofFetchBackground() {
     renderSidebar(); updateCtxBar(); render();
     _scheduleAutoSave && _scheduleAutoSave();
     const lagTxt = (res.geo.layers || []).join(' + ');
-    _showToast && _showToast(`Kart hentet — ${res.geo.width_m} × ${res.geo.height_m} m (${lagTxt}) · © Kartverket`, 'ok');
+    _showToast && _showToast(_roofTileMode ? `Kart hentet (${lagTxt}) — dra og zoom fritt · © Kartverket` : `Kart hentet — ${res.geo.width_m} × ${res.geo.height_m} m (${lagTxt}) · © Kartverket`, 'ok');
   } catch (err) {
     d.busy = false;
     d.error = err && err.roof ? err.message : 'Uventet feil: ' + (err && err.message);
@@ -81151,7 +81471,7 @@ function _editorIsEmpty() {
   const activePart = S.project && S.project.parts && S.project.parts.find(p => p.id === S.ui.activePartId);
   if (activePart && activePart.moduleType !== 'indoor' && activePart.moduleType !== 'snow') return false;
   // Bakgrunn lastet → ikke tomt (brukeren skal tegne oppå)
-  if (S.bgs && Object.values(S.bgs).some(bg => bg && bg.dataUrl)) return false;
+  if (S.bgs && Object.values(S.bgs).some(bg => bg && (bg.dataUrl || _bgIsTiles(bg)))) return false;
   const hasGeoRoom = (S.rooms || []).some(r => _roomOnActiveFloor(r) && r.points && r.points.length >= 3);
   return !hasGeoRoom;
 }
@@ -82748,7 +83068,7 @@ function _buildSaveData() {
     geo: JSON.parse(JSON.stringify(S.geo || {})),
     bgs: Object.fromEntries(
       Object.entries(S.bgs)
-        .filter(([,bg]) => bg.dataUrl)
+        .filter(([,bg]) => bg.dataUrl || _bgIsTiles(bg))   // 194: flisbasert kart har ingen dataUrl — bare geo
         .map(([k, bg]) => [k, _serializeBgFields(bg)])
     ),
     // 046: planveggene hører til etasjens plantegning og må overleve lagring. ⚠ Nøyaktig dette
@@ -83263,6 +83583,14 @@ function _restoreProject(data) {
   }
   let _bgCount = 0;
   for (const [k, bgData] of Object.entries(_savedBgs)) {
+    // 194: flisbasert kart — ingen bilde å laste; georeferansen ER kartet. Gamle prosjekter (dataUrl, uten
+    // geo.tiles) går videre til bildeveien under, uendret.
+    if (bgData && !bgData.dataUrl && bgData.geo && bgData.geo.tiles) {
+      _bgCount++;
+      S.bgs[k] = Object.assign(_newBgObj(), bgData, { img: _TILE_IMG, dataUrl: null, calibrating: false, calPts: [],
+        _needsCalibration: false, locked: true, _srcW: 1600, _srcH: 1600 });
+      continue;
+    }
     if (!bgData || !bgData.dataUrl) continue;
     _bgCount++;
     const bImg = new Image();
@@ -85997,6 +86325,7 @@ async function exportPDF(opts) {
   if (!accessoryResult) return;
   const accessoryItems = accessoryResult.items || [];
   await _pdfBranding();   // last inn org-logo (co-brand) iht. flagg — stemples før save
+  await _tilesPreloadForPdf();   // 194: _renderRoomToImage er synkron — kartflisene må ligge i cache
   const { jsPDF } = window.jspdf;
   const doc = _pdfSuperscriptPatch(new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' }));
   const W = 210, H = 297; // A4 mm

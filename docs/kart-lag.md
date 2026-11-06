@@ -130,3 +130,13 @@ OpenStreetMap brukes **ikke** (ODbL, share-alike på avledede databaser). Hele d
 **Hva quick-nivået IKKE lover:** takflater, møner eller gradrenner. DOM1 er 1 m og har
 oppoverbias; det krever punktsky (fase 2). Modellen sier det selv via `roof.planes: []` og
 `confidence 0,4` på mønehøyden — ikke overtolk den.
+
+
+## 194 — flislag (kartet uten kant)
+
+Nye kart er **flisbaserte**: `bg.geo.tiles = { layer }`, ingen `dataUrl`, `bg.img` = 1×1-plassholder (`_TILE_IMG`).
+Tegnes av `_tilesDraw` fra Kartverkets WMTS rett fra nettleseren (`crossOrigin=anonymous`, CORS `*` — målt i
+docs/194). Gamle prosjekter (`dataUrl`, ingen `geo.tiles`) er uendret; `_bgIsTiles(bg)` skiller. Vinduet
+(`east0/north0`, 200 m) og `_geoToWorld` er som før. PDF: `_tilesPreloadForPdf()` i `exportPDF` fordi
+`_renderRoomToImage` er synkron. Kreditering tegnes av `_tilesDrawCredit` (lisenskrav). Test:
+`_geoTileRegressionTest194`. `_roofTileMode=false` = gammel bildevei (brukes av de eldre testene).
