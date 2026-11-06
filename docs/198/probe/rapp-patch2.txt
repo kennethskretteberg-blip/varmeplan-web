@@ -1,0 +1,25 @@
+@@@ FINN
+Målt på 1400 px: kolonnen ble
+ikke bredere, og radene med nummer ble 4 px høyere (52 → 56). Lange numre kuttes med «…», hele nummeret står
+i verktøytipset.
+@@@ SETT
+Lange numre kuttes
+med «…», hele nummeret står i verktøytipset.
+
+Målt (fem rader, `probe/bredde.mjs`), Status-kolonnen uten → med nummerlinje:
+
+| Skjermbredde | Status-kolonnen | Radhøyde | |
+|---|---|---|---|
+| 1400 px | 137 → 219 px | 52 → 57 px | Det er plass: begge numrene på én linje. Firma 245 → 216, Prosjekt 284 → 251. |
+| 1100 px | 108 → 137 px | 52 → 57 (ett nummer) / 72 (to) | Linja brytes mellom tilbudsnr. og ordrenr. |
+| 900 px | 102 → 103 px | som 1100 | Kolonnen blir ikke bredere. |
+
+Første utgave hadde linja på én ubrytelig linje. Da ble kolonnen 82 px bredere uansett skjerm. Nå tar den
+plassen bare når den finnes, og brytes i to når lista er trang (`liste-1100.png`).
+@@@ SLUTT
+
+@@@ FINN
+Bilder: `liste.png`, `dialog-tilbud-sendt.png`
+@@@ SETT
+Bilder: `liste.png`, `liste-1100.png`, `liste-installator.png`, `dialog-tilbud-sendt.png`
+@@@ SLUTT

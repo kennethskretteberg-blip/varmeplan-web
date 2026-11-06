@@ -1,0 +1,15 @@
+198: Prosjektstatus — tilbudsnr. (Visma) ved Tilbud sendt og ordrenr. (Visma) ved Vunnet, redigerbart og søkbart
+
+Fredrik 02.11.2026: ved «Tilbud sendt» skal tilbudsnummeret fra Visma kunne fylles inn, ved «Vunnet» ordrenummeret. Kenneth 06.11: både når status endres og senere.
+
+To nye, valgfrie tekstkolonner på romtegner_projects (visma_offer_no, visma_order_no) i ny migrasjon supabase-migration-visma-tilbud-ordrenr.sql (additiv, idempotent, IKKE kjørt; ingen nye RLS-policyer). Numrene ligger i kolonner, ikke i prosjekt-JSON, og prosjektnummeret, filnavn, PDF og Visma-eksport er urørt.
+
+Statusen lagres først, av uendret _setProjectStatus. Deretter tilbyr _vismaNoAfterStatus et valgfritt felt: «Tilbudsnr. (Visma)» ved Tilbud sendt, «Ordrenr. (Visma)» ved Vunnet og «Vi fikk jobben», forhåndsutfylt fra databasen. Tomt felt, «Hopp over» og Esc skriver ingenting. Nummeret skrives av en egen skriver (_setProjectVismaNo: kolonneoppdatering med .select('id'), error leses, feil vises i dialogen), så et nummer som ikke lar seg lagre aldri kan ta statusendringen med seg. Rens: trim, mellomrom-rekker til ett, kontrolltegn bort, maks 30 tegn, bokstaver og tall.
+
+Priset PDF som setter Tilbud sendt: ingen dialog, men meldingen «Prosjektet er satt til Tilbud sendt» med knappen «Legg inn tilbudsnr.». Batch-endring uendret. Rette senere: klikk på nummeret i prosjektlista (begge felt), eller «Kunde & prosjektinfo» i prosjektet (uavhengig av status; skrivebeskyttet viser, men låser). Visning: kort og grått under statusen («Tilbud 104455 · Ordre 2026-7719»), brytes i to linjer når lista er trang; «+ Tilbudsnr.» / «+ Ordrenr.» der nummeret mangler (bare bedrifter med Visma-format). Også i kundekortets prosjektrader. Søk: begge numrene er med i _filterProjectsList, så «ordrenr» i søkefeltet stemmer.
+
+Fail-open før migrasjonen er kjørt: egen øverste rung i _fetchProjectList, _vismaNoDisabled skjuler feltene, statusendring lagres som før, én gul melding per økt. Delte prosjekter (046): verken felt, visning eller søketreff. Gatet på S.ui.readOnly/kundeMode som annen skyskriving.
+
+Ny _vismaNoRegressionTest198 (67). Alle 65 eksisterende regresjonstester gir samme tall som HEAD (de sju som er røde uten innlogging, er røde på HEAD også). Mobilappen er ikke endret og ble ikke lest (ingen tilgang til mappa i økta). Rapport, spørsmål og bilder i docs/198.
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>

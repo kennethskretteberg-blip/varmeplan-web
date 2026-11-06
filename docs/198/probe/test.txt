@@ -1,0 +1,272 @@
+// 198-regresjon. Minne-mock av _db (romtegner_projects, med eller uten Visma-kolonnene) — ingen
+// database. Kjør i konsollen: await _vismaNoRegressionTest198()
+async function _vismaNoRegressionTest198() {
+  const results = [];
+  const t = (name, ok, got) => results.push({ name, ok: !!ok, expected: true, got: got === undefined ? !!ok : got });
+  const saved = { db: _db, org: _userOrg, user: _currentUser, view: (typeof _viewAsOrg !== 'undefined') ? _viewAsOrg : null,
+    cache: _cachedProjects, dirty: _projectListDirty, mine: _orgStatusMine, others: _orgStatusOthers, dis: _orgStatusDisabled,
+    vdis: _vismaNoDisabled, nag: _vismaNoNagged, meta: new Map(_projectOwnerMeta), undo: new Map(_plUndo),
+    toast: window._showToast, render: window._renderProjectList, ro: S.ui.readOnly, pid: _supabaseProjectId, project: S.project,
+    mark: window._markProjectDirty, sched: window._scheduleAutoSave, rend: window.render, sb: window._renderSbProjInfo };
+  const ME = 'org-cenika', OTHER = 'org-elektro';
+  const sov = ms => new Promise(r => setTimeout(r, ms));
+  const vent = async f => { for (let i = 0; i < 100; i++) { if (f()) return true; await sov(10); } return false; };
+  const ov = () => document.getElementById('visma-no-overlay');
+  const toastEl = () => document.getElementById('visma-no-toast');
+  const rydd = () => ['visma-no-overlay', 'visma-no-toast', 'lost-reason-overlay', 'pl-action-toast', 'wf-kunde-modal'].forEach(id => document.getElementById(id)?.remove());
+  const visma = p => p && Object.keys(p).some(k => /^visma_/.test(k));
+  // o.cols === false → kolonnene finnes ikke (migrasjonen ikke kjørt). o.fail → nummer-skrivingen feiler.
+  const mk = (rows, o = {}) => {
+    const calls = [];
+    const builder = table => {
+      const st = { op: 'select', cols: '', filters: [], payload: null };
+      const match = r => st.filters.every(([k, v, is]) => is ? (r[k] ?? null) === null : r[k] === v);
+      const exec = async () => {
+        calls.push({ table, op: st.op, cols: st.cols, payload: st.payload });
+        if (table !== 'romtegner_projects') return { data: null, error: { code: 'PGRST205', message: `Could not find the table 'public.${table}' in the schema cache` } };
+        if (o.cols === false && st.op === 'select' && /visma_/.test(st.cols)) return { data: null, error: { code: '42703', message: 'column romtegner_projects.visma_offer_no does not exist' } };
+        if (o.cols === false && st.op === 'update' && visma(st.payload)) return { data: null, error: { code: 'PGRST204', message: "Could not find the 'visma_offer_no' column of 'romtegner_projects' in the schema cache" } };
+        if (o.fail && st.op === 'update' && visma(st.payload)) return { data: null, error: { code: '500', message: 'nettverk nede' } };
+        if (st.op === 'update') { const hit = rows.filter(match); hit.forEach(r => Object.assign(r, st.payload)); return { data: hit.map(r => ({ id: r.id })), error: null }; }
+        return { data: rows.filter(match).map(r => ({ ...r })), error: null };
+      };
+      const q = {
+        select(c) { if (st.op === 'select') st.cols = String(c || ''); return q; }, order() { return q; }, range() { return q; },
+        eq(k, v) { st.filters.push([k, v, false]); return q; }, is(k) { st.filters.push([k, null, true]); return q; },
+        update(p) { st.op = 'update'; st.payload = p; return q; },
+        maybeSingle: async () => { const r = await exec(); return r.error ? r : { data: (r.data || [])[0] || null, error: null }; },
+        single: async () => { const r = await exec(); return r.error ? r : { data: (r.data || [])[0] || null, error: null }; },
+        then(res, rej) { return exec().then(res, rej); },
+      };
+      return q;
+    };
+    return { from: builder, calls, vismaSkriv: () => calls.filter(c => c.op === 'update' && visma(c.payload)) };
+  };
+  const mkRows = kol => {
+    const base = (id, name, org, user) => ({ id, name, description: '', org_id: org, user_id: user, status: null, deleted_at: null,
+      sales_status: 'under_arbeid', delivery_status: null, lost_reason: null, status_changed_at: '2026-11-01T00:00:00Z',
+      project_no: id === 'p1' ? 373 : 374, created_at: '2026-11-01', updated_at: '2026-11-01', data: { project: {} } });
+    const a = base('p1', 'Eget', ME, 'u1'), b = base('p2', 'Delt', OTHER, 'u-annen');
+    if (kol) { a.visma_offer_no = null; a.visma_order_no = null; b.visma_offer_no = 'EIER-1'; b.visma_order_no = null; }
+    return [a, b];
+  };
+  const nyOkt = (rows, o) => {
+    const db = mk(rows, o); _db = db;
+    _projectOwnerMeta.clear(); rows.forEach(r => _projectOwnerMeta.set(r.id, { org_id: r.org_id, user_id: r.user_id }));
+    _vismaNoDisabled = false; _vismaNoNagged = false; _orgStatusDisabled = false;
+    _cachedProjects = rows.map(r => ({ id: r.id, _salesStatus: r.sales_status, _deliveryStatus: null, _lostReason: null }));
+    rydd();
+    return db;
+  };
+  let toasts = [];
+  try {
+    _userOrg = { id: ME, org_type: 'supplier', erp_format: 'visma_paste,gbao10' };
+    _currentUser = { id: 'u1', app_metadata: {} }; _viewAsOrg = null;
+    window._showToast = (m, ty) => { toasts.push([String(m), ty || '']); };
+    window._renderProjectList = async () => {};
+    S.ui.readOnly = false;
+
+    // ── A. Rens ─────────────────────────────────────────────────────────────────────────────
+    t('A1 trim', _vismaNoClean('  12345  ') === '12345', _vismaNoClean('  12345  '));
+    t('A2 bokstaver og tegn er lov', _vismaNoClean('T-2026/0042 b') === 'T-2026/0042 b', _vismaNoClean('T-2026/0042 b'));
+    t('A3 mellomrom/tab/linjeskift → ett mellomrom', _vismaNoClean(' AB \t 12\n3 ') === 'AB 12 3', _vismaNoClean(' AB \t 12\n3 '));
+    t('A4 maks 30 tegn', _vismaNoClean('1234567890'.repeat(4)).length === 30, _vismaNoClean('1234567890'.repeat(4)).length);
+    t('A5 tomt → null', _vismaNoClean('') === null && _vismaNoClean('   ') === null && _vismaNoClean(null) === null && _vismaNoClean(undefined) === null);
+
+    // ── B. Skriveren ────────────────────────────────────────────────────────────────────────
+    let rows = mkRows(true), db = nyOkt(rows);
+    let r = await _setProjectVismaNo('p1', { offer: ' 12345 ' });
+    t('B1 eget prosjekt: tilbudsnr. lagret, renset', r.ok && rows[0].visma_offer_no === '12345', rows[0].visma_offer_no);
+    const pl = db.vismaSkriv().slice(-1)[0].payload;
+    t('B2 skriver BARE kolonnen som er med', JSON.stringify(Object.keys(pl)) === '["visma_offer_no"]', Object.keys(pl));
+    t('B3 prosjektnr., status og tilbudets alder urørt', rows[0].project_no === 373 && rows[0].sales_status === 'under_arbeid' && rows[0].status_changed_at === '2026-11-01T00:00:00Z');
+    r = await _setProjectVismaNo('p1', { order: 'ORD 67' });
+    t('B4 ordrenr. lagret, tilbudsnr. står', r.ok && rows[0].visma_order_no === 'ORD 67' && rows[0].visma_offer_no === '12345');
+    r = await _setProjectVismaNo('p1', { offer: '   ' });
+    t('B5 tomt felt tømmer kolonnen (null)', r.ok && rows[0].visma_offer_no === null, rows[0].visma_offer_no);
+    let n0 = db.vismaSkriv().length;
+    r = await _setProjectVismaNo('p2', { offer: 'X' });
+    t('B6 delt prosjekt: ikke skrevet (shared)', !r.ok && r.reason === 'shared' && db.vismaSkriv().length === n0 && rows[1].visma_offer_no === 'EIER-1', r.reason);
+    r = await _setProjectVismaNo('finnes-ikke', { offer: 'X' });
+    t('B7 0 rader endret → no-permission', !r.ok && r.reason === 'no-permission', r.reason);
+    S.ui.readOnly = true; n0 = db.vismaSkriv().length;
+    r = await _setProjectVismaNo('p1', { offer: 'X' });
+    const rOpen = await _vismaNoOpen('p1', ['offer']);
+    S.ui.readOnly = false;
+    t('B8 skrivebeskyttet (060): ikke skrevet, ingen dialog', !r.ok && r.reason === 'read-only' && db.vismaSkriv().length === n0 && rOpen.reason === 'read-only' && !ov(), r.reason);
+    db = nyOkt(rows, { fail: true });
+    r = await _setProjectVismaNo('p1', { offer: 'X' });
+    t('B9 feil fra Supabase leses og meldes', !r.ok && r.reason === 'error' && /nettverk nede/.test(_vismaNoErrText(r)) && rows[0].visma_offer_no === null, _vismaNoErrText(r));
+
+    // ── C. Statusendring for ett prosjekt → feltet ──────────────────────────────────────────
+    rows = mkRows(true); rows[0].visma_offer_no = 'GML-1'; db = nyOkt(rows);
+    await _quickSetStatus('p1', 'tilbud_sendt', null);
+    const stPl = db.calls.filter(c => c.op === 'update' && c.payload && 'sales_status' in c.payload).slice(-1)[0].payload;
+    t('C1 status lagret, statusskrivet bærer ingen nummerkolonner', rows[0].sales_status === 'tilbud_sendt' && !visma(stPl), Object.keys(stPl));
+    await vent(ov);
+    t('C2 Tilbud sendt → bare «Tilbudsnr. (Visma)», forhåndsutfylt', !!ov() && !!ov().querySelector('#visma-no-offer') && !ov().querySelector('#visma-no-order')
+      && ov().querySelector('#visma-no-offer').value === 'GML-1' && /Tilbudsnr\. \(Visma\)/.test(ov().textContent), ov() && ov().textContent.trim().slice(0, 80));
+    t('C3 feltet tar maks 30 tegn', ov().querySelector('#visma-no-offer').maxLength === 30);
+    ov().querySelector('#visma-no-offer').value = ' 55501 ';
+    await ov()._vismaSave();
+    t('C4 Lagre: nummeret står i kolonnen, dialogen lukket', rows[0].visma_offer_no === '55501' && !ov(), rows[0].visma_offer_no);
+    await _quickSetStatus('p1', 'vunnet', null);
+    await vent(ov);
+    t('C5 Vunnet → bare «Ordrenr. (Visma)»', !!ov() && !!ov().querySelector('#visma-no-order') && !ov().querySelector('#visma-no-offer') && /Ordrenr\. \(Visma\)/.test(ov().textContent));
+    n0 = db.vismaSkriv().length;
+    await ov()._vismaSave();
+    t('C6 tomt felt: status lagret, ingenting skrevet, ingen sperre', rows[0].sales_status === 'vunnet' && rows[0].visma_order_no === null && db.vismaSkriv().length === n0 && !ov());
+    await _quickSetStatus('p1', 'tilbud_sendt', null);
+    await vent(ov);
+    ov().querySelector('#visma-no-offer').value = 'SKAL-IKKE-LAGRES';
+    ov().querySelector('#visma-no-skip').click();
+    t('C7 «Hopp over»: lukket uten å skrive', !ov() && rows[0].visma_offer_no === '55501' && rows[0].sales_status === 'tilbud_sendt');
+    await _quickSetStatus('p1', 'vunnet', null);
+    await vent(ov);
+    const inp = ov().querySelector('#visma-no-order'); inp.value = 'ORD-9';
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await vent(() => rows[0].visma_order_no === 'ORD-9' && !ov());
+    t('C8 Enter lagrer', rows[0].visma_order_no === 'ORD-9' && !ov(), rows[0].visma_order_no);
+    t('C9 kvittering uten å dekke de vanlige toastene', !!toastEl() && toastEl().textContent === 'Ordrenr. lagret', toastEl() && toastEl().textContent);
+    await _vismaNoOpen('p1', ['offer', 'order'], { focus: 'order' });
+    t('C10 «rette senere»: begge felt, forhåndsutfylt, fokus på det som ble bedt om', !!ov() && ov().querySelector('#visma-no-offer').value === '55501'
+      && ov().querySelector('#visma-no-order').value === 'ORD-9' && document.activeElement === ov().querySelector('#visma-no-order'));
+    ov().querySelector('#visma-no-order').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    t('C11 Esc lukker', !ov());
+    await _quickSetStatus('p1', 'under_arbeid', null); await sov(40);
+    const ingenVedUA = !ov();
+    await _quickSetStatus('p1', 'tapt', null); await sov(40);
+    t('C12 Under arbeid og Tapt: ingen nummerdialog', ingenVedUA && !ov());
+    rydd();
+    await _plWeGotTheJob('p1'); await vent(ov);
+    t('C13 «Vi fikk jobben» → Ordrenr.-feltet', rows[0].sales_status === 'vunnet' && !!ov() && !!ov().querySelector('#visma-no-order') && ov().querySelector('#visma-no-order').value === 'ORD-9');
+    rydd();
+    t('C14 delt prosjekt: ingen dialog', _vismaNoAfterStatus('p2', 'vunnet') === null && _vismaNoAfterStatus('p2', 'tilbud_sendt') === null && !ov());
+    db = nyOkt(rows, { fail: true });
+    await _vismaNoOpen('p1', ['offer']); ov().querySelector('#visma-no-offer').value = 'NY';
+    r = await ov()._vismaSave();
+    t('C15 lagring feiler: dialogen står, feilen vises, verdien er ikke tapt', !r.ok && !!ov() && ov().querySelector('#visma-no-offer').value === 'NY'
+      && /nettverk nede/.test(ov().querySelector('#visma-no-err').textContent) && ov().querySelector('#visma-no-err').style.display !== 'none');
+    rydd();
+
+    // ── D. Batch: ingen nummerfelt ──────────────────────────────────────────────────────────
+    rows = mkRows(true); db = nyOkt(rows);
+    _pendingBatchStatusIds = ['p1']; toasts = [];
+    await _applyBatchStatus('tilbud_sendt'); await sov(40);
+    t('D1 batch: status endret, ingen dialog, ingen nummerskriving', rows[0].sales_status === 'tilbud_sendt' && !ov() && db.vismaSkriv().length === 0);
+    t('D2 batch-modalen har ingen inndatafelt', !document.querySelector('#modal-batch-status input'));
+
+    // ── E. Migrasjonen ikke kjørt ───────────────────────────────────────────────────────────
+    rows = mkRows(false); db = nyOkt(rows, { cols: false });
+    let list = await _fetchProjectList();
+    t('E1 lista laster likevel (neste rung), feltene slås av', Array.isArray(list) && list.length === 2 && _vismaNoDisabled === true && list[0]._vismaNoKnown === false, list && list.length);
+    const nSel = db.calls.length;
+    await _fetchProjectList();
+    t('E2 rungen med Visma-kolonnene prøves ikke på nytt i økta', !db.calls.slice(nSel).some(c => /visma_/.test(c.cols || '')));
+    await _quickSetStatus('p1', 'tilbud_sendt', null); await sov(40);
+    t('E3 statusendringen lagres som før, ingen dialog', rows[0].sales_status === 'tilbud_sendt' && !ov());
+    t('E4 tydelig melding om feltene', !!toastEl() && toastEl().classList.contains('warn') && /Statusen er lagret/.test(toastEl().textContent) && /198/.test(toastEl().textContent), toastEl() && toastEl().textContent);
+    rydd();
+    await _quickSetStatus('p1', 'vunnet', null); await sov(40);
+    t('E5 … men bare én gang per økt', rows[0].sales_status === 'vunnet' && !toastEl() && !ov());
+    await _vismaNoOpen('p1', ['offer', 'order']);
+    t('E6 ber brukeren selv om feltet, sies det alltid', !ov() && !!toastEl() && /198/.test(toastEl().textContent));
+    _vismaNoDisabled = false;
+    r = await _setProjectVismaNo('p1', { offer: '1' });
+    t('E7 skriving mot manglende kolonne: no-column, ikke krasj', !r.ok && r.reason === 'no-column' && _vismaNoDisabled === true && /198/.test(_vismaNoErrText(r)), r.reason);
+    _vismaNoDisabled = false;
+    r = await _vismaNoRead('p1');
+    t('E8 lesing mot manglende kolonne: no-column', !r.ok && r.reason === 'no-column' && _vismaNoDisabled === true, r.reason);
+    t('E9 lista viser ingenting', _plVismaNoHtml({ id: 'p1', _vismaNoKnown: false, _salesStatus: 'tilbud_sendt' }, false) === '');
+
+    // ── F. Liste og søk ─────────────────────────────────────────────────────────────────────
+    rows = mkRows(true); rows[0].visma_offer_no = '55501'; rows[0].visma_order_no = 'ORD-9'; rows[0].sales_status = 'vunnet'; db = nyOkt(rows);
+    list = await _fetchProjectList();
+    const p1 = list.find(x => x.id === 'p1'), p2 = list.find(x => x.id === 'p2');
+    t('F1 numrene følger med i lista', p1._vismaNoKnown && p1._vismaOfferNo === '55501' && p1._vismaOrderNo === 'ORD-9');
+    t('F2 delt prosjekt: eierens nummer vises ikke', p2._sharedIn === true && p2._vismaOfferNo === '', p2._vismaOfferNo);
+    t('F3 prosjektnummeret er urørt', p1._projectNo === 373, p1._projectNo);
+    const sok = q => _filterProjectsList(list, { search: q, status: '' }).map(x => x.id).join(',');
+    t('F4 søk på tilbudsnr.', sok('55501') === 'p1', sok('55501'));
+    t('F5 søk på ordrenr. (små/store bokstaver)', sok('ord-9') === 'p1', sok('ord-9'));
+    t('F6 søk treffer ikke eierens nummer på delt prosjekt / ukjent nummer', sok('EIER-1') === '' && sok('99999') === '');
+    let h = _plVismaNoHtml(p1, false);
+    t('F7 «Tilbud 55501 · Ordre ORD-9» under statusen, klikkbar', />Tilbud 55501 · Ordre ORD-9</.test(h) && h.includes("_vismaNoOpen('p1'"), h);
+    h = _plVismaNoHtml({ ...p1, _vismaOrderNo: '' }, false);
+    t('F8 vunnet uten ordrenr.: «+ Ordrenr.»', /Tilbud 55501/.test(h) && /\+ Ordrenr\./.test(h) && h.includes("focus:'order'"), h);
+    h = _plVismaNoHtml({ ...p1, _vismaOfferNo: '', _vismaOrderNo: '', _salesStatus: 'tilbud_sendt' }, false);
+    t('F9 tilbud sendt uten tilbudsnr.: «+ Tilbudsnr.»', /\+ Tilbudsnr\./.test(h), h);
+    _userOrg.erp_format = '';
+    t('F10 bedrift uten Visma: ikke noe hint, men et nummer som finnes vises', _plVismaNoHtml({ ...p1, _vismaOfferNo: '', _vismaOrderNo: '' }, false) === '' && /Tilbud 55501/.test(_plVismaNoHtml(p1, false)));
+    _userOrg.erp_format = 'visma_paste,gbao10';
+    t('F11 ingen status-hint for Under arbeid uten nummer', _plVismaNoHtml({ ...p1, _vismaOfferNo: '', _vismaOrderNo: '', _salesStatus: 'under_arbeid' }, false) === '');
+    h = _plVismaNoHtml({ ...p1, _vismaOfferNo: '<b>x"' }, false);
+    t('F12 nummeret escapes', h.includes('&lt;b&gt;x') && !h.includes('<b>x'), h);
+    h = _plVismaNoHtml(p1, true);
+    t('F13 papirkurv: vises, men ikke klikkbar', /Tilbud 55501/.test(h) && !/onclick/.test(h));
+    t('F14 delt rad: tomt', _plVismaNoHtml({ ...p1, _sharedIn: true }, false) === '');
+    t('F15 kundekortets rad viser numrene', /Tilbud 55501 · Ordre ORD-9/.test(_cardProjectRowHtml(p1)));
+
+    // ── G. PDF-eksporten satte «Tilbud sendt»: melding med lenke, ingen dialog ──────────────
+    rydd();
+    _vismaNoOfferSentToast('p1');
+    const knapp = toastEl() && toastEl().querySelector('button');
+    t('G1 melding + «Legg inn tilbudsnr.», ingen blokkerende dialog', !!toastEl() && toastEl().querySelector('span').textContent === 'Prosjektet er satt til Tilbud sendt'
+      && !!knapp && knapp.textContent === 'Legg inn tilbudsnr.' && !ov(), toastEl() && toastEl().textContent);
+    knapp.click(); await vent(ov);
+    t('G2 lenken åpner tilbudsnr.-feltet, forhåndsutfylt', !!ov() && ov().querySelector('#visma-no-offer') && ov().querySelector('#visma-no-offer').value === '55501' && !toastEl());
+    rydd();
+    _vismaNoOfferSentToast('p2');
+    t('G3 delt prosjekt: melding uten lenke', !!toastEl() && !toastEl().querySelector('button'));
+    rydd();
+    const kilde = String(exportPDF);
+    t('G4 eksporten er koblet til meldingen, med samme betingede overgang som før', kilde.includes('_vismaNoOfferSentToast(_pid198)') && kilde.includes('_setProjectStatus(_pid198,') && kilde.includes('under_arbeid'));
+
+    // ── H. «Kunde & prosjektinfo»: begge feltene, uavhengig av status ───────────────────────
+    window._markProjectDirty = () => {}; window._scheduleAutoSave = () => {}; window.render = () => {}; window._renderSbProjInfo = () => {};
+    rows[0].sales_status = 'under_arbeid';
+    _supabaseProjectId = 'p1'; S.project = { name: 'Test 198', description: 'Gate 1' };
+    _wfKundeModal();
+    const lastet = () => { const b = document.getElementById('wf-k-visma'); return !!(b && b.dataset.loaded === '1'); };
+    await vent(lastet);
+    const fo = document.getElementById('wf-k-visma-offer'), fr = document.getElementById('wf-k-visma-order');
+    t('H1 feltene finnes og er forhåndsutfylt (status Under arbeid)', !!fo && !!fr && fo.value === '55501' && fr.value === 'ORD-9' && !fo.disabled && fo.maxLength === 30, fo && fo.value);
+    fr.value = ' ORD-10 '; n0 = db.vismaSkriv().length;
+    _wfKundeSave();
+    await vent(() => rows[0].visma_order_no === 'ORD-10');
+    const plH = (db.vismaSkriv().slice(-1)[0] || {}).payload || {};
+    t('H2 rettet i ettertid: lagret, bare det endrede feltet skrevet', rows[0].visma_order_no === 'ORD-10' && rows[0].visma_offer_no === '55501'
+      && db.vismaSkriv().length === n0 + 1 && JSON.stringify(Object.keys(plH)) === '["visma_order_no"]', Object.keys(plH));
+    t('H3 numrene havner ikke i prosjekt-JSON', !JSON.stringify(S.project).includes('ORD-10') && S.project.description === 'Gate 1' && !document.getElementById('wf-kunde-modal'));
+    S.ui.readOnly = true; rydd();
+    _wfKundeModal(); await vent(lastet);
+    t('H4 skrivebeskyttet: numrene vises, men kan ikke endres', !!document.getElementById('wf-k-visma-offer') && document.getElementById('wf-k-visma-offer').disabled
+      && document.getElementById('wf-k-visma-offer').value === '55501');
+    S.ui.readOnly = false; rydd();
+    _supabaseProjectId = 'p2';
+    _wfKundeModal(); await sov(60);
+    t('H5 delt prosjekt: ingen felt', !document.getElementById('wf-k-visma'));
+    rydd();
+    _supabaseProjectId = 'p1'; _vismaNoDisabled = true;
+    _wfKundeModal(); await sov(40);
+    t('H6 uten migrasjon: feltene er skjult', !document.getElementById('wf-k-visma'));
+    rydd();
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    rydd();
+    _db = saved.db; _userOrg = saved.org; _currentUser = saved.user; _viewAsOrg = saved.view;
+    _cachedProjects = saved.cache; _projectListDirty = saved.dirty; _orgStatusMine = saved.mine; _orgStatusOthers = saved.others;
+    _orgStatusDisabled = saved.dis; _vismaNoDisabled = saved.vdis; _vismaNoNagged = saved.nag;
+    _projectOwnerMeta.clear(); saved.meta.forEach((v, k) => _projectOwnerMeta.set(k, v));
+    _plUndo.clear(); saved.undo.forEach((v, k) => _plUndo.set(k, v));
+    window._showToast = saved.toast; window._renderProjectList = saved.render;
+    window._markProjectDirty = saved.mark; window._scheduleAutoSave = saved.sched; window.render = saved.rend; window._renderSbProjInfo = saved.sb;
+    S.ui.readOnly = saved.ro; _supabaseProjectId = saved.pid; S.project = saved.project;
+  }
+  const pass = results.filter(x => x.ok).length;
+  console.log(`_vismaNoRegressionTest198: ${pass}/${results.length}`);
+  results.filter(x => !x.ok).forEach(x => console.warn('  ✗', x.name, x.got));
+  return { ok: pass === results.length, results };
+}
+

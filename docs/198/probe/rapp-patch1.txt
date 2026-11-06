@@ -1,0 +1,11 @@
+@@@ FINN
+`_docGenerate…` (:96267)
+@@@ SETT
+`_docGenerate` (:96192, statuslinja :96267)
+@@@ SLUTT
+
+@@@ FINN
+`_applyBatchStatus` (:102018)
+@@@ SETT
+`_applyBatchStatus` (:102017)
+@@@ SLUTT

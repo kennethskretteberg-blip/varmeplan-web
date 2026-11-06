@@ -1,0 +1,51 @@
+198 · patch 2: statusendring (chip, «Vi fikk jobben»), PDF-overgangen, Kunde & prosjektinfo.
+
+@@@ FINN
+  // 171: i fanevisningen flytter en statusendring prosjektet til en annen fane — tegn lista på nytt.
+@@@ SETT
+  // 198: statusen ER lagret — tilby tilbudsnr. (Tilbud sendt) / ordrenr. (Vunnet). Valgfritt felt,
+  // ingen sperre: «Hopp over» eller tomt felt endrer ingenting.
+  _vismaNoAfterStatus(projectId, newStatus);
+  // 171: i fanevisningen flytter en statusendring prosjektet til en annen fane — tegn lista på nytt.
+@@@ SLUTT
+
+@@@ FINN
+  _plActionToast('Flyttet til Til montering', projectId);
+  await _renderProjectList();
+@@@ SETT
+  _plActionToast('Flyttet til Til montering', projectId);
+  _vismaNoAfterStatus(projectId, 'vunnet');   // 198: valgfritt ordrenr. (Visma)
+  await _renderProjectList();
+@@@ SLUTT
+
+@@@ FINN
+    _setProjectStatus(_supabaseProjectId, { sales_status: 'tilbud_sendt' }, { sales_status: 'under_arbeid' });
+@@@ SETT
+    // 198: slo overgangen faktisk til (r.ok — ikke «cond-not-met»), sier vi fra med en liten
+    // melding og en knapp til tilbudsnr.-feltet. Ingen dialog som avbryter eksporten.
+    const _pid198 = _supabaseProjectId;
+    Promise.resolve(_setProjectStatus(_pid198, { sales_status: 'tilbud_sendt' }, { sales_status: 'under_arbeid' }))
+      .then(r => { if (r && r.ok && typeof _vismaNoOfferSentToast === 'function') _vismaNoOfferSentToast(_pid198); })
+      .catch(() => {});
+@@@ SLUTT
+
+@@@ FINN
+    ${(_shrCanShare() && _supabaseProjectId && !(S.ui
+@@@ SETT
+    ${_wfVismaNoBlockHtml()}
+    ${(_shrCanShare() && _supabaseProjectId && !(S.ui
+@@@ SLUTT
+
+@@@ FINN
+  _wfRespRenderView();   // 062: linja tegnes fra verdibæreren
+@@@ SETT
+  _wfVismaNoLoad();      // 198: tilbudsnr./ordrenr. (Visma) hentes fra kolonnene, ikke fra S.project
+  _wfRespRenderView();   // 062: linja tegnes fra verdibæreren
+@@@ SLUTT
+
+@@@ FINN
+  const m = document.getElementById('wf-kunde-modal'); if (m) m.remove();
+@@@ SETT
+  _wfVismaNoSave();   // 198: leser feltene før modalen fjernes; skriver kolonnene asynkront
+  const m = document.getElementById('wf-kunde-modal'); if (m) m.remove();
+@@@ SLUTT

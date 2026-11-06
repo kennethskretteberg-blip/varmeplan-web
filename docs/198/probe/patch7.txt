@@ -1,0 +1,32 @@
+198 · patch 7: nummerlinja tvang Status-kolonnen fra 137 til 219 px (nowrap). Nå kan den brytes mellom
+tilbudsnr. og ordrenr.: én linje når det er plass, to når lista er trang.
+
+@@ FINN-MARKØR (ikke en blokk)
+@@@ FINN
+.pl-visma-no{display:block;margin-top:3px;font-size:11px;color:var(--dim);white-space:nowrap;max-width:210px;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+@@@ SETT
+.pl-visma-no{display:block;margin-top:3px;font-size:11px;line-height:1.35;color:var(--dim);max-width:210px;cursor:pointer}
+.pl-visma-bit{display:inline-block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+@@@ SLUTT
+
+@@@ FINN
+  if (inTrash) return bits.length ? `<span class="pl-visma-no" style="cursor:default" title="${esc(tit.join(' · '))}">${bits.join(' · ')}</span>` : '';
+@@@ SETT
+  // Hver del er udelelig (lange numre kuttes med …), men linja kan brytes MELLOM delene — så
+  // Status-kolonnen ikke tvinges bredere når lista er trang.
+  const linje = () => bits.map((b, i) => `<span class="pl-visma-bit">${b}${i < bits.length - 1 ? ' ·' : ''}</span>`).join(' ');
+  if (inTrash) return bits.length ? `<span class="pl-visma-no" style="cursor:default" title="${esc(tit.join(' · '))}">${linje()}</span>` : '';
+@@@ SLUTT
+
+@@@ FINN
+,{focus:'${focus}'})">${bits.join(' · ')}</span>`;
+@@@ SETT
+,{focus:'${focus}'})">${linje()}</span>`;
+@@@ SLUTT
+
+@@@ FINN
+    t('F7 «Tilbud 55501 · Ordre ORD-9» under statusen, klikkbar', />Tilbud 55501 · Ordre ORD-9</.test(h) && h.includes("_vismaNoOpen('p1'"), h);
+@@@ SETT
+    const tekst = html => { const d = document.createElement('div'); d.innerHTML = html; return d.textContent; };
+    t('F7 «Tilbud 55501 · Ordre ORD-9» under statusen, klikkbar', tekst(h) === 'Tilbud 55501 · Ordre ORD-9' && h.includes("_vismaNoOpen('p1'"), h);
+@@@ SLUTT

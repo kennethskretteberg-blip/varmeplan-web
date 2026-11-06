@@ -1,0 +1,53 @@
+198 · patch 6: «Hopp over»/Esc/tomt felt etter en statusendring tegner lista på nytt, så raden viser
+ny status-linje («+ Tilbudsnr.») også i leverandørvisningen (der statusnedtrekket ikke tegner lista selv).
+
+@@@ FINN
+  const close = () => wrap.remove();
+  const save = async () => {
+@@@ SETT
+  const close = () => wrap.remove();
+  // Lukket uten å skrive. Etter en statusendring tegnes lista på nytt: leverandørvisningen tegner
+  // ikke raden selv når statusen endres, og den skal vise «+ Tilbudsnr.» / «+ Ordrenr.» nå.
+  const skip = () => { close(); if (opts.afterStatus) _vismaNoRefresh(); };
+  const save = async () => {
+@@@ SLUTT
+
+@@@ FINN
+    if (!keys.length) { close(); return { ok:true, unchanged:true }; }
+@@@ SETT
+    if (!keys.length) { skip(); return { ok:true, unchanged:true }; }
+@@@ SLUTT
+
+@@@ FINN
+  wrap.addEventListener('mousedown', e => { if (e.target === wrap) close(); });
+  wrap.querySelector('#visma-no-skip').onclick = close;
+@@@ SETT
+  wrap.addEventListener('mousedown', e => { if (e.target === wrap) skip(); });
+  wrap.querySelector('#visma-no-skip').onclick = skip;
+@@@ SLUTT
+
+@@@ FINN
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+@@@ SETT
+    else if (e.key === 'Escape') { e.preventDefault(); skip(); }
+@@@ SLUTT
+
+@@@ FINN
+    window._renderProjectList = async () => {};
+    S.ui.readOnly = false;
+@@@ SETT
+    let tegnet = 0;
+    window._renderProjectList = async () => { tegnet++; };
+    S.ui.readOnly = false;
+@@@ SLUTT
+
+@@@ FINN
+    ov().querySelector('#visma-no-offer').value = 'SKAL-IKKE-LAGRES';
+    ov().querySelector('#visma-no-skip').click();
+@@@ SETT
+    ov().querySelector('#visma-no-offer').value = 'SKAL-IKKE-LAGRES';
+    const listeSynlig = getComputedStyle(document.getElementById('project-list-screen')).display !== 'none';
+    const tegnetFor = tegnet;
+    ov().querySelector('#visma-no-skip').click();
+    t('C7b «Hopp over» etter statusendring tegner lista på nytt (når lista vises)', tegnet === tegnetFor + (listeSynlig ? 1 : 0), tegnet - tegnetFor);
+@@@ SLUTT

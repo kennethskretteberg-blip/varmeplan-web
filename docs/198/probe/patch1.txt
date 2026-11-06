@@ -1,0 +1,71 @@
+198 · patch 1: CSS, henting (ny øverste rung), mapping, søk, rad, kundekort.
+
+@@@ FINN
+.pl-cust-won{display:inline-block;
+@@@ SETT
+/* 198: tilbudsnr./ordrenr. fra Visma — kort og grått under statusen (ingen ny kolonne). */
+.pl-visma-no{display:block;margin-top:3px;font-size:11px;color:var(--dim);white-space:nowrap;max-width:210px;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.pl-visma-no:hover{color:var(--accent)}
+.pl-visma-no .pl-visma-add{opacity:.8}
+.visma-no-toast{position:fixed;bottom:68px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:12px;background:#22c55e;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;transition:opacity .3s;max-width:90vw}
+.visma-no-toast.warn{background:#f59e0b}
+.visma-no-toast button{background:rgba(255,255,255,.2);border:none;color:#fff;font-weight:600;font-size:12px;padding:4px 10px;margin-right:-8px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.pl-cust-won{display:inline-block;
+@@@ SLUTT
+
+@@@ FINN
+    const candidates = [
+      'id, name, description, created_at, updated_at, status, deleted_at, sales_status, delivery_status, lost_reason, status_changed_at, project_no, org_id, user_id, locked_by,
+@@@ SETT
+    // 198: tilbudsnr./ordrenr. fra Visma står i EN EGEN rung øverst (samme grunn som låsekolonnene):
+    // mangler kolonnene, velter bare den rungen — lista laster fra neste, og _vismaNoDisabled
+    // skjuler feltene. Rungen hoppes over resten av økta når vi vet at kolonnene ikke finnes.
+    const candidates = [
+      ...(_vismaNoDisabled ? [] : ['id, name, description, created_at, updated_at, status, deleted_at, sales_status, delivery_status, lost_reason, status_changed_at, project_no, org_id, user_id, locked_by, locked_by_name, locked_at, lock_seen_at, visma_offer_no, visma_order_no, proj:data->project']),
+      'id, name, description, created_at, updated_at, status, deleted_at, sales_status, delivery_status, lost_reason, status_changed_at, project_no, org_id, user_id, locked_by,
+@@@ SLUTT
+
+@@@ FINN
+      } catch (e) { lastErrMsg = e.message; data = null; }
+@@@ SETT
+      } catch (e) { lastErrMsg = e.message; data = null; if (_vismaNoMissingColumn(e)) _vismaNoDisabled = true; }
+@@@ SLUTT
+
+@@@ FINN
+        _statusChangedAt: p.status_changed_at || null,   // P2: tilbud-alder
+@@@ SETT
+        _statusChangedAt: p.status_changed_at || null,   // P2: tilbud-alder
+        // 198: numrene vises og søkes bare på EGNE prosjekter (på et delt prosjekt er de eierens).
+        // _vismaNoKnown = kolonnene var med i svaret (øverste rung).
+        _vismaNoKnown: 'visma_offer_no' in p,
+        _vismaOfferNo: _projectIsShared(p) ? '' : (p.visma_offer_no || ''),
+        _vismaOrderNo: _projectIsShared(p) ? '' : (p.visma_order_no || ''),
+@@@ SLUTT
+
+@@@ FINN
+                 p._projectNo, c.name, c.phone, c.email]
+@@@ SETT
+                 p._projectNo, p._vismaOfferNo, p._vismaOrderNo, c.name, c.phone, c.email]   // 198: tilbudsnr./ordrenr. (Visma)
+@@@ SLUTT
+
+@@@ FINN
+</select>${_plRowActionsHtml(p, inTrash)}
+@@@ SETT
+</select>${_plVismaNoHtml(p, inTrash)}${_plRowActionsHtml(p, inTrash)}
+@@@ SLUTT
+
+@@@ FINN
+  const to = PROJECT_TYPE_MAP[type] || PROJECT_TYPE_MAP.indoor;
+  return `<div onclick="document.getElementById('customer-card-overlay').style.display='none';_openCloudProject('${p.id}')"
+@@@ SETT
+  const to = PROJECT_TYPE_MAP[type] || PROJECT_TYPE_MAP.indoor;
+  // 198: tilbudsnr./ordrenr. fra Visma i underteksten (samme felter som prosjektlista).
+  const vno = [p._vismaOfferNo ? 'Tilbud ' + p._vismaOfferNo : '', p._vismaOrderNo ? 'Ordre ' + p._vismaOrderNo : ''].filter(Boolean).join(' · ');
+  return `<div onclick="document.getElementById('customer-card-overlay').style.display='none';_openCloudProject('${p.id}')"
+@@@ SLUTT
+
+@@@ FINN
+${_esc(to.label)}</div>
+@@@ SETT
+${_esc(to.label)}${vno ? ' · ' + _esc(vno) : ''}</div>
+@@@ SLUTT

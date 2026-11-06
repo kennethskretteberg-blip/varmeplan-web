@@ -1,0 +1,21 @@
+198 · patch 5: 171-testen tester status, ikke numre — nummerdialogen kobles ut der (ellers står en
+dialog igjen på skjermen etter at testen er kjørt i konsollen). Ingen forventninger endret.
+
+@@@ FINN
+  const ME = 'org-elektro', CEN = 'org-cenika', OTHER = 'org-annen';
+@@@ SETT
+  const ME = 'org-elektro', CEN = 'org-cenika', OTHER = 'org-annen';
+  // 198: nummerdialogen (tilbudsnr./ordrenr.) hører ikke til denne testen — den har sin egen
+  // (_vismaNoRegressionTest198). Koblet ut her, så ingen dialog står igjen etter kjøringen.
+  const _visma198 = window._vismaNoAfterStatus;
+  window._vismaNoAfterStatus = () => null;
+@@@ SLUTT
+
+@@@ FINN
+    window._showToast = saved.toast; window._renderProjectList = saved.render;
+    const sel = document.getElementById('dash-filter-status');
+@@@ SETT
+    window._showToast = saved.toast; window._renderProjectList = saved.render;
+    window._vismaNoAfterStatus = _visma198;
+    const sel = document.getElementById('dash-filter-status');
+@@@ SLUTT

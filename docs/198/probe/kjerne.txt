@@ -1,0 +1,321 @@
+// ════════════════════════════════════════════════════════════════════════════
+//  198 · TILBUDSNR. OG ORDRENR. FRA VISMA
+// ════════════════════════════════════════════════════════════════════════════
+// Fredrik 02.11.2026: ved «Tilbud sendt» skal tilbudsnummeret fra Visma kunne fylles inn, ved
+// «Vunnet» ordrenummeret. Kenneth 06.11: både når status endres OG senere.
+// To kolonner på romtegner_projects (visma_offer_no / visma_order_no) — IKKE i prosjekt-JSON
+// (lista og søket leser dem uten å åpne prosjektet, og de skal kunne rettes fra lista uten å
+// kappløpe med editorens autolagring), og IKKE prosjektnummeret (project_no røres aldri her).
+// Regler:
+//   • Statusen lagres FØRST, av _setProjectStatus som før. Nummeret er et eget, valgfritt skriv
+//     etterpå (_setProjectVismaNo) — et nummer som ikke lar seg lagre, kan aldri ta statusen med seg.
+//   • Fail-open: finnes ikke kolonnene (migrasjonen ikke kjørt), settes _vismaNoDisabled, feltene
+//     skjules og brukeren får beskjed. Statusendringen er uberørt.
+//   • Delte prosjekter (046): numrene står på eierens rad, som den delte orgen ikke kan skrive.
+//     Der vises verken felt eller nummer.
+//   • Batch-endring spør aldri (ett nummer passer ikke for mange prosjekter).
+let _vismaNoDisabled = false;   // true = kolonnene finnes ikke i databasen
+let _vismaNoNagged = false;     // «databasen er ikke oppdatert» ved statusendring: én gang per økt
+const VISMA_NO_MAX = 30;
+const _VISMA_NO_FIELDS = {
+  offer: { col: 'visma_offer_no', label: 'Tilbudsnr. (Visma)', short: 'Tilbud', word: 'Tilbudsnr.' },
+  order: { col: 'visma_order_no', label: 'Ordrenr. (Visma)',   short: 'Ordre',  word: 'Ordrenr.' },
+};
+const _VISMA_NO_COLS = 'visma_offer_no, visma_order_no';
+const _VISMA_NO_MISSING_TXT = 'Tilbudsnr. og ordrenr. fra Visma kan ikke fylles inn ennå — databasen er ikke oppdatert (198).';
+
+// Rens: kontrolltegn bort, mellomrom-rekker → ett mellomrom, trim, maks 30 tegn. Bokstaver og tall
+// er lov (Visma-numre er ikke alltid rene siffer). Tomt → null (kolonnen tømmes).
+function _vismaNoClean(v) {
+  const s = String(v == null ? '' : v).replace(/\p{Cc}/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, VISMA_NO_MAX).trim();
+  return s || null;
+}
+
+// «Kolonnen finnes ikke»: 42703 fra en select, PGRST204 fra en update (PostgREST sitt skjemalager).
+function _vismaNoMissingColumn(err) {
+  if (!err) return false;
+  const m = String(err.message || err || '');
+  if (!/visma_(offer|order)_no/.test(m)) return false;
+  return err.code === '42703' || err.code === 'PGRST204' || /does not exist|schema cache|Could not find/i.test(m);
+}
+
+// Bruker bedriften Visma? (organizations.erp_format satt.) Styrer bare det grå «+ Tilbudsnr.»-hintet
+// i lista — feltet ved statusendring og et nummer som alt finnes, vises for alle.
+function _vismaNoOrgUsesVisma() {
+  return !!(_userOrg && String(_userOrg.erp_format || '').trim());
+}
+
+// Kan numrene redigeres for dette prosjektet? Nei for delte prosjekter og når kolonnene mangler.
+function _vismaNoEditable(projectId) {
+  if (_vismaNoDisabled || !_db || !projectId) return false;
+  const meta = _projectOwnerMeta.get(projectId);
+  return !(meta && _projectIsShared(meta));
+}
+
+// 060: samme gate som annen skyskriving — et skrivebeskyttet vindu og en kundelenke skriver ikke.
+function _vismaNoEditorBlocked() {
+  return !!(S.ui && (S.ui.readOnly || S.ui.kundeMode || S.ui.presentPublic));
+}
+
+async function _vismaNoRead(projectId) {
+  if (!_db || !projectId) return { ok:false, reason:'no-db' };
+  if (_vismaNoDisabled) return { ok:false, reason:'no-column' };
+  try {
+    const { data, error } = await _db.from('romtegner_projects').select('id, ' + _VISMA_NO_COLS).eq('id', projectId).maybeSingle();
+    if (error) {
+      if (_vismaNoMissingColumn(error)) { _vismaNoDisabled = true; return { ok:false, reason:'no-column' }; }
+      return { ok:false, reason:'error', message:error.message };
+    }
+    if (!data) return { ok:false, reason:'no-permission' };
+    return { ok:true, offer: data.visma_offer_no || '', order: data.visma_order_no || '' };
+  } catch (e) { return { ok:false, reason:'error', message:e.message }; }
+}
+
+// ÉN skriver. vals: { offer?, order? } — bare nøklene som er med, skrives. Samme {ok,reason}-form som
+// _setProjectStatus, og error LESES (Supabase-klienten kaster ikke). Rører verken sales_status,
+// status_changed_at (tilbudets alder) eller project_no.
+async function _setProjectVismaNo(projectId, vals) {
+  if (!_db || !projectId) return { ok:false, reason:'no-db' };
+  if (_vismaNoEditorBlocked()) return { ok:false, reason:'read-only' };
+  if (_vismaNoDisabled) return { ok:false, reason:'no-column' };
+  const meta = await _projectOwnerMetaFor(projectId);
+  if (meta && _projectIsShared(meta)) return { ok:false, reason:'shared' };
+  const row = {};
+  for (const k of Object.keys(_VISMA_NO_FIELDS)) if (vals && k in vals) row[_VISMA_NO_FIELDS[k].col] = _vismaNoClean(vals[k]);
+  if (!Object.keys(row).length) return { ok:true, unchanged:true };
+  try {
+    const { data, error } = await _db.from('romtegner_projects').update(row).eq('id', projectId).select('id');
+    if (error) {
+      if (_vismaNoMissingColumn(error)) { _vismaNoDisabled = true; return { ok:false, reason:'no-column' }; }
+      console.error('Visma-nr. feilet:', error.message, error.code);
+      const rls = error.code === '42501' || /row-level security/i.test(error.message || '');
+      return { ok:false, reason: rls ? 'no-permission' : 'error', message:error.message };
+    }
+    // 0 rader uten feil = RLS slapp ikke oppdateringen gjennom (samme lesning som _setProjectStatus).
+    if (!data || !data.length) return { ok:false, reason:'no-permission' };
+    _invalidateProjectCache();
+    return { ok:true, row };
+  } catch (e) { console.error('Visma-nr. error:', e.message); return { ok:false, reason:'error', message:e.message }; }
+}
+
+function _vismaNoErrText(r) {
+  if (r && r.reason === 'no-column') return 'Nummeret kan ikke lagres ennå — databasen er ikke oppdatert (198).';
+  if (r && r.reason === 'no-permission') return 'Kunne ikke lagre nummeret — du har ikke tilgang til prosjektet.';
+  if (r && r.reason === 'shared') return 'Numrene hører til bedriften som eier prosjektet.';
+  if (r && r.reason === 'read-only') return 'Prosjektet er skrivebeskyttet — nummeret ble ikke lagret.';
+  return 'Kunne ikke lagre nummeret' + (r && r.message ? ': ' + r.message : '.');
+}
+
+// Liten melding OVER de vanlige toastene (de står på 24 px — «PDF lagret» og «Flyttet til …» skal
+// ikke dekkes). action: { label, run } gir en knapp og lengre visning.
+function _vismaNoToast(msg, action, warn) {
+  document.getElementById('visma-no-toast')?.remove();
+  const el = document.createElement('div');
+  el.id = 'visma-no-toast'; el.className = 'visma-no-toast' + (warn ? ' warn' : '');
+  const span = document.createElement('span'); span.textContent = msg; el.appendChild(span);
+  if (action) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = action.label;
+    b.onclick = () => { el.remove(); action.run(); };
+    el.appendChild(b);
+  }
+  document.body.appendChild(el);
+  setTimeout(() => { if (el.isConnected) { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); } }, action ? 10000 : (warn ? 7000 : 3000));
+  return el;
+}
+
+// Kolonnene mangler. Ved en statusendring sier vi det ÉN gang per økt (statusen er lagret — det
+// skal ikke mases for hvert prosjekt); når brukeren selv ber om feltet, alltid.
+function _vismaNoMissingNotice(afterStatus) {
+  if (afterStatus) {
+    if (_vismaNoNagged) return;
+    _vismaNoNagged = true;
+    _vismaNoToast('Statusen er lagret. ' + _VISMA_NO_MISSING_TXT, null, true);
+  } else _vismaNoToast(_VISMA_NO_MISSING_TXT, null, true);
+}
+
+// Etter en VELLYKKET statusendring for ETT prosjekt (statusnedtrekket, «Vi fikk jobben»): tilbyr
+// feltet som hører til den nye statusen. Statusen er alt lagret — dette kan bare legge til.
+function _vismaNoAfterStatus(projectId, newStatus) {
+  const which = newStatus === 'tilbud_sendt' ? 'offer' : newStatus === 'vunnet' ? 'order' : null;
+  if (!which || !projectId) return null;
+  const meta = _projectOwnerMeta.get(projectId);
+  if (meta && _projectIsShared(meta)) return null;       // delt: numrene er eierens
+  if (_vismaNoDisabled) { _vismaNoMissingNotice(true); return null; }
+  return _vismaNoOpen(projectId, [which], { afterStatus: newStatus });
+}
+
+// Åpner feltet/feltene. Leser FERSKE verdier fra databasen (forhåndsutfylling som stemmer også når
+// en kollega har lagt inn nummeret) — og oppdager samtidig om kolonnene mangler.
+async function _vismaNoOpen(projectId, fields, opts) {
+  opts = opts || {};
+  if (_vismaNoEditorBlocked()) {
+    if (S.ui.readOnly && typeof _lockToast === 'function') _lockToast();
+    return { ok:false, reason:'read-only' };
+  }
+  const cur = await _vismaNoRead(projectId);
+  if (!cur.ok) {
+    if (cur.reason === 'no-column') _vismaNoMissingNotice(opts.afterStatus);
+    else _vismaNoToast((opts.afterStatus ? 'Statusen er lagret, men n' : 'N') + 'ummerfeltet kunne ikke åpnes' + (cur.message ? ': ' + cur.message : '.'), null, true);
+    return cur;
+  }
+  _vismaNoDialog(projectId, fields, cur, opts);
+  return { ok:true };
+}
+
+// Dialogen. fields: ['offer'] | ['order'] | ['offer','order']. Tomt felt er lov. «Hopp over»,
+// Esc og klikk utenfor lukker uten å skrive; Enter lagrer. Feiler lagringen, blir dialogen
+// stående med det som er skrevet, og feilen vises i den.
+function _vismaNoDialog(projectId, fields, cur, opts) {
+  opts = opts || {};
+  document.getElementById('visma-no-overlay')?.remove();
+  const title = opts.afterStatus === 'tilbud_sendt' ? 'Tilbud sendt'
+    : opts.afterStatus === 'vunnet' ? 'Vunnet' : 'Numre fra Visma';
+  const sub = opts.afterStatus
+    ? 'Statusen er lagret. Nummeret er valgfritt, og kan legges inn eller rettes senere.'
+    : 'Valgfritt. Tomt felt fjerner nummeret.';
+  const inputs = fields.map(k => `<label for="visma-no-${k}" style="display:block;font-size:12px;color:var(--muted);margin:10px 0 4px">${_VISMA_NO_FIELDS[k].label}</label>
+      <input id="visma-no-${k}" type="text" maxlength="${VISMA_NO_MAX}" autocomplete="off" spellcheck="false" value="${esc(cur[k] || '')}" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:14px;box-sizing:border-box">`).join('');
+  const wrap = document.createElement('div');
+  wrap.id = 'visma-no-overlay';
+  wrap.dataset.pid = projectId;
+  wrap.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.45);display:flex;align-items:center;justify-content:center';
+  const knapp = 'padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;';
+  wrap.innerHTML = `<div role="dialog" aria-label="${title}" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;width:min(360px,90vw);box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+      <div style="font-weight:600;font-size:15px;color:var(--text);margin-bottom:4px">${title}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">${sub}</div>
+      ${inputs}
+      <div id="visma-no-err" style="display:none;font-size:12px;color:#f87171;margin-top:10px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button type="button" id="visma-no-skip" style="${knapp}background:none;border:1px solid var(--border);color:var(--muted)">${opts.afterStatus ? 'Hopp over' : 'Avbryt'}</button>
+        <button type="button" id="visma-no-save" style="${knapp}background:var(--accent);border:1px solid var(--accent);color:#fff">Lagre</button>
+      </div></div>`;
+  document.body.appendChild(wrap);
+  const close = () => wrap.remove();
+  const save = async () => {
+    const vals = {};
+    for (const k of fields) {
+      const v = _vismaNoClean(wrap.querySelector('#visma-no-' + k).value);
+      if ((v || '') !== (cur[k] || '')) vals[k] = v;
+    }
+    const keys = Object.keys(vals);
+    if (!keys.length) { close(); return { ok:true, unchanged:true }; }
+    const btn = wrap.querySelector('#visma-no-save'); btn.disabled = true;
+    const r = await _setProjectVismaNo(projectId, vals);
+    if (!r || !r.ok) {
+      btn.disabled = false;
+      const err = wrap.querySelector('#visma-no-err');
+      err.textContent = _vismaNoErrText(r); err.style.display = '';
+      return r;
+    }
+    close();
+    _vismaNoToast(_vismaNoSavedText(vals));
+    _vismaNoRefresh();
+    return r;
+  };
+  wrap._vismaSave = save;   // testene (og bare de) trykker «Lagre» uten å gå via DOM-hendelser
+  wrap.addEventListener('mousedown', e => { if (e.target === wrap) close(); });
+  wrap.querySelector('#visma-no-skip').onclick = close;
+  wrap.querySelector('#visma-no-save').onclick = save;
+  wrap.addEventListener('keydown', e => {
+    e.stopPropagation();   // tegneflatens hurtigtaster skal ikke se tastene herfra
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  });
+  const first = wrap.querySelector('#visma-no-' + (fields.includes(opts.focus) ? opts.focus : fields[0]));
+  if (first) { first.focus(); first.select(); }
+  return wrap;
+}
+
+function _vismaNoSavedText(vals) {
+  const keys = Object.keys(vals || {});
+  if (keys.length !== 1) return 'Numre fra Visma lagret';
+  return _VISMA_NO_FIELDS[keys[0]].word + (_vismaNoClean(vals[keys[0]]) ? ' lagret' : ' fjernet');
+}
+
+// Lista tegnes på nytt bare når den faktisk vises (cachen er alt tømt av _setProjectVismaNo).
+function _vismaNoRefresh() {
+  const scr = document.getElementById('project-list-screen');
+  if (scr && getComputedStyle(scr).display !== 'none' && typeof _renderProjectList === 'function') _renderProjectList();
+}
+
+// Prosjektlista: kort og grått under statusen — «Tilbud 12345 · Ordre 67890». Ingen ny kolonne
+// (tabellen har alt åtte). Klikk åpner begge feltene. Mangler nummeret som hører til statusen,
+// står et dempet «+ Tilbudsnr.» / «+ Ordrenr.» der (bare for bedrifter som bruker Visma), så det
+// er lett å se hva som gjenstår å følge opp. Delte prosjekter og papirkurven: ingen redigering.
+function _plVismaNoHtml(p, inTrash) {
+  if (!p || p._sharedIn || !p._vismaNoKnown || _vismaNoDisabled) return '';
+  const bits = [], tit = [];
+  if (p._vismaOfferNo) { bits.push('Tilbud ' + esc(p._vismaOfferNo)); tit.push('Tilbudsnr. (Visma): ' + p._vismaOfferNo); }
+  if (p._vismaOrderNo) { bits.push('Ordre ' + esc(p._vismaOrderNo)); tit.push('Ordrenr. (Visma): ' + p._vismaOrderNo); }
+  if (inTrash) return bits.length ? `<span class="pl-visma-no" style="cursor:default" title="${esc(tit.join(' · '))}">${bits.join(' · ')}</span>` : '';
+  let focus = '';
+  if (_vismaNoOrgUsesVisma()) {
+    const st = p._salesStatus || 'under_arbeid';
+    if (st === 'tilbud_sendt' && !p._vismaOfferNo) { bits.push('<span class="pl-visma-add">+ Tilbudsnr.</span>'); focus = 'offer'; }
+    if (st === 'vunnet' && !p._vismaOrderNo) { bits.push('<span class="pl-visma-add">+ Ordrenr.</span>'); focus = 'order'; }
+  }
+  if (!bits.length) return '';
+  tit.push('klikk for å legge inn eller rette');
+  return `<span class="pl-visma-no" title="${esc(tit.join(' — '))}" onclick="event.stopPropagation();_vismaNoOpen('${p.id}',['offer','order'],{focus:'${focus}'})">${bits.join(' · ')}</span>`;
+}
+
+// PDF-eksporten flyttet nettopp prosjektet under_arbeid → tilbud_sendt. Ingen dialog som avbryter:
+// en melding, med en knapp som åpner feltet. Uten knapp når feltet ikke kan brukes (delt prosjekt,
+// skrivebeskyttet, kolonnene mangler).
+function _vismaNoOfferSentToast(projectId) {
+  const kan = _vismaNoEditable(projectId) && !_vismaNoEditorBlocked();
+  return _vismaNoToast('Prosjektet er satt til Tilbud sendt', kan
+    ? { label: 'Legg inn tilbudsnr.', run: () => _vismaNoOpen(projectId, ['offer'], { afterStatus: 'tilbud_sendt' }) } : null);
+}
+
+// ── «Kunde & prosjektinfo» (editoren): begge feltene, uavhengig av status ──────────────────────
+// Numrene ligger i kolonner, ikke i S.project — de hentes når modalen åpnes og skrives rett til
+// raden ved «Lagre» (samme skriver som ellers), ikke via autolagringen.
+function _wfVismaNoBlockHtml() {
+  if (!_supabaseProjectId || !_vismaNoEditable(_supabaseProjectId)) return '';
+  if (S.ui && (S.ui.kundeMode || S.ui.presentPublic)) return '';
+  const inp = k => `<div class="dash-create-field" style="flex:1;min-width:0"><label>${_VISMA_NO_FIELDS[k].label}</label><input id="wf-k-visma-${k}" class="dash-create-input" maxlength="${VISMA_NO_MAX}" autocomplete="off" spellcheck="false" disabled placeholder="Henter …"></div>`;
+  return `<div id="wf-k-visma" style="display:flex;gap:10px;margin-bottom:16px">${inp('offer')}${inp('order')}</div>`;
+}
+async function _wfVismaNoLoad() {
+  if (!document.getElementById('wf-k-visma')) return;
+  const pid = _supabaseProjectId;
+  const meta = await _projectOwnerMetaFor(pid);
+  const cur = (meta && _projectIsShared(meta)) ? { ok:false, reason:'shared' } : await _vismaNoRead(pid);
+  const box = document.getElementById('wf-k-visma');
+  if (!box || pid !== _supabaseProjectId) return;          // modalen ble lukket mens vi ventet
+  if (!cur.ok) {
+    if (cur.reason === 'shared') { box.remove(); return; }
+    box.style.cssText = 'font-size:12px;color:var(--dim);margin-bottom:16px';
+    box.textContent = cur.reason === 'no-column'
+      ? 'Tilbudsnr. og ordrenr. (Visma): databasen er ikke oppdatert ennå (198).'
+      : 'Tilbudsnr. og ordrenr. (Visma) kunne ikke hentes.';
+    return;
+  }
+  const laast = _vismaNoEditorBlocked();                   // skrivebeskyttet: se, ikke skriv
+  for (const k of Object.keys(_VISMA_NO_FIELDS)) {
+    const el = document.getElementById('wf-k-visma-' + k); if (!el) continue;
+    el.value = cur[k]; el.dataset.orig = cur[k]; el.placeholder = ''; el.disabled = laast;
+  }
+  box.dataset.loaded = '1';
+}
+// Kalles av _wfKundeSave FØR modalen fjernes: feltene leses nå, skrivingen går asynkront.
+// Urørte felt skrives ikke (en kollegas nummer overskrives ikke av en gammel verdi).
+function _wfVismaNoSave() {
+  const box = document.getElementById('wf-k-visma');
+  const pid = _supabaseProjectId;
+  if (!box || box.dataset.loaded !== '1' || !pid) return null;
+  const vals = {};
+  for (const k of Object.keys(_VISMA_NO_FIELDS)) {
+    const el = document.getElementById('wf-k-visma-' + k); if (!el) continue;
+    const v = _vismaNoClean(el.value);
+    if ((v || '') !== (el.dataset.orig || '')) vals[k] = v;
+  }
+  if (!Object.keys(vals).length) return null;
+  return _setProjectVismaNo(pid, vals).then(r => {
+    if (r && r.ok) _vismaNoToast(_vismaNoSavedText(vals));
+    else _vismaNoToast(_vismaNoErrText(r), null, true);
+    return r;
+  });
+}
+

@@ -1,0 +1,8 @@
+198 · patch 4: testen fanger også at det vanlige søket (navn, små bokstaver) fortsatt virker.
+
+@@@ FINN
+    t('F4 søk på tilbudsnr.', sok('55501') === 'p1', sok('55501'));
+@@@ SETT
+    t('F4 søk på tilbudsnr.', sok('55501') === 'p1', sok('55501'));
+    t('F4b vanlig søk virker som før (navn, del av ord, flere ord på tvers av felt)', sok('eget') === 'p1' && sok('ege 555') === 'p1' && sok('delt') === 'p2', sok('eget') + '|' + sok('ege 555') + '|' + sok('delt'));
+@@@ SLUTT

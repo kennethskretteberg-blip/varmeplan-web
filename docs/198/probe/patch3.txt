@@ -1,0 +1,14 @@
+198 · patch 3: kommentaren i søkelinja slukte resten av linja (.filter/.join/.toLowerCase).
+
+@@@ FINN
+c.email]   // 198: tilbudsnr./ordrenr. (Visma)
+@@@ SETT
+c.email]
+@@@ SLUTT
+
+@@@ FINN
+  // lenket kunderad-navn/telefon/e-post), kontaktperson og ordre-/prosjektnr.
+@@@ SETT
+  // lenket kunderad-navn/telefon/e-post), kontaktperson og ordre-/prosjektnr.
+  // 198: «ordrenr» finnes endelig — tilbudsnr. og ordrenr. fra Visma (_vismaOfferNo/_vismaOrderNo).
+@@@ SLUTT
