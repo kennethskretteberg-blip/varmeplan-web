@@ -1,0 +1,13 @@
+@@@ FINN
+Kontor) og er likevel mindre, fordi bilder uten labelbokser komprimeres bedre.
+@@@ SETT
+Kontor) og er likevel mindre — trolig fordi bilder uten labelbokser komprimeres bedre (ikke undersøkt nærmere).
+@@@ SLUTT
+
+@@@ FINN
+De fire nederste er røde **også på HEAD**, med nøyaktig samme rader: testnettleseren er ikke innlogget, så
+@@@ SETT
+Tom rute i HEAD-kolonnen = ikke kjørt på nytt mot HEAD i denne økten (de var grønne med samme tall i 195).
+
+De fire nederste er røde **også på HEAD**, med nøyaktig samme rader: testnettleseren er ikke innlogget, så
+@@@ SLUTT

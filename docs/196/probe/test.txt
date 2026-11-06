@@ -1,0 +1,248 @@
+// 196 — regresjon for Nummer-modus. Kjøres fra konsollen: await _pdfNumberModeRegressionTest().
+// Eget lite prosjekt (nedkjøring med 7 matter, lager med 22 foliebaner, bredt rom, blandet rom, tomt
+// rom), ekte exportPDF med et jsPDF som logger hver tekst og hvert bilde per side. Rydder alltid opp.
+async function _pdfNumberModeRegressionTest() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const saved = {
+    rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats,
+    matPaths: S.matPaths, plates: S.plates, aluboard: S.aluboard, zones: S.zones, hindrings: S.hindrings,
+    stairs: S.stairs, floors: S.floors, project: S.project,
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId,
+    prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
+    autoSave: window._performAutoSave, sched: window._scheduleAutoSave, toast: window._showToast,
+    modal: window.showAccessoriesModal, branding: window._pdfBranding,
+    jsPDF: window.jspdf && window.jspdf.jsPDF, writeProf: window._writeProfileRow, guard: window.exportPDFGuarded,
+    prof: _currentProfile, user: _currentUser,
+    undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
+  };
+  let lsSaved = null; try { lsSaved = localStorage.getItem(PDF_MARK_LS_KEY); } catch (e) {}
+  const dlg0 = document.getElementById('export-dialog');
+  const dlgSaved = dlg0 ? dlg0.style.display : null;
+  let logg = [], profKall = [], guardKall = [];
+  try {
+    window._performAutoSave = () => Promise.resolve(); window._scheduleAutoSave = () => {};
+    window._showToast = () => {};
+    window.showAccessoriesModal = () => Promise.resolve({ items: [] });
+    window._pdfBranding = () => Promise.resolve(null);
+    window._writeProfileRow = async f => { profKall.push(JSON.parse(JSON.stringify(f))); return null; };
+    // jsPDF som logger: { side, t: tekst } og { side, img: [x, y, w, h] }. Ingen nedlasting.
+    const EkteJsPDF = saved.jsPDF;
+    window.jspdf.jsPDF = function (...a) {
+      const d = new EkteJsPDF(...a), oT = d.text.bind(d), oI = d.addImage.bind(d);
+      const side = () => d.internal.getCurrentPageInfo().pageNumber;
+      d.text = function (t, x, y, o) { for (const s of [].concat(t)) logg.push({ side: side(), t: String(s), x, y }); return oT(t, x, y, o); };
+      d.addImage = function (u, f, x, y, w, h, ...r) { logg.push({ side: side(), img: [x, y, w, h] }); return oI(u, f, x, y, w, h, ...r); };
+      d.save = function () { return d; };
+      return d;
+    };
+    _currentProfile = null; _currentUser = null;
+    try { localStorage.removeItem(PDF_MARK_LS_KEY); } catch (e) {}
+    const F60 = { id: 996601, category_id: 9601, active: true, name: 'TestFolie 60W B=60cm', width_mm: 590, netto_width_mm: 590, watt_per_lm: 36, watt_per_m2: 60, voltage: 230, min_gap_mm: 10, min_wall_margin_mm: 25 };
+    const KAB = { id: 996602, category_id: 9602, active: true, product_family: 'TestKabel 10T', name: 'TestKabel 10T 400W 40m', voltage: 230, cable_length_m: 40, watt_per_m: 10, total_effect_w: 400 };
+    const M05 = { id: 996616, category_id: 9603, active: true, product_family: 'TestSnø 300T', name: 'TestSnø 300T 0,5x16m', voltage: 400, mat_area_m2: 8, mat_width_mm: 500, watt_per_m2: 300, total_effect_w: 2400, mat_cc_mm: 100 };
+    const M10 = { id: 996617, category_id: 9603, active: true, product_family: 'TestSnø 300T', name: 'TestSnø 300T 1x16m', voltage: 400, mat_area_m2: 16, mat_width_mm: 1000, watt_per_m2: 300, total_effect_w: 4800, mat_cc_mm: 100 };
+    const M04 = { id: 996618, category_id: 9603, active: true, product_family: 'TestMatte 150', name: 'TestMatte 150 0,5x4m', voltage: 230, mat_area_m2: 2, mat_width_mm: 500, watt_per_m2: 150, total_effect_w: 300, mat_cc_mm: 80 };
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(F60, KAB, M05, M10, M04);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push({ id: 9601, name: 'Folie', module_type: 'foil' }, { id: 9602, name: 'Kabel', module_type: 'cable' }, { id: 9603, name: 'Matte', module_type: 'mat' });
+    const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+    const mk = (id, navn, pts) => ({ id, floorId: null, partId: null, name: navn, points: pts, walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [] });
+    const R1 = mk(996701, 'Nedkjøring', rect(0, 0, 570, 1600)), R2 = mk(996702, 'Lager', rect(1000, 0, 1400, 500));
+    const R3 = mk(996703, 'Stue', rect(3000, 0, 800, 400)), R4 = mk(996704, 'Blandet', rect(4200, 0, 600, 500)), R5 = mk(996705, 'Tomt', rect(5200, 0, 300, 300));
+    S.rooms = [R1, R2, R3, R4, R5];
+    S.cables = []; S.mats = []; S.matPaths = []; S.plates = []; S.aluboard = []; S.foilFree = []; S.strips = [];
+    S.zones = []; S.hindrings = []; S.stairs = []; S.floors = []; S.ui.activeFloorId = null; S.ui.activePartId = null;
+    S.project = { name: 'NUMMER-TEST', parts: [], revision: 0, lastExportedAt: null, createdAt: Date.now() };
+    // R1: 4 × 0,5 m + 3 × 1 m i stående striper — lagt inn i STOKKET rekkefølge
+    const xs = [[20, M05], [75, M05], [130, M05], [185, M05], [240, M10], [345, M10], [450, M10]];
+    [4, 0, 6, 2, 5, 1, 3].forEach((k, i) => S.mats.push({ id: 996800 + i, roomId: R1.id, productId: xs[k][1].id, x_cm: xs[k][0], y_cm: 0,
+      width_cm: xs[k][1].mat_width_mm / 10, length_cm: 1600, num_runs: 1, last_run_length_cm: null, gap_cm: 5, rotation_deg: 0, matCoordV: 2, startCorner: 'bl' }));
+    // R2: 22 stående foliebaner · R3: 6 liggende (ulik lengde, samme start)
+    for (let k = 0; k < 22; k++) S.strips.push({ id: 996900 + k, roomId: R2.id, productId: F60.id, direction: 'v', pos_cm: 1020 + k * 62, start_cm: 20, length_cm: 460 });
+    for (let k = 0; k < 6; k++) S.strips.push({ id: 996950 + k, roomId: R3.id, productId: F60.id, direction: 'h', pos_cm: 15 + k * 62, start_cm: 3020, length_cm: 760 - k * 30 });
+    // R4: matte med to bredder, frihåndsmatte, fri folie, kabel + reserve + «kun label»-kabel = 6 elementer
+    S.mats.push({ id: 996820, roomId: R4.id, productId: M04.id, x_cm: 4220, y_cm: 20, width_cm: 50, length_cm: 200, num_runs: 2, last_run_length_cm: null, gap_cm: 5, rotation_deg: 0, matCoordV: 2, startCorner: 'bl' });
+    S.matPaths.push({ id: 996830, roomId: R4.id, productId: M04.id, start: { x: 4220, y: 300 }, moves: [{ axis: 'h', dir: 1, len: 400, conn: 'first', side: 1 }], gapCm: 0, centered: false, offX: 0, offY: 0 });
+    S.foilFree.push({ id: 996840, roomId: R4.id, productId: F60.id, cx_cm: 4500, cy_cm: 420, length_cm: 300, angle_deg: 20 });
+    const kRuns = []; for (let x = 4405; x < 4780; x += 10) kRuns.push({ pos_cm: x, segments: [{ start_cm: 25, end_cm: 225 }] });
+    S.cables.push({ id: 996850, roomId: R4.id, productId: KAB.id, direction: 'v', spacing_cm: 10, startCorner: 'bl', totalLength_cm: 4000, runs: kRuns, connections: [] });
+    S.cables.push({ id: 996851, roomId: R4.id, productId: KAB.id, direction: 'v', spacing_cm: 10, startCorner: 'bl', totalLength_cm: 4000, runs: JSON.parse(JSON.stringify(kRuns)), connections: [], reserve: true, _manual: true, mainCableId: 996850 });
+    S.cables.push({ id: 996852, roomId: R4.id, productId: KAB.id, labelOnly: true, runs: [], connections: [] });
+    if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    const tegn = (room, lay, num) => _renderRoomToImage(room, num ? { focusRoom: true, targetWidthMm: lay.imgW2, noUrl: true, captureLabels: true, numberMode: true }
+                                                                     : { focusRoom: true, targetWidthMm: lay.imgW2, noUrl: true, captureLabels: true });
+    const fri = ns => { let min = Infinity; for (let i = 0; i < ns.length; i++) for (let j = i + 1; j < ns.length; j++) min = Math.min(min, Math.hypot(ns[i].x - ns[j].x, ns[i].y - ns[j].y) - ns[i].r - ns[j].r); return min; };
+
+    // ── A · elementlista: antall, rekkefølge, navn/mål/effekt ────────────────────────────────
+    const it1 = _pdfNumberItems(R1);
+    check('A1: nedkjøringen har 7 nummer, 1–7', '1,2,3,4,5,6,7', it1.map(i => i.n).join(',') === '1,2,3,4,5,6,7', it1.map(i => i.n).join(','));
+    check('A2: nummer følger venstre → høyre (ikke lagringsrekkefølgen)', 'x stigende', it1.every((it, i) => i === 0 || it.box.x0 > it1[i - 1].box.x0), it1.map(i => Math.round(i.box.x0)).join(','));
+    check('A3: produkt, mål og effekt per nummer', '4 × 0,5 × 16,0 m 2400 W + 3 × 1,0 × 16,0 m 4800 W',
+      it1.slice(0, 4).every(i => i.name === M05.name && i.dim === '0,5 × 16,0 m' && i.effectW === 2400) && it1.slice(4).every(i => i.name === M10.name && i.dim === '1,0 × 16,0 m' && i.effectW === 4800),
+      it1.map(i => i.name + ' | ' + i.dim + ' | ' + i.effectW).join(' ; '));
+    const ml = _collectMaterialItems().filter(i => i.roomName === R1.name);
+    const nokkel = l => l.map(i => i[0] + '|' + Math.round(i[1])).sort().join(';');
+    check('A4: samme produkter og effekt som materiallista', nokkel(ml.map(i => [i.product.name, i.watt])),
+      ml.length === 7 && nokkel(it1.map(i => [i.name, i.effectW])) === nokkel(ml.map(i => [i.product.name, i.watt])), nokkel(it1.map(i => [i.name, i.effectW])));
+    const it3 = _pdfNumberItems(R3);
+    check('A5: liggende baner nummereres topp → bunn', 'y stigende', it3.length === 6 && it3.every((it, i) => i === 0 || it.box.y0 > it3[i - 1].box.y0), it3.map(i => Math.round(i.box.y0)).join(','));
+    const it4 = _pdfNumberItems(R4);
+    check('A6: blandet rom — matte (2 bredder), frihåndsmatte, fri folie, kabel, reserve, «kun label» = 6', 6,
+      it4.length === 6 && new Set(it4.map(i => i.ref.type + i.ref.id)).size === 6, it4.map(i => i.ref.type).join(','));
+    const res4 = it4.find(i => i.kind === 'Reservekabel');
+    check('A7: reserven har egen rad uten effekt', 'Reserve · … / —',
+      !!res4 && /^Reserve/.test(res4.name) && res4.effectW == null && _pdfLegendRows(R4).find(r => r.n === res4.n).effect === '—', res4 && res4.name);
+    check('A8: rom uten produkter → ingen nummer', 0, _pdfNumberItems(R5).length === 0, _pdfNumberItems(R5).length);
+
+    // ── B · tegningen i Nummer-modus ─────────────────────────────────────────────────────────
+    const lay1 = _pdfNumberLayout(R1), layL1 = _pdfRoomImgLayout(R1);
+    const b1 = tegn(R1, lay1, true), ns1 = b1.numbers || [];
+    check('B1: 7 sirkler, nummer 1–7', '1,2,3,4,5,6,7', ns1.map(n => n.n).join(',') === '1,2,3,4,5,6,7', ns1.map(n => n.n).join(','));
+    const dia = ns1.length ? Math.min(...ns1.map(n => 2 * n.r / n.pxPerMm)) : 0, pt = ns1.length ? ns1[0].fontPx / ns1[0].pxPerMm / (25.4 / 72) : 0;
+    check('B2: sirkel ≥ 4 mm og tall ≥ 7 pt på ferdig side', '≥ 4 mm, ≥ 7 pt', dia >= 4 && pt >= 7, dia.toFixed(2) + ' mm, ' + pt.toFixed(1) + ' pt');
+    check('B3: sirklene overlapper ikke', '> 0 px mellom', ns1.length === 7 && fri(ns1) > 0 && !ns1.some(n => n.overlap), fri(ns1));
+    const sc1 = b1.view.outW / b1.view.worldW;
+    const toPx = (x, y) => ({ x: (x - b1.view.panX) * sc1 + b1.view.outW / 2, y: (y - b1.view.panY) * sc1 + b1.view.outH / 2 });
+    const paaEgen = ns1.length === 7 && ns1.every(n => { const it = it1.find(i => i.n === n.n), p0 = toPx(it.box.x0, it.box.y0), p1 = toPx(it.box.x1, it.box.y1);
+      return n.x >= p0.x - 1 && n.x <= p1.x + 1 && n.y >= p0.y - 1 && n.y <= p1.y + 1; });
+    check('B4: hver sirkel står på sitt eget element', true, paaEgen, paaEgen);
+    const antLab = l => l ? Object.keys(l.cable).length + Object.keys(l.matRect).length + Object.keys(l.mat).length + Object.keys(l.strip).length : -1;
+    // Label-modus tegner labels for alle rom på etasjen (også de utenfor utsnittet) — tell rommets egne.
+    const labR1 = l => l ? Object.keys(l.matRect).filter(id => S.mats.some(m => m.id === parseInt(id, 10) && m.roomId === R1.id)).length : -1;
+    check('B5: ingen labels i tegningen (heller ikke i naborom)', 0, antLab(b1.labels) === 0, antLab(b1.labels));
+    check('B6: flagget er av igjen etter tegningen', 'av', !S.ui._pdfNumberMode && S.ui._pdfNumberRoomId == null && !S.ui._pdfMode, [S.ui._pdfNumberMode, S.ui._pdfNumberRoomId]);
+    const l1 = tegn(R1, layL1, false);
+    check('B7: Label-modus — 7 labels, ingen sirkler', '7 / null', labR1(l1.labels) === 7 && l1.numbers === null, labR1(l1.labels) + ' / ' + JSON.stringify(l1.numbers));
+    const b2 = tegn(R2, _pdfNumberLayout(R2), true), b4 = tegn(R4, _pdfNumberLayout(R4), true);
+    check('B8: 22 foliebaner → 22 sirkler uten overlapp', '22, > 0', (b2.numbers || []).length === 22 && fri(b2.numbers) > 0 && !b2.numbers.some(n => n.overlap), (b2.numbers || []).length + ', ' + fri(b2.numbers || []));
+    check('B9: blandet rom → 6 sirkler uten overlapp', '6, > 0', (b4.numbers || []).length === 6 && fri(b4.numbers) > 0 && !b4.numbers.some(n => n.overlap), (b4.numbers || []).length + ', ' + fri(b4.numbers || []));
+    // Smale baner i et stort rom: sirklene skyves i sikksakk langs banene i stedet for å overlappe.
+    const smale = []; for (let k = 0; k < 20; k++) smale.push({ n: k + 1, ref: { type: 'strip', id: k }, color: '#8c5a00', a: { x: k * 30, y: 0 }, b: { x: k * 30, y: 400 } });
+    const pl = _pdfNumberPlace(smale, (x, y) => ({ x: x * 0.5, y: y * 0.5 }), 12);   // 15 px mellom banene, 24 px sirkler
+    check('B10: 20 smale baner (senteravstand < sirkel) → ingen overlapp, alle på sin bane', '> 0, x uendret',
+      fri(pl) > 0 && !pl.some(q => q.overlap) && pl.every((q, i) => Math.abs(q.x - i * 15) < 1e-6), fri(pl));
+
+    // ── C · PDF-en: forklaringen er TEKST, plasseringen følger regelen ───────────────────────
+    const OPTS = { cover: false, summary: false, floorplan: false, rooms: S.rooms.map(r => r.id), stairs: [], roomTable: false, stairTable: false,
+      materialList: false, resistance: false, cableTable: false, pricing: false, discount: 0, showDGDB: false, docs: false, signature: false, freeText: '' };
+    const bygg = async ekstra => { logg = []; S.project.revision = 0; S.project.lastExportedAt = null; await exportPDF({ ...OPTS, ...(ekstra || {}) }); return logg.slice(); };
+    const lNum = await bygg({ marking: 'number' });
+    // sidene: 1 Nedkjøring · 2 Lager · 3 Lager – forklaring · 4 Stue · 5 Blandet · 6 Tomt
+    const sider = lNum.reduce((m, e) => Math.max(m, e.side), 0);
+    check('C1: 6 sider (5 rom + én forklaringsside)', 6, sider === 6, sider);
+    const tekst = s => lNum.filter(e => e.side === s && e.t != null).map(e => e.t);
+    const bilder = s => lNum.filter(e => e.side === s && e.img);
+    const nrX = s => lNum.filter(e => e.side === s && e.t === 'Nr').map(e => e.x);
+    // tabellradene = rene tall som står i «Nr»-kolonnen (samme x som overskriften)
+    const rader = s => lNum.filter(e => e.side === s && e.t != null && /^\d+$/.test(e.t) && nrX(s).some(x => Math.abs(x - e.x) < 0.01)).map(e => +e.t);
+    check('C2: nedkjøringen — 7 tabellrader 1–7 som tekst, og bare ETT bilde på siden (tegningen)', '1,2,3,4,5,6,7 / 1 bilde',
+      rader(1).join(',') === '1,2,3,4,5,6,7' && bilder(1).length === 1, rader(1).join(',') + ' / ' + bilder(1).length + ' bilde(r)');
+    check('C3: antall rader = antall sirkler = antall elementer', '7 = 7 = 7',
+      rader(1).length === 7 && ns1.length === 7 && S.mats.filter(m => m.roomId === R1.id).length === 7, [rader(1).length, ns1.length].join(' = '));
+    check('C4: produktnavn, mål og effekt står som tekst', 'navn, 0,5 × 16,0 m, 2400 W, Mål',
+      tekst(1).includes(M05.name) && tekst(1).includes('0,5 × 16,0 m') && tekst(1).includes('2400 W') && tekst(1).includes('Mål'), tekst(1).slice(0, 12).join(' | '));
+    const im1 = bilder(1)[0] ? bilder(1)[0].img : [0, 0, 0, 0];
+    check('C5: nedkjøringen — tabellen øverst til høyre, tegningen like stor som i Label-modus', 'side, ' + layL1.imgW2.toFixed(1) + ' mm',
+      lay1.place === 'side' && Math.abs(im1[2] - layL1.imgW2) < 0.01 && nrX(1).length === 1 && nrX(1)[0] > im1[0] + im1[2], lay1.place + ', ' + im1[2].toFixed(1) + ' mm');
+    const lay2 = _pdfNumberLayout(R2), layL2 = _pdfRoomImgLayout(R2), im2 = bilder(2)[0] ? bilder(2)[0].img : [0, 0, 0, 0];
+    check('C6: 22 rader → egen side «Lager – forklaring», tekst uten bilde', 'page, 22 rader, 0 bilder',
+      lay2.place === 'page' && tekst(3).includes('Lager – forklaring') && rader(3).join(',') === Array.from({ length: 22 }, (_, i) => i + 1).join(',') && bilder(3).length === 0 && rader(2).length === 0,
+      lay2.place + ', ' + rader(3).length + ' rader, ' + bilder(3).length + ' bilder');
+    check('C7: tegningen krympes ikke for en lang tabell', layL2.imgW2.toFixed(1) + ' × ' + layL2.imgH.toFixed(1),
+      Math.abs(im2[2] - layL2.imgW2) < 0.01 && Math.abs(im2[3] - layL2.imgH) < 0.01, im2[2].toFixed(1) + ' × ' + im2[3].toFixed(1));
+    const lay3 = _pdfNumberLayout(R3), layL3 = _pdfRoomImgLayout(R3), im3 = bilder(4)[0] ? bilder(4)[0].img : [0, 0, 0, 0];
+    check('C8: bredt rom — tabellen under tegningen i to spalter, tegningen ikke større enn i Label-modus', 'below, 6 rader, 2 spalter',
+      lay3.place === 'below' && rader(4).length === 6 && nrX(4).length === 2 && lNum.filter(e => e.side === 4 && e.t === 'Nr').every(e => e.y > im3[1] + im3[3]) && im3[2] <= layL3.imgW2 + 0.01,
+      lay3.place + ', ' + rader(4).length + ' rader, ' + nrX(4).length + ' spalter');
+    check('C9: blandet rom — 6 rader', 6, rader(5).length === 6, rader(5).length);
+    check('C10: rom uten produkter — ingen forklaring', 'none', nrX(6).length === 0 && _pdfNumberLayout(R5).place === 'none', _pdfNumberLayout(R5).place);
+    const sig = l => l.map(e => e.t != null ? 't|' + e.side + '|' + e.t + '|' + e.x + '|' + e.y : 'i|' + e.side + '|' + e.img.join(',')).join('\n');
+    const lLab = await bygg({ marking: 'label' }), lUten = await bygg();
+    check('C11: Label-modus = uten valget (samme tekster og bilder på samme plass)', 'identisk', lLab.length > 0 && sig(lLab) === sig(lUten), lLab.length + ' / ' + lUten.length);
+    check('C12: Label-modus har ingen forklaring og ingen ekstra side', '5 sider, ingen «Nr»',
+      lLab.reduce((m, e) => Math.max(m, e.side), 0) === 5 && !lLab.some(e => e.t === 'Nr' || /forklaring/.test(e.t || '')), lLab.reduce((m, e) => Math.max(m, e.side), 0));
+
+    // ── G · valget i PDF-dialogen, og at det huskes per bruker ───────────────────────────────
+    saved.harLsSp = true; saved.lsSp = null; try { saved.lsSp = localStorage.getItem(PDF_SAVE_PICKER_LS_KEY); } catch (e) {}
+    const radio = v => document.querySelector('input[name="exp-mark"][value="' + v + '"]');
+    check('G1: standard er Label', 'label', _pdfMarkPref() === 'label', _pdfMarkPref());
+    _showExportDialog();
+    check('G2: dialogen har «Merking på tegningen» med Label valgt', 'label',
+      !!radio('label') && !!radio('number') && radio('label').checked && !radio('number').checked && /Merking på tegningen/.test(document.getElementById('export-dialog').textContent),
+      radio('label') ? (radio('label').checked ? 'label' : 'number') : 'mangler');
+    window.exportPDFGuarded = o => { guardKall.push(o); return Promise.resolve(true); };
+    radio('number').checked = true; _runExportPDF();
+    check('G3: «Generer PDF» sender valget til eksporten', 'number', guardKall.length === 1 && guardKall[0].marking === 'number', guardKall.map(o => o && o.marking).join(','));
+    let lsNaa = null; try { lsNaa = localStorage.getItem(PDF_MARK_LS_KEY); } catch (e) {}
+    check('G4: valget huskes (ikke innlogget → denne nettleseren)', 'number', lsNaa === 'number' && _pdfMarkPref() === 'number', lsNaa);
+    _showExportDialog();
+    check('G5: neste gang står Nummer valgt', 'number', !!radio('number') && radio('number').checked && !radio('label').checked, radio('number') && radio('number').checked);
+    radio('label').checked = true; _runExportPDF();
+    check('G6: tilbake til Label huskes også', 'label', _pdfMarkPref() === 'label' && guardKall.length === 2 && guardKall[1].marking === 'label', _pdfMarkPref());
+    _currentProfile = { prefs: { pdfLabelScale: 1.25, pdfSavePicker: false } }; _currentUser = { id: 'u-196' }; profKall = [];
+    _pdfSetMarkPref('number');
+    await Promise.resolve();
+    const pr = (profKall[0] && profKall[0].prefs) || {};
+    check('G7: innlogget → profilraden skrives, de andre valgene beholdes', 'pdfMarkMode number, pdfLabelScale 1.25, pdfSavePicker false',
+      profKall.length === 1 && pr.pdfMarkMode === 'number' && pr.pdfLabelScale === 1.25 && pr.pdfSavePicker === false, JSON.stringify(profKall));
+    _pdfSetMarkPref('number');
+    check('G8: uendret valg skriver ikke på nytt', 1, profKall.length === 1, profKall.length);
+    try { localStorage.removeItem(PDF_MARK_LS_KEY); } catch (e) {}
+    check('G9: profilen gjelder selv om nettleseren ikke har valget (ny maskin)', 'number', _pdfMarkPref() === 'number', _pdfMarkPref());
+    _currentProfile = null; _currentUser = null;
+    try { localStorage.setItem(PDF_MARK_LS_KEY, 'number'); } catch (e) {}
+    guardKall = []; _presentDownloadPDF();
+    check('G10: kundelenka sender ikke valget (Label, som før)', 'ingen opts', guardKall.length === 1 && guardKall[0] === undefined, JSON.stringify(guardKall));
+    window.exportPDFGuarded = saved.guard;
+
+    // ── I · forhåndsvisningen i dialogen viser samme modus som PDF-en ────────────────────────
+    _showExportDialog();
+    check('I1: dialogen åpner med det lagrede valget', 'number', radio('number').checked, radio('number').checked);
+    _expPreviewRoom(R1.id);
+    const pv1 = _pdfPrev && _pdfPrev.res, leg1 = document.getElementById('exp-pv-legend');
+    check('I2: Nummer → forhåndsvisningen har 7 sirkler og ingen labels', '7 / 0', !!pv1 && (pv1.numbers || []).length === 7 && antLab(pv1.labels) === 0, pv1 ? (pv1.numbers || []).length + ' / ' + antLab(pv1.labels) : 'ingen');
+    check('I3: … og forklaringen under bildet, 7 rader', 7, !!leg1 && leg1.querySelectorAll('tr').length === 7 && leg1.textContent.includes(M05.name), leg1 ? leg1.querySelectorAll('tr').length : 'mangler');
+    check('I4: … tegnet i samme bredde som PDF-en', lay1.imgW2.toFixed(1) + ' mm',
+      !!pv1 && Math.abs(pv1.view.renderW - Math.round(lay1.imgW2 / 25.4 * 300)) <= 1, pv1 ? pv1.view.renderW + ' px' : 'ingen');
+    radio('label').checked = true; _expMarkChanged();
+    const pv2 = _pdfPrev && _pdfPrev.res;
+    check('I5: bytte til Label tegner forhåndsvisningen på nytt — 7 labels, ingen sirkler, ingen forklaring', '7 / null / borte',
+      !!pv2 && labR1(pv2.labels) === 7 && pv2.numbers === null && !document.getElementById('exp-pv-legend'), pv2 ? labR1(pv2.labels) + ' / ' + JSON.stringify(pv2.numbers && pv2.numbers.length) : 'ingen');
+    radio('number').checked = true; _expMarkChanged();
+    check('I6: … og tilbake til Nummer', 7, !!_pdfPrev && (_pdfPrev.res.numbers || []).length === 7 && !!document.getElementById('exp-pv-legend'), _pdfPrev && (_pdfPrev.res.numbers || []).length);
+    _expPreviewRoom(R2.id);
+    const leg2 = document.getElementById('exp-pv-legend');
+    check('I7: 22 rader → forhåndsvisningen sier «egen side i PDF-en»', true, !!leg2 && leg2.querySelectorAll('tr').length === 22 && /egen side i PDF-en/.test(leg2.textContent), leg2 ? leg2.textContent.slice(0, 60) : 'mangler');
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree,
+      cables: saved.cables, mats: saved.mats, matPaths: saved.matPaths, plates: saved.plates,
+      aluboard: saved.aluboard, zones: saved.zones, hindrings: saved.hindrings, stairs: saved.stairs,
+      floors: saved.floors, project: saved.project });
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId;
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push(...saved.cats);
+    window._performAutoSave = saved.autoSave; window._scheduleAutoSave = saved.sched; window._showToast = saved.toast;
+    window.showAccessoriesModal = saved.modal; window._pdfBranding = saved.branding;
+    window._writeProfileRow = saved.writeProf; window.exportPDFGuarded = saved.guard;
+    if (window.jspdf) window.jspdf.jsPDF = saved.jsPDF;
+    _currentProfile = saved.prof; _currentUser = saved.user;
+    try { if (lsSaved == null) localStorage.removeItem(PDF_MARK_LS_KEY); else localStorage.setItem(PDF_MARK_LS_KEY, lsSaved); } catch (e) {}
+    if (saved.harLsSp) try { if (saved.lsSp == null) localStorage.removeItem(PDF_SAVE_PICKER_LS_KEY); else localStorage.setItem(PDF_SAVE_PICKER_LS_KEY, saved.lsSp); } catch (e) {}
+    if (saved.undoLen != null) _undoStack.length = saved.undoLen;
+    // Dialogen bygges på nytt for det virkelige prosjektet neste gang den åpnes; forhåndsvisningen
+    // av testrommet slippes her så den ikke tegnes på nytt mot et rom som ikke finnes.
+    _pdfPrev = null;
+    const pa = document.getElementById('exp-preview-area'); if (pa) pa.innerHTML = '';
+    const dlg = document.getElementById('export-dialog'); if (dlg) dlg.style.display = dlgSaved == null ? 'none' : dlgSaved;
+    if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_pdfNumberModeRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return { ok: allOk, results };
+}
+

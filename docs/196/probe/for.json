@@ -1,0 +1,82 @@
+{
+ "tag": "for",
+ "mark": "",
+ "sider": 7,
+ "bytes": 1403818,
+ "sha": "e17435f0339f09c4f8bafc1d0adfa0ed7199a4f4777a5ed6e240c2c3c5f22150",
+ "ms": 219,
+ "steg0": [
+  {
+   "rom": "Nedkjøring",
+   "cm": "570 x 1600",
+   "aspekt": 2.184,
+   "imgX": 64.2,
+   "imgW": 81.5,
+   "imgH": 178,
+   "ledigHoyre": 49.2,
+   "ledigHvisVenstrestilt": 98.5,
+   "px": 963,
+   "mmPerCm": 0.0937
+  },
+  {
+   "rom": "Lager",
+   "cm": "1400 x 500",
+   "aspekt": 0.471,
+   "imgX": 15,
+   "imgW": 180,
+   "imgH": 84.7,
+   "ledigHoyre": 0,
+   "ledigHvisVenstrestilt": 0,
+   "px": 2126,
+   "mmPerCm": 0.1059
+  },
+  {
+   "rom": "Kontor",
+   "cm": "780 x 400",
+   "aspekt": 0.648,
+   "imgX": 15,
+   "imgW": 180,
+   "imgH": 116.7,
+   "ledigHoyre": 0,
+   "ledigHvisVenstrestilt": 0,
+   "px": 2126,
+   "mmPerCm": 0.1667
+  },
+  {
+   "rom": "Bad",
+   "cm": "300 x 250",
+   "aspekt": 0.917,
+   "imgX": 15,
+   "imgW": 180,
+   "imgH": 165,
+   "ledigHoyre": 0,
+   "ledigHvisVenstrestilt": 0,
+   "px": 2126,
+   "mmPerCm": 0.3
+  },
+  {
+   "rom": "Stue",
+   "cm": "800 x 400",
+   "aspekt": 0.636,
+   "imgX": 15,
+   "imgW": 180,
+   "imgH": 114.5,
+   "ledigHoyre": 0,
+   "ledigHvisVenstrestilt": 0,
+   "px": 2126,
+   "mmPerCm": 0.1636
+  },
+  {
+   "rom": "Gang",
+   "cm": "400 x 300",
+   "aspekt": 0.857,
+   "imgX": 15,
+   "imgW": 180,
+   "imgH": 154.3,
+   "ledigHoyre": 0,
+   "ledigHvisVenstrestilt": 0,
+   "px": 2126,
+   "mmPerCm": 0.2571
+  }
+ ]
+}

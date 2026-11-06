@@ -1,0 +1,52 @@
+196 · patch 2: _pdfRoomImgLayout gir fra seg høydebudsjettet; _renderRoomToImage kan Nummer-modus.
+
+@@@ FINN
+  return { aspect, imgW2, imgH, imgX, budget: b };
+@@@ SETT
+  return { aspect, imgW2, imgH, imgX, budget: b, availH: availImgH };   // 196: availH leses av _pdfNumberLayout
+@@@ SLUTT
+
+@@@ FINN
+    pdfScaleMmPerCm: S.ui?._pdfScaleMmPerCm,   // 051
+  };
+@@@ SETT
+    pdfScaleMmPerCm: S.ui?._pdfScaleMmPerCm,   // 051
+    pdfNumberMode: S.ui?._pdfNumberMode, pdfNumberRoomId: S.ui?._pdfNumberRoomId,   // 196
+  };
+@@@ SLUTT
+
+@@@ FINN
+  if (S.ui) S.ui._pdfScaleMmPerCm = targetWmm / worldW;
+@@@ SETT
+  if (S.ui) S.ui._pdfScaleMmPerCm = targetWmm / worldW;
+  // 196: Nummer-modus (opts.numberMode) — labels av, nummer i sirkel på, bare for DETTE rommet.
+  // Uten opts.numberMode er flagget av, og tegningen er nøyaktig som før.
+  if (S.ui) { S.ui._pdfNumberMode = !!opts.numberMode; S.ui._pdfNumberRoomId = opts.numberMode ? room.id : null; }
+@@@ SLUTT
+
+@@@ FINN
+  const view = { zoom: S.view.zoom, panX: S.view.panX, panY: S.view.panY, outW, outH, worldW, worldH, scale: pvScale };
+
+  // Restore canvas backing store and view, then re-render so the user's
+@@@ SETT
+  const view = { zoom: S.view.zoom, panX: S.view.panX, panY: S.view.panY, outW, outH, worldW, worldH, scale: pvScale };
+  // 196: sirklene slik de ble tegnet i DETTE bildet (lerretspiksler) — for tester og forhåndsvisning.
+  const numbers = opts.numberMode ? _pdfNumberDrawn.slice() : null;
+
+  // Restore canvas backing store and view, then re-render so the user's
+@@@ SLUTT
+
+@@@ FINN
+    S.ui._pdfScaleMmPerCm = saved.pdfScaleMmPerCm;   // 051
+    S.ui.theme = saved.theme;
+@@@ SETT
+    S.ui._pdfScaleMmPerCm = saved.pdfScaleMmPerCm;   // 051
+    S.ui._pdfNumberMode = saved.pdfNumberMode; S.ui._pdfNumberRoomId = saved.pdfNumberRoomId;   // 196
+    S.ui.theme = saved.theme;
+@@@ SLUTT
+
+@@@ FINN
+  return { url: dataURL, w: outW, h: outH, aspect, view, labels };   // 155: view + labels
+@@@ SETT
+  return { url: dataURL, w: outW, h: outH, aspect, view, labels, numbers };   // 155: view + labels · 196: numbers
+@@@ SLUTT

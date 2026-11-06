@@ -1,0 +1,5 @@
+@@@ FINN
+**Valgt nå:** sirkelen står alltid midt på kabelen (midterste strekk). Har du dratt kabelens label et
+@@@ SETT
+**Valgt nå:** sirkelen står alltid midt i feltet kabelen dekker. Har du dratt kabelens label et
+@@@ SLUTT

@@ -1,0 +1,21 @@
+196 · patch 8: testen teller labels i DETTE rommet (Label-modus tegner også naborommenes labels).
+
+@@@ FINN
+    check('B5: ingen labels i tegningen', 0, antLab(b1.labels) === 0, antLab(b1.labels));
+@@@ SETT
+    // Label-modus tegner labels for alle rom på etasjen (også de utenfor utsnittet) — tell rommets egne.
+    const labR1 = l => l ? Object.keys(l.matRect).filter(id => S.mats.some(m => m.id === parseInt(id, 10) && m.roomId === R1.id)).length : -1;
+    check('B5: ingen labels i tegningen (heller ikke i naborom)', 0, antLab(b1.labels) === 0, antLab(b1.labels));
+@@@ SLUTT
+
+@@@ FINN
+    check('B7: Label-modus — 7 labels, ingen sirkler', '7 / null', antLab(l1.labels) === 7 && l1.numbers === null, antLab(l1.labels) + ' / ' + JSON.stringify(l1.numbers));
+@@@ SETT
+    check('B7: Label-modus — 7 labels, ingen sirkler', '7 / null', labR1(l1.labels) === 7 && l1.numbers === null, labR1(l1.labels) + ' / ' + JSON.stringify(l1.numbers));
+@@@ SLUTT
+
+@@@ FINN
+      !!pv2 && antLab(pv2.labels) === 7 && pv2.numbers === null && !document.getElementById('exp-pv-legend'), pv2 ? antLab(pv2.labels) + ' / ' + JSON.stringify(pv2.numbers && pv2.numbers.length) : 'ingen');
+@@@ SETT
+      !!pv2 && labR1(pv2.labels) === 7 && pv2.numbers === null && !document.getElementById('exp-pv-legend'), pv2 ? labR1(pv2.labels) + ' / ' + JSON.stringify(pv2.numbers && pv2.numbers.length) : 'ingen');
+@@@ SLUTT

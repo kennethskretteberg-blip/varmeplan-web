@@ -1,0 +1,345 @@
+// ══ 196 · PDF: MERKING «LABEL» ELLER «NUMMER» PÅ ROMSIDENE (Kenneth og Fredrik 06.11.2026) ═══════
+// Kenneth: «Ville det vært kjekt med et valg i dialogen ved utskrift: 1: Label, 2: Nummerering. Ved
+// nummerering kan produktet illustreres med farge og nummer som går igjen i en tabellvisning på samme
+// side?» Fredrik: «Problemet ved store tegninger er at man ikke ser målene.»
+//
+// STEG 0 (docs/196/RAPPORT.md): hver matte/kabel/folie tegner sin egen label (to linjer, 2,2 mm tekst
+// på papiret) oppå elementet. På nedkjøringen (570 × 1600 cm, 7 matter) blir bildet 81,5 mm bredt, og
+// labelene dekker en stor del av mattene — to av dem ligger oppå hverandre.
+//
+// Nummer-modus: ingen labels i tegningen, men ett nummer i en fylt sirkel per element (5 mm på ferdig
+// side, uansett romstørrelse), og en forklaringstabell som TEKST i PDF-en (jsPDF, ikke en del av bildet).
+// ÉN kilde for begge: _pdfNumberItems(room) — sirklene (_drawPdfNumberBadges) og tabellen
+// (_pdfLegendRows) leser samme liste, så nummer og rad aldri kan komme i utakt.
+//
+// Label-modus er URØRT: alt nytt er bak `S.ui._pdfNumberMode`, som bare _renderRoomToImage setter (og
+// bare med opts.numberMode). Plantegningen per etasje (154) og trappesidene tegnes som før.
+// Valget er per BRUKER (profiles.prefs.pdfMarkMode, localStorage uten innlogging) — samme mønster som
+// pdfSavePicker (195). Standard = 'label'. Regresjon: await _pdfNumberModeRegressionTest().
+const PDF_MARK_LS_KEY = 'varmeplan_pdf_mark_mode';
+const PDF_NUM_DIA_MM = 5.0;          // sirkelens diameter på ferdig side
+const PDF_NUM_FONT_PT = 8;           // tallets skriftstørrelse på ferdig side
+const PDF_LEGEND_MAX_ROWS = 15;      // flere rader → forklaringen får egen side
+const PDF_LEGEND_SIDE_MIN_MM = 70;   // smaleste tabell ved siden av tegningen
+const PDF_LEGEND_SIDE_MAX_MM = 92;
+const PDF_LEGEND_GAP_MM = 5;         // luft mellom tegning og tabell
+const PDF_LEGEND_HEAD_MM = 6;        // kolonneoverskrift + strek
+const PDF_LEGEND_ROW_MM = 4.2;       // én tekstlinje
+const PDF_LEGEND_LINE_MM = 3.1;      // hver ekstra linje i et brutt produktnavn
+let _pdfNumberDrawn = [];            // sirklene fra SISTE tegning i Nummer-modus (lerretspiksler)
+
+function _pdfMarkPref() {
+  const prof = (_currentProfile && _currentProfile.prefs) || null;
+  if (prof && (prof.pdfMarkMode === 'number' || prof.pdfMarkMode === 'label')) return prof.pdfMarkMode;
+  try {
+    const v = localStorage.getItem(PDF_MARK_LS_KEY);
+    if (v === 'number' || v === 'label') return v;
+  } catch (e) { /* lagring utilgjengelig — standardverdien under */ }
+  return 'label';
+}
+// Lagrer valget når det er ENDRET (som _pdfSetSavePickerPref): profilraden skrives i bakgrunnen og
+// blokkerer aldri eksporten; de andre prefs-nøklene følger med uendret.
+function _pdfSetMarkPref(v) {
+  v = v === 'number' ? 'number' : 'label';
+  if (v === _pdfMarkPref()) return;
+  try { localStorage.setItem(PDF_MARK_LS_KEY, v); } catch (e) { /* privat modus */ }
+  if (_currentProfile && _currentUser && _currentUser.id) {
+    _currentProfile.prefs = { ...(_currentProfile.prefs || {}), pdfMarkMode: v };
+    Promise.resolve(_writeProfileRow({ prefs: _currentProfile.prefs }))
+      .then(err => { if (err) console.warn('[PDF] valget «merking på tegningen» ble ikke lagret i profilen:', err.message || err); })
+      .catch(e => console.warn('[PDF] valget «merking på tegningen» ble ikke lagret i profilen:', e));
+  }
+}
+// Valget slik det står i PDF-dialogen akkurat nå (radioknappene); uten åpen dialog: det lagrede.
+function _pdfMarkDialogMode() {
+  const el = document.querySelector('input[name="exp-mark"]:checked');
+  return el ? (el.value === 'number' ? 'number' : 'label') : _pdfMarkPref();
+}
+
+// Elementene som nummereres i ETT rom, i nummerrekkefølge (starter på 1 i hvert rom). Ett element = én
+// fysisk ting montøren legger: én matte (S.mats), én rull i en frihåndsbane (S.matPaths-segment), én
+// foliebane (strip eller fri folie), én kabel (også reserve og «kun label»). Plater og Aluboard
+// nummereres ikke — de har ingen store labels i dag (docs/196/SPØRSMÅL.md).
+// Hvert element: { n, ref, kind, product, name, color, dim, effectW, a, b, box } — a–b er lengdeaksen i
+// verdens-cm (sirkelen står midt på den og kan skyves langs den når naboene er for nære), box er
+// omrisset rekkefølgen regnes av. Navn, mål og effekt kommer fra de samme kildene som Spesifikasjonen
+// og materiallista (_matRatedW, _matFreeCatalog, _foilItemW, _cableRatedW).
+function _pdfNumberItems(room) {
+  if (!room) return [];
+  const out = [];
+  const lenM = cm => (cm / 100).toFixed(1).replace('.', ',');
+  const widM = cm => { let s = (cm / 100).toFixed(2); if (s.endsWith('0')) s = s.slice(0, -1); return s.replace('.', ','); };
+  const BLUE = '#2864c8', AMBER = '#8c5a00', ORANGE = '#c06030';   // tegningens farger på hvit side
+  const add = (ref, kind, product, name, color, dim, effectW, a, b, half) => {
+    const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+    const horiz = (x1 - x0) >= (y1 - y0);
+    out.push({ ref, kind, product, name, color, dim, effectW, a, b,
+      box: horiz ? { x0, x1, y0: y0 - half, y1: y1 + half } : { x0: x0 - half, x1: x1 + half, y0, y1 } });
+  };
+  for (const m of _matsForRoom(room.id)) {
+    if (m.labelOnly) continue;   // «kun label»-matte har ingen geometri og tegnes ikke
+    const p = HEATING_PRODUCTS.find(pr => pr.id === m.productId);
+    const nr = m.num_runs || 1, mid = Math.floor((nr - 1) / 2);
+    let g = null;   // midterste bredde som har lengde
+    for (let k = 0; k < nr && !g; k++) g = (mid - k >= 0 ? _matRunWorldGeom(m, mid - k) : null) || ((k && mid + k < nr) ? _matRunWorldGeom(m, mid + k) : null);
+    if (!g) continue;
+    add({ type: 'mat', id: m.id }, 'Matte', p, p ? p.name : 'Matte', _matColor(m) || BLUE,
+      widM(m.width_cm) + ' × ' + lenM(_matLaidLengthCm(m)) + ' m', _matRatedW(p, m), g.start, g.end, m.width_cm / 2);
+  }
+  for (const mp of (S.matPaths || [])) {
+    if (mp.roomId !== room.id) continue;
+    const cat = _matFreeCatalog(mp), NET = _matFreeConsts(_matFreeProdOf(mp)).NET, runs = _matFreeDeriveRuns(mp);
+    cat.segments.forEach((seg, si) => {
+      const p = seg.product || cat.fam;
+      let acc = 0, best = null;   // lengste bredde-bit som hører til denne rullen
+      for (const r of runs) {
+        const rl = _matFreeRunLen(r), lo = Math.max(seg.fromCm, acc), hi = Math.min(seg.toCm, acc + rl);
+        if (rl > 0.5 && hi - lo > 0.5 && (!best || hi - lo > best.len)) {
+          const t0 = (lo - acc) / rl, t1 = (hi - acc) / rl;
+          best = { len: hi - lo, a: { x: r.a.x + (r.b.x - r.a.x) * t0, y: r.a.y + (r.b.y - r.a.y) * t0 }, b: { x: r.a.x + (r.b.x - r.a.x) * t1, y: r.a.y + (r.b.y - r.a.y) * t1 } };
+        }
+        acc += rl;
+      }
+      if (!best) return;
+      add({ type: 'matPath', id: mp.id, segIdx: si }, 'Matte', p, p ? p.name : 'Matte', _matPathSegColor(mp, si) || BLUE,
+        widM(NET) + ' × ' + lenM(seg.lenCm) + ' m', seg.watt, best.a, best.b, NET / 2);
+    });
+  }
+  for (const s of _stripsForRoom(room.id)) {
+    const nc = _stripNettoCm(s);
+    if (!(nc > 0) || !(s.length_cm > 0)) continue;
+    const p = _stripProduct(s), c = s.pos_cm + nc / 2, v = s.direction === 'v';
+    add({ type: 'strip', id: s.id }, 'Folie', p, p ? p.name : 'Folie', _resolveFillColor(s) || AMBER,
+      widM(nc) + ' × ' + lenM(s.length_cm) + ' m', _foilItemW(s),
+      v ? { x: c, y: s.start_cm } : { x: s.start_cm, y: c }, v ? { x: c, y: s.start_cm + s.length_cm } : { x: s.start_cm + s.length_cm, y: c }, nc / 2);
+  }
+  for (const ff of (S.foilFree || [])) {
+    if (ff.roomId !== room.id) continue;
+    const nc = _foilFreeNettoCm(ff);
+    if (!(nc > 0) || !(ff.length_cm > 0)) continue;
+    const p = _foilFreeProduct(ff), rad = (ff.angle_deg || 0) * Math.PI / 180;
+    const hx = Math.cos(rad) * ff.length_cm / 2, hy = Math.sin(rad) * ff.length_cm / 2;
+    add({ type: 'foilFree', id: ff.id }, 'Folie', p, p ? p.name : 'Folie', AMBER, widM(nc) + ' × ' + lenM(ff.length_cm) + ' m', _foilItemW(ff),
+      { x: ff.cx_cm - hx, y: ff.cy_cm - hy }, { x: ff.cx_cm + hx, y: ff.cy_cm + hy }, nc / 2);
+  }
+  for (const c of _cablesForRoom(room.id)) {
+    const p = HEATING_PRODUCTS.find(pr => pr.id === c.productId);
+    const segs = c.labelOnly ? [] : _cableWorldSegments(c);
+    let a, b, half = 0;
+    if (segs.length && c.reserve) {
+      // reserven ligger oppå hovedkabelen — sirkelen står ved STARTEN dens (som labelen, 156)
+      a = { x: segs[0].x1, y: segs[0].y1 }; b = { x: segs[0].x2, y: segs[0].y2 };
+    } else if (segs.length) {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const s of segs) { x0 = Math.min(x0, s.x1, s.x2); x1 = Math.max(x1, s.x1, s.x2); y0 = Math.min(y0, s.y1, s.y2); y1 = Math.max(y1, s.y1, s.y2); }
+      if (x1 - x0 >= y1 - y0) { a = { x: x0, y: (y0 + y1) / 2 }; b = { x: x1, y: (y0 + y1) / 2 }; half = (y1 - y0) / 2; }
+      else { a = { x: (x0 + x1) / 2, y: y0 }; b = { x: (x0 + x1) / 2, y: y1 }; half = (x1 - x0) / 2; }
+    } else if (c.labelOnly && room.points && room.points.length) {
+      const xs = room.points.map(q => q.x), ys = room.points.map(q => q.y);   // «kun label»: midt i rommet
+      a = b = { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
+    } else continue;   // kabel uten geometri tegnes ikke i dag heller
+    const m = c.totalLength_cm > 0 ? c.totalLength_cm / 100 : ((p && p.cable_length_m) || 0);
+    add({ type: 'cable', id: c.id }, c.reserve ? 'Reservekabel' : 'Kabel', p, (c.reserve ? 'Reserve · ' : '') + (p ? p.name : 'Kabel'),
+      c.multiCableGroup != null ? INDOOR_CABLE_COLORS[(c.multiCableIndex || 0) % INDOOR_CABLE_COLORS.length] : ORANGE,
+      m > 0 ? m.toFixed(1).replace('.', ',') + ' m' : '—', c.reserve ? null : Math.round(_cableRatedW(p, c)), a, b, half);
+  }
+  // Rekkefølge: venstre → høyre, så topp → bunn (som målkjeden langs bunnen). Elementer som ligger
+  // over/under hverandre (x-utstrekningene overlapper mer enn halve den smaleste) er samme kolonne og
+  // tas ovenfra; kolonnene tas fra venstre.
+  out.sort((p, q) => (p.box.x0 - q.box.x0) || (p.box.y0 - q.box.y0));
+  const groups = [];
+  for (const it of out) {
+    const g = groups[groups.length - 1];
+    const ov = g ? Math.min(g.x1, it.box.x1) - Math.max(g.x0, it.box.x0) : -1;
+    if (g && ov > 0.5 * Math.min(g.x1 - g.x0, it.box.x1 - it.box.x0)) { g.items.push(it); g.x1 = Math.max(g.x1, it.box.x1); }
+    else groups.push({ x0: it.box.x0, x1: it.box.x1, items: [it] });
+  }
+  const res = [];
+  for (const g of groups) {
+    g.items.sort((p, q) => (Math.round(p.box.y0 / 5) - Math.round(q.box.y0 / 5)) || (p.box.x0 - q.box.x0));
+    res.push(...g.items);
+  }
+  res.forEach((it, i) => { it.n = i + 1; });
+  return res;
+}
+
+// Sirklenes plass på lerretet. Hver sirkel står midt på elementets lengdeakse; ligger en allerede plassert
+// sirkel for nær (smale baner i et stort rom), skyves den i halve sirkelbredder langs aksen — annenhver
+// vei — til den går fri. Naboer havner da i sikksakk og overlapper ikke. Finnes det ikke plass langs
+// aksen, står sirkelen midt på (og merkes `overlap`, så testen ser det).
+// toScr(x, y) → lerretspiksler, rPx = radius i piksler. Ren funksjon (ingen tegning) — testbar.
+function _pdfNumberPlace(items, toScr, rPx) {
+  const placed = [], gap = rPx * 0.25;
+  for (const it of items) {
+    const A = toScr(it.a.x, it.a.y), B = toScr(it.b.x, it.b.y);
+    const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2, L = Math.hypot(B.x - A.x, B.y - A.y);
+    const ux = L > 0 ? (B.x - A.x) / L : 0, uy = L > 0 ? (B.y - A.y) / L : 0;
+    const r = String(it.n).length > 2 ? rPx * 1.25 : rPx;   // tresifret nummer får litt større sirkel
+    const maxOff = Math.max(0, L / 2 - r * 1.2), step = r + gap / 2;
+    const free = (x, y) => placed.every(q => Math.hypot(q.x - x, q.y - y) >= q.r + r + gap);
+    let pos = null;
+    for (let k = 0; !pos; k++) {
+      const offs = k === 0 ? [0] : [k * step, -k * step];
+      if (k * step > maxOff && k > 0) break;
+      for (const o of offs) { const x = mx + ux * o, y = my + uy * o; if (free(x, y)) { pos = { x, y }; break; } }
+    }
+    placed.push({ n: it.n, ref: it.ref, color: it.color, x: pos ? pos.x : mx, y: pos ? pos.y : my, r, overlap: !pos });
+  }
+  return placed;
+}
+// Tegner sirklene. Kalles fra render(), og gjør ingenting utenom PDF-ens romside i Nummer-modus.
+// Størrelsen regnes fra papiret: `_pdfScaleMmPerCm` (051) er mm på ferdig side per verdens-cm i DETTE
+// bildet, så px per mm = (px per cm) ÷ (mm per cm). 5 mm sirkel og 8 pt tall uansett romstørrelse.
+function _drawPdfNumberBadges() {
+  if (!S.ui || !S.ui._pdfNumberMode || !S.ui._pdfMode) return;
+  _pdfNumberDrawn = [];
+  const room = S.rooms.find(r => r.id === S.ui._pdfNumberRoomId);
+  const mmPerCm = S.ui._pdfScaleMmPerCm;
+  if (!room || !(mmPerCm > 0)) return;
+  const pxPerMm = (S.view.zoom * BASE_SCALE) / mmPerCm;
+  const fontPx = PDF_NUM_FONT_PT * (25.4 / 72) * pxPerMm;
+  const placed = _pdfNumberPlace(_pdfNumberItems(room), w2s, PDF_NUM_DIA_MM / 2 * pxPerMm);
+  ctx.save();
+  ctx.setLineDash([]); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const b of placed) {
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 2 * Math.PI);
+    ctx.fillStyle = b.color; ctx.fill();
+    ctx.lineWidth = Math.max(1.5, 0.3 * pxPerMm); ctx.strokeStyle = '#ffffff'; ctx.stroke();   // hvit ring skiller sirkelen fra det den ligger på
+    ctx.fillStyle = _hexLum(b.color) > 0.6 ? '#141820' : '#ffffff';
+    ctx.font = `bold ${fontPx}px 'Space Grotesk',sans-serif`;
+    ctx.fillText(String(b.n), b.x, b.y + fontPx * 0.05);
+  }
+  ctx.restore();
+  _pdfNumberDrawn = placed.map(b => ({ ...b, pxPerMm, fontPx }));
+}
+
+// Forklaringstabellens rader — én per nummer, fra samme liste som sirklene.
+function _pdfLegendRows(room) {
+  return _pdfNumberItems(room).map(it => ({ n: it.n, ref: it.ref, kind: it.kind, color: it.color, name: it.name, dim: it.dim,
+    effectW: it.effectW, effect: it.effectW == null ? '—' : Math.round(it.effectW) + ' W' }));
+}
+function _pdfHexRgb(hex) {
+  const n = parseInt(String(hex).replace('#', ''), 16);
+  return isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [120, 120, 120];
+}
+// Kolonnene i en tabellspalte med bredde w (mm): Nr · farge · Produkt · Mål · Effekt (høyrestilt).
+function _pdfLegendCols(w) {
+  const nr = 6, sw = 5.5, dim = 23, eff = 14;
+  return { sw: nr, name: nr + sw, nameW: Math.max(10, w - nr - sw - dim - eff - 1.5), dim: w - eff - dim, eff: w };
+}
+// Et jsPDF-dokument å måle tekst med når kalleren ikke har et (forhåndsvisningen) — delt med 165.
+function _pdfMeasureDoc(doc) {
+  if (doc) return doc;
+  if (!_pdfBudgetDoc && window.jspdf && window.jspdf.jsPDF) _pdfBudgetDoc = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  return _pdfBudgetDoc;
+}
+// Radhøyder for en spalte med bredde cw: produktnavnet brytes i Produkt-kolonnen.
+function _pdfLegendRowMetrics(doc, rows, cw) {
+  const K = _pdfLegendCols(cw), d = _pdfMeasureDoc(doc);
+  if (d) { d.setFont('helvetica', 'normal'); d.setFontSize(7.5); }
+  return rows.map(r => {
+    const lines = d ? d.splitTextToSize(String(r.name || ''), K.nameW) : [String(r.name || '')];
+    return { row: r, lines, h: PDF_LEGEND_ROW_MM + (lines.length - 1) * PDF_LEGEND_LINE_MM };
+  });
+}
+// Mål av hele tabellen: bredde w, ncol spalter (radene fordeles spalte for spalte). → { h, cw, cols }
+function _pdfLegendMeasure(doc, rows, w, ncol) {
+  ncol = Math.max(1, ncol || 1);
+  const cw = (w - (ncol - 1) * 6) / ncol, ms = _pdfLegendRowMetrics(doc, rows, cw), per = Math.ceil(ms.length / ncol);
+  const cols = []; let hMax = 0;
+  for (let c = 0; c < ncol; c++) {
+    const part = ms.slice(c * per, (c + 1) * per);
+    if (!part.length) continue;
+    cols.push(part); hMax = Math.max(hMax, part.reduce((s, m) => s + m.h, 0));
+  }
+  return { h: PDF_LEGEND_HEAD_MM + hMax + 1, cw, cols, ncol };
+}
+// Tegner én spalte (overskrift + rader) som TEKST og vektor i PDF-en — aldri som bilde. → høyden (mm).
+function _pdfLegendDrawCol(doc, ms, x, y, cw) {
+  const K = _pdfLegendCols(cw);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(120, 130, 150);
+  doc.text('Nr', x, y + 3); doc.text('Produkt', x + K.name, y + 3); doc.text('Mål', x + K.dim, y + 3);
+  doc.text('Effekt', x + K.eff, y + 3, { align: 'right' });
+  doc.setDrawColor(220, 228, 240); doc.setLineWidth(0.2); doc.line(x, y + 4.4, x + cw, y + 4.4);
+  let yy = y + PDF_LEGEND_HEAD_MM;
+  for (const m of ms) {
+    const r = m.row, base = yy + 2.9, c = _pdfHexRgb(r.color);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(20, 40, 80);
+    doc.text(String(r.n), x, base);
+    doc.setFillColor(c[0], c[1], c[2]); doc.rect(x + K.sw, yy + 0.6, 3, 3, 'F');
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(40, 50, 70);
+    m.lines.forEach((ln, i) => doc.text(ln, x + K.name, base + i * PDF_LEGEND_LINE_MM));
+    doc.text(r.dim, x + K.dim, base);
+    doc.text(r.effect, x + K.eff, base, { align: 'right' });
+    yy += m.h;
+  }
+  return yy - y + 1;
+}
+function _pdfLegendDraw(doc, m, x, y) {
+  m.cols.forEach((ms, c) => _pdfLegendDrawCol(doc, ms, x + c * (m.cw + 6), y, m.cw));
+  return m.h;
+}
+// Forklaring på EGEN side (flere enn PDF_LEGEND_MAX_ROWS rader): to spalter som fylles jevnt, ny side
+// når begge er fulle. o = { x, y, w, bottom, newPage: () => y på den nye siden }. → y etter tabellen.
+function _pdfLegendDrawPaged(doc, rows, o) {
+  const cw = (o.w - 6) / 2, ms = _pdfLegendRowMetrics(doc, rows, cw);
+  let i = 0, y = o.y, yEnd = o.y;
+  while (i < ms.length) {
+    const cap = o.bottom - y - PDF_LEGEND_HEAD_MM - 1;
+    const rem = ms.slice(i).reduce((s, m) => s + m.h, 0);
+    yEnd = y;
+    for (let c = 0; c < 2 && i < ms.length; c++) {
+      const lim = c === 0 ? Math.min(cap, rem / 2 + PDF_LEGEND_ROW_MM / 2) : cap;
+      const part = []; let h = 0;
+      while (i < ms.length && (!part.length || h + ms[i].h <= lim + 0.01)) { h += ms[i].h; part.push(ms[i++]); }
+      yEnd = Math.max(yEnd, y + _pdfLegendDrawCol(doc, part, o.x + c * (cw + 6), y, cw));
+    }
+    if (i < ms.length) y = o.newPage();
+  }
+  return yEnd;
+}
+// Samme forklaring som HTML, under forhåndsvisningen i PDF-dialogen (155) når Nummer er valgt.
+function _pdfLegendHtml(room) {
+  const rows = _pdfLegendRows(room);
+  if (!rows.length) return '';
+  const td = 'padding:2px 10px 2px 0';
+  const tr = rows.map(r => `<tr><td style="${td};font-weight:700">${r.n}</td><td style="${td}"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${r.color}"></span></td><td style="${td}">${_esc(r.name)}</td><td style="${td};white-space:nowrap">${_esc(r.dim)}</td><td style="padding:2px 0;text-align:right;white-space:nowrap">${_esc(r.effect)}</td></tr>`).join('');
+  return `<div id="exp-pv-legend" style="margin-top:10px">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Forklaring — ${rows.length} nummer${rows.length > PDF_LEGEND_MAX_ROWS ? ' (egen side i PDF-en)' : ''}</div>
+    <div style="max-height:140px;overflow:auto"><table style="border-collapse:collapse;font-size:11px;width:100%">${tr}</table></div></div>`;
+}
+// Romsidens oppsett i Nummer-modus: tegningens plass + hvor forklaringen står. Regelen (STEG 0.3,
+// docs/196/RAPPORT.md): den plasseringen som gir STØRST tegning vinner; ved likt står tabellen øverst
+// til høyre.
+//   'side'  — tabellen øverst til høyre, tegningen til venstre. Høye, smale rom: bildet er høydebegrenset
+//             og har ledig bredde (nedkjøringen: 81,5 mm bilde, 98,5 mm ledig) — tegningen krymper ikke.
+//   'below' — tabellen rett under tegningen, i to spalter fra fem rader. Brede rom: bildet fyller bredden,
+//             og ofte er det ledig høyde under, så tegningen krymper lite eller ikke i det hele tatt.
+//   'page'  — flere enn 15 rader: egen side rett etter romsiden; tegningen er som i Label-modus.
+//   'none'  — ingen elementer å nummerere.
+function _pdfNumberLayout(room, doc, yTop) {
+  const base = _pdfRoomImgLayout(room, doc, yTop);
+  const rows = _pdfLegendRows(room);
+  const out = { ...base, place: 'none', rows, table: null };
+  if (!rows.length) return out;
+  if (rows.length > PDF_LEGEND_MAX_ROWS) { out.place = 'page'; return out; }
+  const M = PDF_PAGE_M, pw = 210 - 2 * M, aspect = base.aspect, avail = Math.max(40, base.availH);
+  // A · ved siden av: tegningen aldri bredere enn i Label-modus, tabellen minst 70 mm
+  const ws = Math.min(base.imgW2, pw - PDF_LEGEND_GAP_MM - PDF_LEGEND_SIDE_MIN_MM);
+  const tw = Math.min(PDF_LEGEND_SIDE_MAX_MM, pw - PDF_LEGEND_GAP_MM - ws);
+  const mS = _pdfLegendMeasure(doc, rows, tw, 1);
+  // B · under: tabellens høyde tas av bildets høydebudsjett
+  const mB = _pdfLegendMeasure(doc, rows, pw, rows.length >= 5 ? 2 : 1);
+  const hB = Math.min(pw * aspect, Math.max(40, base.availH - mB.h - 3));
+  const wB = hB < pw * aspect ? hB / aspect : pw;
+  if (mS.h <= avail && ws >= wB - 0.5) {
+    out.place = 'side'; out.imgW2 = ws; out.imgH = ws * aspect;
+    out.imgX = M + (pw - PDF_LEGEND_GAP_MM - tw - ws) / 2;
+    out.table = { x: M + pw - tw, w: tw, m: mS };
+  } else {
+    out.place = 'below'; out.imgW2 = wB; out.imgH = hB; out.imgX = M + (pw - wB) / 2;
+    out.table = { x: M, w: pw, m: mB };
+  }
+  return out;
+}
+

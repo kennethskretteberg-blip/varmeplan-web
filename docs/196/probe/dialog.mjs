@@ -1,0 +1,48 @@
+// 196: PDF-dialogen ende til ende med EKTE klikk. Bruk: node -e ' import("./docs/196/probe/dialog.mjs") '
+import { openPage, sov } from './cdp.mjs';
+import { FIX } from './fixture.mjs';
+const ut = [];
+const si = (navn, ok, fikk) => { ut.push((ok ? '+ ' : '- ') + navn + (ok ? '' : ' → fikk ' + JSON.stringify(fikk))); };
+const p = await openPage('http://localhost:4000/');
+await p.eval(`(() => { localStorage.removeItem('varmeplan_pdf_mark_mode'); ${FIX} return 1; })()`);
+await p.eval(`(() => { window.__kall = []; window.exportPDFGuarded = o => { window.__kall.push(o && o.marking); return Promise.resolve(true); }; _showExportDialog(); _expPreviewRoom(21); return 1; })()`);
+await sov(300);
+const tilstand = `(() => { const r = v => document.querySelector('input[name="exp-mark"][value="' + v + '"]'); const pr = _pdfPrev && _pdfPrev.res;
+  return { label: !!r('label') && r('label').checked, number: !!r('number') && r('number').checked, sirkler: pr && pr.numbers ? pr.numbers.length : null,
+    labels: pr && pr.labels ? Object.keys(pr.labels.matRect).filter(id => S.mats.some(m => m.id === +id && m.roomId === 21)).length : null,
+    forklaring: document.querySelectorAll('#exp-pv-legend tr').length, ls: localStorage.getItem('varmeplan_pdf_mark_mode'), synlig: document.getElementById('export-dialog').style.display !== 'none' }; })()`;
+let t = await p.eval(tilstand);
+si('1: dialogen åpner med Label valgt; forhåndsvisningen har 7 labels, ingen sirkler, ingen forklaring', t.label && !t.number && t.sirkler === null && t.labels === 7 && t.forklaring === 0, t);
+await p.shot('docs/196/dialog-label.png');
+await p.clickSel('input[name="exp-mark"][value="number"]');
+await sov(400);
+t = await p.eval(tilstand);
+si('2: klikk på Nummer → forhåndsvisningen tegnes på nytt: 7 sirkler, 0 labels, forklaring med 7 rader', t.number && t.sirkler === 7 && t.labels === 0 && t.forklaring === 7, t);
+si('2: valget lagres ikke før PDF-en lages', t.ls === null, t.ls);
+await p.shot('docs/196/dialog-nummer.png');
+await p.clickSel('button[onclick="_runExportPDF()"]');
+await sov(300);
+const kall = await p.eval('window.__kall');
+t = await p.eval(tilstand);
+si('3: «Generer PDF» sender marking: number, dialogen lukkes, valget er lagret', kall.length === 1 && kall[0] === 'number' && !t.synlig && t.ls === 'number', { kall, t });
+await p.eval('(() => { _showExportDialog(); return 1; })()');
+t = await p.eval(tilstand);
+si('4: neste eksport i samme økt: Nummer står valgt', t.number && !t.label, t);
+// Ny innlasting av siden (ny økt i samme nettleser)
+await p.goto('http://localhost:4000/');
+await p.eval(`(() => { ${FIX} window.__kall = []; window.exportPDFGuarded = o => { window.__kall.push(o && o.marking); return Promise.resolve(true); }; _showExportDialog(); _expPreviewRoom(21); return 1; })()`);
+await sov(300);
+t = await p.eval(tilstand);
+si('5: etter ny innlasting: Nummer står valgt, og forhåndsvisningen åpner med sirkler', t.number && t.sirkler === 7 && t.forklaring === 7, t);
+await p.clickSel('input[name="exp-mark"][value="label"]');
+await sov(400);
+t = await p.eval(tilstand);
+si('6: klikk tilbake på Label → 7 labels, ingen sirkler, ingen forklaring', t.label && t.sirkler === null && t.labels === 7 && t.forklaring === 0, t);
+await p.clickSel('button[onclick="_runExportPDF()"]');
+await sov(300);
+t = await p.eval(tilstand);
+si('7: «Generer PDF» med Label → lagret valg er Label igjen', (await p.eval('window.__kall'))[0] === 'label' && t.ls === 'label', t);
+await p.eval(`(() => { localStorage.removeItem('varmeplan_pdf_mark_mode'); return 1; })()`);
+for (const l of ut) console.log(l);
+console.log(ut.every(l => l[0] === '+') ? 'ALT OK' : 'FEIL');
+await p.close(); process.exit(0);

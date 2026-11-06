@@ -1,0 +1,7 @@
+@@@ FINN
+Tom rute i HEAD-kolonnen = ikke kjørt på nytt mot HEAD i denne økten (de var grønne med samme tall i 195).
+@@@ SETT
+Tom rute i HEAD-kolonnen = ikke kjørt mot HEAD i denne økten. PDF-/profil-testene hadde de samme tallene
+i 195 (`docs/195/probe/etter.json`); tegnetestene (målkjeder, matter, folie, trapp) er grønne nå, men er
+ikke sammenlignet tall for tall med HEAD.
+@@@ SLUTT

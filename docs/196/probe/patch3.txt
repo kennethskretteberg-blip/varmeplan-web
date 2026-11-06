@@ -1,0 +1,73 @@
+196 · patch 3: romsiden i exportPDF — oppsett, bilde, forklaring ved siden av / under / på egen side.
+
+@@@ FINN
+    const _lay = _pdfRoomImgLayout(room, doc, y);
+@@@ SETT
+    // 196: Nummer-modus har sitt eget oppsett (tegning + forklaringstabell). Label-modus går samme
+    // vei som før, med samme kall.
+    const _numMode = opts.marking === 'number';
+    const _lay = _numMode ? _pdfNumberLayout(room, doc, y) : _pdfRoomImgLayout(room, doc, y);
+@@@ SLUTT
+
+@@@ FINN
+      const imgRes = _renderRoomToImage(room, { focusRoom: true, targetWidthMm: imgW2 });
+      if (imgRes && imgRes.url) {
+        doc.addImage(imgRes.url, 'JPEG', imgX, y, imgW2, imgH);
+        y += imgH + 3;
+@@@ SETT
+      const imgRes = _numMode ? _renderRoomToImage(room, { focusRoom: true, targetWidthMm: imgW2, numberMode: true })
+                              : _renderRoomToImage(room, { focusRoom: true, targetWidthMm: imgW2 });
+      if (imgRes && imgRes.url) {
+        doc.addImage(imgRes.url, 'JPEG', imgX, y, imgW2, imgH);
+        // 196: forklaringen øverst til høyre, ved siden av tegningen — tekst i PDF-en, ikke bilde.
+        // Er tabellen høyere enn tegningen (lavt rom), fortsetter siden under tabellen.
+        if (_numMode && _lay.place === 'side') {
+          _pdfLegendDraw(doc, _lay.table.m, _lay.table.x, y);
+          y += Math.max(0, _lay.table.m.h - imgH);
+        }
+        y += imgH + 3;
+@@@ SLUTT
+
+@@@ FINN
+          y += 3;
+        }
+        y += 3;
+      }
+    } catch(e) { console.warn('PDF room image failed:', e); }
+@@@ SETT
+          y += 3;
+        }
+        y += 3;
+        // 196: forklaringen rett under tegningen (brede rom). Høyden er tatt av bildets budsjett
+        // (_pdfNumberLayout), så blokkene under får plass på samme side som før.
+        if (_numMode && _lay.place === 'below') y += _pdfLegendDraw(doc, _lay.table.m, _lay.table.x, y - 2) + 1;
+      }
+    } catch(e) { console.warn('PDF room image failed:', e); }
+@@@ SLUTT
+
+@@@ FINN
+      y += 2;
+    }
+  }
+
+  // ── Stair detail pages ──
+@@@ SETT
+      y += 2;
+    }
+
+    // 196: flere enn 15 nummer → forklaringen på egen side rett etter romsiden («<rom> – forklaring»).
+    // Tegningen på romsiden er da like stor som i Label-modus.
+    if (_numMode && _lay.place === 'page') {
+      const _forklTittel = () => {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(20, 60, 130);
+        doc.text((room.name || 'Rom') + ' – forklaring', M, y + 5);
+        y += 9; _line(y); y += 5;
+      };
+      _addPage(); _forklTittel();
+      y = _pdfLegendDrawPaged(doc, _lay.rows, { x: M, y, w: pw, bottom: H - M,
+        newPage: () => { _addPage(); _forklTittel(); return y; } }) + 4;
+    }
+  }
+
+  // ── Stair detail pages ──
+@@@ SLUTT

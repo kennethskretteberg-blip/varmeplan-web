@@ -1,0 +1,63 @@
+196 · patch 4: PDF-dialogen (valget), forhåndsvisningen og _runExportPDF.
+
+@@@ FINN
+        <!-- 051: ingen labelstørrelse-valg HER med vilje. Papirregelen gjør at normalvalget er
+@@@ SETT
+        <!-- 196: merking på romsidene — Label (som før) eller Nummer (sirkel per element +
+             forklaringstabell). Huskes per bruker; forhåndsvisningen av et rom følger valget straks. -->
+        ${hasRooms ? `<div class="exp-group">
+          <div class="exp-group-title">Merking på tegningen</div>
+          <label class="exp-check" title="Produktnavn og nøkkeltall i en label på hvert element (som før)"><input type="radio" name="exp-mark" value="label"${_pdfMarkPref() === 'number' ? '' : ' checked'} onchange="_expMarkChanged()"> Label</label>
+          <label class="exp-check" title="Et nummer i en sirkel på hvert element, og en forklaringstabell med produkt, mål og effekt ved siden av tegningen"><input type="radio" name="exp-mark" value="number"${_pdfMarkPref() === 'number' ? ' checked' : ''} onchange="_expMarkChanged()"> Nummer <span style="font-size:11px;color:var(--muted)">(sirkel + forklaring)</span></label>
+        </div>` : ''}
+        <!-- 051: ingen labelstørrelse-valg HER med vilje. Papirregelen gjør at normalvalget er
+@@@ SLUTT
+
+@@@ FINN
+function _expPreviewRoom(roomId) {
+@@@ SETT
+// 196: «Merking på tegningen» endret i dialogen → forhåndsvisningen av rommet tegnes på nytt i den
+// nye modusen (bildet og forklaringen under det).
+function _expMarkChanged() {
+  const p = _pdfPrev;
+  if (p && p.kind === 'room' && p.roomId != null && p.cv && p.cv.isConnected) _expPreviewRoom(p.roomId);
+}
+
+function _expPreviewRoom(roomId) {
+@@@ SLUTT
+
+@@@ FINN
+      <div>Effekt: ${Math.round(stats.totalW)} W · ${wm2} W/m²</div>` });
+}
+@@@ SETT
+      <div>Effekt: ${Math.round(stats.totalW)} W · ${wm2} W/m²</div>` + (_pdfMarkDialogMode() === 'number' ? _pdfLegendHtml(room) : '') });   // 196
+}
+@@@ SLUTT
+
+@@@ FINN
+    const resR = _renderRoomToImage(room, { focusRoom: true, targetWidthMm: _pdfRoomImgLayout(room).imgW2, toCanvas: p.hi, noUrl: true, captureLabels: true });
+@@@ SETT
+    // 196: samme merking som PDF-en får — i Nummer-modus også samme bildebredde (_pdfNumberLayout).
+    const resR = _pdfMarkDialogMode() === 'number'
+      ? _renderRoomToImage(room, { focusRoom: true, targetWidthMm: _pdfNumberLayout(room).imgW2, toCanvas: p.hi, noUrl: true, captureLabels: true, numberMode: true })
+      : _renderRoomToImage(room, { focusRoom: true, targetWidthMm: _pdfRoomImgLayout(room).imgW2, toCanvas: p.hi, noUrl: true, captureLabels: true });
+@@@ SLUTT
+
+@@@ FINN
+    freeText: document.getElementById('exp-freetext')?.value?.trim() || ''
+  };
+@@@ SETT
+    freeText: document.getElementById('exp-freetext')?.value?.trim() || '',
+    marking: _pdfMarkDialogMode()   // 196: 'label' | 'number'
+  };
+@@@ SLUTT
+
+@@@ FINN
+  const _spEl = document.getElementById('exp-savepicker');
+  if (_spEl) _pdfSetSavePickerPref(_spEl.checked);
+@@@ SETT
+  const _spEl = document.getElementById('exp-savepicker');
+  if (_spEl) _pdfSetSavePickerPref(_spEl.checked);
+  // 196: «Merking på tegningen» huskes per bruker på samme måte (bare når valget finnes i dialogen).
+  if (document.querySelector('input[name="exp-mark"]')) _pdfSetMarkPref(opts.marking);
+@@@ SLUTT

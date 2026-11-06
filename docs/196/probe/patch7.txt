@@ -1,0 +1,23 @@
+196 · patch 7: luft mellom forklaringen under tegningen og «Areal, effekt og dekning»; énspaltet
+tabell under tegningen er 110 mm bred (ikke 180 — Mål-kolonnen havnet langt fra produktnavnet).
+
+@@@ FINN
+  const mB = _pdfLegendMeasure(doc, rows, pw, rows.length >= 5 ? 2 : 1);
+  const hB = Math.min(pw * aspect, Math.max(40, base.availH - mB.h - 3));
+@@@ SETT
+  const twoCol = rows.length >= 5, wT = twoCol ? pw : Math.min(pw, 110);
+  const mB = _pdfLegendMeasure(doc, rows, wT, twoCol ? 2 : 1);
+  const hB = Math.min(pw * aspect, Math.max(40, base.availH - mB.h - 5));
+@@@ SLUTT
+
+@@@ FINN
+    out.table = { x: M, w: pw, m: mB };
+@@@ SETT
+    out.table = { x: M, w: wT, m: mB };
+@@@ SLUTT
+
+@@@ FINN
+        if (_numMode && _lay.place === 'below') y += _pdfLegendDraw(doc, _lay.table.m, _lay.table.x, y - 2) + 1;
+@@@ SETT
+        if (_numMode && _lay.place === 'below') y += _pdfLegendDraw(doc, _lay.table.m, _lay.table.x, y - 1) + 4;
+@@@ SLUTT

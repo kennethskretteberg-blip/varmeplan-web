@@ -1,0 +1,56 @@
+196 · patch 1: label-vaktene (seks tegnesteder) og sirkel-passet i render().
+
+@@@ FINN
+    if (S.ui.showStripLabels) {
+      const prod = _stripProduct(strip);
+@@@ SETT
+    if (S.ui.showStripLabels && !S.ui._pdfNumberMode) {   // 196: Nummer-modus tegner sirkler i stedet (_drawPdfNumberBadges)
+      const prod = _stripProduct(strip);
+@@@ SLUTT
+
+@@@ FINN
+    if (S.ui.showStripLabels) _drawFoilFreeLabel(ff);
+@@@ SETT
+    if (S.ui.showStripLabels && !S.ui._pdfNumberMode) _drawFoilFreeLabel(ff);   // 196
+@@@ SLUTT
+
+@@@ FINN
+  // Label-posisjon: lagret labelPos (drag), ellers rom-sentrum forskjøvet litt ned
+  // for ikke å overlappe romnavnet (som sitter i sentroiden).
+@@@ SETT
+  if (S.ui._pdfNumberMode) return;   // 196: Nummer-modus — sirkelen tegnes av _drawPdfNumberBadges
+  // Label-posisjon: lagret labelPos (drag), ellers rom-sentrum forskjøvet litt ned
+  // for ikke å overlappe romnavnet (som sitter i sentroiden).
+@@@ SLUTT
+
+@@@ FINN
+    if (_hasGeom && cable.labelVisible !== false) {
+@@@ SETT
+    if (_hasGeom && cable.labelVisible !== false && !S.ui._pdfNumberMode) {   // 196
+@@@ SLUTT
+
+@@@ FINN
+    // FEIL 2: label vises alltid nå (bare et blokkscope, ikke lenger et betinget dimOther-uttrykk).
+    {
+@@@ SETT
+    // FEIL 2: label vises alltid nå (bare et blokkscope, ikke lenger et betinget dimOther-uttrykk).
+    // 196: unntatt i PDF-ens Nummer-modus, der matta får en sirkel med nummer i stedet.
+    if (!S.ui._pdfNumberMode) {
+@@@ SLUTT
+
+@@@ FINN
+  if (!active) {
+    const cat2 = cat || _matFreeCatalog(mp);
+@@@ SETT
+  if (!active && !S.ui._pdfNumberMode) {   // 196: Nummer-modus → sirkel i stedet for label
+    const cat2 = cat || _matFreeCatalog(mp);
+@@@ SLUTT
+
+@@@ FINN
+  drawZones();
+  if (S.ui.drawMode === 'import') drawImportOverlay();
+@@@ SETT
+  drawZones();
+  _drawPdfNumberBadges();   // 196: nummer i sirkel per element — bare på PDF-ens romside i Nummer-modus
+  if (S.ui.drawMode === 'import') drawImportOverlay();
+@@@ SLUTT

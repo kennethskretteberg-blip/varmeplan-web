@@ -1,0 +1,26 @@
+196 · patch 5: sirkelen 4,6 mm (var 5,0) og mindre luftkrav — nedkjøringens 0,5 m-matter (5,15 mm
+senteravstand på papiret) får da sirklene på rett linje i stedet for i sikksakk.
+
+@@@ FINN
+const PDF_NUM_DIA_MM = 5.0;          // sirkelens diameter på ferdig side
+@@@ SETT
+const PDF_NUM_DIA_MM = 4.6;          // sirkelens diameter på ferdig side (kravet er minst ca. 4 mm)
+@@@ SLUTT
+
+@@@ FINN
+  const placed = [], gap = rPx * 0.25;
+@@@ SETT
+  const placed = [], gap = rPx * 0.15;
+@@@ SLUTT
+
+@@@ FINN
+// side, uansett romstørrelse), og en forklaringstabell som TEKST i PDF-en (jsPDF, ikke en del av bildet).
+@@@ SETT
+// side, uansett romstørrelse — 4,6 mm), og en forklaringstabell som TEKST i PDF-en (jsPDF, ikke en del av bildet).
+@@@ SLUTT
+
+@@@ FINN
+// bildet, så px per mm = (px per cm) ÷ (mm per cm). 5 mm sirkel og 8 pt tall uansett romstørrelse.
+@@@ SETT
+// bildet, så px per mm = (px per cm) ÷ (mm per cm). 4,6 mm sirkel og 8 pt tall uansett romstørrelse.
+@@@ SLUTT
