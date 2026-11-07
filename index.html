@@ -73318,6 +73318,7 @@ canvas.addEventListener('mousedown', e=>{
   if (_takDraw && _takDrawMouseDown(e)) return;   // 204: «Tegn omrisset selv» eier venstreklikket
   if (_takFeat && _takFeatMouseDown(e)) return;   // 206: rennestrekk/nedløp/gradrenne-verktøyet eier venstreklikket
   if (_takFeatPickMouseDown(e)) return;   // 206: klikk på et rennestrekk/nedløp velger det — før kantene (renna ligger på takfoten)
+  if (_takFlatPickMouseDown(e)) return;   // 212: klikk på et sluk, en gradrenne eller et varmefelt velger det
   if (_takEdgeMouseDown(e)) return;   // 205: klikk på en takkant → typemenyen. Bare i tak-modulen; bom går videre
   // Frihånds-matte: klikk setter neste bane (snappet til raster). Dobbeltklikk avslutter
   // (dobbeltklikkets første klikk la til en bane → angre den før commit).
@@ -81286,7 +81287,7 @@ function _takHasWork(t) {
   // 205: et kantFORSLAG er ikke arbeid (det lages på nytt) — bare kanter brukeren har rettet/bekreftet.
   // 211: høyder brukeren har OPPGITT på et tegnet bygg (USER_DRAWN) er også arbeid — standardverdien
   // for terrenget (0, `standard: true`) er det ikke.
-  return (t.features || []).length > 0 || (t.edges || []).some(e => e.prov && e.prov.source === 'USER_CONFIRMED') || (t.surfaces || []).some(s =>
+  return (t.features || []).length > 0 || !!(t.flat && ((t.flat.features || []).length || t.flat.cable)) || (t.edges || []).some(e => e.prov && e.prov.source === 'USER_CONFIRMED') || (t.surfaces || []).some(s =>
     Object.values(s.heights || {}).some(h => h && h.prov && (h.prov.source === 'USER_CONFIRMED' || (h.prov.source === 'USER_DRAWN' && !h.prov.standard))) ||
     (s.roof_type && s.roof_type.prov && s.roof_type.prov.source === 'USER_CONFIRMED'));
 }
@@ -81652,6 +81653,7 @@ function _takDrawCanvas() {
   }
   const tk = _takOf(fid);
   if (tk && (tk.edges || []).length) _takDrawEdges(fid, tk);   // 205: kanttypene i farge, oppå omrisset
+  if (tk && _takIsFlat(s) && (tk.flat || (_takFeat && TAK_FLAT_TOOLS.includes(_takFeat.kind)))) _takFlatDraw(fid, tk);   // 212: varmefelt, gradrenner, sluk
   if (tk && ((tk.features || []).length || _takFeat)) _takDrawFeatures(fid, tk);   // 206: renner, nedløp, gradrenner oppå kantene
   const D = _takDraw;
   if (D && D.fid === fid && !S.ui?._pdfMode) {
@@ -81789,6 +81791,7 @@ function _takCardHtml(fid) {
     ${!rt.value ? `<div style="color:var(--warn,#d97706);font-size:11px">⚠ Velg taktype — den styrer hvilke kanter som får renne.</div>` : ''}
     ${row('Terreng', 'ground_z')}
     ${_takEdgesCardHtml(fid, t, s)}
+    ${_takFlatCardHtml(fid, t, s)}
     ${_takFeaturesCardHtml(fid, t, s)}
     ${t && t.model ? `<div style="font-size:10px;margin-top:3px">${dim(esc(t.model.attribution || '© Kartverket'))}</div>` : ''}
     <div style="margin-top:4px">${t && t.building ? '' : _takBtn(`_takDrawStart(${fid})`, 'Tegn på nytt')}</div>`);
@@ -81830,7 +81833,7 @@ function _takDrawnCardInner(fid, t, s) {
     ${eaveMissing ? warn('Gesimshøyden mangler — uten den får nedløpene ingen lengde.') : ''}
     ${rt.value === 'pitched' ? row('Møne', 'ridge_m', 'over terreng · bare for skråtak') : ''}
     ${row('Terreng', 'ground_z', 'nullpunkt for høydene · valgfritt')}
-    ${blocked ? '' : _takEdgesCardHtml(fid, t, s) + _takFeaturesCardHtml(fid, t, s)}
+    ${blocked ? '' : _takEdgesCardHtml(fid, t, s) + _takFlatCardHtml(fid, t, s) + _takFeaturesCardHtml(fid, t, s)}
     <div style="margin-top:4px">${_takBtn(again, 'Tegn på nytt')}${_takBtn(`_takStartOver(${fid})`, 'Velg en annen vei')}</div>`;
 }
 /** 211: tilbake til de tre valgene (taket fjernes — kan angres). */
@@ -82704,7 +82707,10 @@ function _takFeatStart(fid, kind) {
                 valley: 'Klikk toppen av gradrenna, så bunnen · Esc avslutter',
                 skylight: 'Klikk på taket for å plassere et takvindu · Esc avslutter',
                 obstacle: 'Klikk på taket eller på et rennestrekk for å plassere en hindring · Esc avslutter',
-                start: 'Klikk på et nedløp (start nede i nedløpet) eller på et rennestrekk · Esc avslutter' }[kind];
+                start: 'Klikk på et nedløp (start nede i nedløpet) eller på et rennestrekk · Esc avslutter',
+                drain: 'Klikk på taket der sluket står · Esc avslutter',                                     // 212
+                fvalley: 'Klikk den ene enden (sluk eller parapet), så den andre · Esc avslutter',
+                field: 'Klikk hjørnene i varmefeltet · Enter eller første hjørne lukker · Esc avslutter' }[kind];
   _showToast && _showToast(msg, 'info');
   renderSidebar(); render();
 }
@@ -82782,6 +82788,7 @@ function _takFeatMouseDown(e) {
     return true;
   }
   if (F.kind === 'skylight' || F.kind === 'obstacle' || F.kind === 'start' || F.kind === 'like') return _takObjMouseDown(F, w, sx, sy);   // 209
+  if (TAK_FLAT_TOOLS.includes(F.kind)) return _takFlatToolMouseDown(F, w, sx, sy);   // 212: sluk, gradrenne, varmefelt
   return false;
 }
 function _takFeatMouseMove(e) {
@@ -82790,10 +82797,12 @@ function _takFeatMouseMove(e) {
   if (F.kind === 'gutter') { const h = _takHitGutterEdge(F.fid, w, sx, sy, F.edgeId); F.hover = h ? { edgeId: h.e.id, s: h.s, ok: _takEdgeTakesGutter(_takOf(F.fid), h.e) } : null; }
   else if (F.kind === 'downspout') { const h = _takHitGutter(F.fid, w, sx, sy); F.hover = h ? { gutter: h.g.id, s: h.s } : null; }
   else if (F.kind === 'skylight' || F.kind === 'obstacle' || F.kind === 'start' || F.kind === 'like') F.hover = _takObjHover(F, w, sx, sy);   // 209
+  else if (TAK_FLAT_TOOLS.includes(F.kind)) F.hover = _takFlatToolHover(F, w, sx, sy);   // 212
   else F.hover = { pt: _takValleySnap(F.fid, w) };
   markDirty();
 }
 function _takFeatKey(e) {
+  if (e.key === 'Enter' && _takFeat.kind === 'field') { e.preventDefault(); _takFlatFieldFinish(); return true; }   // 212: Enter lukker varmefeltet
   if (e.key === 'Escape') {
     e.preventDefault();
     if (_takFeat.pts.length) { _takFeat.pts = []; _takFeat.edgeId = null; render(); } else _takFeatStop();
@@ -83009,8 +83018,9 @@ function _takFeaturesCardHtml(fid, t, s) {
   const anyEave = _takEdgesOf(t).some(e => e.kind === 'outline' && _takEdgeTakesGutter(t, e));
   const F = _takFeat && _takFeat.fid === fid ? _takFeat : null;
   let h = `<div class="tak-feat-card" style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px"><div style="font-weight:700">Renner og nedløp</div>`;
-  if (F && TAK_OBJ_TOOLS.includes(F.kind)) {
-    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk')}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp') : ''}${_takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne')}</div>`;   // 209: verktøyboksen står under «Takvindu og hindringer»
+  const flat212 = _takIsFlat(s);   // 212: på flatt tak hører gradrenna til flatt-tak-kortet (bredde × W/m², ikke løp × lengde)
+  if (F && (TAK_OBJ_TOOLS.includes(F.kind) || TAK_FLAT_TOOLS.includes(F.kind))) {
+    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk')}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp') : ''}${flat212 ? '' : _takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne')}</div>`;   // 209: verktøyboksen står under «Takvindu og hindringer»
   } else if (F) {
     const txt = { gutter: F.whole ? 'Klikk en takfot — hele kanten blir ett strekk.' : (F.edgeId ? 'Klikk sluttpunktet på samme kant.' : 'Klikk startpunktet på en takfot.'),
                   downspout: 'Klikk på et rennestrekk.', valley: F.pts.length ? 'Klikk bunnen av gradrenna.' : 'Klikk toppen av gradrenna.' }[F.kind];
@@ -83019,7 +83029,7 @@ function _takFeaturesCardHtml(fid, t, s) {
       ${F.kind === 'gutter' ? `<div>${_takBtn('_takFeatWhole(true)', 'Hele kanten', F.whole)}${_takBtn('_takFeatWhole(false)', 'Fra–til', !F.whole)}</div>` : ''}
       <div>${_takBtn('_takFeatStop()', 'Ferdig', true)}</div></div>`;
   } else {
-    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk', anyEave && !G.length)}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp', !D.length) : ''}${_takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne')}</div>`;
+    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk', anyEave && !G.length)}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp', !D.length) : ''}${flat212 ? '' : _takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne')}</div>`;
     if (!anyEave) h += warn(s.roof_type.value === 'flat' ? 'Ingen kant har utvendig renne. Merk en kant som takfot for å legge et rennestrekk.' : 'Ingen kant er merket takfot ennå.');
   }
   for (const g of G) {
@@ -83156,7 +83166,7 @@ function _takCableSumHtml(t) {
 // CABLE_START = { id: 's1', type: 'CABLE_START', on: { type: 'DOWNSPOUT', id } | { type: 'GUTTER', id, at_m },
 //   geometry: { kind: 'point', pt }, prov }             // ett per tak. Nede i et nedløp er lovlig (Kenneth 07.11).
 //
-// SNOW_GUARD/ROOF_DRAIN står i planen (§6.3), men finnes ikke i koden — de er ikke laget her.
+// SNOW_GUARD står i planen (§6.3), men finnes ikke i koden. ROOF_DRAIN kom med 212 — i S.tak[fid].flat, ikke her.
 // Startpunktet endrer ALDRI kabelmeter: det sorterer bare radene i _takCableRows (_takCableOrder).
 // «Kabel må forbi» er brukerens eget tillegg — en egen rad (⤳) i Kabelmeter, aldri et tall appen finner på.
 // «Finn like»: taket har ingen takflater (planes = []), så «like steder» kan bare komme fra OMRISSET:
@@ -84123,6 +84133,781 @@ function _takSectionPDF(fid, on, opts) {
 // byte-identisk, omrisset havner riktig i verden (hjørne mot kjent UTM), høydene har height_ref + prov,
 // statuskortet viser opphav, retting gir USER_CONFIRMED/«(rettet)», tjenestefeil gir «Prøv igjen», et svar
 // som kommer etter at bygget er byttet forkastes, manuell tegning virker, og angre fjerner taket.
+// ═══ 212 · FLATT TAK — sluk, gradrenner og varmefelt; c/c og kabelmeter regnes av flateeffekten ═════════
+// Kenneth 07.11.2026. Samme Tak-modul, annen objektpalett: taktypen hører til takflaten (204 B/E), og et flatt
+// tak har parapet i stedet for takfot (205). Tre metoder fra Cenikas animasjon «Flatt tak»:
+//   1 · varme i sluket (ring rundt sluket + kabel ned i røret) — grunnlaget, kan stå alene
+//   2 · varme i gradrennene (bånd mellom slukene, bredde × W/m²)
+//   3 · varme på hele taket (varmefelt, areal × W/m²)
+//
+// ET SLUK ER IKKE ET NEDLØP. Nedløpet på et skråtak går utvendig og lengden følger byggehøyden (206). Røret fra et
+// sluk går INNVENDIG gjennom et oppvarmet bygg: kabelen føres bare ned til frostfritt nivå, resten av røret ligger
+// i varmt rom. Lengden henger derfor ikke sammen med byggehøyden, og nedløpsmodellen (_takDownpipeCable*) brukes
+// ALDRI her. `pipe_cable_m` er brukerens eget tall — tomt som standard, og tomt betyr «lengde mangler», aldri 0.
+//
+// c/c REGNES, den oppgis ikke. Formelen er rommenes (W/m² = W/m × 100 / CC_cm — se _cableWm2Floor), snudd:
+//   c/c (m) = kabelens W/m ÷ ønsket W/m²
+//   kabelmeter = areal (m²) × W/m² ÷ W/m        (= areal ÷ c/c — testen regner begge veier)
+//   antall løp = dekket bredde (m) ÷ c/c
+// Grensene er rommenes: _ccLimits (016 — kabelens minste og anbefalte største c/c) og 159-advarselen for
+// flateeffekt over taket (_wm2OverCore, samme tekst som romkortet). Taket er utendørs-taket i _moduleContext.
+//
+// Lagres i S.tak[fid].flat — IKKE i t.features. Da kan ingen skråtaksfunksjon (206–210: _takRecalc,
+// _takCableRows, _takAccessories, snittet) noen gang se et sluk eller en flat gradrenne. Uten flate objekter finnes
+// ikke `flat` i det hele tatt, så et tak lagret før 212 er byte-identisk.
+//
+// S.tak[fid].flat = {
+//   v: 1,
+//   cable: { product_id, family, name, watt_per_m, min_spacing_mm, max_spacing_mm, prov } | null,   // fra heating_products
+//   setup: 'drains' | 'valleys' | 'field' | null,   // valgt oppsett. null = avledet (_takFlatSetup). Spm. 1: utelukker 2 og 3 hverandre?
+//   features: [ ROOF_DRAIN | VALLEY_GUTTER | HEAT_FIELD ],
+// }
+// ROOF_DRAIN    = { id: 'sl<n>', type, surface, geometry: { kind: 'point', pt: {x,y} },
+//                   ring_runs: { value: 2, prov }, ring_r_m: { value: 0.40, prov },        // filmen: 0,33–0,42 m
+//                   pipe_cable_m: { value: null | m, prov },                                // TOMT = mangler
+//                   ring_m, cable_total_m (AVLEDET; null når røret mangler), prov }
+// VALLEY_GUTTER = { id: 'gr<n>', type, roof: 'flat', surface, geometry: { kind: 'polyline', pts: [a, b] },
+//                   width_m: { value, prov }, covered_width_m: { value, prov } (prov.from = 'width_m' → følger bredden),
+//                   wm2: { value, prov }, length_m (AVLEDET, i plan), cable_total_m (AVLEDET), prov }
+// HEAT_FIELD    = { id: 'vf<n>', type, surface, whole: bool (= hele takflaten, følger omrisset),
+//                   geometry: { kind: 'polygon', pts }, wm2: { value, prov }, area_m2, cable_total_m (AVLEDET), prov }
+const TAK_FLAT_TOOLS = ['drain', 'fvalley', 'field'];
+const TAK_FLAT_RING_RUNS_DEFAULT = 2;
+// Ringradien er det ENESTE tallet hentet fra filmen (prompt 212 D): midt i filmens 0,33–0,42 m. Redigerbar.
+const TAK_FLAT_RING_R_DEFAULT_M = 0.40;
+const TAK_FLAT_RING_R_NOTE = 'standard 0,40 m — hentet fra Cenikas animasjon «Flatt tak» (0,33–0,42 m)';
+const TAK_FLAT_COLOR = { ROOF_DRAIN: '#7c3aed', VALLEY_GUTTER: '#1d4ed8', HEAT_FIELD: '#dc2626' };
+const TAK_FLAT_SETUPS = {
+  drains:  { nr: '1',     label: 'Sluk',                 methods: ['ROOF_DRAIN'] },
+  valleys: { nr: '1 + 2', label: 'Sluk + gradrenner',    methods: ['ROOF_DRAIN', 'VALLEY_GUTTER'] },
+  field:   { nr: '1 + 3', label: 'Sluk + varme på taket', methods: ['ROOF_DRAIN', 'HEAT_FIELD'] },
+};
+const TAK_FLAT_MSG_NO_WM2 = 'flateeffekt ikke satt';
+const TAK_FLAT_MSG_NO_CABLE = 'kabel ikke valgt';
+const TAK_FLAT_MSG_NO_PIPE = 'lengde i røret mangler';
+const TAK_FLAT_NO_ADVICE = 'Appen anbefaler ingen flateeffekt (T1) og har ingen kurslengdegrense (T8) — den regner med tallene du oppgir.';
+
+function _takFlatOf(t) { return (t && t.flat) || null; }
+function _takFlatFeats(t, type) { const F = _takFlatOf(t); return ((F && F.features) || []).filter(f => !type || f.type === type); }
+function _takFlatFeat_(t, id) { return _takFlatFeats(t).find(f => f.id === id) || null; }
+function _takFlatNextId(t, pre) {
+  let n = 0;
+  for (const f of _takFlatFeats(t)) { const m = new RegExp('^' + pre + '(\\d+)$').exec(f.id); if (m) n = Math.max(n, +m[1]); }
+  return pre + (n + 1);
+}
+function _takIsFlat(s) { return !!(s && s.roof_type && s.roof_type.value === 'flat'); }
+
+// ── Formelen (ren funksjon) ──
+/** c/c i cm for en kabel med `wpm` W/m som skal gi `wm2` W/m². Rommenes formel W/m² = W/m × 100 / CC_cm, snudd. */
+function _ccCmFromWm2(wpm, wm2) { return wpm > 0 && wm2 > 0 ? wpm * 100 / wm2 : null; }
+/** Kabelen: katalogens rad når den er lastet (W/m leses derfra), ellers øyeblikksbildet som ble lagret ved valget. */
+function _takFlatCable(t) {
+  const F = _takFlatOf(t), c = F && F.cable;
+  if (!c) return null;
+  const p = (typeof HEATING_PRODUCTS !== 'undefined' ? HEATING_PRODUCTS : []).find(x => x.id === c.product_id);
+  return p && p.watt_per_m > 0 ? { ...c, watt_per_m: p.watt_per_m, min_spacing_mm: p.min_spacing_mm ?? c.min_spacing_mm, max_spacing_mm: p.max_spacing_mm ?? c.max_spacing_mm, product: p, live: true }
+                               : { ...c, product: { name: c.name, product_family: c.family, min_spacing_mm: c.min_spacing_mm, max_spacing_mm: c.max_spacing_mm }, live: false };
+}
+/** Utendørs-taket for flateeffekt (450 W/m²) — samme tall som snømodulen, lest fra _moduleContext, ikke skrevet her. */
+function _takFlatWm2Max() { return _moduleContext('snow').wm2Max; }
+/** Regnestykket for ett felt: kabelens W/m, ønsket W/m², areal og (for en gradrenne) dekket bredde.
+ *  → { ok:false, reason } når noe mangler — da finnes INGEN kabelmeter (ikke 0). Ellers c/c, løp, kabelmeter,
+ *  kontrollen begge veier, advarslene og formelen som tekst. */
+function _takFlatCalc(cable, wm2, area_m2, width_m) {
+  if (!(wm2 > 0)) return { ok: false, reason: 'no_wm2', msg: TAK_FLAT_MSG_NO_WM2 };
+  if (!cable || !(cable.watt_per_m > 0)) return { ok: false, reason: 'no_cable', msg: TAK_FLAT_MSG_NO_CABLE };
+  if (!(area_m2 > 0)) return { ok: false, reason: 'no_area', msg: width_m != null ? 'bredde ikke satt' : 'arealet er 0' };
+  const wpm = cable.watt_per_m;
+  const cc_cm = _ccCmFromWm2(wpm, wm2), cc_m = cc_cm / 100;
+  const cable_m = area_m2 * wm2 / wpm;            // kabelmeter = areal × W/m² ÷ W/m
+  const cable_m_cc = area_m2 / cc_m;              // = areal ÷ c/c — samme tall, regnet den andre veien
+  const runs = width_m > 0 ? width_m / cc_m : null;
+  const runsWhole = runs == null || Math.abs(runs - Math.round(runs)) < 0.01;
+  const L = _ccLimits(cable.product || {});
+  const warns = [];
+  const over = _wm2OverCore(Math.round(wm2), _takFlatWm2Max());   // 159: samme advarsel som romkortet
+  if (over) warns.push({ kind: 'wm2', hard: false, kort: over.kort, txt: over.hode + '.' });
+  if (cc_cm < L.minSp - 0.01) warns.push({ kind: 'cc_min', hard: true, txt: `c/c ${_takNum(cc_cm)} cm er tettere enn kabelens minste c/c (${_takNum(L.minSp)} cm) — kan ikke legges.` });
+  else if (_ccOverWarn(cable.product || {}, cc_cm)) warns.push({ kind: 'cc_max', hard: false, txt: _ccWarnText(cable.product || {}, cc_cm, true).replace(/^⚠ /, '') + '.' });
+  const n = v => _takNum(v, Number.isInteger(Math.round(v * 100) / 100) ? 0 : 2);
+  const head = `${n(wpm)} W/m ÷ ${n(wm2)} W/m² = c/c ${_takNum(cc_cm, Math.abs(cc_cm - Math.round(cc_cm)) < 0.05 ? 0 : 1)} cm`;
+  const formula = width_m > 0
+    ? `${head} · ${_takNum(runs, runsWhole ? 0 : 1)} løp over ${_takNum(width_m * 100, 0)} cm · ${_takNum(cable_m, 2)} m`
+    : `${head} · ${_takNum(area_m2, 1)} m² × ${n(wm2)} ÷ ${n(wpm)} = ${_takNum(cable_m, 2)} m`;
+  return { ok: true, wpm, wm2, area_m2, cc_cm, cc_m, cable_m, cable_m_cc, runs, runsWhole, warns, formula };
+}
+/** Ringene rundt sluket: antall × 2πr. Røret: brukerens tall, eller null (mangler). */
+function _takFlatDrainCable(d) {
+  const n = d.ring_runs && d.ring_runs.value, r = d.ring_r_m && d.ring_r_m.value;
+  const ring_m = n > 0 && r > 0 ? n * 2 * Math.PI * r : 0;
+  const pipe = d.pipe_cable_m ? d.pipe_cable_m.value : null;
+  return { ring_m, per_ring_m: r > 0 ? 2 * Math.PI * r : 0, pipe_m: pipe, missing: pipe == null, total_m: pipe == null ? null : ring_m + pipe };
+}
+function _takFlatPolyAreaM2(P) {
+  let A = 0;
+  for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; A += a.x * b.y - b.x * a.y; }
+  return Math.abs(A) / 2 / 10000;
+}
+/** Avledede felt: lengder, areal, kabelmeter. Idempotent. Kjører bare når taket har flate objekter. */
+function _takFlatRecalc(t) {
+  const F = _takFlatOf(t); if (!F) return;
+  const cab = _takFlatCable(t);
+  for (const f of F.features || []) {
+    if (f.type === 'ROOF_DRAIN') { const c = _takFlatDrainCable(f); f.ring_m = c.ring_m; f.cable_total_m = c.total_m; }
+    else if (f.type === 'VALLEY_GUTTER') {
+      const [a, b] = f.geometry.pts; f.length_m = Math.hypot(b.x - a.x, b.y - a.y) / 100;
+      const cw = f.covered_width_m || {};
+      if (!cw.prov || cw.prov.from === 'width_m') f.covered_width_m = { value: f.width_m ? f.width_m.value : null, prov: { source: 'ESTIMATE', confidence: 1, note: 'standard = rennas bredde', from: 'width_m' } };
+      const w = f.covered_width_m.value;
+      const c = _takFlatCalc(cab, f.wm2 && f.wm2.value, w > 0 ? f.length_m * w : 0, w > 0 ? w : null);
+      f.cable_total_m = c.ok ? c.cable_m : null;
+    } else if (f.type === 'HEAT_FIELD') {
+      if (f.whole) { const P = _takOutline(t); if (P.length >= 3) f.geometry = { kind: 'polygon', pts: P.map(p => ({ x: p.x, y: p.y })) }; }
+      f.area_m2 = _takFlatPolyAreaM2(f.geometry.pts || []);
+      const c = _takFlatCalc(cab, f.wm2 && f.wm2.value, f.area_m2, null);
+      f.cable_total_m = c.ok ? c.cable_m : null;
+    }
+  }
+}
+/** Valgt oppsett. Brukerens valg står; ellers avledet av hva som er tegnet. Begge 2 og 3 tegnet uten valg → null (spør). */
+function _takFlatSetup(t) {
+  const F = _takFlatOf(t); if (!F) return 'drains';
+  if (F.setup && TAK_FLAT_SETUPS[F.setup]) return F.setup;
+  const v = _takFlatFeats(t, 'VALLEY_GUTTER').length, f = _takFlatFeats(t, 'HEAT_FIELD').length;
+  return v && f ? null : v ? 'valleys' : f ? 'field' : 'drains';
+}
+/** Summen per metode og per oppsett. Mangler noe, er summen et MINIMUM og sier hva som mangler — aldri stille for lav. */
+function _takFlatSummary(t) {
+  const cab = _takFlatCable(t);
+  const per = {};
+  for (const type of ['ROOF_DRAIN', 'VALLEY_GUTTER', 'HEAT_FIELD']) {
+    const L = _takFlatFeats(t, type);
+    const missing = L.filter(f => f.cable_total_m == null).map(f => f.id);
+    const m = { type, count: L.length, known_m: L.reduce((a, f) => a + (f.cable_total_m || 0), 0), missing };
+    if (type === 'ROOF_DRAIN') { m.ring_m = L.reduce((a, f) => a + (f.ring_m || 0), 0); m.pipe_m = L.reduce((a, f) => a + ((f.pipe_cable_m && f.pipe_cable_m.value) || 0), 0); m.known_m = m.ring_m + m.pipe_m; }
+    else { m.area_m2 = L.reduce((a, f) => a + (type === 'HEAT_FIELD' ? f.area_m2 || 0 : (f.length_m || 0) * ((f.covered_width_m && f.covered_width_m.value) || 0)), 0);
+           m.noWm2 = L.filter(f => !(f.wm2 && f.wm2.value > 0)).map(f => f.id); }
+    per[type] = m;
+  }
+  const missTxt = m => {
+    if (!m.missing.length) return null;
+    if (m.type === 'ROOF_DRAIN') return `${m.missing.length} sluk mangler rørlengde`;
+    const w = m.type === 'VALLEY_GUTTER' ? (m.missing.length === 1 ? 'gradrenne' : 'gradrenner') : (m.missing.length === 1 ? 'varmefelt' : 'varmefelt');
+    return `${m.missing.length} ${w} uten kabelmeter (${!cab ? TAK_FLAT_MSG_NO_CABLE : m.noWm2.length ? TAK_FLAT_MSG_NO_WM2 : 'bredde ikke satt'})`;
+  };
+  const setups = {};
+  for (const [k, S0] of Object.entries(TAK_FLAT_SETUPS)) {
+    const ms = S0.methods.map(x => per[x]);
+    const notes = ms.map(missTxt).filter(Boolean);
+    setups[k] = { key: k, total_m: ms.reduce((a, m) => a + m.known_m, 0), complete: !notes.length, missing: notes };
+  }
+  const setup = _takFlatSetup(t);
+  return { per, setups, setup, total: setup ? setups[setup] : null, cable: cab,
+           both23: per.VALLEY_GUTTER.count > 0 && per.HEAT_FIELD.count > 0 };
+}
+/** «≥ 45,24 m» når noe mangler — tallet skal aldri se ferdig ut når det ikke er det. */
+function _takFlatMeters(x) { return (x.complete ? '' : '≥ ') + _takNum(x.total_m, 2) + ' m'; }
+
+// ── 159-advarselen, delt ──
+// Kjernen i `_roomWm2OverWarn` (159), trukket ut så taket bruker SAMME sammenligning og SAMME tekst. Romvarianten
+// bygger videre på den med kabler, areal og tiltak — uendret tekst (testen _wm2OverWarnTest).
+function _wm2OverCore(wm2, max) {
+  if (!(max > 0) || !(wm2 > max)) return null;
+  return { wm2, max, overWm2: wm2 - max, kort: wm2 + ' W/m² · tak ' + max,
+           hode: 'Flateeffekt ' + wm2 + ' W/m² er ' + (wm2 - max) + ' W/m² over taket på ' + max + ' W/m²' };
+}
+
+// ── Mutasjoner (readOnly-gate, pushUndo, ny utregning) ──
+function _takFlatMut(fid) {
+  if (S.ui.readOnly) { _lockToast(); return null; }
+  const t = _takOf(fid); if (!t) return null;
+  if (!_takIsFlat(_takSurface(fid))) { _showToast && _showToast('Sluk, gradrenner og varmefelt hører til et flatt tak — velg «Flatt tak» først.', 'warn'); return null; }
+  return t;
+}
+function _takFlatEnsure(t) { if (!t.flat) t.flat = { v: 1, cable: null, setup: null, features: [] }; if (!t.flat.features) t.flat.features = []; return t.flat; }
+function _takFlatDone(t) { _takFlatRecalc(t); renderSidebar(); render(); _scheduleAutoSave && _scheduleAutoSave(); }
+/** Kabelvalg: utendørs kabelprodukter i katalogen, én rad per familie (W/m er likt i familien). */
+function _takFlatCableChoices() {
+  const L = (typeof _listCableProducts === 'function' ? _listCableProducts('snow') : []).filter(p => p.watt_per_m > 0);
+  const by = new Map();
+  for (const p of L.slice().sort((a, b) => a.id - b.id)) {
+    const fam = p.product_family || p.name;
+    // Katalogen avgjør hva som er utendørs (_catAvailableInModule, som snømodulen). Kategorier som BARE er utendørs
+    // står først — «Varmekabel» (InFloor) er merket både inne og ute i katalogen og kommer etter.
+    const cat = (typeof PRODUCT_CATEGORIES !== 'undefined' ? PRODUCT_CATEGORIES : []).find(c => c.id === p.category_id);
+    const ute = !!(cat && Array.isArray(cat.available_contexts) && !cat.available_contexts.includes('indoor'));
+    if (!by.has(fam)) by.set(fam, { family: fam, product: p, watt_per_m: p.watt_per_m, n: 0, ute });
+    by.get(fam).n++;
+  }
+  return [...by.values()].sort((a, b) => (b.ute - a.ute) || a.family.localeCompare(b.family, 'nb'));
+}
+function _takFlatSetCable(fid, family) {
+  const t = _takFlatMut(fid); if (!t) { renderSidebar(); return false; }
+  const ch = _takFlatCableChoices().find(c => c.family === family);
+  const cur = t.flat && t.flat.cable;
+  if (!family) { if (!cur) return false; pushUndo(); t.flat.cable = null; _takFlatDone(t); return true; }
+  if (!ch) { _showToast && _showToast('Fant ikke kabelen i produktkatalogen.', 'warn'); renderSidebar(); return false; }
+  if (cur && cur.family === family) return false;
+  pushUndo();
+  const p = ch.product;
+  _takFlatEnsure(t).cable = { product_id: p.id, family: ch.family, name: p.name, watt_per_m: p.watt_per_m,
+    min_spacing_mm: p.min_spacing_mm ?? null, max_spacing_mm: p.max_spacing_mm ?? null,
+    prov: { source: 'CATALOG', confidence: 1, note: 'heating_products — W/m leses fra katalogen' } };
+  _takFlatDone(t);
+  return true;
+}
+function _takFlatSetSetup(fid, key) {
+  const t = _takFlatMut(fid); if (!t) return false;
+  if (!TAK_FLAT_SETUPS[key]) return false;
+  const F = _takFlatEnsure(t); if (F.setup === key) return false;
+  pushUndo(); F.setup = key; _takFlatDone(t); return true;
+}
+const _takUD = note => ({ source: 'USER_DRAWN', confidence: 1, note });
+const _takUC = note => ({ source: 'USER_CONFIRMED', confidence: 1, note });
+function _takFlatAddDrain(fid, pt) {
+  const t = _takFlatMut(fid); if (!t) return null;
+  const P = _takOutline(t);
+  if (P.length >= 3 && !_takInPoly(P, pt)) { _showToast && _showToast('Sluket må ligge på takflaten.', 'warn'); return null; }
+  const near = _takFlatFeats(t, 'ROOF_DRAIN').find(d => Math.hypot(d.geometry.pt.x - pt.x, d.geometry.pt.y - pt.y) < 20);
+  if (near) { _showToast && _showToast(`Det står allerede et sluk her (${near.id}).`, 'warn'); return null; }
+  pushUndo();
+  const s = _takSurface(fid);
+  const d = { id: _takFlatNextId(t, 'sl'), type: 'ROOF_DRAIN', surface: s ? s.id : null,
+    geometry: { kind: 'point', pt: { x: pt.x, y: pt.y } },
+    ring_runs: { value: TAK_FLAT_RING_RUNS_DEFAULT, prov: { source: 'ESTIMATE', confidence: 0.5, note: 'standard 2 ringer' } },
+    ring_r_m: { value: TAK_FLAT_RING_R_DEFAULT_M, prov: { source: 'ESTIMATE', confidence: 0.5, note: TAK_FLAT_RING_R_NOTE } },
+    pipe_cable_m: { value: null, prov: null },   // INGEN standardverdi — brukeren fyller inn (Kenneth 07.11)
+    ring_m: 0, cable_total_m: null, prov: _takUD('klikket på takflaten') };
+  _takFlatEnsure(t).features.push(d);
+  _takFeatSel = { fid, id: d.id };
+  _takFlatDone(t);
+  return d;
+}
+function _takFlatAddValley(fid, a, b) {
+  const t = _takFlatMut(fid); if (!t) return null;
+  if (Math.hypot(b.x - a.x, b.y - a.y) < 10) { _showToast && _showToast('Gradrenna må være minst 10 cm.', 'warn'); return null; }
+  pushUndo();
+  const s = _takSurface(fid);
+  const v = { id: _takFlatNextId(t, 'gr'), type: 'VALLEY_GUTTER', roof: 'flat', surface: s ? s.id : null,
+    geometry: { kind: 'polyline', pts: [{ x: a.x, y: a.y }, { x: b.x, y: b.y }] },
+    width_m: { value: null, prov: null }, covered_width_m: null, wm2: { value: null, prov: null },
+    length_m: 0, cable_total_m: null, prov: _takUD('ende og ende klikket') };
+  _takFlatEnsure(t).features.push(v);
+  _takFeatSel = { fid, id: v.id };
+  _takFlatDone(t);
+  return v;
+}
+/** Varmefelt: et polygon (verdens-cm) — eller `null` = hele takflaten (følger omrisset). */
+function _takFlatAddField(fid, pts) {
+  const t = _takFlatMut(fid); if (!t) return null;
+  const whole = !pts;
+  if (whole && _takFlatFeats(t, 'HEAT_FIELD').some(f => f.whole)) { _showToast && _showToast('Hele takflaten er alt et varmefelt.', 'warn'); return null; }
+  if (!whole && (pts.length < 3 || _takFlatPolyAreaM2(pts) < 0.01)) { _showToast && _showToast('Varmefeltet trenger minst tre hjørner.', 'warn'); return null; }
+  pushUndo();
+  const s = _takSurface(fid);
+  const f = { id: _takFlatNextId(t, 'vf'), type: 'HEAT_FIELD', surface: s ? s.id : null, whole,
+    geometry: { kind: 'polygon', pts: whole ? _takOutline(t) : pts.map(p => ({ x: p.x, y: p.y })) },
+    wm2: { value: null, prov: null }, area_m2: 0, cable_total_m: null,
+    prov: _takUD(whole ? 'hele takflaten' : 'hjørnene klikket') };
+  _takFlatEnsure(t).features.push(f);
+  _takFeatSel = { fid, id: f.id };
+  _takFlatDone(t);
+  return f;
+}
+function _takFlatDelete(fid, id) {
+  const t = _takFlatMut(fid); if (!t) return false;
+  const f = _takFlatFeat_(t, id); if (!f) return false;
+  pushUndo();
+  t.flat.features = t.flat.features.filter(x => x !== f);
+  if (_takFeatSel && _takFeatSel.id === id) _takFeatSel = null;
+  _takFlatDone(t);
+  return true;
+}
+/** Felt på et flatt objekt. Tomt felt = verdien fjernes (null) — aldri 0. */
+const TAK_FLAT_FIELDS = {
+  ring_runs:       { min: 1, max: 6, int: true, msg: 'Skriv antall ringer, 1–6' },
+  ring_r_m:        { min: 0.05, max: 2, msg: 'Skriv radien i meter, f.eks. 0,40' },
+  pipe_cable_m:    { min: 0, max: 100, empty: true, msg: 'Skriv kabelens lengde ned i røret i meter, f.eks. 1,5' },
+  width_m:         { min: 0.01, max: 10, empty: true, msg: 'Skriv rennas bredde i meter, f.eks. 0,60' },
+  covered_width_m: { min: 0.01, max: 10, empty: true, msg: 'Skriv dekket bredde i meter, f.eks. 0,60' },
+  wm2:             { min: 1, max: 2000, empty: true, msg: 'Skriv ønsket flateeffekt i W/m², f.eks. 300' },
+};
+function _takFlatSet(fid, id, key, str) {
+  const t = _takFlatMut(fid); if (!t) { renderSidebar(); return false; }
+  const f = _takFlatFeat_(t, id), R = TAK_FLAT_FIELDS[key];
+  if (!f || !R || !(key in f)) return false;
+  const blank = String(str == null ? '' : str).trim() === '';
+  let v = blank ? null : _takParse(str);
+  if (blank && !R.empty) { renderSidebar(); return false; }
+  if (!blank && (v == null || v < R.min || v > R.max || (R.int && !Number.isInteger(v)))) { _showToast && _showToast(R.msg, 'warn'); renderSidebar(); return false; }
+  const old = f[key] || { value: null, prov: null };
+  // Dekket bredde satt lik bredden → følger bredden igjen (ingen egen verdi å huske).
+  if (key === 'covered_width_m' && v != null && f.width_m && f.width_m.value != null && Math.abs(v - f.width_m.value) < 1e-9 && old.prov && old.prov.from) return false;
+  if (old.value === v && old.prov && !old.prov.from && old.prov.source === 'USER_CONFIRMED') return false;
+  if (old.value === v && v == null) return false;
+  pushUndo();
+  f[key] = v == null ? (key === 'covered_width_m' ? null : { value: null, prov: null })
+                     : { value: v, prov: _takUC(old.value != null ? `rettet fra ${_takNum(old.value, 2)}` : 'satt av bruker') };
+  _takFlatDone(t);
+  return true;
+}
+
+// ── Verktøyene (samme modus som 206/209: _takFeat) ──
+function _takFlatDrainAt(t, sx, sy) {
+  let best = null, bd = 14;
+  for (const d of _takFlatFeats(t, 'ROOF_DRAIN')) { const q = w2s(d.geometry.pt.x, d.geometry.pt.y), dd = Math.hypot(sx - q.x, sy - q.y); if (dd < bd) { bd = dd; best = d; } }
+  return best;
+}
+/** Gradrennas ender snappes til sluk først, så til omrissets hjørner og kanter. */
+function _takFlatSnap(fid, w, sx, sy) {
+  const t = _takOf(fid);
+  const d = _takFlatDrainAt(t, sx, sy); if (d) return { x: d.geometry.pt.x, y: d.geometry.pt.y, drain: d.id };
+  const P = _takOutline(t);
+  for (const p of P) { const q = w2s(p.x, p.y); if (Math.hypot(sx - q.x, sy - q.y) < TAK_SNAP_PX) return { x: p.x, y: p.y, corner: true }; }
+  let best = null;
+  for (let i = 0; i < P.length; i++) {
+    const pr = _takPolyProject([{ ...P[i], z: null }, { ...P[(i + 1) % P.length], z: null }], w), q = w2s(pr.pt.x, pr.pt.y);
+    const dd = Math.hypot(sx - q.x, sy - q.y); if (dd < TAK_SNAP_PX && (!best || dd < best.d)) best = { x: pr.pt.x, y: pr.pt.y, d: dd, edge: true };
+  }
+  return best ? { x: best.x, y: best.y, edge: true } : { x: w.x, y: w.y };
+}
+function _takFlatToolMouseDown(F, w, sx, sy) {
+  if (F.kind === 'drain') { _takFlatAddDrain(F.fid, w); return true; }
+  if (F.kind === 'fvalley') {
+    const p = _takFlatSnap(F.fid, w, sx, sy);
+    if (!F.pts.length) { F.pts = [p]; renderSidebar(); render(); return true; }
+    const a = F.pts[0]; F.pts = [];
+    _takFlatAddValley(F.fid, a, p);
+    return true;
+  }
+  if (F.kind === 'field') {
+    const p = _takFlatSnap(F.fid, w, sx, sy);
+    if (F.pts.length >= 3) { const q = w2s(F.pts[0].x, F.pts[0].y); if (Math.hypot(sx - q.x, sy - q.y) < 10) return _takFlatFieldFinish(), true; }
+    F.pts.push({ x: p.x, y: p.y }); renderSidebar(); render();
+    return true;
+  }
+  return false;
+}
+function _takFlatFieldFinish() {
+  const F = _takFeat; if (!F || F.kind !== 'field') return false;
+  if (F.pts.length < 3) { _showToast && _showToast('Varmefeltet trenger minst tre hjørner.', 'info'); return false; }
+  const pts = F.pts; F.pts = [];
+  return !!_takFlatAddField(F.fid, pts);
+}
+function _takFlatToolHover(F, w, sx, sy) {
+  if (F.kind === 'drain') return { pt: { x: w.x, y: w.y } };
+  return { pt: _takFlatSnap(F.fid, w, sx, sy) };
+}
+// ── Velge (utenfor verktøyene): sluk > gradrenne > varmefelt ──
+function _takFlatHit(fid, sx, sy) {
+  const t = _takOf(fid); if (!_takFlatOf(t) || !_takIsFlat(_takSurface(fid))) return null;
+  const d = _takFlatDrainAt(t, sx, sy); if (d) return d;
+  let best = null, bd = 8;
+  for (const v of _takFlatFeats(t, 'VALLEY_GUTTER')) {
+    const [a, b] = v.geometry.pts.map(p => w2s(p.x, p.y)), dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy;
+    const u = L2 ? Math.max(0, Math.min(1, ((sx - a.x) * dx + (sy - a.y) * dy) / L2)) : 0;
+    const dd = Math.hypot(sx - a.x - u * dx, sy - a.y - u * dy);
+    const half = ((v.covered_width_m && v.covered_width_m.value) || 0) * 50 * S.view.zoom * BASE_SCALE;
+    if (dd < Math.max(bd, half) && (!best || dd < best.d)) best = { v, d: dd };
+  }
+  if (best) return best.v;
+  const w = s2w(sx, sy);
+  const fl = _takFlatFeats(t, 'HEAT_FIELD').filter(f => _takInPoly(f.geometry.pts || [], w));
+  return fl.length ? fl.reduce((a, b) => (a.area_m2 <= b.area_m2 ? a : b)) : null;   // minste felt øverst
+}
+/** Panelet: klikk på en kompakt rad velger objektet (og viser alle feltene). */
+function _takFlatSelect(fid, id) { _takFeatSel = { fid, id }; renderSidebar(); render(); }
+function _takFlatPickMouseDown(e) {
+  if (e.button !== 0) return false;
+  const fid = S.ui.activeFloorId;
+  if (!S.tak || !S.tak[fid] || _takDraw || _takFeat || _geoPick || S.ui.drawMode || !_takPartOfFloor(fid)) return false;
+  const { x, y } = _evToCanvas(e);
+  const f = _takFlatHit(fid, x, y); if (!f) return false;
+  _takFeatSel = { fid, id: f.id };
+  renderSidebar(); render();
+  e.preventDefault && e.preventDefault();
+  return true;
+}
+
+// ── Tegning ──
+function _takFlatDraw(fid, t) {
+  const F = _takFlatOf(t), tool = _takFeat && _takFeat.fid === fid && TAK_FLAT_TOOLS.includes(_takFeat.kind) ? _takFeat : null;
+  if (!F && !tool) return;
+  const pdf = !!(S.ui && S.ui._pdfMode);
+  const isSel = f => !pdf && _takFeatSel && _takFeatSel.fid === fid && _takFeatSel.id === f.id;
+  const z = S.view.zoom * BASE_SCALE;   // px per cm (som w2s)
+  const cab = _takFlatCable(t), setup = _takFlatSetup(t);
+  const inSetup = type => type === 'ROOF_DRAIN' || !setup || TAK_FLAT_SETUPS[setup].methods.includes(type);
+  ctx.save(); ctx.setLineDash([]);
+  const poly = (P, close) => { ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); if (close) ctx.closePath(); };
+  // Varmefelt nederst.
+  for (const f of _takFlatFeats(t, 'HEAT_FIELD')) {
+    const P = (f.geometry.pts || []).map(p => w2s(p.x, p.y)); if (P.length < 3) continue;
+    const c = TAK_FLAT_COLOR.HEAT_FIELD;
+    ctx.globalAlpha = inSetup('HEAT_FIELD') ? 1 : 0.35;
+    poly(P, true); ctx.fillStyle = 'rgba(220,38,38,0.10)'; ctx.fill();
+    // Skravur i c/c-retning — bare et bilde av at feltet er varmet, ikke kabelens leggemønster.
+    ctx.save(); poly(P, true); ctx.clip();
+    const xs = P.map(p => p.x), ys = P.map(p => p.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    ctx.strokeStyle = 'rgba(220,38,38,0.25)'; ctx.lineWidth = 1;
+    for (let x = x0 - (y1 - y0); x < x1; x += 10) { ctx.beginPath(); ctx.moveTo(x, y1); ctx.lineTo(x + (y1 - y0), y0); ctx.stroke(); }
+    ctx.restore();
+    poly(P, true); ctx.setLineDash([6, 4]); ctx.strokeStyle = c; ctx.lineWidth = isSel(f) ? 3 : 1.5; ctx.stroke(); ctx.setLineDash([]);
+    const m = { x: (x0 + x1) / 2, y: y0 + 22 };   // øverst i feltet — midten er der slukene ofte står
+    const calc = _takFlatCalc(cab, f.wm2 && f.wm2.value, f.area_m2, null);
+    _takLabel(`${f.id} · ${_takNum(f.area_m2, 1)} m²`, m.x, m.y - 8, c, true);
+    _takLabel(calc.ok ? `${_takNum(calc.wm2, 0)} W/m² · c/c ${_takNum(calc.cc_cm, 1)} cm · ${_takNum(calc.cable_m, 0)} m` : calc.msg, m.x, m.y + 7, calc.ok ? c : '#b45309', false);
+    ctx.globalAlpha = 1;
+  }
+  // Gradrenner: båndet i virkelig bredde, løpene som tynne linjer med c/c.
+  for (const v of _takFlatFeats(t, 'VALLEY_GUTTER')) {
+    const [A, B] = v.geometry.pts, a = w2s(A.x, A.y), b = w2s(B.x, B.y), c = TAK_FLAT_COLOR.VALLEY_GUTTER;
+    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1, n = { x: -(b.y - a.y) / L, y: (b.x - a.x) / L };
+    ctx.globalAlpha = inSetup('VALLEY_GUTTER') ? 1 : 0.35;
+    const wpx = ((v.width_m && v.width_m.value) || 0) * 100 * z, cpx = ((v.covered_width_m && v.covered_width_m.value) || 0) * 100 * z;
+    const band = (h, fill, stroke) => { const P = [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([i, j]) => ({ x: (i > 0 ? b.x : a.x) + n.x * h * j, y: (i > 0 ? b.y : a.y) + n.y * h * j })); poly(P, true); if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); } };
+    if (isSel(v)) { ctx.globalAlpha *= 0.35; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = c; ctx.lineWidth = Math.max(14, wpx + 8); ctx.lineCap = 'round'; ctx.stroke(); ctx.globalAlpha = inSetup('VALLEY_GUTTER') ? 1 : 0.35; }
+    if (wpx > 1) band(wpx / 2, 'rgba(29,78,216,0.08)', 'rgba(29,78,216,0.45)');
+    if (cpx > 1) band(cpx / 2, 'rgba(29,78,216,0.16)', null);
+    const calc = _takFlatCalc(cab, v.wm2 && v.wm2.value, (v.length_m || 0) * ((v.covered_width_m && v.covered_width_m.value) || 0), (v.covered_width_m && v.covered_width_m.value) || null);
+    if (calc.ok && calc.runs >= 1 && calc.runs <= 80 && calc.cc_m * 100 * z >= 2) {
+      const k = Math.round(calc.runs), step = calc.cc_m * 100 * z;
+      ctx.strokeStyle = c; ctx.lineWidth = 1;
+      for (let i = 0; i < k; i++) { const o = (i + 0.5) * step - k * step / 2; ctx.beginPath(); ctx.moveTo(a.x + n.x * o, a.y + n.y * o); ctx.lineTo(b.x + n.x * o, b.y + n.y * o); ctx.stroke(); }
+    } else { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.setLineDash([8, 5]); ctx.stroke(); ctx.setLineDash([]); }
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, off = Math.max(12, wpx / 2 + 10);
+    _takLabel(`${v.id} · ${_takNum(v.length_m)} m` + (calc.ok ? ` · ${_takNum(calc.runs, calc.runsWhole ? 0 : 1)} løp` : ''), mx + n.x * off, my + n.y * off, c, true);
+    ctx.globalAlpha = 1;
+  }
+  // Sluk øverst: ringene i virkelig radius, sluket som en fylt prikk.
+  for (const d of _takFlatFeats(t, 'ROOF_DRAIN')) {
+    const q = w2s(d.geometry.pt.x, d.geometry.pt.y), c = TAK_FLAT_COLOR.ROOF_DRAIN;
+    const r = Math.max(6, ((d.ring_r_m && d.ring_r_m.value) || 0) * 100 * z), n = (d.ring_runs && d.ring_runs.value) || 0;
+    if (isSel(d)) { ctx.beginPath(); ctx.arc(q.x, q.y, r + 8, 0, Math.PI * 2); ctx.fillStyle = 'rgba(124,58,237,0.18)'; ctx.fill(); }
+    for (let i = 0; i < n; i++) { ctx.beginPath(); ctx.arc(q.x, q.y, r + i * 2.5, 0, Math.PI * 2); ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.stroke(); }
+    ctx.beginPath(); ctx.arc(q.x, q.y, 4, 0, Math.PI * 2); ctx.fillStyle = c; ctx.fill();
+    const dc = _takFlatDrainCable(d);
+    _takLabel(d.id + (dc.missing ? ' · rør ?' : ''), q.x, q.y - r - 10, dc.missing ? '#b45309' : c, true);
+  }
+  // Verktøyets forhåndsvisning.
+  if (tool && !pdf) {
+    const h = tool.hover && tool.hover.pt;
+    if (tool.kind === 'drain' && h) { const q = w2s(h.x, h.y), r = TAK_FLAT_RING_R_DEFAULT_M * 100 * z; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(6, r), 0, Math.PI * 2); ctx.strokeStyle = TAK_FLAT_COLOR.ROOF_DRAIN; ctx.lineWidth = 1.5; ctx.stroke(); ctx.globalAlpha = 1; }
+    if (tool.kind === 'fvalley' && tool.pts.length && h) { const a = w2s(tool.pts[0].x, tool.pts[0].y), b = w2s(h.x, h.y); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = TAK_FLAT_COLOR.VALLEY_GUTTER; ctx.lineWidth = 3; ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]); }
+    if (tool.kind === 'field' && tool.pts.length) {
+      const P = [...tool.pts, ...(h ? [h] : [])].map(p => w2s(p.x, p.y));
+      poly(P, false); ctx.strokeStyle = TAK_FLAT_COLOR.HEAT_FIELD; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.stroke(); ctx.setLineDash([]);
+      for (const p of P.slice(0, tool.pts.length)) { ctx.beginPath(); ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2); ctx.fillStyle = TAK_FLAT_COLOR.HEAT_FIELD; ctx.fill(); }
+      if (tool.pts.length >= 3) { ctx.beginPath(); ctx.arc(P[0].x, P[0].y, 8, 0, Math.PI * 2); ctx.lineWidth = 1.5; ctx.stroke(); }
+    }
+    if (h && (h.drain || h.corner || h.edge) && tool.kind !== 'drain') { const q = w2s(h.x, h.y); ctx.beginPath(); ctx.arc(q.x, q.y, h.drain ? 9 : 6, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(29,78,216,0.95)'; ctx.lineWidth = 2; ctx.stroke(); }
+  }
+  ctx.restore();
+}
+
+// ── Sidepanelet ──
+function _takFlatCardHtml(fid, t, s) {
+  if (!t || !_takIsFlat(s)) return '';
+  const dim = x => `<span style="color:var(--dim)">${x}</span>`;
+  const warn = (x, hard) => `<div class="tak-flat-warn" style="color:${hard ? '#dc2626' : 'var(--warn,#d97706)'};font-size:11px;margin-top:1px">⚠ ${x}</div>`;
+  const inp = (val, on, w, d, cls) => `<input type="text" inputmode="decimal" class="${cls || ''}" value="${val == null ? '' : _takNum(val, d == null ? 2 : d)}" placeholder="—" onchange="${on}" onkeydown="if(event.key==='Enter')this.blur()" style="width:${w || 44}px;padding:1px 4px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">`;
+  const set = (id, key) => `_takFlatSet(${fid},'${id}','${key}',this.value)`;
+  const x = id => `<button class="tak-flat-del" title="Slett" onclick="_takFlatDelete(${fid},'${id}')" style="border:0;background:transparent;color:var(--dim);cursor:pointer;padding:0 2px;font-size:12px">✕</button>`;
+  const sel = f => _takFeatSel && _takFeatSel.fid === fid && _takFeatSel.id === f.id;
+  const fr = (lbl, field, cls) => `<div class="${cls || ''}" style="display:flex;align-items:center;justify-content:space-between;gap:3px;white-space:nowrap"><span style="color:var(--dim)">${lbl}</span><span>${field}</span></div>`;
+  const calcHtml = c => !c.ok ? `<div class="tak-flat-calc" data-ok="0" style="font-size:11px;color:var(--warn,#d97706)">${c.msg} — ingen kabelmeter</div>`
+    : `<div class="tak-flat-calc" data-ok="1" data-cc="${c.cc_cm.toFixed(3)}" data-m="${c.cable_m.toFixed(3)}" style="font-size:11px">${esc(c.formula)}</div>` +
+      (!c.runsWhole ? warn(`${_takNum(c.runs, 2)} løp er ikke et helt tall — kabelmeter er regnet av arealet. Juster bredden eller flateeffekten.`) : '') +
+      c.warns.map(w => warn(w.txt, w.hard)).join('');
+  const cab = _takFlatCable(t), Sm = _takFlatSummary(t), F = _takFeat && _takFeat.fid === fid && TAK_FLAT_TOOLS.includes(_takFeat.kind) ? _takFeat : null;
+  const D = _takFlatFeats(t, 'ROOF_DRAIN'), V = _takFlatFeats(t, 'VALLEY_GUTTER'), FL = _takFlatFeats(t, 'HEAT_FIELD');
+  // Mange sluk/gradrenner (filmen: 9 og 12) → kompakte rader. Valgt objekt (eller ≤ 2 av typen) viser alle feltene.
+  const full = o => sel(o) || _takFlatFeats(t, o.type).length <= 2;
+  let h = `<div class="tak-flat-card" style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px"><div style="font-weight:700">Flatt tak — sluk, gradrenner, varmefelt</div>`;
+  // Kabel fra katalogen.
+  const ch = _takFlatCableChoices();
+  const opts = [`<option value="">— velg kabel —</option>`].concat(ch.map(c => `<option value="${esc(c.family)}" ${cab && cab.family === c.family ? 'selected' : ''}>${esc(c.family)} · ${_takNum(c.watt_per_m, 0)} W/m</option>`));
+  if (cab && !ch.some(c => c.family === cab.family)) opts.push(`<option value="${esc(cab.family)}" selected>${esc(cab.family)} · ${_takNum(cab.watt_per_m, 0)} W/m (lagret)</option>`);
+  h += `<div style="display:flex;align-items:center;gap:4px;margin-top:2px"><span style="color:var(--dim)">Kabel</span><select class="tak-flat-cable" onchange="_takFlatSetCable(${fid},this.value)" style="flex:1;min-width:0;font-size:11px;padding:1px 2px;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">${opts.join('')}</select></div>`;
+  if (!ch.length && !cab) h += `<div style="font-size:10px;color:var(--dim)">Produktkatalogen er ikke lastet — kabel kan ikke velges ennå.</div>`;
+  else if (cab) h += `<div style="font-size:10px;color:var(--dim)">W/m fra produktkatalogen${cab.live ? '' : ' (lagret ved valget — katalogen er ikke lastet)'}</div>`;
+  // Verktøy.
+  if (F) {
+    const txt = { drain: 'Klikk på taket der sluket står.', fvalley: F.pts.length ? 'Klikk den andre enden (sluk, hjørne eller kant snapper).' : 'Klikk den ene enden — et sluk eller parapeten.',
+                  field: F.pts.length >= 3 ? 'Klikk første hjørne eller Enter for å lukke.' : 'Klikk hjørnene i varmefeltet.' }[F.kind];
+    h += `<div class="tak-flat-mode" data-kind="${F.kind}" style="background:var(--bg2,rgba(124,58,237,0.08));border-radius:6px;padding:4px 6px;margin:3px 0">
+      <div style="font-weight:600">${{ drain: 'Plasserer sluk', fvalley: 'Tegner gradrenne', field: 'Tegner varmefelt' }[F.kind]}</div><div>${txt}</div>
+      <div>${F.kind === 'field' && F.pts.length >= 3 ? _takBtn('_takFlatFieldFinish()', 'Lukk feltet', true) : ''}${_takBtn('_takFeatStop()', 'Ferdig', !(F.kind === 'field' && F.pts.length >= 3))}</div></div>`;
+  } else {
+    h += `<div>${_takBtn(`_takFeatStart(${fid},'drain')`, '+ Sluk', !D.length)}${_takBtn(`_takFeatStart(${fid},'fvalley')`, '+ Gradrenne')}${_takBtn(`_takFeatStart(${fid},'field')`, '+ Varmefelt')}${FL.some(f => f.whole) ? '' : _takBtn(`_takFlatAddField(${fid},null)`, 'Hele takflaten')}</div>`;
+  }
+  // 1 · Sluk.
+  h += `<div class="tak-flat-sec" data-m="1" style="margin-top:4px;font-weight:600">1 · Varme i sluket ${dim('(' + D.length + ')')}</div>`;
+  if (!D.length) h += `<div style="font-size:11px">${dim('Ingen sluk. Ring rundt sluket + kabel ned til frostfritt nivå.')}</div>`;
+  for (const d of D) {
+    const dc = _takFlatDrainCable(d);
+    h += `<div class="tak-drain" data-id="${d.id}" style="margin:2px 0 0 2px;padding:2px 4px;border-left:2px solid ${TAK_FLAT_COLOR.ROOF_DRAIN};font-size:11px;${sel(d) ? 'background:rgba(124,58,237,0.12)' : ''}">
+      <div style="display:flex;justify-content:space-between;font-size:12px"><b style="color:${TAK_FLAT_COLOR.ROOF_DRAIN};cursor:pointer" onclick="_takFlatSelect(${fid},'${d.id}')">Sluk ${d.id}</b><span style="white-space:nowrap"><b class="tak-drain-total">${dc.missing ? '≥ ' + _takNum(dc.ring_m, 2) : _takNum(dc.total_m, 2)} m</b>${x(d.id)}</span></div>
+      ${!full(d) ? `<div class="tak-drain-kort" style="font-size:10px;color:var(--dim);cursor:pointer" onclick="_takFlatSelect(${fid},'${d.id}')">${d.ring_runs.value} ringer × ${_takNum(d.ring_r_m.value, 2)} m = ${_takNum(dc.ring_m, 2)} m · klikk for alt</div>` + fr('Ned i røret', inp(dc.pipe_m, set(d.id, 'pipe_cable_m'), 40, 2, 'tak-pipe') + ' m') + (dc.missing ? warn(TAK_FLAT_MSG_NO_PIPE) : '') + '</div>' : `
+      ${fr('Ringer', inp(d.ring_runs.value, set(d.id, 'ring_runs'), 30, 0, 'tak-ring-runs'))}
+      ${fr('Radius', inp(d.ring_r_m.value, set(d.id, 'ring_r_m'), 40, 2, 'tak-ring-r') + ' m')}
+      <div style="font-size:10px;color:var(--dim)">${d.ring_r_m.prov && d.ring_r_m.prov.source === 'USER_CONFIRMED' ? 'rettet' : 'standard 0,40 m — fra Cenikas animasjon (0,33–0,42 m)'}</div>
+      <div style="white-space:nowrap;text-align:right">${dim(`${d.ring_runs.value} × 2π × ${_takNum(d.ring_r_m.value, 2)} =`)} <b class="tak-ring-m">${_takNum(dc.ring_m, 2)} m</b></div>
+      ${fr('Ned i røret', inp(dc.pipe_m, set(d.id, 'pipe_cable_m'), 40, 2, 'tak-pipe') + ' m')}
+      <div style="font-size:10px;color:var(--dim)">til frostfritt nivå — resten av røret er i varmt rom. Ikke byggehøyden.</div>
+      ${dc.missing ? warn('Lengde i røret mangler — fyll inn. Sluket regnes ikke som ferdig.') : ''}</div>`}`;
+  }
+  // 2 · Gradrenner.
+  const setup = Sm.setup, dimIf = type => setup && !TAK_FLAT_SETUPS[setup].methods.includes(type) ? 'opacity:.55;' : '';
+  h += `<div class="tak-flat-sec" data-m="2" style="margin-top:5px;font-weight:600;${dimIf('VALLEY_GUTTER')}">2 · Varme i gradrennene ${dim('(' + V.length + ')')}</div>`;
+  for (const v of V) {
+    const cw = v.covered_width_m || {}, w = cw.value;
+    const c = _takFlatCalc(cab, v.wm2.value, w > 0 ? v.length_m * w : 0, w > 0 ? w : null);
+    h += `<div class="tak-fvalley" data-id="${v.id}" style="margin:2px 0 0 2px;padding:2px 4px;border-left:2px solid ${TAK_FLAT_COLOR.VALLEY_GUTTER};font-size:11px;${dimIf('VALLEY_GUTTER')}${sel(v) ? 'background:rgba(29,78,216,0.12)' : ''}">
+      <div style="display:flex;justify-content:space-between;font-size:12px"><b style="color:${TAK_FLAT_COLOR.VALLEY_GUTTER};cursor:pointer" onclick="_takFlatSelect(${fid},'${v.id}')">Gradrenne ${v.id}</b><span style="white-space:nowrap"><b>${_takNum(v.length_m, 2)} m</b>${x(v.id)}</span></div>
+      ${!full(v) ? `<div class="tak-fv-kort" style="font-size:10px;color:var(--dim);cursor:pointer" onclick="_takFlatSelect(${fid},'${v.id}')">bredde ${w > 0 ? _takNum(w, 2) + ' m' : '—'} · ${v.wm2.value ? _takNum(v.wm2.value, 0) + ' W/m²' : 'W/m² —'} · klikk for å endre</div>` + calcHtml(c) + '</div>' : `
+      ${fr('Bredde', inp(v.width_m.value, set(v.id, 'width_m'), 40, 2, 'tak-fv-w') + ' m')}
+      ${fr('Dekket bredde', inp(w, set(v.id, 'covered_width_m'), 40, 2, 'tak-fv-cw') + ' m')}
+      <div style="font-size:10px;color:var(--dim)">${cw.prov && !cw.prov.from ? 'satt av deg' : '= rennas bredde (standard)'}</div>
+      ${fr('Flateeffekt', inp(v.wm2.value, set(v.id, 'wm2'), 44, 0, 'tak-fv-wm2') + ' W/m²')}
+      ${calcHtml(c)}</div>`}`;
+  }
+  // 3 · Varmefelt.
+  h += `<div class="tak-flat-sec" data-m="3" style="margin-top:5px;font-weight:600;${dimIf('HEAT_FIELD')}">3 · Varme på taket ${dim('(' + FL.length + ')')}</div>`;
+  for (const f of FL) {
+    const c = _takFlatCalc(cab, f.wm2.value, f.area_m2, null);
+    h += `<div class="tak-field" data-id="${f.id}" style="margin:2px 0 0 2px;padding:2px 4px;border-left:2px solid ${TAK_FLAT_COLOR.HEAT_FIELD};font-size:11px;${dimIf('HEAT_FIELD')}${sel(f) ? 'background:rgba(220,38,38,0.10)' : ''}">
+      <div style="display:flex;justify-content:space-between;font-size:12px"><b style="color:${TAK_FLAT_COLOR.HEAT_FIELD}">Felt ${f.id}</b><span style="white-space:nowrap"><b>${_takNum(f.area_m2, 1)} m²</b>${x(f.id)}</span></div>
+      <div style="font-size:10px;color:var(--dim)">${f.whole ? 'hele takflaten — følger omrisset' : (f.geometry.pts || []).length + ' hjørner'}</div>
+      ${fr('Flateeffekt', inp(f.wm2.value, set(f.id, 'wm2'), 44, 0, 'tak-vf-wm2') + ' W/m²')}
+      ${calcHtml(c)}</div>`;
+  }
+  // Sammenligning og sum.
+  h += `<div class="tak-flat-sum" style="margin-top:6px;border-top:1px solid var(--border);padding-top:4px"><div style="font-weight:700">Kabelmeter, flatt tak</div>
+    <table class="tak-flat-per" style="width:100%;font-size:11px;border-collapse:collapse">
+      ${[['ROOF_DRAIN', '1 · sluk'], ['VALLEY_GUTTER', '2 · gradrenner'], ['HEAT_FIELD', '3 · varme på taket']].map(([k, l]) => { const m = Sm.per[k]; return `<tr class="tak-flat-per-row" data-type="${k}"><td>${l}</td><td style="text-align:right;white-space:nowrap">${m.count ? (m.missing.length ? '≥ ' : '') + _takNum(m.known_m, 2) + ' m' : dim('—')}</td></tr>`; }).join('')}
+    </table>
+    <div style="font-size:10px;color:var(--dim);margin-top:3px">Oppsett (sluk er alltid med):</div>`;
+  for (const k of Object.keys(TAK_FLAT_SETUPS)) {
+    const S0 = TAK_FLAT_SETUPS[k], x0 = Sm.setups[k], on = setup === k;
+    h += `<button class="tak-flat-setup tak-flat-setup-${k}" data-total="${x0.total_m.toFixed(2)}" data-complete="${x0.complete ? 1 : 0}" ${on ? 'aria-pressed="true"' : ''} onclick="_takFlatSetSetup(${fid},'${k}')" style="display:block;width:100%;text-align:left;margin-top:2px;padding:2px 5px;border:1px solid ${on ? 'var(--accent,#0891b2)' : 'var(--border)'};border-radius:4px;background:${on ? 'rgba(8,145,178,0.10)' : 'transparent'};color:var(--text);cursor:pointer;font-size:11px"><b>${S0.nr} · ${S0.label}</b>${on ? ' ' + dim('(valgt)') : ''}<br><span style="color:var(--dim)">${_takFlatMeters(x0)}${x0.missing.length ? ' · ' + x0.missing.join(' · ') : ''}</span></button>`;
+  }
+  if (Sm.both23 && !(t.flat && t.flat.setup)) h += warn('Både gradrenner og varmefelt er tegnet. Velg oppsett — appen antar at de ikke regnes sammen (et varmefelt over taket dekker gradrennene). Ikke bekreftet.');
+  if (Sm.total) h += `<div class="tak-flat-total" data-total="${Sm.total.total_m.toFixed(2)}" data-complete="${Sm.total.complete ? 1 : 0}" style="margin-top:4px;display:flex;justify-content:space-between"><b>Sum, valgt oppsett</b><b>${_takFlatMeters(Sm.total)}</b></div>` +
+                   (Sm.total.missing.length ? `<div class="tak-flat-missing" style="font-size:11px;color:var(--warn,#d97706)">⚠ Mangler: ${Sm.total.missing.join(' · ')}. Summen er et minimum.</div>` : '');
+  h += `<div style="font-size:10px;color:var(--dim);margin-top:2px">${TAK_FLAT_NO_ADVICE} Gradrennas lengde er målt i plan.</div></div>`;
+  return h + '</div>';
+}
+
+// 212: flatt tak — formelen begge veier, ni sluk, manglende rørlengde, tom flateeffekt, advarslene (rommenes),
+// oppsettene, lagring, og at skråtak, prosjekt uten tak og rommenes 159-advarsel er uendret.
+async function _takRegressionTest212() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '212: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
+                 part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId, hp: HEATING_PRODUCTS.slice() };
+  const eq = (a, b, tol) => a != null && b != null && Math.abs(a - b) < (tol || 1e-9);
+  const toasts = [];
+  try {
+    window._showToast = (m, t) => toasts.push({ m: String(m), t }); window._scheduleAutoSave = () => {}; window.confirm = () => true;
+    // Kabelen: katalogens InSnow 30T når den er lastet, ellers en testrad med de samme feltene (30 W/m, c/c 6–20 cm).
+    const CAT = (PRODUCT_CATEGORIES.find(c => c.module_type === 'cable' && Array.isArray(c.available_contexts) && !c.available_contexts.includes('indoor')) ||
+                 PRODUCT_CATEGORIES.find(c => c.module_type === 'cable' && _catAvailableInModule(c, 'snow')) || {}).id;
+    if (!_takFlatCableChoices().some(c => c.family === 'InSnow 30T') && CAT != null)
+      HEATING_PRODUCTS.push({ id: 921201, name: 'InSnow 30T 1000W 33m', product_family: 'InSnow 30T', voltage: 230, category_id: CAT, active: true,
+                              cable_length_m: 33, watt_per_m: 30, total_effect_w: 1000, min_spacing_mm: 60, max_spacing_mm: 200 });
+    const ch = _takFlatCableChoices();
+    const c30 = ch.find(c => c.family === 'InSnow 30T');
+    check('STEG 0: InSnow 30T finnes i katalogen med 30 W/m', '30', c30 && c30.watt_per_m === 30, c30 && c30.watt_per_m);
+    check('STEG 0: InSnow 20T og 40T tilbys ikke (active = false)', 'ingen', !ch.some(c => /InSnow [24]0T/.test(c.family)), ch.map(c => c.family).join(', '));
+
+    // ── A. Formelen, begge veier ──
+    const cab = { watt_per_m: 30, product: { min_spacing_mm: 60, max_spacing_mm: 200, product_family: 'InSnow 30T' } };
+    check('A: c/c = W/m ÷ W/m²: 30 ÷ 300 = 0,10 m', '10 cm', eq(_ccCmFromWm2(30, 300), 10), _ccCmFromWm2(30, 300));
+    const tak = _takFlatCalc(cab, 300, 800, null);
+    check('A: 800 m² × 300 ÷ 30 = 8000 m', '8000', eq(tak.cable_m, 8000), tak.cable_m);
+    check('A: andre veien — areal ÷ c/c = 800 ÷ 0,10 = 8000 m', '8000', eq(tak.cable_m_cc, 8000, 1e-6) && eq(tak.cable_m, tak.cable_m_cc, 1e-6), tak.cable_m_cc);
+    const gr = _takFlatCalc(cab, 300, 8 * 0.6, 0.6);
+    check('A: 60 cm dekket bredde ÷ 0,10 = 6 løp', '6', eq(gr.runs, 6, 1e-9) && gr.runsWhole, gr.runs);
+    check('A: formelen står i klartekst, slik at tallet kan ettergås', '30 W/m ÷ 300 W/m² = c/c 10 cm · 6 løp over 60 cm · 48,00 m',
+      gr.formula === '30 W/m ÷ 300 W/m² = c/c 10 cm · 6 løp over 60 cm · 48,00 m', gr.formula);
+    check('A: løp × lengde = areal × W/m² ÷ W/m (6 × 8 = 48)', '48', eq(gr.runs * 8, gr.cable_m, 1e-9) && eq(gr.cable_m, 48, 1e-9), gr.cable_m);
+    let ok = true; const bad = [];
+    for (const wpm of [17, 30]) for (const wm2 of [150, 250, 300, 375]) for (const A of [1, 12.5, 800]) {
+      const c = _takFlatCalc({ watt_per_m: wpm, product: {} }, wm2, A, null);
+      if (!eq(c.cable_m, c.cable_m_cc, 1e-6) || !eq(c.cc_cm * wm2 / 100, wpm, 1e-9)) { ok = false; bad.push(wpm + '/' + wm2 + '/' + A); }
+    }
+    check('A: begge veier stemmer for 24 kombinasjoner, og c/c snudd gir rommenes W/m² = W/m × 100 / CC', 'alle', ok, bad.join(' '));
+    const ikke = _takFlatCalc(cab, 300, 8 * 0.65, 0.65);
+    check('A: 65 cm ÷ 10 cm = 6,5 løp — ikke et helt tall, merket', '6,5 · ikke helt', eq(ikke.runs, 6.5, 1e-9) && !ikke.runsWhole, ikke.runs);
+
+    // ── B. Advarslene er rommenes ──
+    const w500 = _takFlatCalc(cab, 500, 10, null), w300 = _takFlatCalc(cab, 300, 10, null), w600 = _takFlatCalc(cab, 600, 10, null), w100 = _takFlatCalc(cab, 100, 10, null);
+    const max = _moduleContext('snow').wm2Max;
+    check('B: 500 W/m² over utendørs-taket gir 159-advarselen med samme korttekst som romkortet', `500 W/m² · tak ${max}`,
+      w500.warns.some(w => w.kind === 'wm2' && w.kort === _wm2OverCore(500, max).kort && w.kort === '500 W/m² · tak ' + max), w500.warns.map(w => w.kort || w.txt).join(' | '));
+    check('B: 300 W/m² (c/c 10 cm) gir ingen advarsel', 'ingen', w300.warns.length === 0, w300.warns.map(w => w.txt).join(' | '));
+    check('B: 600 W/m² → c/c 5 cm under kabelens minste 6 cm (_ccLimits) — hard advarsel', 'cc_min',
+      w600.warns.some(w => w.kind === 'cc_min' && w.hard), w600.warns.map(w => w.kind).join());
+    check('B: 100 W/m² → c/c 30 cm over anbefalt maks 20 cm (_ccWarnText, 016)', 'cc_max',
+      w100.warns.some(w => w.kind === 'cc_max' && /over anbefalt maks \(20 cm\)/.test(w.txt)), w100.warns.map(w => w.txt).join(' | '));
+    check('B: tom flateeffekt → ingen kabelmeter, bare meldingen', TAK_FLAT_MSG_NO_WM2,
+      _takFlatCalc(cab, null, 800, null).ok === false && _takFlatCalc(cab, null, 800, null).msg === TAK_FLAT_MSG_NO_WM2 && _takFlatCalc(cab, null, 800, null).cable_m === undefined, '');
+    check('B: ingen kabel valgt → ingen kabelmeter', TAK_FLAT_MSG_NO_CABLE, _takFlatCalc(null, 300, 800, null).msg === TAK_FLAT_MSG_NO_CABLE, '');
+
+    // ── C. Filmens tak: 40 × 20 m, ni sluk i 3 × 3 ──
+    _resetProjectState(); addPart('roof');
+    const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+    S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null;
+    S.tak = { [fid]: _takManual([{ x: 0, y: 0 }, { x: 4000, y: 0 }, { x: 4000, y: 2000 }, { x: 0, y: 2000 }], { method: 'free' }) };
+    const t = _takOf(fid);
+    check('C: sluk kan ikke settes før taket er flatt', 'nekter', _takFlatAddDrain(fid, { x: 2000, y: 1000 }) === null && !t.flat, '');
+    _takSetRoofType(fid, 'flat');
+    check('C: flatt tak → alle kanter parapet (205), ingen takfot', '4 parapet', _takEdgesOf(t).filter(e => e.type === 'parapet').length === 4 && !_takEdgesOf(t).some(e => e.type === 'eave'), _takEdgeCounter(t, _takSurface(fid)));
+    check('C: parapeten tar ikke rennestrekk uten at brukeren sier det (205/206)', 'ingen renne', _takAddGutter(fid, 'k1') === null, '');
+    check('C: et flatt tak uten objekter har ingen `flat` i lagringen', 'ingen', !('flat' in t), Object.keys(t).join());
+    _takFlatSetCable(fid, 'InSnow 30T');
+    check('C: kabelen lagres med W/m fra katalogen', '30', t.flat && t.flat.cable && t.flat.cable.watt_per_m === 30 && _takFlatCable(t).watt_per_m === 30, t.flat && JSON.stringify(t.flat.cable));
+    for (const x of [666.7, 2000, 3333.3]) for (const y of [333.3, 1000, 1666.7]) _takFlatAddDrain(fid, { x, y });
+    const D = _takFlatFeats(t, 'ROOF_DRAIN');
+    check('C: ni sluk', '9', D.length === 9, D.length);
+    check('C: sluket har standard 2 ringer à 0,40 m og TOMT rørfelt', '2 · 0,40 · null', D.every(d => d.ring_runs.value === 2 && d.ring_r_m.value === 0.4 && d.pipe_cable_m.value === null), '');
+    const per = _takFlatDrainCable(D[0]).per_ring_m;
+    check('C: én ring = 2π × 0,40 = 2,51 m', '2,51', per.toFixed(2) === '2.51', per);
+    let Sm = _takFlatSummary(t);
+    check('C: ni sluk × 2 ringer × 2,51 = 45,2 m (uten røret)', '45,2', Sm.per.ROOF_DRAIN.ring_m.toFixed(1) === '45.2' && eq(Sm.per.ROOF_DRAIN.ring_m, 9 * 2 * 2 * Math.PI * 0.4, 1e-9), Sm.per.ROOF_DRAIN.ring_m);
+    check('C: uten rørlengde er sluket IKKE ferdig — cable_total_m er null, ikke ringen alene', 'null', D.every(d => d.cable_total_m === null), D.map(d => d.cable_total_m).join());
+    check('C: summen sier «9 sluk mangler rørlengde» og er et minimum', '≥ 45,24 m', !Sm.total.complete && Sm.total.missing.includes('9 sluk mangler rørlengde') && _takFlatMeters(Sm.total) === '≥ 45,24 m', _takFlatMeters(Sm.total));
+    D.forEach((d, i) => { if (i) _takFlatSet(fid, d.id, 'pipe_cable_m', '1,5'); });
+    Sm = _takFlatSummary(t);
+    check('C: ett sluk uten rørlengde → «1 sluk mangler rørlengde», ikke stille for lavt', '1 sluk mangler rørlengde',
+      !Sm.total.complete && Sm.total.missing.join() === '1 sluk mangler rørlengde' && eq(Sm.total.total_m, 45.2389342 + 8 * 1.5, 1e-6), Sm.total.missing.join() + ' · ' + Sm.total.total_m);
+    renderSidebar();
+    const domTot = () => { const e = document.querySelector('.tak-flat-total'); return e ? e.textContent.replace(/\s+/g, ' ').trim() : null; };
+    const domMiss = () => { const e = document.querySelector('.tak-flat-missing'); return e ? e.textContent : ''; };
+    check('C: panelet viser «≥ 57,24 m» og hva som mangler', '≥ 57,24 m · 1 sluk mangler', /≥ 57,24 m/.test(domTot() || '') && /1 sluk mangler rørlengde/.test(domMiss()), domTot() + ' / ' + domMiss());
+    _takFlatSet(fid, D[0].id, 'pipe_cable_m', '0');
+    Sm = _takFlatSummary(t);
+    check('C: 0 skrevet inn er et svar (ikke «mangler»): summen er ferdig, 45,24 + 12,00', '57,24 · ferdig', Sm.total.complete && eq(Sm.total.total_m, 45.2389342 + 12, 1e-6), Sm.total.total_m);
+    _takFlatSet(fid, D[0].id, 'pipe_cable_m', '');
+    check('C: tømt felt → mangler igjen', 'mangler', D[0].pipe_cable_m.value === null && !_takFlatSummary(t).total.complete, D[0].pipe_cable_m.value);
+    _takFlatSet(fid, D[0].id, 'pipe_cable_m', '1,5');
+    // Et sluk er ikke et nedløp: byggehøyden påvirker det ikke, og ingen nedløpsfelt finnes.
+    const før = D[0].cable_total_m;
+    _takSetHeight(fid, 'eave_m', '11');
+    check('C: gesimsen (11 m) endrer ikke sluket — kabelen i røret er brukerens tall', 'uendret', eq(D[0].cable_total_m, før) && !('above_ground_m' in D[0]) && !('continues_below_ground' in D[0]), D[0].cable_total_m);
+    check('C: ingen DOWNSPOUT laget, og 207-tabellen (skråtak) er tom', '0 rader', _takFeats(t, 'DOWNSPOUT').length === 0 && _takCableSummary(t).rows.length === 0, _takCableSummary(t).rows.length);
+
+    // ── D. Gradrenne og varmefelt, oppsettene ──
+    const v = _takFlatAddValley(fid, { x: 666.7, y: 1000 }, { x: 1466.7, y: 1000 });
+    check('D: gradrenna er 8,00 m (målt i plan)', '8,00', eq(v.length_m, 8, 1e-6), v.length_m);
+    check('D: uten bredde og flateeffekt — ingen kabelmeter', 'null', v.cable_total_m === null, v.cable_total_m);
+    _takFlatSet(fid, v.id, 'width_m', '0,6');
+    check('D: dekket bredde følger bredden som standard', '0,6', v.covered_width_m && v.covered_width_m.value === 0.6 && v.covered_width_m.prov.from === 'width_m', JSON.stringify(v.covered_width_m));
+    check('D: bredde uten flateeffekt → fortsatt ingen kabelmeter', 'null', v.cable_total_m === null, v.cable_total_m);
+    renderSidebar();
+    const vEl = () => document.querySelector('.tak-fvalley[data-id="' + v.id + '"] .tak-flat-calc');
+    check('D: panelet sier «flateeffekt ikke satt», ikke et tall', TAK_FLAT_MSG_NO_WM2, vEl() && vEl().dataset.ok === '0' && vEl().textContent.includes(TAK_FLAT_MSG_NO_WM2) && !/\d+,\d\d m/.test(vEl().textContent), vEl() && vEl().textContent);
+    _takFlatSet(fid, v.id, 'wm2', '300');
+    check('D: 8 m × 0,6 m × 300 ÷ 30 = 48 m', '48', eq(v.cable_total_m, 48, 1e-9), v.cable_total_m);
+    renderSidebar();
+    check('D: panelet viser formelen', '… 6 løp over 60 cm · 48,00 m', vEl() && vEl().textContent === '30 W/m ÷ 300 W/m² = c/c 10 cm · 6 løp over 60 cm · 48,00 m', vEl() && vEl().textContent);
+    _takFlatSet(fid, v.id, 'covered_width_m', '0,4');
+    check('D: dekket bredde 40 cm → 4 løp, 32 m', '32', eq(v.cable_total_m, 32, 1e-9) && !v.covered_width_m.prov.from, v.cable_total_m);
+    _takFlatSet(fid, v.id, 'width_m', '0,8');
+    check('D: rettet dekket bredde står når bredden endres', '0,4', v.covered_width_m.value === 0.4, v.covered_width_m.value);
+    _takFlatSet(fid, v.id, 'covered_width_m', ''); _takFlatSet(fid, v.id, 'width_m', '0,6');
+    check('D: tømt dekket bredde følger bredden igjen', '0,6 · 48', v.covered_width_m.value === 0.6 && eq(v.cable_total_m, 48, 1e-9), v.covered_width_m.value);
+    check('D: oppsettet blir «sluk + gradrenner» når bare gradrenner er tegnet', 'valleys', _takFlatSetup(t) === 'valleys', _takFlatSetup(t));
+    const f = _takFlatAddField(fid, null);
+    check('D: «Hele takflaten» = 800 m²', '800', eq(f.area_m2, 800, 1e-6) && f.whole, f.area_m2);
+    check('D: varmefelt uten flateeffekt → ingen kabelmeter', 'null', f.cable_total_m === null, f.cable_total_m);
+    _takFlatSet(fid, f.id, 'wm2', '300');
+    check('D: 800 m² × 300 ÷ 30 = 8000 m', '8000', eq(f.cable_total_m, 8000, 1e-6), f.cable_total_m);
+    Sm = _takFlatSummary(t);
+    check('D: gradrenner OG varmefelt uten valg → ingen sum, appen spør (antakelse: utelukker hverandre)', 'null', Sm.setup === null && Sm.total === null && Sm.both23, Sm.setup);
+    renderSidebar();
+    check('D: panelet ber om å velge oppsett', 'Velg oppsett', /Velg oppsett/.test((document.querySelector('.tak-flat-sum') || {}).textContent || ''), '');
+    const ring = 9 * 2 * 2 * Math.PI * 0.4, rør = 9 * 1.5;
+    check('D: knappene viser hvert oppsett: 1 · 1+2 · 1+3', `${(ring + rør).toFixed(2)} · ${(ring + rør + 48).toFixed(2)} · ${(ring + rør + 8000).toFixed(2)}`,
+      eq(Sm.setups.drains.total_m, ring + rør, 1e-6) && eq(Sm.setups.valleys.total_m, ring + rør + 48, 1e-6) && eq(Sm.setups.field.total_m, ring + rør + 8000, 1e-6),
+      [Sm.setups.drains.total_m, Sm.setups.valleys.total_m, Sm.setups.field.total_m].map(x => x.toFixed(2)).join(' · '));
+    const btn = k => document.querySelector('.tak-flat-setup-' + k);
+    check('D: knappenes tall = summen etter klikk', 'like', btn('field') && btn('field').dataset.total === (ring + rør + 8000).toFixed(2), btn('field') && btn('field').dataset.total);
+    btn('field').click();
+    check('D: «Sluk + varme på taket» valgt → summen er 1 + 3, ferdig', (ring + rør + 8000).toFixed(2),
+      t.flat.setup === 'field' && document.querySelector('.tak-flat-total') && document.querySelector('.tak-flat-total').dataset.total === (ring + rør + 8000).toFixed(2) && document.querySelector('.tak-flat-total').dataset.complete === '1',
+      document.querySelector('.tak-flat-total') && document.querySelector('.tak-flat-total').dataset.total);
+    const poly = _takFlatAddField(fid, [{ x: 2400, y: 400 }, { x: 3400, y: 400 }, { x: 3400, y: 900 }, { x: 2400, y: 900 }]);
+    check('D: tegnet varmefelt 10 × 5 m = 50 m²', '50', eq(poly.area_m2, 50, 1e-9), poly.area_m2);
+    _takFlatDelete(fid, poly.id);
+
+    // ── E. Lagring, angring, tegning ──
+    const j = JSON.parse(JSON.stringify(_buildSaveData()));
+    check('E: S.tak[fid].flat lagres i prosjektet', '9 + 1 + 1', j.tak && j.tak[fid] && j.tak[fid].flat && j.tak[fid].flat.features.length === 11, j.tak && j.tak[fid] && j.tak[fid].flat && j.tak[fid].flat.features.length);
+    check('E: flate objekter ligger IKKE i t.features (skråtakets liste)', '0', (j.tak[fid].features || []).length === 0, (j.tak[fid].features || []).length);
+    _restoreProject(JSON.parse(JSON.stringify(j))); S.ui.activePartId = part.id; S.ui.activeFloorId = fid;
+    const t2 = _takOf(fid), Sm2 = _takFlatSummary(t2);
+    check('E: åpnet igjen gir samme sum og samme oppsett', (ring + rør + 8000).toFixed(2), Sm2.setup === 'field' && eq(Sm2.total.total_m, ring + rør + 8000, 1e-6), Sm2.total && Sm2.total.total_m);
+    const n0 = _takFlatFeats(t2).length;
+    _takFlatAddDrain(fid, { x: 100, y: 100 }); undo();
+    check('E: angre fjerner sluket igjen', n0, _takFlatFeats(_takOf(fid)).length === n0, _takFlatFeats(_takOf(fid)).length);
+    S.ui.readOnly = true;
+    check('E: låst prosjekt (060) — ingen endring', 'null', _takFlatAddDrain(fid, { x: 200, y: 200 }) === null && _takFlatFeats(_takOf(fid)).length === n0, '');
+    S.ui.readOnly = false;
+    fitAll(); let feil = null; try { render(); } catch (e) { feil = e; }
+    check('E: lerretet tegner flatt tak uten feil', 'ingen', !feil, feil && feil.message);
+    // Ekte klikk med verktøyet: sluk og gradrenne snappet til to sluk.
+    const cr = canvas.getBoundingClientRect();
+    const klikk = w => { const q = w2s(w.x, w.y), o = { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: cr.left + q.x, clientY: cr.top + q.y };
+      canvas.dispatchEvent(new MouseEvent('mousemove', { ...o, buttons: 0 })); canvas.dispatchEvent(new MouseEvent('mousedown', o)); canvas.dispatchEvent(new MouseEvent('mouseup', { ...o, buttons: 0 })); };
+    _takFeatStart(fid, 'drain'); klikk({ x: 1300, y: 1700 }); _takFeatStop();
+    const ny = _takFlatFeats(_takOf(fid), 'ROOF_DRAIN').slice(-1)[0];
+    check('E: klikk med «+ Sluk» setter et sluk der du klikket', '(1300, 1700) ± 3 cm', ny && Math.hypot(ny.geometry.pt.x - 1300, ny.geometry.pt.y - 1700) < 3, ny && JSON.stringify(ny.geometry.pt));
+    _takFeatStart(fid, 'fvalley'); klikk({ x: 2005, y: 335 }); klikk({ x: 2005, y: 995 }); _takFeatStop();
+    const nv = _takFlatFeats(_takOf(fid), 'VALLEY_GUTTER').slice(-1)[0];
+    check('E: gradrenne-verktøyet snapper endene til slukene', '6,67 m', nv && eq(nv.length_m, 6.667, 1e-3) && nv.geometry.pts[0].x === 2000, nv && nv.length_m);
+    _takFeatSel = null; klikk({ x: 2000, y: 1666.7 });
+    check('E: klikk på et sluk velger det', 'valgt', _takFeatSel && /^sl\d+$/.test(_takFeatSel.id), _takFeatSel && _takFeatSel.id);
+
+    // ── F. Skråtak uendret (213-tallene), prosjekt uten tak uendret ──
+    _resetProjectState(); addPart('roof');
+    const p2 = S.project.parts[0], f2 = S.floors.find(f => f.partId === p2.id).id;
+    S.ui.activePartId = p2.id; S.ui.activeFloorId = f2;
+    S.tak = { [f2]: _takManual([{ x: 0, y: 0 }, { x: 2500, y: 0 }, { x: 2500, y: 1000 }, { x: 0, y: 1000 }]) };
+    _takSetRoofType(f2, 'pitched'); _takSetHeight(f2, 'eave_m', '10');
+    const g = _takAddGutter(f2, 'k1');
+    _takAddDownspout(f2, g.id, 2); _takAddDownspout(f2, g.id, 12.5); _takAddDownspout(f2, g.id, 23);
+    const tp = _takOf(f2);
+    check('F: skråtak — metode 2 er fortsatt 110,15 m', '110,15', eq(_takCableSummary(tp).total_m, 110.15, 1e-9), _takCableSummary(tp).total_m);
+    ['n1', 'n2', 'n3'].forEach(id => _takSetRuns(f2, id, 1));
+    check('F: skråtak — metode 1 er fortsatt 80,15 m', '80,15', eq(_takCableSummary(tp).total_m, 80.15, 1e-9), _takCableSummary(tp).total_m);
+    const kp = _takCardHtml(f2);
+    check('F: skråtak — ingen flatt-tak-kort, ingen `flat`, «+ Gradrenne» (206) står', 'uendret', !kp.includes('tak-flat-card') && !('flat' in tp) && kp.includes(`_takFeatStart(${f2},'valley')`), '');
+    check('F: skråtak — sluk kan ikke legges', 'nekter', _takFlatAddDrain(f2, { x: 1000, y: 500 }) === null && !('flat' in tp), '');
+    check('F: skråtak lagres uten `flat`', 'ingen', !JSON.stringify(_buildSaveData().tak).includes('"flat"'), '');
+    _resetProjectState();
+    const tom = JSON.stringify(_buildSaveData());
+    check('F: prosjekt uten tak — ingen `tak` og ingen `flat` i lagringen', 'ingen', !/"tak"|"flat"/.test(tom), '');
+
+    // ── G. Rommenes flateeffekt og 159-advarsel uendret ──
+    check('G: _wm2OverCore = 159-tekstens hode', 'Flateeffekt 389 W/m² er 89 W/m² over taket på 300 W/m²', _wm2OverCore(389, 300).hode === 'Flateeffekt 389 W/m² er 89 W/m² over taket på 300 W/m²' && _wm2OverCore(300, 300) === null, _wm2OverCore(389, 300).hode);
+    const r159 = await _wm2OverWarnTest();
+    check('G: 159-testen (romkortets advarsel, tekst og tall) er grønn etter gjenbruket', 'grønn', r159.ok, r159.results.filter(x => !x.ok).map(x => x.name).join(' | '));
+  } catch (e) {
+    check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 400));
+  } finally {
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...keep.hp);
+    hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takFeat = null; _takFeatSel = null; _takFeatHover = null;
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest212: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
 async function _takRegressionTest204() {
   const results = [];
   const check = (name, expected, cond, got) => results.push({ name: '204: ' + name, expected, got, ok: !!cond });
@@ -88661,7 +89446,7 @@ function _restoreProject(data) {
   S.geo = data.geo || {};   // 005: georeferanse per etasje (kart-bakgrunner)
   // 204: tak per etasje. Mangler den, opprettes ingenting (tomt objekt i minnet, aldri lagret).
   S.tak = (data.tak && typeof data.tak === 'object') ? data.tak : {};
-  for (const k in S.tak) { _takNormalize(S.tak[k]); _takRecalc(S.tak[k]); }   // 205: edges ett nivå opp · 207: løp/kabelmeter for tak lagret før 207
+  for (const k in S.tak) { _takNormalize(S.tak[k]); _takRecalc(S.tak[k]); _takFlatRecalc(S.tak[k]); }   // 212: flatt tak (bare når t.flat finnes)   // 205: edges ett nivå opp · 207: løp/kabelmeter for tak lagret før 207
   _takFetchState = {}; _takDraw = null; _takRoomDraw = null;
   _takFeat = null; _takFeatSel = null; _takFeatHover = null;   // 206
   S.ui.selectedStripId = null;
@@ -111842,7 +112627,8 @@ function _roomWm2OverWarn(room) {
   const netto = st.nettoM2 || 0;
   const wm2 = Math.round(_roomFlateeffektWm2(room, st) || 0);
   const max = _wm2MaxFor(room.id);
-  if (!(netto > 0) || !(max > 0) || !(wm2 > max)) return null;
+  const core = _wm2OverCore(wm2, max);   // 212: kjernen deles med flatt tak
+  if (!(netto > 0) || !core) return null;
   const antall = rows.filter(r => r.kind !== 'Reservekabel').reduce((a, r) => a + (r.count || 0), 0);
   const kinds = [...new Set(rows.filter(r => r.kind !== 'Reservekabel').map(r => r.kind))];
   const MULTI = { Kabel: 'kabler', Matte: 'matter', Folie: 'folier', Plate: 'plater' };
@@ -111854,8 +112640,8 @@ function _roomWm2OverWarn(room) {
   const minM2 = netto * wm2 / max;
   const mindre = ett ? ('færre eller kortere ' + MULTI[ett]) : 'færre eller svakere produkter';
   return { wm2, max, overWm2: wm2 - max, ratedW, netto, antall, noun, overW, minM2,
-    kort: wm2 + ' W/m² · tak ' + max,
-    lang: 'Flateeffekt ' + wm2 + ' W/m² er ' + (wm2 - max) + ' W/m² over taket på ' + max + ' W/m² (' +
+    kort: core.kort,
+    lang: core.hode + ' (' +
       antall + ' ' + noun + ', ' + fmt(ratedW) + ' W på ' + fmt(netto, 1) + ' m²). Ca ' + fmt(overW) +
       ' W for mye — bruk ' + mindre + ', eller et rom på minst ' + fmt(minM2, 1) + ' m².' };
 }

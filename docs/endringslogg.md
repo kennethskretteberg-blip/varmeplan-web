@@ -4,6 +4,16 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 212 — Tak: flatt tak med sluk, gradrenner og varmefelt; c/c og kabelmeter regnes av flateeffekten og kabelens W/m (07.11.2026, `main`, ikke pushet)
+
+- Flatt tak (`roof_type = 'flat'`) får et eget kort i Tak-modulen: kabel fra produktkatalogen (W/m leses derfra), «+ Sluk», «+ Gradrenne», «+ Varmefelt» og «Hele takflaten». Samme modul. Alt ligger i `S.tak[fid].flat`, ikke i `t.features`, så ingen skråtakslogikk (206–210) ser det. Uten flate objekter finnes ikke `flat`.
+- c/c regnes: `c/c = W/m ÷ W/m²`, `kabelmeter = areal × W/m² ÷ W/m`, `løp = dekket bredde ÷ c/c`. Regnestykket står i panelet («30 W/m ÷ 300 W/m² = c/c 10 cm · 6 løp over 60 cm · 48,00 m»). Tom W/m² → «flateeffekt ikke satt», ingen kabelmeter. Ingen anbefalt W/m², ingen kurslengdegrense.
+- Sluk ≠ nedløp: ring rundt sluket (2 × 2π × 0,40 m, radien fra Cenikas film, redigerbar) + «Ned i røret», tomt som standard. Tomt = «1 sluk mangler rørlengde» og «≥» foran summen. Nedløpsmodellen fra 206/213 brukes ikke.
+- Gjenbruk: formelen er rommenes (`W/m² = W/m × 100 / CC`) snudd (`_ccCmFromWm2`); grensene er `_ccLimits`/`_ccWarnText` (016) og 159-advarselen, hvis kjerne er trukket ut i `_wm2OverCore` (romteksten uendret, `_wm2OverWarnTest` 9/9). Tak bruker utendørs-taket 450 W/m².
+- Tre oppsett med kabelmeter før valg: «1 · Sluk», «1 + 2 · Sluk + gradrenner», «1 + 3 · Sluk + varme på taket». Er både 2 og 3 tegnet, ingen sum før valg (antakelse: de utelukker hverandre, spm. 1).
+- Kontroll: 30 W/m / 300 W/m² → c/c 0,10 m; 800 m² → 8000 m begge veier; 60 cm → 6 løp; ni sluk → 45,24 m.
+- Ny `_takRegressionTest212` 70/70; de 79 andre like med HEAD; skråtak og tomt prosjekt bit-identiske med HEAD (lagring, panel, sum, lerret). Rapport i `docs/212/RAPPORT.md`, ti spørsmål i `docs/212/SPØRSMÅL.md`.
+
 ## 211 — Tak: tegn bygget over en plantegning eller for frihånd, med høyder og taktype satt manuelt (07.11.2026, `main`, ikke pushet)
 
 - Uten omriss viser Tak-kortet tre veier: 1 Finn bygget fra adressen (204, standard), 2 Tegn over en plantegning, 3 Tegn for frihånd. For nybygg som ikke finnes i Kartverkets data.
