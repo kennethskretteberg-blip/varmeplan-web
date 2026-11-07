@@ -4,6 +4,19 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 205 — Tak: kanttyper med fargekode, forslag og retting (07.11.2026, `main`, ikke pushet)
+
+- Kantene ligger nå på taket og ikke på flaten: `S.tak[fid].edges`. Delte kanter (mønet) lagres én gang, med `planes: [a, b]`. Tak fra 204 med `surfaces[i].edges` flyttes opp når de åpnes (`_takNormalize`).
+- Fargene er takfot grønn, gavl grå, møne gul, gradrenne blå, parapet mørk grå og «ikke valgt» rød stiplet.
+- Forslaget (`_takSuggest`, `AI_SUGGESTION` med lav confidence) gjør dette:
+  - Flatt tak: alle kanter blir parapet.
+  - Rektangulært skråtak: de lange sidene blir takfot og de korte gavl. Mønet blir en ny linje mellom gavlenes midtpunkter.
+  - Andre former: ingenting gjettes, og kortet sier «Formen er for sammensatt …».
+- Klikk på en kant åpner typemenyen. Valget gir `USER_CONFIRMED`. Dette virker bare i tak-modulen, og klikk andre steder er uendret (testet).
+- Panelet viser en teller og en advarsel for «ikke valgt», og har knappene «Merk alle som takfot/parapet», «Nullstill» og «Foreslå på nytt».
+- Ny `_takEdgeTakesGutter`, som 206 skal spørre: bare takfot kan få renne, og på flatt tak bare når brukeren selv har merket den.
+- Ny `_takRegressionTest205` 63/63. `_takRegressionTest204` C/D er skrevet om (64/64). Rapport i `docs/205/RAPPORT.md`.
+
 ## 204 — Tak-modulen slås på (07.11.2026, `main`, ikke pushet)
 
 - `MODULE_TYPES.roof.available = true`. Flisa «Tak & renner» vises på dashbordet, med hengelås for kundebedrifter (170). 066-dialogen og modul-navet har fortsatt fire valg, se `docs/204/SPØRSMÅL.md` 3.

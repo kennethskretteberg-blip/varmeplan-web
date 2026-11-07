@@ -73312,6 +73312,7 @@ canvas.addEventListener('mousedown', e=>{
   // 201: «Hent bygg» eier venstreklikket mens den står på — før alt annet, så kaskaden under aldri ser det.
   if (_geoPick && _geoPickMouseDown(e)) return;
   if (_takDraw && _takDrawMouseDown(e)) return;   // 204: «Tegn omrisset selv» eier venstreklikket
+  if (_takEdgeMouseDown(e)) return;   // 205: klikk på en takkant → typemenyen. Bare i tak-modulen; bom går videre
   // Frihånds-matte: klikk setter neste bane (snappet til raster). Dobbeltklikk avslutter
   // (dobbeltklikkets første klikk la til en bane → angre den før commit).
   if (S.ui.drawMode === 'mat-freehand' && _matFree) {
@@ -75167,6 +75168,7 @@ canvas.addEventListener('mousemove', e=>{
   _lastCanvasClient = { x: e.clientX, y: e.clientY };
   if (_geoPick && _geoPickMouseMove(e)) return;   // 201: hover/panorering i «Hent bygg»
   if (_takDraw) _takDrawMouseMove(e);              // 204: gummistrikk — returnerer ikke, panorering virker som før
+  else if (S.tak && S.tak[S.ui.activeFloorId]) _takEdgeMouseMove(e);   // 205: hover på takkant (bare tak-modulen)
   // Frihånds-matte: ghost følger musa (vannrett/loddrett ut fra retning, snappet raster).
   if (S.ui.drawMode === 'mat-freehand' && _matFree) {
     const wp = getWorldPos(e);
@@ -81225,8 +81227,11 @@ function _geoPickStore(fid, bg, c) {
 //   id, roof_type: { value: 'pitched'|'flat'|null, prov|null, service? },
 //   footprint: { world: [{x,y}] (verdens-cm, uten gjentatt sluttpunkt), prov },
 //   heights: { eave_m, ridge_m, ground_z }  — hver { value|null, height_ref, prov|null },
-//   edges: []                   // 205
+//   planes: [ { id, side?, prov } ]   // 205: takflatens fall-sider ut fra kantforslaget (kan være tom)
 // }
+// 205: kantene bor på TAKET, ikke på flaten — S.tak[fid].edges = [TakKant]. En delt kant (møne,
+// gradrenne) lagres ÉN gang med `planes: [a, b]`; itererer man over flater, dobles den. Se blokka
+// «205 · KANTENE» for TakKant.
 // height_ref sier hva høyden er målt FRA: 'terreng' (gesims/møne fra tjenesten er DOM − DTM),
 // 'moh' (terrenget selv, NN2000). 'takfot'/'møne' er med i lista for 206 (nedløp fra takfot).
 //
@@ -81258,7 +81263,8 @@ function _takRing(pts) {
 function _takNum(v, d) { return v == null || !isFinite(v) ? '' : (+v).toFixed(d == null ? 1 : d).replace('.', ','); }
 function _takHasWork(t) {
   if (!t) return false;
-  return (t.features || []).length > 0 || (t.surfaces || []).some(s => (s.edges || []).length > 0 ||
+  // 205: et kantFORSLAG er ikke arbeid (det lages på nytt) — bare kanter brukeren har rettet/bekreftet.
+  return (t.features || []).length > 0 || (t.edges || []).some(e => e.prov && e.prov.source === 'USER_CONFIRMED') || (t.surfaces || []).some(s =>
     Object.values(s.heights || {}).some(h => h && h.prov && h.prov.source === 'USER_CONFIRMED') ||
     (s.roof_type && s.roof_type.prov && s.roof_type.prov.source === 'USER_CONFIRMED'));
 }
@@ -81278,7 +81284,7 @@ function _takFromModel(model, bg, cand) {
   const h = (m, ref) => m ? { value: m.value, height_ref: ref, prov: { ...m.prov } } : { value: null, height_ref: ref, prov: null };
   const rt = model.roof && model.roof.roof_type;
   const known = rt === 'flat' || rt === 'pitched';
-  return {
+  const t = {
     v: 1,
     building: { bygningsnr: (cand && cand.bygningsnr) || model.bygningsnr || null, type: (cand && cand.type) || null,
                 origin: { epsg: o.epsg || 25833, east: o.east, north: o.north } },
@@ -81293,13 +81299,16 @@ function _takFromModel(model, bg, cand) {
       footprint: { world, prov: _takFootprintProv(cand) },
       heights: { eave_m: h(H.eave_m, 'terreng'), ridge_m: h(H.ridge_m, 'terreng'),
                  ground_z: { value: o.ground_z, height_ref: 'moh', prov: o.prov ? { ...o.prov } : null } },
-      edges: [],
+      planes: [],
     }],
+    edges: [],      // 205: én liste per tak (delte kanter én gang). Tjenestens roof.edges (alle «eave») tas IKKE inn.
     features: [],
     model: { level: 'quick', fetchedAt: new Date().toISOString(), warnings: (model.quality && model.quality.warnings) || [],
              dom_nodata_frac: model.quality ? model.quality.dom_nodata_frac : null,
              attribution: model.attribution || '© Kartverket (CC BY 4.0)' },
   };
+  _takApplySuggestion(t, t.surfaces[0]);   // 205: kjent taktype → kantforslag med en gang
+  return t;
 }
 /** Et omriss tegnet for hånd: ingen høyder, ingen taktype — brukeren setter alt. */
 function _takManual(pts) {
@@ -81308,8 +81317,8 @@ function _takManual(pts) {
     v: 1, building: null,
     surfaces: [{ id: 'f1', roof_type: { value: null, prov: null },
                  footprint: { world: _takRing(pts), prov: { source: 'USER_DRAWN', confidence: 1, note: 'tegnet for hånd' } },
-                 heights: { eave_m: hz('terreng'), ridge_m: hz('terreng'), ground_z: hz('moh') }, edges: [] }],
-    features: [], model: null,
+                 heights: { eave_m: hz('terreng'), ridge_m: hz('terreng'), ground_z: hz('moh') }, planes: [] }],
+    edges: [], features: [], model: null,
   };
 }
 /** Kantene kan merkes (205) først når takflaten har en taktype. */
@@ -81387,13 +81396,16 @@ function _takSetRoofType(fid, value) {
   const cur = s.roof_type || { value: null, prov: null };
   if (cur.value === value && cur.prov && cur.prov.source === 'USER_CONFIRMED') return false;
   // Kantene (205) er merket UT FRA taktypen — bytt aldri bort arbeid uten å spørre.
-  if (cur.value && cur.value !== value && (s.edges || []).length &&
+  const tt = _takOf(fid);
+  if (cur.value && cur.value !== value && _takEdgesOf(tt, s).some(e => e.prov && e.prov.source === 'USER_CONFIRMED') &&
       !confirm(`Bytte til ${TAK_ROOF_TYPES[value].toLowerCase()}? De merkede kantene nullstilles.`)) return false;
   pushUndo();
-  if (cur.value !== value) s.edges = [];
   s.roof_type = { value, prov: { source: 'USER_CONFIRMED', confidence: 1,
                   note: cur.value && cur.prov && cur.prov.source !== 'USER_CONFIRMED' ? 'bekreftet/rettet fra anslag ' + cur.value : 'valgt av bruker' },
                   ...(cur.service ? { service: cur.service } : {}) };
+  // 205: ny taktype → nytt kantforslag (det gamle var laget for den andre typen). Samme type
+  // bekreftet → kantene står, også de brukeren har rettet.
+  if (cur.value !== value || !_takEdgesOf(tt, s).length) _takApplySuggestion(tt, s);
   renderSidebar(); render(); _scheduleAutoSave && _scheduleAutoSave();
   return true;
 }
@@ -81464,10 +81476,16 @@ function _takDrawCanvas() {
     s.footprint.world.forEach((pt, i) => { const q = w2s(pt.x, pt.y); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); });
     ctx.closePath();
     ctx.fillStyle = 'rgba(234,88,12,0.10)'; ctx.fill();
+    // 205: har taket kanter, ER kantene omrisset (i sin farge) — ingen oransje strek under dem.
+    const tk0 = _takOf(fid);
+    if (!(tk0 && (tk0.edges || []).length)) {
     // Tegnet for hånd = stiplet, samme språk som DOM1-omrisset: ikke målt vektordata.
     ctx.setLineDash(s.footprint.prov && s.footprint.prov.source === 'USER_DRAWN' ? [7, 5] : []);
     ctx.strokeStyle = 'rgba(194,65,12,0.95)'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+    }
   }
+  const tk = _takOf(fid);
+  if (tk && (tk.edges || []).length) _takDrawEdges(fid, tk);   // 205: kanttypene i farge, oppå omrisset
   const D = _takDraw;
   if (D && D.fid === fid && !S.ui?._pdfMode) {
     const pts = D.hover ? [...D.pts, D.hover] : D.pts;
@@ -81569,8 +81587,338 @@ function _takCardHtml(fid) {
     <div style="padding:3px 0 1px"><div>Taktype ${rtPt ? dim('(' + rtPt + ')') : ''}</div><div>${typeBtns}</div></div>
     ${!rt.value ? `<div style="color:var(--warn,#d97706);font-size:11px">⚠ Velg taktype — den styrer hvilke kanter som får renne.</div>` : ''}
     ${row('Terreng', 'ground_z')}
+    ${_takEdgesCardHtml(fid, t, s)}
     ${t && t.model ? `<div style="font-size:10px;margin-top:3px">${dim(esc(t.model.attribution || '© Kartverket'))}</div>` : ''}
     <div style="margin-top:4px">${t && t.building ? '' : _takBtn(`_takDrawStart(${fid})`, 'Tegn på nytt')}</div>`);
+}
+
+// ═══ 205 · KANTENE — kanttype med fargekode, forslag for flatt tak og enkelt saltak, brukeren retter ══
+// Kenneth 07.11.2026: «Kantene må være riktig merket før kabelen legges ut» — typen styrer hva appen
+// foreslår i 206–209. Appen FORESLÅR (AI_SUGGESTION, lav confidence), brukeren RETTER (USER_CONFIRMED).
+// Tjenestens `roof.edges` (alle omrisskanter = «eave») er en liste, ikke et forslag, og tas ikke inn.
+// `roof.planes` er tom — forslaget hviler på omriss + taktype, aldri på flategeometri.
+//
+// TakKant (S.tak[fid].edges — ÉN liste per tak, delte kanter lagres én gang) = {
+//   id,                 // 'k<i+1>' = omrisskant i (footprint.world[i] → [i+1]); 'm1' = mønelinje
+//   kind,               // 'outline' (omrisskant) | 'line' (ny linje inne i flaten — mønet)
+//   i?,                 // omrisskantens indeks
+//   a, b,               // {x,y} verdens-cm, som omrisset. Høyde per kant kommer med 206.
+//   type,               // 'eave'|'rake'|'ridge'|'valley'|'parapet' | null = «ikke valgt»
+//   surface,            // TakFlate.id kanten hører til
+//   planes,             // fall-sidene (TakFlate.planes[].id) kanten grenser mot — mønet: [a, b]
+//   prov,               // { source, confidence, note } | null (nullstilt)
+// }
+// Formen avgjør om appen gjetter. Flatt tak: alle kanter parapet, uansett form. Skråtak: bare et
+// omtrentlig rektangel (4 sider, hjørner 90° ± 5°, ikke nær kvadratisk) gir et forslag. Alt annet
+// (L, T, ark, valm vi ikke kan se, skjeve vinkler, fem kanter …) → alle «ikke valgt» + melding.
+// v3 §8 / LiNear: si «usikker», aldri gjett stille.
+const TAK_EDGE_TYPES = {
+  eave:    { lbl: 'Takfot',            short: 'takfot',    color: '#16a34a', w: 4, dash: [], note: 'her ligger takrenna' },
+  rake:    { lbl: 'Gavl',              short: 'gavl',      color: '#9ca3af', w: 4, dash: [], note: 'ingen kabel' },
+  ridge:   { lbl: 'Møne',              short: 'møne',      color: '#eab308', w: 4, dash: [], note: 'ingen kabel' },
+  valley:  { lbl: 'Gradrenne',         short: 'gradrenne', color: '#2563eb', w: 4, dash: [], note: 'kabel, to løp' },
+  parapet: { lbl: 'Parapet / takkant', short: 'parapet',   color: '#374151', w: 3, dash: [], note: 'flatt tak — ingen renne med mindre du sier det' },
+};
+const TAK_EDGE_UNSET = { lbl: 'Ikke valgt', short: 'ikke valgt', color: '#dc2626', w: 3, dash: [6, 4], note: 'merk kanten' };
+const TAK_EDGE_ORDER = ['eave', 'rake', 'ridge', 'valley', 'parapet'];
+const TAK_MSG_COMPLEX = 'Formen er for sammensatt for et automatisk forslag. Merk kantene selv.';
+const TAK_MSG_SQUARE = 'Bygget er nesten kvadratisk — appen vet ikke hvilken vei mønet går. Merk kantene selv.';
+const TAK_SHAPE_TOL_DEG = 5;      // rett hjørne = 90° ± 5°; retningsendring < 5° = samme side
+const TAK_SQUARE_RATIO = 1.05;    // lang/kort under dette → mønets retning er ukjent
+var _takEdgeHover = null;   // { fid, id } — transient, lagres aldri
+var _takEdgeSel = null;     // { fid, id } mens kantmenyen står åpen
+var _takEdgePending = null; // mousedown traff en kant → menyen åpnes på KLIKKET (ellers lukker «klikk utenfor» den straks)
+
+function _takEdgesOf(t, s) { return ((t && t.edges) || []).filter(e => !s || e.surface === s.id); }
+function _takEdgeStyle(e) { return (e && TAK_EDGE_TYPES[e.type]) || TAK_EDGE_UNSET; }
+function _takEdgeLenM(e) { return Math.hypot(e.b.x - e.a.x, e.b.y - e.a.y) / 100; }
+
+/** Ren funksjon: omrisset → rette sider (nesten-kolineære hjørner slått sammen) og formen.
+ *  { kind:'rect', segSide[], eave:[j,j], rake:[j,j], ridge:{a,b}, lenM } | { kind:'square'|'complex', reason } */
+function _takShape(world) {
+  const P = _takRing(world), n = P.length;
+  if (n < 3) return { kind: 'complex', reason: 'for få hjørner' };
+  const turn = (p0, p1, p2) => {
+    const u = { x: p1.x - p0.x, y: p1.y - p0.y }, v = { x: p2.x - p1.x, y: p2.y - p1.y };
+    if (Math.hypot(u.x, u.y) < 1 || Math.hypot(v.x, v.y) < 1) return 0;   // dobbeltpunkt (< 1 cm)
+    return Math.abs(Math.atan2(u.x * v.y - u.y * v.x, u.x * v.x + u.y * v.y)) * 180 / Math.PI;
+  };
+  const keep = P.map((_, i) => i);
+  for (let changed = true; changed && keep.length > 3;) {
+    changed = false;
+    for (let k = 0; k < keep.length; k++) {
+      const m = keep.length;
+      if (turn(P[keep[(k - 1 + m) % m]], P[keep[k]], P[keep[(k + 1) % m]]) < TAK_SHAPE_TOL_DEG) { keep.splice(k, 1); changed = true; break; }
+    }
+  }
+  const m = keep.length;
+  if (m !== 4) return { kind: 'complex', reason: m > 4 ? `${m} kanter — L-form, ark eller sammensatt` : 'trekant' };
+  const turns = keep.map((_, k) => turn(P[keep[(k + 3) % 4]], P[keep[k]], P[keep[(k + 1) % 4]]));
+  if (turns.some(a => Math.abs(a - 90) > TAK_SHAPE_TOL_DEG)) return { kind: 'complex', reason: 'skjeve vinkler (' + turns.map(a => Math.round(180 - a) + '°').join(', ') + ')' };
+  // Side j går fra hjørne keep[j] til keep[j+1]; omrisskant i hører til siden der den starter.
+  const segSide = new Array(n);
+  for (let j = 0; j < 4; j++) for (let i = keep[j]; i !== keep[(j + 1) % 4]; i = (i + 1) % n) segSide[i] = j;
+  const corner = j => P[keep[j % 4]];
+  const len = j => Math.hypot(corner(j + 1).x - corner(j).x, corner(j + 1).y - corner(j).y);
+  const A = (len(0) + len(2)) / 2, B = (len(1) + len(3)) / 2;
+  if (Math.max(A, B) / Math.min(A, B) < TAK_SQUARE_RATIO) return { kind: 'square', reason: `nesten kvadratisk (${_takNum(A / 100)} × ${_takNum(B / 100)} m)` };
+  const eave = A >= B ? [0, 2] : [1, 3], rake = A >= B ? [1, 3] : [0, 2];
+  const mid = j => ({ x: (corner(j).x + corner(j + 1).x) / 2, y: (corner(j).y + corner(j + 1).y) / 2 });
+  // Mønet: NY linje fra midten av den ene gavlen til midten av den andre — langs lengste akse,
+  // midt mellom takfotene. Ikke en omrisskant.
+  return { kind: 'rect', segSide, eave, rake, ridge: { a: mid(rake[0]), b: mid(rake[1]) }, lenM: Math.max(A, B) / 100 };
+}
+
+/** Ren funksjon: takflaten (omriss + taktype) → { kind, reason?, edges, planes } eller null (taktype ikke valgt). */
+function _takSuggest(s) {
+  const P = _takRing(s && s.footprint && s.footprint.world);
+  const rt = s && s.roof_type && s.roof_type.value;
+  if (!rt || P.length < 3) return null;
+  const sid = s.id;
+  const seg = (i, type, planes, prov) => ({ id: 'k' + (i + 1), kind: 'outline', i, a: { x: P[i].x, y: P[i].y },
+    b: { x: P[(i + 1) % P.length].x, y: P[(i + 1) % P.length].y }, type, surface: sid, planes, prov });
+  if (rt === 'flat') {
+    // Flatt tak dreneres innvendig med taksluk og har som regel ingen renne. Ingen møne.
+    const pa = sid + '.a';
+    const prov = () => ({ source: 'AI_SUGGESTION', confidence: 0.5, note: 'flatt tak: parapet/takkant — ingen renne før du sier at den finnes' });
+    return { kind: 'flat', planes: [{ id: pa, prov: prov() }], edges: P.map((_, i) => seg(i, 'parapet', [pa], prov())) };
+  }
+  const sh = _takShape(P);
+  if (sh.kind === 'rect') {
+    const pa = sid + '.a', pb = sid + '.b';
+    const prov = () => ({ source: 'AI_SUGGESTION', confidence: 0.4, note: 'enkelt saltak antatt fra rektangulært omriss — kan være valm- eller pulttak' });
+    const edges = P.map((_, i) => {
+      const j = sh.segSide[i];
+      return j === sh.eave[0] ? seg(i, 'eave', [pa], prov()) : j === sh.eave[1] ? seg(i, 'eave', [pb], prov()) : seg(i, 'rake', [pa, pb], prov());
+    });
+    edges.push({ id: 'm1', kind: 'line', a: sh.ridge.a, b: sh.ridge.b, type: 'ridge', surface: sid, planes: [pa, pb],
+                 prov: { source: 'AI_SUGGESTION', confidence: 0.3, note: 'mønet antatt midt mellom takfotene, langs lengste akse' } });
+    const eavesOf = j => edges.filter(e => e.kind === 'outline' && sh.segSide[e.i] === j).map(e => e.id);
+    return { kind: 'gable', edges, planes: [{ id: pa, eaves: eavesOf(sh.eave[0]), prov: prov() }, { id: pb, eaves: eavesOf(sh.eave[1]), prov: prov() }] };
+  }
+  const prov = () => ({ source: 'AI_SUGGESTION', confidence: 0, note: 'usikker: ' + sh.reason });
+  return { kind: sh.kind === 'square' ? 'square' : 'complex', reason: sh.reason, planes: [], edges: P.map((_, i) => seg(i, null, [], prov())) };
+}
+/** Legger forslaget inn for flaten (erstatter flatens kanter). Muterer t og s. */
+function _takApplySuggestion(t, s) {
+  if (!t || !s) return null;
+  const sug = _takSuggest(s);
+  t.edges = (t.edges || []).filter(e => e.surface !== s.id).concat(sug ? sug.edges : []);
+  s.planes = sug ? sug.planes : [];
+  if (sug) s.edge_suggestion = { kind: sug.kind, ...(sug.reason ? { reason: sug.reason } : {}) }; else delete s.edge_suggestion;
+  return sug;
+}
+/** Åpning: et tak lagret av 204 hadde `surfaces[i].edges` (alltid tom). Flytt opp — ingenting annet endres. */
+function _takNormalize(t) {
+  if (!t || typeof t !== 'object' || Array.isArray(t.edges)) return t;
+  t.edges = [];
+  for (const s of t.surfaces || []) {
+    if (Array.isArray(s.edges)) { t.edges.push(...s.edges.map(e => ({ surface: s.id, ...e }))); delete s.edges; }
+    if (!Array.isArray(s.planes)) s.planes = [];
+  }
+  return t;
+}
+/** 206 spør her: kan et rennestrekk legges langs kanten? Bare takfot — og på flatt tak bare når
+ *  brukeren SELV har sagt at det finnes en utvendig renne (USER_CONFIRMED). */
+function _takEdgeTakesGutter(t, e) {
+  if (!e || e.type !== 'eave') return false;
+  const s = ((t && t.surfaces) || []).find(x => x.id === e.surface);
+  if (s && s.roof_type && s.roof_type.value === 'flat') return !!(e.prov && e.prov.source === 'USER_CONFIRMED');
+  return true;
+}
+
+// ── Retting ──────────────────────────────────────────────────────────────────────────────────
+function _takEdgeMut(fid) { if (S.ui.readOnly) { _lockToast(); return null; } return _takOf(fid); }
+function _takEdgeDone() {
+  hideCtx(); _takEdgeSel = null;
+  renderSidebar(); render(); _scheduleAutoSave && _scheduleAutoSave();
+}
+function _takSetEdgeType(fid, id, type) {
+  const t = _takEdgeMut(fid); if (!t) { hideCtx(); return false; }
+  const e = (t.edges || []).find(x => x.id === id);
+  if (!e || !TAK_EDGE_TYPES[type]) return false;
+  if (e.type === type && e.prov && e.prov.source === 'USER_CONFIRMED') { hideCtx(); _takEdgeSel = null; render(); return false; }
+  pushUndo();
+  const old = e.type;
+  e.type = type;
+  // Samme type som forslaget = bekreftet. Opphavet til det gamle står i notatet.
+  e.prov = { source: 'USER_CONFIRMED', confidence: 1,
+             note: old === type ? 'bekreftet forslag' : 'rettet fra ' + (old ? TAK_EDGE_TYPES[old].short : 'ikke valgt') };
+  _takEdgeDone();
+  return true;
+}
+function _takRemoveEdgeLine(fid, id) {
+  const t = _takEdgeMut(fid); if (!t) { hideCtx(); return false; }
+  const e = (t.edges || []).find(x => x.id === id);
+  if (!e || e.kind !== 'line') return false;
+  pushUndo();
+  t.edges = t.edges.filter(x => x !== e);
+  _takEdgeDone();
+  return true;
+}
+/** «Merk alle som …»: alle omrisskanter får typen. Mønelinjen fra forslaget fjernes — den forutsetter
+ *  to gavler, og fall-sidene er ikke lenger kjent. */
+function _takSetAllEdges(fid, type) {
+  const t = _takEdgeMut(fid), s = _takSurface(fid);
+  if (!t || !s || !TAK_EDGE_TYPES[type] || !_takRoofTypeReady(s)) return false;
+  if (!_takEdgesOf(t, s).length) _takApplySuggestion(t, s);   // gamle 204-tak uten kanter
+  pushUndo();
+  t.edges = t.edges.filter(e => !(e.surface === s.id && e.kind === 'line'));
+  for (const e of _takEdgesOf(t, s)) {
+    e.type = type; e.planes = [];
+    e.prov = { source: 'USER_CONFIRMED', confidence: 1, note: 'merket alle som ' + TAK_EDGE_TYPES[type].short };
+  }
+  s.planes = []; s.edge_suggestion = { kind: 'user' };
+  _takEdgeDone();
+  return true;
+}
+/** «Nullstill»: alle kanter «ikke valgt», ingen møne — begynn på nytt. */
+function _takResetEdges(fid) {
+  const t = _takEdgeMut(fid), s = _takSurface(fid);
+  if (!t || !s || !_takRoofTypeReady(s)) return false;
+  if (!_takEdgesOf(t, s).length) _takApplySuggestion(t, s);
+  pushUndo();
+  t.edges = t.edges.filter(e => !(e.surface === s.id && e.kind === 'line'));
+  for (const e of _takEdgesOf(t, s)) { e.type = null; e.planes = []; e.prov = null; }
+  s.planes = []; s.edge_suggestion = { kind: 'reset' };
+  _takEdgeDone();
+  return true;
+}
+/** «Foreslå på nytt»: appens forslag ut fra omriss + taktype. Spør om brukerens egne kanter går tapt. */
+function _takResuggest(fid) {
+  const t = _takEdgeMut(fid), s = _takSurface(fid);
+  if (!t || !s || !_takRoofTypeReady(s)) return false;
+  if (_takEdgesOf(t, s).some(e => e.prov && e.prov.source === 'USER_CONFIRMED') &&
+      !confirm('Lage nytt forslag? Kantene du har merket selv, blir erstattet.')) return false;
+  pushUndo();
+  _takApplySuggestion(t, s);
+  _takEdgeDone();
+  return true;
+}
+
+// ── Klikk på kanten — BARE i tak-modulen ─────────────────────────────────────────────────────────
+// Kroken står øverst i mousedown (etter «Tegn omrisset selv»), og svarer bare når etasjen er en
+// tak-del, taket har kanter og ingen annen modus eier musa. Bommer klikket, går det videre i
+// kaskaden som før. Utenfor tak-modulen returnerer den usant før den regner noe (låst i testen).
+function _takEdgeActiveFid() {
+  const fid = S.ui.activeFloorId;
+  if (!S.tak || !S.tak[fid] || _takDraw || _geoPick || S.ui.drawMode) return null;
+  if (!_takPartOfFloor(fid) || !(S.tak[fid].edges || []).length) return null;
+  return fid;
+}
+function _takHitEdge(fid, sx, sy) {
+  let best = null, bd = 8;
+  for (const e of _takEdgesOf(_takOf(fid))) {
+    const a = w2s(e.a.x, e.a.y), b = w2s(e.b.x, e.b.y);
+    const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy;
+    const u = L2 ? Math.max(0, Math.min(1, ((sx - a.x) * dx + (sy - a.y) * dy) / L2)) : 0;
+    const d = Math.hypot(sx - a.x - u * dx, sy - a.y - u * dy);
+    if (d < bd) { bd = d; best = e; }   // strengt mindre: ved møtepunktet vinner omrisskanten (den kom først)
+  }
+  return best;
+}
+function _takEdgeMouseDown(e) {
+  _takEdgePending = null;
+  if (e.button !== 0) return false;
+  const fid = _takEdgeActiveFid(); if (fid == null) return false;
+  const { x, y } = _evToCanvas(e);
+  const hit = _takHitEdge(fid, x, y); if (!hit) return false;
+  _takEdgePending = { fid, id: hit.id };
+  e.preventDefault && e.preventDefault();
+  return true;
+}
+function _takEdgeMouseMove(e) {
+  const prev = _takEdgeHover;
+  const fid = _takEdgeActiveFid();
+  let hit = null;
+  if (fid != null) { const { x, y } = _evToCanvas(e); hit = _takHitEdge(fid, x, y); }
+  _takEdgeHover = hit ? { fid, id: hit.id } : null;
+  if (hit) canvas.style.cursor = 'pointer'; else if (prev) canvas.style.cursor = 'default';
+  if ((prev && prev.id) !== (hit && hit.id)) markDirty();
+}
+/** Den lille menyen ved kanten: typene med farge og betydning. */
+function _takEdgeMenu(fid, id, cx, cy) {
+  const t = _takOf(fid), e = t && (t.edges || []).find(x => x.id === id);
+  if (!e) return false;
+  const s = (t.surfaces || []).find(x => x.id === e.surface);
+  const flat = s && s.roof_type && s.roof_type.value === 'flat';
+  const sw = st => `<span style="display:inline-block;width:16px;height:0;border-top:${st.w}px ${st.dash.length ? 'dashed' : 'solid'} ${st.color};vertical-align:middle;margin-right:7px"></span>`;
+  const types = e.kind === 'line' ? ['ridge', 'valley'] : TAK_EDGE_ORDER;
+  const pv = e.prov ? (e.prov.source === 'USER_CONFIRMED' ? 'merket av deg' : e.type ? 'forslag' : 'usikker') : 'ikke valgt';
+  const items = types.map(k => {
+    const st = TAK_EDGE_TYPES[k];
+    return `<div class="ctx-item${e.type === k ? ' sel' : ''}" data-tak-edge-type="${k}" onclick="_takSetEdgeType(${fid},'${id}','${k}')">${sw(st)}${st.lbl}${k === 'eave' && flat ? ' (utvendig renne)' : ''} <span style="color:var(--dim);font-size:11px;margin-left:4px">${st.note}</span></div>`;
+  }).join('');
+  document.getElementById('ctx-menu').innerHTML =
+    `<div style="padding:4px 8px 3px;font-size:11px;color:var(--dim)">${e.kind === 'line' ? 'Linje' : 'Kant'} · ${_takNum(_takEdgeLenM(e), 2)} m · ${_takEdgeStyle(e).lbl.toLowerCase()} (${pv})</div>${items}` +
+    (e.kind === 'line' ? `<div class="ctx-sep"></div><div class="ctx-item danger" onclick="_takRemoveEdgeLine(${fid},'${id}')">✕ Fjern linjen</div>` : '');
+  showCtxAt(cx, cy);
+  _takEdgeSel = { fid, id };
+  render();
+  return true;
+}
+// Menyen åpnes på klikket etter en mousedown som traff en kant. Capture-fasen kommer før
+// «lukk menyen ved klikk utenfor» (bobler på document), som ellers ville lukket den straks.
+document.addEventListener('click', e => {
+  const p = _takEdgePending; if (!p) return;
+  _takEdgePending = null;
+  if (e.target !== canvas) return;
+  e.stopPropagation();
+  _takEdgeMenu(p.fid, p.id, e.clientX, e.clientY);
+}, true);
+
+// ── Tegneflaten ──────────────────────────────────────────────────────────────────────────────
+function _takDrawEdges(fid, t) {
+  const menuOpen = _takEdgeSel && _takEdgeSel.fid === fid && document.getElementById('ctx-menu').style.display !== 'none';
+  const pdf = !!(S.ui && S.ui._pdfMode);
+  ctx.save(); ctx.lineCap = 'round';
+  // Omrisskanter først, linjer (mønet) oppå.
+  const list = [..._takEdgesOf(t)].sort((a, b) => (a.kind === 'line') - (b.kind === 'line'));
+  for (const e of list) {
+    const st = _takEdgeStyle(e), a = w2s(e.a.x, e.a.y), b = w2s(e.b.x, e.b.y);
+    const hi = !pdf && ((_takEdgeHover && _takEdgeHover.fid === fid && _takEdgeHover.id === e.id) || (menuOpen && _takEdgeSel.id === e.id));
+    if (hi) {
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      ctx.setLineDash([]); ctx.globalAlpha = 0.3; ctx.strokeStyle = st.color; ctx.lineWidth = st.w + 10; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+    ctx.setLineDash(st.dash); ctx.strokeStyle = st.color; ctx.lineWidth = st.w + (hi ? 1 : 0); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── Sidepanelet ──────────────────────────────────────────────────────────────────────────────
+/** «4 takfot · 2 gavl · 1 møne · 0 gradrenne» (+ parapet når taket er flatt eller har noen). */
+function _takEdgeCounter(t, s) {
+  const E = _takEdgesOf(t, s), n = k => E.filter(e => e.type === k).length;
+  const ks = ['eave', 'rake', 'ridge', 'valley'];
+  if ((s.roof_type && s.roof_type.value === 'flat') || n('parapet')) ks.push('parapet');
+  return ks.map(k => n(k) + ' ' + TAK_EDGE_TYPES[k].short).join(' · ');
+}
+function _takEdgesCardHtml(fid, t, s) {
+  if (!_takRoofTypeReady(s)) return '';
+  const dim = x => `<span style="color:var(--dim)">${x}</span>`;
+  const warn = x => `<div style="color:var(--warn,#d97706);font-size:11px;margin-top:2px">⚠ ${x}</div>`;
+  const E = _takEdgesOf(t, s);
+  const head = `<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px"><div style="font-weight:700">Kanter</div>`;
+  if (!E.length) return head + `<div>${dim('Ingen kanter merket ennå.')}</div><div>${_takBtn(`_takResuggest(${fid})`, 'Foreslå kanttyper', true)}</div></div>`;
+  const flat = s.roof_type.value === 'flat';
+  const unset = E.filter(e => !e.type).length;
+  const sug = s.edge_suggestion || {};
+  const anyAi = E.some(e => e.type && e.prov && e.prov.source === 'AI_SUGGESTION');
+  let msg = '';
+  if (sug.kind === 'complex' && unset) msg += warn(TAK_MSG_COMPLEX) + `<div style="font-size:11px">${dim('(' + esc(sug.reason || '') + ')')}</div>`;
+  if (sug.kind === 'square' && unset) msg += warn(TAK_MSG_SQUARE);
+  if (unset) msg += warn(`${unset} ${unset === 1 ? 'kant står' : 'kanter står'} som «ikke valgt» — merk ${unset === 1 ? 'den' : 'dem'} før kabelen legges ut.`);
+  if (anyAi && sug.kind === 'gable') msg += `<div style="font-size:11px">${dim('Forslag (usikkert): enkelt saltak — takfot på de lange sidene, gavl på de korte, mønet midt imellom. Valm- eller pulttak? Rett kantene.')}</div>`;
+  if (flat) msg += `<div style="font-size:11px">${dim('Flatt tak dreneres med taksluk. Merk en kant som takfot bare der det finnes en utvendig renne.')}</div>`;
+  const legend = [...TAK_EDGE_ORDER.filter(k => k !== 'parapet' || flat || E.some(e => e.type === 'parapet')).map(k => TAK_EDGE_TYPES[k]), ...(unset ? [TAK_EDGE_UNSET] : [])]
+    .map(st => `<span style="white-space:nowrap;margin-right:8px"><span style="display:inline-block;width:14px;height:0;border-top:${Math.min(st.w, 3)}px ${st.dash.length ? 'dashed' : 'solid'} ${st.color};vertical-align:middle;margin-right:3px"></span>${st.short}</span>`).join('');
+  return head +
+    `<div class="tak-edge-count">${_takEdgeCounter(t, s)}</div>${msg}
+     <div style="font-size:11px;margin-top:3px;line-height:1.7">${legend}</div>
+     <div style="font-size:11px">${dim('Klikk en kant i tegningen for å endre typen.')}</div>
+     <div style="margin-top:3px">${_takBtn(`_takSetAllEdges(${fid},'eave')`, 'Merk alle som takfot')}${_takBtn(`_takSetAllEdges(${fid},'parapet')`, 'Merk alle som parapet')}${_takBtn(`_takResetEdges(${fid})`, 'Nullstill')}${_takBtn(`_takResuggest(${fid})`, 'Foreslå på nytt')}</div></div>`;
 }
 
 // 204: tak-modulen. Stubbet fetch mot /roof/model?level=quick (ingen eksterne kall). Låser: modulen er på
@@ -81673,7 +82021,8 @@ async function _takRegressionTest204() {
     check('C: møne 7,5 over terreng, conf 0,4', 'terreng/0.4', s && s.heights.ridge_m.value === 7.5 && s.heights.ridge_m.height_ref === 'terreng' && s.heights.ridge_m.prov.confidence === 0.4, s && JSON.stringify(s.heights.ridge_m));
     check('C: terreng 182,4 moh med prov', 'moh/DOM_RASTER', s && s.heights.ground_z.value === 182.4 && s.heights.ground_z.height_ref === 'moh' && s.heights.ground_z.prov.source === 'DOM_RASTER', s && JSON.stringify(s.heights.ground_z));
     check('C: taktype = pitched, ESTIMATE', 'pitched/ESTIMATE', s && s.roof_type.value === 'pitched' && s.roof_type.prov.source === 'ESTIMATE', s && JSON.stringify(s.roof_type));
-    check('C: kanter og objekter er tomme (205–209)', '0/0', s && s.edges.length === 0 && t.features.length === 0, '');
+    // 205: kantene bor på taket (ikke flaten), og en kjent taktype gir forslaget straks (12 × 8 m saltak: 4 kanter + møne).
+    check('C: objekter tomme (206–209), kantene = 205-forslaget på taket', '0 / 5 / ingen s.edges', s && !('edges' in s) && t.edges.length === 5 && t.features.length === 0, t && t.edges && t.edges.length);
     check('C: valgt bygg er satt i S.geo', '300100', S.geo[fid].chosen && S.geo[fid].chosen.bygningsnr === '300100', '');
     const kort = _takCardHtml(fid);
     check('C: kortet: «Omriss fra Kartverket»', 'ja', kort.includes('Omriss fra Kartverket'), '');
@@ -81705,12 +82054,13 @@ async function _takRegressionTest204() {
     _takSetRoofType(fid, 'flat');
     check('D: taktype rettet → flat, USER_CONFIRMED, (valgt)', 'flat', s2().roof_type.value === 'flat' && s2().roof_type.prov.source === 'USER_CONFIRMED' && _takCardHtml(fid).includes('(valgt)'), JSON.stringify(s2().roof_type));
     // Kanter merket (205) → bytte spør, og «nei» endrer ingenting.
-    s2().edges = [{ id: 'e1', type: 'eave' }];
+    const tE = () => _takOf(fid).edges;
+    tE()[0].prov = { source: 'USER_CONFIRMED', confidence: 1, note: 'test' };   // brukeren har merket en kant (205)
     let spurt = 0; window.confirm = () => { spurt++; return false; };
-    check('D: bytte taktype med merkede kanter spør — nei = uendret', 'spurt, flat, 1 kant', _takSetRoofType(fid, 'pitched') === false && spurt === 1 && s2().roof_type.value === 'flat' && s2().edges.length === 1, spurt + ' ' + s2().roof_type.value);
+    check('D: bytte taktype med merkede kanter spør — nei = uendret', 'spurt, flat, 1 kant', _takSetRoofType(fid, 'pitched') === false && spurt === 1 && s2().roof_type.value === 'flat' && tE().length === 4 && tE()[0].prov.source === 'USER_CONFIRMED', spurt + ' ' + s2().roof_type.value);
     window.confirm = () => true;
     _takSetRoofType(fid, 'pitched');
-    check('D: …ja = ny type og kantene nullstilt', 'pitched, 0', s2().roof_type.value === 'pitched' && s2().edges.length === 0, '');
+    check('D: …ja = ny type og nytt kantforslag (205)', 'pitched, 5 forslag', s2().roof_type.value === 'pitched' && tE().length === 5 && tE().every(e => e.prov.source === 'AI_SUGGESTION'), tE().length);
 
     // ── E. Tjenesten nede → melding + Prøv igjen + tegn selv; så lykkes det ──
     _restoreProject(JSON.parse(jT)); S.ui.activePartId = part.id; S.ui.activeFloorId = fid;
@@ -81788,6 +82138,216 @@ async function _takRegressionTest204() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_takRegressionTest204: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+
+// 205: kantene. Ingen eksterne kall. Låser: flatt tak = bare parapet (ingen takfot/møne, ingen renne før
+// brukeren sier det), rektangulært saltak = 2 takfot + 2 gavl + møne langs lengste akse (endepunktene
+// kontrollert), sammensatte former (L, femkant, skjeve vinkler, kvadrat) gjettes IKKE og meldingen vises,
+// retting via ekte lerretsklikk gir USER_CONFIRMED og ny farge, mønet finnes én gang, klikk utenfor
+// tak-modulen er uendret, og tak uten kanter fra 204 åpnes uten å endre noe annet.
+async function _takRegressionTest205() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '205: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
+                 part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId };
+  const near = (p, x, y) => p && Math.abs(p.x - x) < 0.01 && Math.abs(p.y - y) < 0.01;
+  const typer = (t) => (t.edges || []).map(e => e.id + ':' + (e.type || '—')).join(' ');
+  try {
+    window._showToast = () => {}; window._scheduleAutoSave = () => {}; window.confirm = () => true;
+    _resetProjectState();
+    addPart('roof');
+    const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+    S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null;
+    // Lag et tak av et omriss og en taktype — samme vei som «Tegn omrisset selv» + knappen i kortet.
+    const lag = (pts, rt) => { S.tak = { [fid]: _takManual(pts) }; if (rt) _takSetRoofType(fid, rt); return S.tak[fid]; };
+    const R = [{ x: 0, y: 0 }, { x: 1200, y: 0 }, { x: 1200, y: 800 }, { x: 0, y: 800 }];
+
+    // ── STEG 0 ──
+    const t0 = lag(R, null);
+    check('STEG 0: 204-taket har ingen kanter før taktypen er valgt', '0', t0.edges.length === 0 && !_takRoofTypeReady(t0.surfaces[0]), t0.edges.length);
+    check('STEG 0: kortet viser ingen kantdel før taktypen er valgt', 'ingen', !_takCardHtml(fid).includes('tak-edge-count'), '');
+    {
+      const bg = _installTileBackground(fid, { east: 574200, north: 6670300 }, 'Testveien 4');
+      const ring = [[-6, -4], [6, -4], [6, 4], [-6, 4], [-6, -4]];
+      const mod = { origin: { epsg: 25833, east: 574216, north: 6670324, ground_z: 182.4 }, footprint: { polygon: ring },
+        heights: {}, roof: { roof_type: 'flat', planes: [], edges: ring.slice(0, 4).map((p, i) => ({ type: 'eave', a: p, b: ring[i + 1] })), prov: { confidence: 0.5 } } };
+      const tm = _takFromModel(mod, bg, null);
+      check('STEG 0: tjenestens edges (alle «eave») tas ikke inn — flatt tak gir parapet', '4 parapet', tm.edges.length === 4 && tm.edges.every(e => e.type === 'parapet'), typer(tm));
+      check('STEG 0: roof.planes tom → forslaget hviler på omriss + taktype', 'AI_SUGGESTION', tm.edges.every(e => e.prov.source === 'AI_SUGGESTION'), '');
+      check('STEG 0: kantene bor på taket, ikke på flaten', 'ingen s.edges', !('edges' in tm.surfaces[0]), '');
+    }
+
+    // ── Flatt tak ──
+    const tf = lag(R, 'flat');
+    check('Flatt: alle 4 kanter parapet', '4 parapet', tf.edges.length === 4 && tf.edges.every(e => e.type === 'parapet'), typer(tf));
+    check('Flatt: ingen takfot, ingen møne', '0/0', !tf.edges.some(e => e.type === 'eave' || e.type === 'ridge'), '');
+    check('Flatt: forslaget er AI_SUGGESTION med lav confidence', '≤ 0,5', tf.edges.every(e => e.prov.source === 'AI_SUGGESTION' && e.prov.confidence <= 0.5), tf.edges[0].prov.confidence);
+    check('Flatt: ingen kant tar renne', 'ingen', !tf.edges.some(e => _takEdgeTakesGutter(tf, e)), '');
+    check('Flatt: en ANTATT takfot på flatt tak tar heller ikke renne', 'nei', _takEdgeTakesGutter(tf, { ...tf.edges[0], type: 'eave' }) === false, '');
+    let k = _takCardHtml(fid);
+    check('Flatt: telleren', '0 takfot · 0 gavl · 0 møne · 0 gradrenne · 4 parapet', k.includes('0 takfot · 0 gavl · 0 møne · 0 gradrenne · 4 parapet'), '');
+    check('Flatt: kortet forklarer taksluk / utvendig renne', 'ja', k.includes('taksluk') && k.includes('utvendig renne'), '');
+    _takSetEdgeType(fid, 'k1', 'eave');
+    const k1 = tf.edges.find(e => e.id === 'k1');
+    check('Flatt: brukeren merker takfot → renne tillatt der, USER_CONFIRMED', 'eave/USER_CONFIRMED/ja', k1.type === 'eave' && k1.prov.source === 'USER_CONFIRMED' && _takEdgeTakesGutter(tf, k1), JSON.stringify(k1.prov));
+    check('Flatt: de andre kantene tar fortsatt ikke renne', '3 nei', tf.edges.filter(e => e.id !== 'k1').every(e => !_takEdgeTakesGutter(tf, e)), '');
+
+    // ── Rektangulært saltak ──
+    let tg = lag(R, 'pitched');
+    const ty = id => (tg.edges.find(e => e.id === id) || {}).type;
+    check('Saltak: lange sider (12 m) takfot, korte (8 m) gavl', 'k1 eave, k2 rake, k3 eave, k4 rake', ty('k1') === 'eave' && ty('k2') === 'rake' && ty('k3') === 'eave' && ty('k4') === 'rake', typer(tg));
+    let ridge = tg.edges.filter(e => e.type === 'ridge');
+    check('Saltak: nøyaktig ett møne, som NY linje (ikke omrisskant)', '1 line', ridge.length === 1 && ridge[0].kind === 'line', ridge.length + ' ' + (ridge[0] && ridge[0].kind));
+    check('Saltak: mønets endepunkter = midten av gavlene (1200,400) og (0,400)', '(1200,400)→(0,400)', near(ridge[0].a, 1200, 400) && near(ridge[0].b, 0, 400), JSON.stringify([ridge[0].a, ridge[0].b]));
+    check('Saltak: mønet er 12 m (langs lengste akse)', '12', Math.abs(_takEdgeLenM(ridge[0]) - 12) < 1e-9, _takEdgeLenM(ridge[0]));
+    check('Saltak: telleren', '2 takfot · 2 gavl · 1 møne · 0 gradrenne', _takCardHtml(fid).includes('2 takfot · 2 gavl · 1 møne · 0 gradrenne'), _takEdgeCounter(tg, tg.surfaces[0]));
+    check('Saltak: takfot tar renne, gavl og møne ikke', 'ja', _takEdgeTakesGutter(tg, tg.edges[0]) && !_takEdgeTakesGutter(tg, tg.edges[1]) && !_takEdgeTakesGutter(tg, ridge[0]), '');
+    check('Saltak: lav confidence, mønet lavest', '0,4 / 0,3', tg.edges.every(e => e.prov.source === 'AI_SUGGESTION' && e.prov.confidence <= 0.4) && ridge[0].prov.confidence < 0.4, '');
+    check('Saltak: kortet sier at forslaget er usikkert', 'ja', _takCardHtml(fid).includes('Forslag (usikkert)'), '');
+    // Stående rektangel: lengste akse loddrett.
+    tg = lag([{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 1000 }, { x: 0, y: 1000 }], 'pitched');
+    ridge = tg.edges.filter(e => e.type === 'ridge');
+    check('Saltak 6 × 10: møne loddrett (300,0)→(300,1000), takfot k2/k4', 'ja', ridge.length === 1 && near(ridge[0].a, 300, 0) && near(ridge[0].b, 300, 1000) && ty('k2') === 'eave' && ty('k4') === 'eave' && ty('k1') === 'rake', typer(tg) + ' ' + JSON.stringify(ridge[0] && [ridge[0].a, ridge[0].b]));
+    // Rotert 30°: samme forslag, mønet på midtlinja.
+    const rot = (p, a) => ({ x: 500 + p.x * Math.cos(a) - p.y * Math.sin(a), y: 300 + p.x * Math.sin(a) + p.y * Math.cos(a) });
+    tg = lag(R.map(p => rot(p, Math.PI / 6)), 'pitched');
+    ridge = tg.edges.filter(e => e.type === 'ridge');
+    const mA = rot({ x: 1200, y: 400 }, Math.PI / 6), mB = rot({ x: 0, y: 400 }, Math.PI / 6);
+    check('Saltak rotert 30°: forslag og møne på midtlinja', 'ja', ridge.length === 1 && near(ridge[0].a, mA.x, mA.y) && near(ridge[0].b, mB.x, mB.y) && ty('k1') === 'eave', typer(tg));
+    // Et ekstra hjørne midt på en langside (vanlig i omriss) er fortsatt et rektangel.
+    tg = lag([{ x: 0, y: 0 }, { x: 600, y: 0.5 }, { x: 1200, y: 0 }, { x: 1200, y: 800 }, { x: 0, y: 800 }], 'pitched');
+    check('Saltak med kolineært ekstrahjørne: k1+k2 takfot, ett møne', 'eave eave rake eave rake + m1', ty('k1') === 'eave' && ty('k2') === 'eave' && ty('k3') === 'rake' && ty('k4') === 'eave' && ty('k5') === 'rake' && tg.edges.filter(e => e.type === 'ridge').length === 1, typer(tg));
+
+    // ── Sammensatte former: ikke gjett ──
+    const L = [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 400 }, { x: 400, y: 400 }, { x: 400, y: 900 }, { x: 0, y: 900 }];
+    const tl = lag(L, 'pitched');
+    k = _takCardHtml(fid);
+    check('L-form: ingen kant gjettet (alle «ikke valgt»), ingen møne', '6 × —', tl.edges.length === 6 && tl.edges.every(e => e.type === null) && !tl.edges.some(e => e.kind === 'line'), typer(tl));
+    check('L-form: meldingen vises', TAK_MSG_COMPLEX, k.includes(TAK_MSG_COMPLEX), '');
+    check('L-form: advarsel om «ikke valgt»', '6 kanter står', k.includes('6 kanter står som «ikke valgt»'), '');
+    check('L-form: opphav sier «usikker», confidence 0', 'AI_SUGGESTION/0', tl.edges.every(e => e.prov.source === 'AI_SUGGESTION' && e.prov.confidence === 0 && /usikker/.test(e.prov.note)), tl.edges[0].prov.note);
+    const P5 = [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 600 }, { x: 500, y: 900 }, { x: 0, y: 600 }];
+    const tp = lag(P5, 'pitched');
+    k = _takCardHtml(fid);
+    check('Femkant: ingen kant gjettet, melding vist', '5 × —', tp.edges.length === 5 && tp.edges.every(e => e.type === null) && k.includes(TAK_MSG_COMPLEX) && k.includes('5 kanter står'), typer(tp));
+    const ts = lag([{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1150, y: 700 }, { x: 0, y: 700 }], 'pitched');
+    check('Skjeve vinkler: ingen kant gjettet', '4 × —', ts.edges.every(e => e.type === null) && _takCardHtml(fid).includes(TAK_MSG_COMPLEX), typer(ts));
+    const tq = lag([{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 980 }, { x: 0, y: 980 }], 'pitched');
+    check('Nesten kvadratisk: ingen kant gjettet, egen melding', '4 × —', tq.edges.every(e => e.type === null) && _takCardHtml(fid).includes(TAK_MSG_SQUARE), typer(tq));
+    check('Sammensatt FLATT tak: parapet uansett form', '6 parapet', lag(L, 'flat').edges.every(e => e.type === 'parapet'), '');
+
+    // ── Retting med ekte lerretsklikk (mousedown → mouseup → click) ──
+    tg = lag(R, 'pitched');
+    fitAll(); render();
+    const cr = canvas.getBoundingClientRect();
+    const mus = (type, w) => { const q = w2s(w.x, w.y); canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: cr.left + q.x, clientY: cr.top + q.y })); };
+    const klikk = w => { mus('mousedown', w); mus('mouseup', w); mus('click', w); };
+    const menu = document.getElementById('ctx-menu');
+    const k1g = tg.edges.find(e => e.id === 'k1');
+    const farge0 = _takEdgeStyle(k1g).color;
+    mus('mousemove', { x: 600, y: 0 });
+    check('Hover på kanten markeres', 'k1', _takEdgeHover && _takEdgeHover.id === 'k1', JSON.stringify(_takEdgeHover));
+    klikk({ x: 600, y: 0 });
+    check('Klikk på kanten åpner typemenyen', 'meny med 5 typer', menu.style.display !== 'none' && menu.querySelectorAll('[data-tak-edge-type]').length === 5 && menu.innerHTML.includes('Takfot'), menu.style.display);
+    menu.querySelector('[data-tak-edge-type="rake"]').click();
+    check('Retting: k1 → gavl, USER_CONFIRMED, conf 1', 'rake/USER_CONFIRMED', k1g.type === 'rake' && k1g.prov.source === 'USER_CONFIRMED' && k1g.prov.confidence === 1, JSON.stringify(k1g.prov));
+    check('Retting: fargen endres (grønn → grå)', farge0 + ' → ' + TAK_EDGE_TYPES.rake.color, farge0 === TAK_EDGE_TYPES.eave.color && _takEdgeStyle(k1g).color === TAK_EDGE_TYPES.rake.color, _takEdgeStyle(k1g).color);
+    check('Retting: menyen lukkes', 'lukket', menu.style.display === 'none', menu.style.display);
+    check('Retting: notatet sier hva det var', 'rettet fra takfot', k1g.prov.note === 'rettet fra takfot', k1g.prov.note);
+    undo(); tg = _takOf(fid);
+    check('Angre: k1 er takfot (forslag) igjen', 'eave/AI_SUGGESTION', tg.edges[0].type === 'eave' && tg.edges[0].prov.source === 'AI_SUGGESTION', JSON.stringify(tg.edges[0].prov));
+    klikk({ x: 600, y: 400 });   // midt i flaten — på mønet
+    check('Klikk på mønet: bare møne/gradrenne + «Fjern linjen»', '2 + fjern', menu.style.display !== 'none' && menu.querySelectorAll('[data-tak-edge-type]').length === 2 && menu.innerHTML.includes('Fjern linjen'), '');
+    hideCtx();
+    klikk({ x: 300, y: 200 });   // inne i flaten, langt fra alle kanter
+    check('Klikk utenfor kantene åpner ingen meny', 'lukket', menu.style.display === 'none' && !_takEdgePending, menu.style.display);
+    klikk({ x: 600, y: 0 });
+    menu.querySelector('[data-tak-edge-type="eave"]').click();
+    check('Velge samme type som forslaget = bekreftet', 'eave/USER_CONFIRMED/bekreftet forslag', tg.edges[0].type === 'eave' && tg.edges[0].prov.source === 'USER_CONFIRMED' && tg.edges[0].prov.note === 'bekreftet forslag', JSON.stringify(tg.edges[0].prov));
+
+    // ── Delt kant én gang ──
+    const sd = _buildSaveData();
+    const lagretKanter = sd.tak[fid].edges;
+    check('Mønet finnes ÉN gang i modellen, med begge fall-sidene', '1 × [f1.a, f1.b]', lagretKanter.filter(e => e.type === 'ridge').length === 1 && lagretKanter.find(e => e.type === 'ridge').planes.join() === 'f1.a,f1.b', JSON.stringify(lagretKanter.filter(e => e.type === 'ridge').map(e => e.planes)));
+    check('Ingen kantliste på flatene (ingen dobbeltlagring)', 'ingen', sd.tak[fid].surfaces.every(s => !('edges' in s)), '');
+    const sumOverFlater = sd.tak[fid].surfaces.reduce((a, s) => a + _takEdgesOf(sd.tak[fid], s).filter(e => e.type === 'ridge').reduce((b, e) => b + _takEdgeLenM(e), 0), 0);
+    check('Møne summert over flatene = 12 m, ikke 24', '12', Math.abs(sumOverFlater - 12) < 1e-9, sumOverFlater);
+    check('Fall-sidene: f1.a har takfot k1, f1.b har k3', 'k1 / k3', tg.surfaces[0].planes.length === 2 && tg.surfaces[0].planes[0].eaves.join() === 'k1' && tg.surfaces[0].planes[1].eaves.join() === 'k3', JSON.stringify(tg.surfaces[0].planes.map(p => p.eaves)));
+
+    // ── Knappene ──
+    _takSetAllEdges(fid, 'eave');
+    check('«Merk alle som takfot»: 4 takfot, mønet fjernet, USER_CONFIRMED', '4 eave', tg.edges.length === 4 && tg.edges.every(e => e.type === 'eave' && e.prov.source === 'USER_CONFIRMED'), typer(tg));
+    _takSetAllEdges(fid, 'parapet');
+    check('«Merk alle som parapet»', '4 parapet', tg.edges.every(e => e.type === 'parapet'), typer(tg));
+    _takResetEdges(fid);
+    k = _takCardHtml(fid);
+    check('«Nullstill»: alle «ikke valgt», advarsel vises', '4 × —', tg.edges.every(e => e.type === null && e.prov === null) && k.includes('4 kanter står som «ikke valgt»'), typer(tg));
+    _takSetEdgeType(fid, 'k2', 'valley');
+    check('Én kant merket etter nullstill → telleren teller den', '1 gradrenne + 3 ikke valgt', _takCardHtml(fid).includes('0 takfot · 0 gavl · 0 møne · 1 gradrenne') && _takCardHtml(fid).includes('3 kanter står'), _takEdgeCounter(tg, tg.surfaces[0]));
+    let spurt = 0; window.confirm = () => { spurt++; return true; };
+    _takResuggest(fid);
+    check('«Foreslå på nytt» spør når egne kanter finnes, og gir saltak-forslaget', 'spurt, 5', spurt === 1 && tg.edges.length === 5 && tg.edges.filter(e => e.type === 'ridge').length === 1, spurt + ' ' + typer(tg));
+    spurt = 0;
+    _takSetRoofType(fid, 'flat');
+    check('Bytte taktype med bare FORSLAG spør ikke, gir nytt forslag', 'ikke spurt, 4 parapet', spurt === 0 && tg.edges.length === 4 && tg.edges.every(e => e.type === 'parapet'), spurt + ' ' + typer(tg));
+    window.confirm = () => true;
+
+    // ── Skrivebeskyttet ──
+    S.ui.readOnly = true;
+    check('readOnly: retting avvises', 'uendret', _takSetEdgeType(fid, 'k1', 'eave') === false && tg.edges[0].type === 'parapet', '');
+    check('readOnly: knappene avvises', 'uendret', _takSetAllEdges(fid, 'eave') === false && _takResetEdges(fid) === false && tg.edges[0].type === 'parapet', '');
+    S.ui.readOnly = false;
+
+    // ── Lagring ──
+    const NS = d => { d = JSON.parse(JSON.stringify(d)); if (d.project) delete d.project.savedAt; return JSON.stringify(d); };
+    // Første åpning legger til project._customerDeleted (også på HEAD, se docs/204) → sammenlign fra andre lagring.
+    const j0 = NS(_buildSaveData()); _restoreProject(JSON.parse(j0));
+    const j1 = NS(_buildSaveData()); _restoreProject(JSON.parse(j1));
+    check('Rundtur med kanter er byte-identisk', j1.length + ' B', NS(_buildSaveData()) === j1, '');
+    check('Kantene overlever rundturen', '4 parapet', _takOf(fid).edges.length === 4 && _takOf(fid).edges.every(e => e.type === 'parapet'), typer(_takOf(fid)));
+    // Et tak lagret av 204 (edges: [] på flaten) åpnes med kantene ett nivå opp og ingenting annet endret.
+    const gml = JSON.parse(j1); const g204 = gml.tak[fid];
+    delete g204.edges; g204.surfaces.forEach(s => { s.edges = []; delete s.planes; delete s.edge_suggestion; });
+    _restoreProject(gml);
+    const n204 = _takOf(fid);
+    check('204-tak åpnes: edges flyttet opp (tom), flaten uten edges', '[] / ingen', Array.isArray(n204.edges) && n204.edges.length === 0 && !('edges' in n204.surfaces[0]), JSON.stringify(n204.edges));
+    check('204-tak åpnes: intet forslag laget av seg selv, kortet tilbyr det', 'Foreslå kanttyper', _takCardHtml(fid).includes('Foreslå kanttyper'), '');
+    // Prosjekt uten tak: ingen tak-nøkkel etter rundtur.
+    _resetProjectState(); addPart('indoor');
+    const ju = _buildSaveData(); _restoreProject(JSON.parse(JSON.stringify(ju)));
+    check('Prosjekt uten tak: fortsatt ingen tak-nøkkel', 'ingen', !('tak' in _buildSaveData()) && Object.keys(S.tak).length === 0, '');
+
+    // ── Klikk utenfor tak-modulen er uendret ──
+    // Innendørs etasje med et rom. Samme klikk med og uten et (kunstig) tak med kanter på nøyaktig samme
+    // linjer i den etasjen — kantkroken skal ikke svare, og alt i S.ui skal bli likt.
+    const fIn = S.floors[0].id; S.ui.activeFloorId = fIn; S.ui.drawMode = null;
+    const room = createRoom([{ x: 0, y: 0 }, { x: 1200, y: 0 }, { x: 1200, y: 800 }, { x: 0, y: 800 }], 'rect', 'Stue', fIn, true);
+    fitAll(); render();
+    const snap = () => JSON.stringify(Object.keys(S.ui).filter(x => /sel|hover|drag|mode/i.test(x)).sort().map(x => [x, S.ui[x] instanceof Set ? [...S.ui[x]] : S.ui[x]])) + '|' + menu.style.display;
+    const runde = medTak => {
+      hideCtx(); S.ui.selectedRoomId = null; S.ui.selectedWall = null; S.tak = medTak ? { [fIn]: _takManual(R) } : {};
+      if (medTak) { S.tak[fIn].surfaces[0].roof_type = { value: 'pitched', prov: null }; _takApplySuggestion(S.tak[fIn], S.tak[fIn].surfaces[0]); }
+      const ut = [];
+      for (const w of [{ x: 600, y: 400 }, { x: 600, y: 0 }, { x: 1200, y: 400 }]) { klikk(w); ut.push(snap()); }
+      return ut;
+    };
+    const uten = runde(false), med = runde(true);
+    check('Innendørs: rommet blir faktisk valgt av klikket (testen måler noe)', room && room.id, room && S.ui.selectedRoomId === room.id, S.ui.selectedRoomId);
+    check('Innendørs: tre klikk gir samme tilstand med og uten tak-kanter i etasjen', 'likt', uten.join() === med.join(), med.find((m, i) => m !== uten[i]) || '');
+    check('Innendørs: kantkroken svarer ikke', 'null', _takEdgeActiveFid() === null && !_takEdgePending, '');
+    S.tak = {};
+  } catch (e) {
+    check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 300));
+  } finally {
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
+    hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takEdgePending = null;
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest205: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
   return { ok: allOk, results };
 }
 
@@ -84615,6 +85175,7 @@ function _restoreProject(data) {
   S.geo = data.geo || {};   // 005: georeferanse per etasje (kart-bakgrunner)
   // 204: tak per etasje. Mangler den, opprettes ingenting (tomt objekt i minnet, aldri lagret).
   S.tak = (data.tak && typeof data.tak === 'object') ? data.tak : {};
+  for (const k in S.tak) _takNormalize(S.tak[k]);   // 205: 204-tak hadde edges per flate → ett nivå opp
   _takFetchState = {}; _takDraw = null;
   S.ui.selectedStripId = null;
   S.ui.selectedCableId = null;
