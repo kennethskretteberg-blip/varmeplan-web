@@ -56447,18 +56447,19 @@ function _stairReposRiserRegressionTest191() {
     let st = mk([L(), T(6)]);
     check('1 repos nederst: ingen opptrinn fra bakken', 0, _stairGroundRiserCm(st, st.surfaces));
     check('1 repos nederst: opptrinn over reposet = 17', 17, side(st)[0]);
-    check('1 repos nederst: byggerens høyde (øverste trinn) 6 × 17', 102, builder([L(), T(6)]));
+    // 193 (svar 191/2): byggerens høyde = høydekjeden (til etasjen over). Før: 102 / 153 / 157 / 119.
+    check('1 repos nederst: byggerens høyde = kjeden 7 × 17', 119, builder([L(), T(6)]));
     check('1 repos nederst: høydekjeden (bakken → etasjen over)', 119, _stairSideTotalHeightCm(st));
     // 2: 4 trinn + repos + 4 trinn.
     st = mk([T(4), L(), T(4)]);
     check('2 4+R+4: opptrinn i profilen (ett per flate + fra bakken)', [17, 17, 17, 17, 17, 17, 17, 17, 17, 17], [_stairGroundRiserCm(st, st.surfaces), ...side(st)]);
-    check('2 4+R+4: byggerens høyde 9 × 17', 153, builder([T(4), L(), T(4)]));
+    check('2 4+R+4: byggerens høyde = kjeden 10 × 17', 170, builder([T(4), L(), T(4)]));
     check('2 4+R+4: kabelens 8 opptrinn mellom flater', [17, 17, 17, 17, 17, 17, 17, 17], cableRisers(st));
     // 3: trinn med høyde 18 over reposet — 18 både i tegningen og i kabelen.
     st = mk([T(4), L(), T(4, 18)]);
     check('3 18 over repos: tegningen', 18, side(st)[4]);
     check('3 18 over repos: kabelen', 18, cableRisers(st)[4]);
-    check('3 18 over repos: byggerens høyde 5 × 17 + 4 × 18', 157, builder([T(4), L(), T(4, 18)]));
+    check('3 18 over repos: byggerens høyde = kjeden 5 × 17 + 5 × 18', 175, builder([T(4), L(), T(4, 18)]));
     // 4: repos øverst — ingen opptrinn over det.
     st = mk([T(6), L()]);
     check('4 repos øverst: 0 over reposet', 0, side(st)[6]);
@@ -56474,6 +56475,77 @@ function _stairReposRiserRegressionTest191() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_stairReposRiserRegressionTest191: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return results;
+}
+
+// 193 (svar 191/2–3 + 192): byggerens høyde = høydekjeden i sidevisningen, forhåndsvisningen har
+// samme profil og rekkefølge som tegningen i begge byggeretninger, og «Maks CC repos» i dialogen
+// for ny trapp vises bare med repos. Kjøres fra konsollen: _stairBuilderHeightRegressionTest193().
+function _stairBuilderHeightRegressionTest193() {
+  const saved = { stairs: S.stairs, nextStair: S.counters.nextStairId, segs: _stairBuilderSegs, dir: _stairBuilderDir, edit: _stairBuilderEditingId };
+  const results = [];
+  const check = (name, expected, got) => results.push({ name, ok: JSON.stringify(expected) === JSON.stringify(got), expected, got });
+  const T = (n, h) => ({ type: 'steps', stepCount: n, stepDepth_cm: 30, stepHeight_cm: h || 17, width_cm: 100 });
+  const L = () => ({ type: 'landing', depth_cm: 90, width_cm: 100 });
+  const mk = (segs, dir) => { S.counters.nextStairId = 998193; return _createStairObj({ name: 'TEST193', width_cm: 100, step_depth_cm: 30,
+    step_height_cm: segs.find(s => s.type === 'steps').stepHeight_cm, buildDirection: dir, edgeMargin_cm: 5, stepCC_cm: 10, landingCC_cm: 10,
+    riserOffset_cm: 2, noseOffset_cm: 2, segments: JSON.parse(JSON.stringify(segs)) }); };
+  const chainLabel = st => _stairGeometryDims(st, 'side').filter(d => d.side === 'left').map(d => d.label);
+  // Forhåndsvisningens hjørner i cm (fra bunnen til venstre), lest ut av SVG-stien og skalert tilbake.
+  const previewPts = () => {
+    const svg = _stairBuilderPreviewSVG();
+    const d = /d="([^"]+)"/.exec(svg)[1];
+    const pts = d.replace(/^M/, '').split(/ L| /).filter(Boolean).map(p => p.split(',').map(Number));
+    return pts;
+  };
+  // Tegningens profil (samme punkter som _drawStairSide, uten den lukkende bunnen), normalisert.
+  const sidePts = st => {
+    const surfs = st.surfaces; const g = _stairGroundRiserCm(st, surfs);
+    const out = [[0, 0]]; let x = 0, y = g; if (g > 0) out.push([0, y]);
+    surfs.forEach((s, i) => { x += s.d_cm; out.push([x, y]); const sh = _stairSideRiserCm(st, surfs, i); if (sh > 0) { y += sh; out.push([x, y]); } });
+    return out;
+  };
+  const norm = pts => { const x0 = pts[0][0], y0 = pts[0][1]; const xs = pts.map(p => p[0] - x0), ys = pts.map(p => p[1] - y0);
+    const sx = Math.max(...xs.map(Math.abs)) || 1, sy = Math.max(...ys.map(Math.abs)) || 1;
+    return pts.map((_, i) => [Math.round(xs[i] / sx * 1000), Math.round(Math.abs(ys[i]) / sy * 1000)]); };
+  try {
+    _stairBuilderEditingId = null;
+    const C = [['repos + 6', [L(), T(6)], 119], ['4 + repos + 4', [T(4), L(), T(4)], 170], ['4 + repos + 4×18', [T(4), L(), T(4, 18)], 175],
+      ['6 + repos', [T(6), L()], 119], ['8 trinn', [T(8)], 153], ['4 + repos + repos + 4', [T(4), L(), L(), T(4)], 187]];
+    for (const dir of ['bottom', 'top']) for (const [nm, segs, exp] of C) {
+      const st = mk(segs, dir);
+      _stairBuilderSegs = JSON.parse(JSON.stringify(segs)); _stairBuilderDir = dir;
+      const b = _stairBuilderStats().totalHeight, k = _stairSideTotalHeightCm(st);
+      check(`${dir} ${nm}: byggeren = høydekjeden (${exp})`, [exp, exp], [b, k]);
+      check(`${dir} ${nm}: forhåndsvisningen = tegningens profil`, norm(sidePts(st)), norm(previewPts()));
+    }
+    // Ovenfra og ned, repos + 6: reposet NEDERST i forhåndsvisningen (første strekning er flat).
+    _stairBuilderSegs = [L(), T(6)]; _stairBuilderDir = 'top';
+    const pp = previewPts();
+    check('ovenfra repos + 6: forhåndsvisningen starter med reposet flatt på bakken', true, pp[1][1] === pp[0][1] && pp[1][0] > pp[0][0]);
+    check('kjeden repos + 6 sier 7 × 17 = 119', ['7 × 17 = 119'], chainLabel(mk([L(), T(6)], 'top')));
+    // Redigering: standardhøyden (repos → repos) er trappas egen.
+    const ed = mk([T(4, 18), L(), L(), T(4, 18)], 'bottom'); ed.step_height_cm = 16; S.stairs = [ed];
+    _stairBuilderEditingId = ed.id; _stairBuilderSegs = JSON.parse(JSON.stringify(ed.segments)); _stairBuilderDir = 'bottom';
+    check('redigering: repos → repos følger trappas standard (16)', _stairSideTotalHeightCm(ed), _stairBuilderStats().totalHeight);
+    _stairBuilderEditingId = null;
+    // «Maks CC repos» i dialogen for ny trapp.
+    _showStraightStairBuilder();
+    const wrap = () => document.getElementById('stair-landing-cc-wrap');
+    check('ny trapp uten repos: «Maks CC repos» skjult', 'none', wrap() && wrap().style.display);
+    document.getElementById('stair-landing-cc').value = '7';
+    _stairBuilderAddSeg('landing');
+    check('legg til repos: feltet vises', '', wrap() && wrap().style.display);
+    _stairBuilderRemoveSeg(_stairBuilderSegs.length - 1);
+    check('fjern reposet: skjult igjen', 'none', wrap() && wrap().style.display);
+    _stairBuilderAddSeg('landing');
+    check('verdien står når reposet kommer tilbake', '7', document.getElementById('stair-landing-cc').value);
+  } finally {
+    const bg = document.getElementById('stair-modal-bg'); if (bg) bg.remove();
+    S.stairs = saved.stairs; S.counters.nextStairId = saved.nextStair; _stairBuilderSegs = saved.segs; _stairBuilderDir = saved.dir; _stairBuilderEditingId = saved.edit;
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_stairBuilderHeightRegressionTest193: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
   return results;
 }
 
@@ -69499,7 +69571,8 @@ function showStairEditModal(stairId) {
 // draget og ＋-stripene regner likt. MÅLT i STEG 0.1: lista ble SNUDD for «Ovenfra og ned», og da
 // havnet segmentet som ligger NEDERST i planen (y=160 cm) øverst i lista — under overskriften
 // «SEGMENTER (topp → bunn)», og motsatt vei av sidevisningen rett under, som tegner segs[0]
-// øverst for nettopp den retningen. Lista er BYGGEREKKEFØLGEN: rad 0 er alltid segs[0] (der
+// øverst for nettopp den retningen. (193: forhåndsvisningen følger nå tegningen og legger segs[0]
+// NEDERST i begge retninger — se _stairBuilderPreviewStair.) Lista er BYGGEREKKEFØLGEN: rad 0 er alltid segs[0] (der
 // kabelen starter), og bare etiketten snur. Da peker ▲/▼ og draget samme vei som sidevisningen,
 // og «＋ Trinn»/«＋ Repos» nederst legger til i den enden brukeren ser dem i.
 // Visningsposisjon == array-indeks; alt som regner om går gjennom denne ene hjelperen.
@@ -69654,7 +69727,7 @@ function _renderStairBuilderModal() {
       <!-- CC settings row -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;font-size:13px;margin-bottom:14px">
         <label style="color:var(--muted)">Maks CC trinn (cm)<br><input id="stair-step-cc" type="number" value="10" min="3" max="${_stairBuilderMaxCc()}" step="0.5" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);font-size:13px"></label>
-        <label style="color:var(--muted)">Maks CC repos (cm)<br><input id="stair-landing-cc" type="number" value="10" min="3" max="${_stairBuilderMaxCc()}" step="0.5" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);font-size:13px"></label>
+        <label id="stair-landing-cc-wrap" style="color:var(--muted);${_stairBuilderSegs.some(sg => sg.type === 'landing') ? '' : 'display:none'}">Maks CC repos (cm)<br><input id="stair-landing-cc" type="number" value="10" min="3" max="${_stairBuilderMaxCc()}" step="0.5" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);font-size:13px"></label>
       </div>`}
 
       <!-- Action buttons -->
@@ -69679,6 +69752,10 @@ function _renderStairBuilderModal() {
 // Felles for _stairBuilderUpd og _stairBuilderRefreshSegs — oppdaterer KUN sidevisning+statistikk
 // i DOM-en, uten å røre noe annet felt i modalen (navn, produkt, CC, ...).
 function _stairBuilderRefreshPreviewStats() {
+  // 193 (som panelet i 192): «Maks CC repos» bare når trappa har minst ett repos. Feltet skjules,
+  // det fjernes ikke — en verdi brukeren har skrevet står der når et repos legges til igjen.
+  const landingCcWrap = document.getElementById('stair-landing-cc-wrap');
+  if (landingCcWrap) landingCcWrap.style.display = _stairBuilderSegs.some(sg => sg.type === 'landing') ? '' : 'none';
   const previewEl = document.getElementById('stair-builder-preview');
   if (previewEl) previewEl.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Sidevisning</div>' + _stairBuilderPreviewSVG();
   const statsEl = document.getElementById('stair-builder-stats');
@@ -69924,55 +70001,48 @@ function _stairBuilderRemoveSeg(idx) {
   _stairBuilderRefreshSegs();
 }
 
-// 191 (Regel 24): opptrinnet UNDER et repos i byggerens rekkefølge. Byggeren teller ett opptrinn
-// under hvert trinn (n trinn = n × høyde, som før); mellom et trinn og et repos over det står også
-// ett opptrinn — med trinnets høyde (samme flate eier det i tegningen, _stairRiserBetweenCm), eller
-// trappas standardhøyde mellom to repos. Et repos nederst ligger på bakken: 0. Repos → trinn er
-// allerede telt som trinnets eget opptrinn. Summen er altså høyden opp til øverste flate.
-function _stairBuilderLandingRiserCm(segs, i) {
-  if (i <= 0) return 0;
-  const prev = segs[i - 1];
+// 193 (Kenneth 05.11.2026, svar 191/2–3): byggeren regner IKKE høyde eller profil selv. Den lager
+// en midlertidig trapp av segmentene i dialogen og går gjennom de samme hjelperne som tegningen:
+// _generateStairSurfaces (flatene), _stairSideRiserCm/_stairGroundRiserCm (opptrinnene, Regel 24)
+// og _stairSideTotalHeightCm (høydekjeden). Høyden er altså bakken → etasjen over, som kjeden i
+// sidevisningen, og forhåndsvisningen har samme rekkefølge som sidevisningen i BEGGE byggeretninger
+// (sidevisningen legger alltid segs[0] nederst til venstre; byggeretningen snur bare planen).
+// Standardhøyden (repos → repos) er trappas egen ved redigering, ellers første trinnsegment — det
+// _confirmAddStair lagrer som step_height_cm.
+function _stairBuilderPreviewStair() {
+  const segs = JSON.parse(JSON.stringify(_stairBuilderSegs || []));
   const firstSteps = segs.find(sg => sg.type === 'steps');
-  const std = (firstSteps && firstSteps.stepHeight_cm) || 17;   // = stair.step_height_cm ved lagring
-  return _stairRiserBetweenCm({ step_height_cm: std },
-    prev.type === 'steps' ? { type: 'tread', stepHeight_cm: prev.stepHeight_cm } : { type: 'landing' }, { type: 'landing' });
+  const editing = _stairBuilderEditingId != null ? S.stairs.find(s => s.id === _stairBuilderEditingId) : null;
+  const std = (editing && editing.step_height_cm) || (firstSteps && firstSteps.stepHeight_cm) || 17;
+  const st = { segments: segs, buildDirection: _stairBuilderDir || 'bottom', step_height_cm: std };
+  st.surfaces = segs.length ? _generateStairSurfaces(st) : [];
+  return st;
 }
 function _stairBuilderStats() {
-  let totalSteps = 0, totalHeight = 0, totalDepth = 0, landings = 0;
-  _stairBuilderSegs.forEach((seg, i) => {
+  let totalSteps = 0, totalDepth = 0, landings = 0;
+  _stairBuilderSegs.forEach(seg => {
     if (seg.type === 'steps') {
       totalSteps += seg.stepCount;
-      totalHeight += seg.stepCount * seg.stepHeight_cm;
       totalDepth += seg.stepCount * seg.stepDepth_cm;
     } else if (seg.type === 'landing') {
       landings++;
-      totalHeight += _stairBuilderLandingRiserCm(_stairBuilderSegs, i);   // 191
       totalDepth += seg.depth_cm;
     }
   });
-  return { totalSteps, totalHeight: Math.round(totalHeight), totalDepth: Math.round(totalDepth), landings };
+  // 193: samme tall som høydekjeden i sidevisningen, avrundet som målene (_stairDimRound).
+  const totalHeight = _stairDimRound(_stairSideTotalHeightCm(_stairBuilderPreviewStair()));
+  return { totalSteps, totalHeight, totalDepth: Math.round(totalDepth), landings };
 }
 
 function _stairBuilderPreviewSVG() {
-  // Preview tegner NEDENFRA og opp (forste tegnede segment havner nederst-venstre).
-  // Canvas legger ut "forste flate overst", sa for at det som ligger NEDERST skal
-  // matche pa begge: preview-rekkefolgen er motsatt av canvas-utlegget.
-  //   'bottom': segs[0] skal nederst => tegn segs[0] forst => array-rekkefolge.
-  //   'top'   : segs[0] skal overst  => tegn segs[last] forst => omvendt.
-  const segs = (_stairBuilderDir === 'top') ? _stairBuilderSegs.slice().reverse() : _stairBuilderSegs.slice();
-  if (!segs.length) return '<div style="height:60px;color:var(--muted);font-size:11px;display:flex;align-items:center;justify-content:center">Ingen segmenter</div>';
-
-  // Calculate total dimensions
-  let totalDepth = 0, totalHeight = 0;
-  segs.forEach((seg, i) => {
-    if (seg.type === 'steps') {
-      totalDepth += seg.stepCount * seg.stepDepth_cm;
-      totalHeight += seg.stepCount * seg.stepHeight_cm;
-    } else {
-      totalDepth += seg.depth_cm;
-      totalHeight += _stairBuilderLandingRiserCm(segs, i);   // 191
-    }
-  });
+  if (!_stairBuilderSegs.length) return '<div style="height:60px;color:var(--muted);font-size:11px;display:flex;align-items:center;justify-content:center">Ingen segmenter</div>';
+  const st = _stairBuilderPreviewStair();
+  const surfs = st.surfaces;
+  // 193: samme profil som _drawStairSide — opptrinnet fra bakken, så hver flate med opptrinnet
+  // over seg (det over øverste trinn leder til etasjen over; et repos øverst har ikke noe).
+  const ground = _stairGroundRiserCm(st, surfs);
+  let totalDepth = 0, totalHeight = ground;
+  for (let i = 0; i < surfs.length; i++) { totalDepth += surfs[i].d_cm; totalHeight += _stairSideRiserCm(st, surfs, i); }
   if (totalDepth === 0) return '';
 
   const svgW = 440, svgH = 120;
@@ -69981,26 +70051,15 @@ function _stairBuilderPreviewSVG() {
   const scaleY = (svgH - 2*pad) / Math.max(totalHeight, 20);
   const sc = Math.min(scaleX, scaleY);
 
-  let pathD = '';
+  // x mot høyre (dybde), y oppover (høyde). Trinn 1 / segs[0] nederst til venstre, som i tegningen.
   let x = pad, y = svgH - pad;
-  // Build bottom-up: x goes right (depth), y goes up (height)
-  for (const seg of segs) {
-    if (seg.type === 'steps') {
-      for (let i = 0; i < seg.stepCount; i++) {
-        const dx = seg.stepDepth_cm * sc;
-        const dy = seg.stepHeight_cm * sc;
-        pathD += (pathD ? ' ' : 'M' + x + ',' + y + ' ') + `L${x},${y-dy} L${x+dx},${y-dy}`;
-        y -= dy;
-        x += dx;
-      }
-    } else {
-      const dx = seg.depth_cm * sc;
-      // 191 (Regel 24): ett opptrinn opp til reposet når det står på et trinn (eller et repos).
-      const dy = _stairBuilderLandingRiserCm(segs, segs.indexOf(seg)) * sc;
-      pathD += (pathD ? ' ' : 'M' + x + ',' + y + ' ') + (dy > 0 ? `L${x},${y-dy} ` : '') + `L${x+dx},${y-dy}`;
-      y -= dy;
-      x += dx;
-    }
+  let pathD = `M${x},${y}`;
+  if (ground > 0) { y -= ground * sc; pathD += ` L${x},${y}`; }
+  for (let i = 0; i < surfs.length; i++) {
+    x += surfs[i].d_cm * sc;
+    pathD += ` L${x},${y}`;
+    const sh = _stairSideRiserCm(st, surfs, i);
+    if (sh > 0) { y -= sh * sc; pathD += ` L${x},${y}`; }
   }
 
   return `<svg width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="max-width:100%">

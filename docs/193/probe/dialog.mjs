@@ -1,0 +1,21 @@
+import { openPage } from './cdp.mjs';
+const OUT = process.env.HOME + '/Code/varmeplan-web/docs/193/';
+const p = await openPage(`http://localhost:4000/`);
+await p.send('Emulation.setDeviceMetricsOverride', { width: 900, height: 1100, deviceScaleFactor: 1, mobile: false });
+await p.eval(`(async () => { await _loadProducts(); document.getElementById('auth-screen').style.display='none'; document.getElementById('project-list-screen').style.display='none'; document.getElementById('app').style.display='flex'; return 1; })()`);
+const click = async sel => {
+  const r = await p.eval(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); e.scrollIntoView({block:'center'}); const b = e.getBoundingClientRect(); return [b.x + b.width/2, b.y + b.height/2]; })()`);
+  for (const type of ['mousePressed', 'mouseReleased']) await p.send('Input.dispatchMouseEvent', { type, x: r[0], y: r[1], button: 'left', clickCount: 1 });
+  await new Promise(r => setTimeout(r, 300));
+};
+const vis = () => p.eval(`(() => { const w = document.getElementById('stair-landing-cc-wrap'); return w ? getComputedStyle(w).display + ' · høyde: ' + document.getElementById('stair-builder-stats').innerText.replace(/\\s+/g,' ') : 'mangler'; })()`);
+await p.eval(`_showStraightStairBuilder(); 1`);
+await new Promise(r => setTimeout(r, 300));
+console.log('ny trapp:', await vis());
+await p.eval(`document.querySelector('#stair-modal-bg > div').scrollTop = 1e6; 1`);
+await p.shot(OUT + 'dialog-uten-repos.png');
+await click(`button[onclick="_stairBuilderAddSeg('landing')"]`);
+console.log('etter klikk på ＋ Repos:', await vis());
+await p.eval(`document.querySelector('#stair-modal-bg > div').scrollTop = 1e6; 1`);
+await p.shot(OUT + 'dialog-med-repos.png');
+await p.close(); process.exit(0);
