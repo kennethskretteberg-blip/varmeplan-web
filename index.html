@@ -81956,14 +81956,14 @@ function _takEdgesCardHtml(fid, t, s) {
 //   above_ground_m: { value, prov },                       // standard = gesimsen (ESTIMATE, én verdi for hele bygget)
 //   continues_below_ground: { value: bool, prov },         // ført under bakken til frostfritt nivå?
 //   below_ground_m: { value, prov },                       // standard 1,0 m — brukes bare når bryteren er på
-//   cable_m,                                               // AVLEDET: over + 0,05 | over + under (ingen 5 cm)
-//   runs, runs_src, cable_total_m,                         // 207: løp (standard 2) · AVLEDET cable_m × runs
+//   cable_m,                                               // AVLEDET: kabel med ETT løp — over + 0,05 | over + under (ingen 5 cm)
+//   runs, runs_src, cable_total_m,                         // 207: løp (standard 2) · 213: AVLEDET over × løp + 0,05 | (over + under) × løp
 //   prov: { source: 'USER_DRAWN', … }
 // }
 // VALLEY_GUTTER = { id: 'g<n>', type: 'VALLEY_GUTTER', geometry: { kind:'polyline', pts: [topp, bunn] },
 //   z_prov: [topp, bunn], height_ref: 'terreng', surface, planes: [], length_m, prov }
 //   — en gradrenne ligger mellom to takflater, men lagres ÉN gang (som mønet i 205).
-const TAK_DOWNPIPE_TAIL_M = 0.05;      // nedløp som slutter over bakken: kabelen stikker 5 cm ut
+const TAK_DOWNPIPE_TAIL_M = 0.05;      // nedløp som slutter over bakken: kabelen stikker 5 cm ut — ÉN gang per nedløp (213)
 const TAK_BELOW_GROUND_DEFAULT_M = 1.0; // Kenneth 07.11: under bakken til frostfritt nivå, standard 1 m
 // 207 · KABELLØP. Hvert delstrekk (`segments[i]`), nedløp og gradrenne har `runs: 1 | 2` og
 // `runs_src: 'standard' | 'user'`. Kabelmeter = lengde × løp (`cable_total_m`, avledet). Delstrekket har i
@@ -81974,6 +81974,8 @@ const TAK_GUTTER_PROFILE_DEG = { hengkant: 40, midt: 65, bunn: 90 };       // vi
 const TAK_GUTTER_RUN_POS = { 1: ['bunn'], 2: ['bunn', 'hengkant'] };       // ett løp: bunnen · to løp: bunnen + opp mot hengkanten
 var TAK_CIRCUIT_LIMIT_M = null;   // kurslengdegrense (m) — står TOM til et produkt er valgt. Ikke fyll inn et tall.
 const TAK_CABLE_NO_PRODUCT = 'Produkt ikke valgt. Kabelmeter er geometri.';
+// 213 (Kenneth, svar på 207 spm. 7): svinger og overganger er null til produktet (T1) er valgt — panelet må si det.
+const TAK_CABLE_MINIMUM_NOTE = 'Kabelmeter er rette lengder. Svinger i renneenden og overgangen renne–nedløp er ikke med, så tallet er et minimum.';
 const TAK_FEAT_COLOR = { GUTTER: '#0891b2', DOWNSPOUT: '#0e7490', VALLEY_GUTTER: '#1d4ed8' };
 var _takFeat = null;     // verktøy: { fid, kind: 'gutter'|'downspout'|'valley', whole, pts: [], edgeId, hover } — lagres aldri
 var _takFeatSel = null;  // { fid, id } valgt objekt (transient)
@@ -82023,16 +82025,30 @@ function _takCentroid(t) {
   if (!P.length) return { x: 0, y: 0 };
   return { x: P.reduce((a, p) => a + p.x, 0) / P.length, y: P.reduce((a, p) => a + p.y, 0) / P.length };
 }
-/** Kabellengden i nedløpet (Kenneth 07.11, Coworks tolkning — se docs/206/SPØRSMÅL.md 1). */
-function _takDownpipeCableM(d) {
-  const over = d.above_ground_m && d.above_ground_m.value;
+/** 213: DEN ENESTE formelen for kabel i et nedløp. Panelet, tabellen, forhåndsvisningen og summen leser denne.
+ *  Kenneth 07.11 (svar på 207 spm. 2): to løp i et nedløp er ÉN sløyfe — kabelen kommer ut av nedløpet én
+ *  gang. Tillegget hører til nedløpet, ikke til løpet:
+ *    slutter over bakken:   over × løp + 0,05
+ *    under bakken:          (over + under) × løp           (ingen 0,05)
+ *  `under` = null → slutter over bakken. → { len_m (nedløpets lengde, per løp), tail_m, cable_m } eller null. */
+function _takDownpipeCableFor(over, under, runs) {
   if (over == null || !isFinite(over)) return null;
+  const n = runs === 1 || runs === 2 ? runs : 1;
+  const len_m = under == null ? over : over + under, tail_m = under == null ? TAK_DOWNPIPE_TAIL_M : 0;
+  return { len_m, tail_m, cable_m: len_m * n + tail_m };
+}
+/** Nedløpets kabel for et lagret nedløp. Under bakken uten kjent dybde → null (manglende tall). */
+function _takDownpipeCable(d, runs) {
+  const over = d.above_ground_m && d.above_ground_m.value;
   if (d.continues_below_ground && d.continues_below_ground.value) {
     const under = d.below_ground_m && d.below_ground_m.value;
-    return under == null ? null : over + under;     // gravd ned: ingen ekstra 5 cm
+    if (under == null) return null;
+    return _takDownpipeCableFor(over, under, runs);
   }
-  return over + TAK_DOWNPIPE_TAIL_M;
+  return _takDownpipeCableFor(over, null, runs);
 }
+/** 206-feltet `cable_m`: kabel med ETT løp (over + 0,05 | over + under). Uendret betydning for 1 løp. */
+function _takDownpipeCableM(d) { const c = _takDownpipeCable(d, 1); return c ? c.cable_m : null; }
 /** Etiketten ved symbolet: nedløpets lengde, «10,0 m» eller «10,0 + 1,0 m». */
 function _takDownpipeLabel(d) {
   const over = d.above_ground_m && d.above_ground_m.value;
@@ -82067,7 +82083,8 @@ function _takRecalc(t) {
     }
     g.cable_total_m = g.segments.reduce((a, sg) => a + sg.cable_total_m, 0);
   }
-  for (const d of _takFeats(t, 'DOWNSPOUT')) { _takRunsFill(d, TAK_RUNS_DEFAULT.DOWNSPOUT); d.cable_total_m = d.cable_m == null ? null : d.cable_m * d.runs; }
+  // 213: ikke cable_m × løp — 0,05 regnes én gang per nedløp (_takDownpipeCableFor).
+  for (const d of _takFeats(t, 'DOWNSPOUT')) { _takRunsFill(d, TAK_RUNS_DEFAULT.DOWNSPOUT); const c = _takDownpipeCable(d, d.runs); d.cable_total_m = c ? c.cable_m : null; }
   for (const v of _takFeats(t, 'VALLEY_GUTTER')) { _takRunsFill(v, TAK_RUNS_DEFAULT.VALLEY_GUTTER); v.cable_total_m = v.length_m * v.runs; }
 }
 /** 207: mangler `runs` (nytt objekt, eller lagret før 207) → standardverdien, merket «standard». */
@@ -82082,7 +82099,8 @@ function _takCableRows(t) {
   for (const g of G) for (const sg of (g.segments || [])) rows.push({ id: sg.id, kind: 'segment', of: g.id, length_m: sg.length_m, runs: sg.runs, cable_m: sg.cable_total_m });
   const order = id => { const i = G.findIndex(g => g.id === id); return i < 0 ? 1e9 : i; };
   const D = _takFeats(t, 'DOWNSPOUT').slice().sort((a, b) => order(a.gutter) - order(b.gutter) || a.at_m - b.at_m);
-  for (const d of D) rows.push({ id: d.id, kind: 'DOWNSPOUT', of: d.gutter, length_m: d.cable_m, runs: d.runs, cable_m: d.cable_total_m });
+  // 213: lengde = nedløpets lengde per løp, tail_m = 0,05 ut av nedløpet (én gang). kabel = lengde × løp + tail.
+  for (const d of D) { const c = _takDownpipeCable(d, d.runs); rows.push({ id: d.id, kind: 'DOWNSPOUT', of: d.gutter, length_m: c ? c.len_m : null, tail_m: c ? c.tail_m : 0, runs: d.runs, cable_m: d.cable_total_m }); }
   for (const v of _takFeats(t, 'VALLEY_GUTTER')) rows.push({ id: v.id, kind: 'VALLEY_GUTTER', of: null, length_m: v.length_m, runs: v.runs, cable_m: v.cable_total_m });
   return rows;
 }
@@ -82504,7 +82522,7 @@ function _takDrawFeatures(fid, t) {
         if (Math.abs(s1 - s0) > 0.001) {
           _takLabel(_takNum(Math.abs(s1 - s0)) + ' m', q.x + 16, q.y - 14, col, true);
           // 207: hva strekket gir i kabel med standard løp, og hva totalen blir.
-          if (h.ok) { const add = Math.abs(s1 - s0) * TAK_RUNS_DEFAULT.segment; _takLabel(`+${_takNum(add)} m kabel (×${TAK_RUNS_DEFAULT.segment}) → ${_takNum(_takCableSummary(t).total_m + add)} m`, q.x + 16, q.y + 2, col, false); }
+          if (h.ok) { const add = Math.abs(s1 - s0) * TAK_RUNS_DEFAULT.segment; _takLabel(`+${_takNum(add, 2)} m kabel (×${TAK_RUNS_DEFAULT.segment}) → ${_takNum(_takCableSummary(t).total_m + add, 2)} m`, q.x + 16, q.y + 2, col, false); }
         }
       }
       if (F.edgeId && F.pts.length) { const e0 = (t.edges || []).find(x => x.id === F.edgeId); if (e0) { const L = _takEdgeLenM(e0), u = F.pts[0] / L, q = w2s(e0.a.x + u * (e0.b.x - e0.a.x), e0.a.y + u * (e0.b.y - e0.a.y)); ctx.beginPath(); ctx.arc(q.x, q.y, 5, 0, Math.PI * 2); ctx.fillStyle = TAK_FEAT_COLOR.GUTTER; ctx.fill(); } }
@@ -82515,7 +82533,8 @@ function _takDrawFeatures(fid, t) {
         _takLabel(_takNum(F.hover.s) + ' m fra start', q.x + n.x * 30, q.y + n.y * 30, TAK_FEAT_COLOR.DOWNSPOUT, false);
         // 207: nedløpet med standard høyde og løp — hva det legger til.
         const sf = _takSurface(fid), ev = sf && sf.heights && sf.heights.eave_m;
-        if (ev && ev.value != null) { const add = (ev.value + TAK_DOWNPIPE_TAIL_M) * TAK_RUNS_DEFAULT.DOWNSPOUT; _takLabel(`+${_takNum(add)} m kabel (×${TAK_RUNS_DEFAULT.DOWNSPOUT}) → ${_takNum(_takCableSummary(t).total_m + add)} m`, q.x + n.x * 30, q.y + n.y * 30 + 15, TAK_FEAT_COLOR.DOWNSPOUT, false); } }
+        // 213: samme formel som tabellen (et nytt nedløp slutter over bakken), og to desimaler som tabellen.
+        if (ev && ev.value != null) { const add = _takDownpipeCableFor(ev.value, null, TAK_RUNS_DEFAULT.DOWNSPOUT).cable_m; _takLabel(`+${_takNum(add, 2)} m kabel (×${TAK_RUNS_DEFAULT.DOWNSPOUT}) → ${_takNum(_takCableSummary(t).total_m + add, 2)} m`, q.x + n.x * 30, q.y + n.y * 30 + 15, TAK_FEAT_COLOR.DOWNSPOUT, false); } }
     } else if (F.kind === 'valley' && F.hover) {
       const q = w2s(F.hover.pt.x, F.hover.pt.y);
       if (F.pts.length) { const a = w2s(F.pts[0].x, F.pts[0].y); ctx.setLineDash([6, 4]); line([a, q], TAK_FEAT_COLOR.VALLEY_GUTTER, 4); ctx.setLineDash([]);
@@ -82571,6 +82590,7 @@ function _takFeaturesCardHtml(fid, t, s) {
     for (const d of D.filter(d => d.gutter === g.id).sort((a, b) => a.at_m - b.at_m)) {
       const ag = d.above_ground_m || {}, under = !!(d.continues_below_ground && d.continues_below_ground.value), bg = d.below_ground_m || {};
       const est = ag.prov && ag.prov.source === 'ESTIMATE';
+      const dc = _takDownpipeCable(d, d.runs);   // 213: samme kilde som tabellen
       // Smalt panel (180 px): etikett til venstre, felt til høyre, én linje per verdi.
       const fr = (lbl, field, extra) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:3px;white-space:nowrap"><span style="color:var(--dim)">${lbl}</span><span>${field} m${extra || ''}</span></div>`;
       h += `<div class="tak-downspout" data-id="${d.id}" style="margin:3px 0 0 4px;padding:2px 4px;border-left:2px solid ${TAK_FEAT_COLOR.DOWNSPOUT};font-size:11px;${sel(d) ? 'background:rgba(14,116,144,0.12)' : ''}">
@@ -82582,8 +82602,8 @@ function _takFeaturesCardHtml(fid, t, s) {
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="tak-under" ${under ? 'checked' : ''} onchange="_takSetDownspout(${fid},'${d.id}','under',this.checked)" style="margin:0"><span title="Ført under bakken til frostfritt nivå">Under bakken</span></label>
         ${under ? `<div class="tak-under-row">${fr('Under bakken', inp(bg.value, `_takSetDownspout(${fid},'${d.id}','below',this.value)`, 40))}<div style="font-size:10px;color:var(--dim)">${bg.prov && bg.prov.source === 'USER_CONFIRMED' ? 'rettet' : 'standard 1,0 m'}</div></div>` : ''}
         <div style="display:flex;align-items:center;justify-content:space-between;white-space:nowrap">${dim('Løp')}${runsSel(d)}</div>
-        <div style="white-space:nowrap">${dim('Kabel per løp:')} <b class="tak-cable">${d.cable_m == null ? '—' : _takNum(d.cable_m, 2) + ' m'}</b></div><div style="font-size:10px;color:var(--dim)">${under ? 'over + under bakken' : 'høyde + 0,05'}</div>
-        <div style="white-space:nowrap;text-align:right">${dim('× ' + d.runs + ' løp =')} <b class="tak-cable-total">${km(d.cable_total_m)} m</b></div></div>`;
+        <div style="white-space:nowrap">${dim('Per løp:')} <b class="tak-cable">${dc == null ? '—' : _takNum(dc.len_m, 2) + ' m'}</b></div><div style="font-size:10px;color:var(--dim)">${under ? 'over + under bakken, ingen 0,05' : 'høyde · + 0,05 ut av nedløpet, én gang'}</div>
+        <div style="white-space:nowrap;text-align:right">${dim('× ' + d.runs + ' løp' + (dc && dc.tail_m ? ' + 0,05' : '') + ' =')} <b class="tak-cable-total">${km(d.cable_total_m)} m</b></div></div>`;
     }
     h += '</div>';
   }
@@ -82612,11 +82632,12 @@ function _takCableSumHtml(t) {
     <div style="font-weight:700">Kabelmeter</div>
     <table class="tak-cable-table" style="width:100%;font-size:10px;border-collapse:collapse">
       <tr style="font-size:10px"><td>${dim('objekt')}</td><td style="text-align:right">${dim('lengde')}</td><td style="text-align:center;padding:0 4px">${dim('løp')}</td><td style="text-align:right">${dim('kabel')}</td></tr>
-      ${S7.rows.map(r => `<tr class="tak-cable-row" data-id="${r.id}"><td style="white-space:nowrap" title="${r.kind === 'segment' ? 'Delstrekk av renne ' + r.of : r.kind === 'DOWNSPOUT' ? 'Nedløp på ' + r.of + ' (lengde per løp)' : 'Gradrenne'}">${name(r)}</td><td style="text-align:right">${km(r.length_m)}</td><td style="text-align:center;padding:0 4px">${r.runs}</td><td style="text-align:right">${km(r.cable_m)}</td></tr>`).join('')}
+      ${S7.rows.map(r => `<tr class="tak-cable-row" data-id="${r.id}"><td style="white-space:nowrap" title="${r.kind === 'segment' ? 'Delstrekk av renne ' + r.of : r.kind === 'DOWNSPOUT' ? 'Nedløp på ' + r.of + ' (lengde per løp; +0,05 = kabelen ut av nedløpet, én gang)' : 'Gradrenne'}">${name(r)}</td><td style="text-align:right;white-space:nowrap">${km(r.length_m)}${r.tail_m ? dim('+0,05') : ''}</td><td style="text-align:center;padding:0 4px">${r.runs}</td><td style="text-align:right">${km(r.cable_m)}</td></tr>`).join('')}
       <tr style="border-top:1px solid var(--border)"><td><b>Sum</b></td><td></td><td></td><td style="text-align:right;white-space:nowrap"><b class="tak-cable-sum-total">${_takNum(S7.total_m, 2)} m</b></td></tr>
     </table>
     ${S7.missing.length ? `<div style="color:var(--warn,#d97706);font-size:11px">⚠ Summen mangler ${S7.missing.join(', ')} (høyden er ikke kjent).</div>` : ''}
-    <div style="font-size:10px;color:var(--dim)">r1.1 = delstrekk · ↓ nedløp · ◇ gradrenne · lengde per løp</div>
+    ${S7.total_m > 0 ? `<div class="tak-cable-minimum" style="font-size:10px;color:var(--dim)">${TAK_CABLE_MINIMUM_NOTE}</div>` : ''}
+    <div style="font-size:10px;color:var(--dim)">r1.1 = delstrekk · ↓ nedløp · ◇ gradrenne · lengde per løp · +0,05 én gang per nedløp</div>
     <div class="tak-cable-note" style="font-size:10px;color:var(--dim)">${c.note || ''}</div>
     <div class="tak-circuit" style="font-size:10px;color:var(--dim)">Kurslengde: ${c.limit_m == null ? 'grense ikke satt' : _takNum(c.limit_m) + ' m'}</div>
   </div>`;
@@ -83281,8 +83302,9 @@ async function _takRegressionTest207() {
     // ── A. Standard: 2 løp overalt ──
     check('Standard: alle delstrekk 2 løp («standard»)', '2,2,2,2', g.segments.every(s => s.runs === 2 && s.runs_src === 'standard'), g.segments.map(s => s.runs + s.runs_src[0]).join());
     check('Standard: alle nedløp 2 løp', '2,2,2', _takFeats(t, 'DOWNSPOUT').every(d => d.runs === 2 && d.runs_src === 'standard'), _takFeats(t, 'DOWNSPOUT').map(d => d.runs).join());
-    check('Filmens metode 2 (renne 2, nedløp 2) = 2 × 25 + 3 × 2 × 10,05 = 110,30 m', '110,30', eq(tot(), 110.3, 1e-9) && tot() >= 110.0 && tot() <= 110.6, tot());
-    check('Panelet: sum nederst 110,30 m', '110,30 m', domSum() === '110,30 m', domSum());
+    // 213: 0,05 én gang per nedløp. Før 213: 2 × 25 + 3 × 2 × 10,05 = 110,30 (og panelet «110,30 m»).
+    check('Filmens metode 2 (renne 2, nedløp 2) = 2 × 25 + 3 × (2 × 10 + 0,05) = 110,15 m', '110,15', eq(tot(), 110.15, 1e-9) && tot() >= 110.0 && tot() <= 110.6, tot());
+    check('Panelet: sum nederst 110,15 m', '110,15 m', domSum() === '110,15 m', domSum());
     check('Panelet: tabellen har 7 rader (4 delstrekk + 3 nedløp)', '7', document.querySelectorAll('.tak-cable-row').length === 7, document.querySelectorAll('.tak-cable-row').length);
     // B. Posisjon i profilen
     check('To løp i renna: bunnen (90°) og hengkanten (40°), lagret på delstrekket', 'bunn 90 · hengkant 40', JSON.stringify(SG(0).run_pos) === JSON.stringify([{ at: 'bunn', deg: 90 }, { at: 'hengkant', deg: 40 }]), JSON.stringify(SG(0).run_pos));
@@ -83292,7 +83314,8 @@ async function _takRegressionTest207() {
     const b1 = btn('.tak-downspout[data-id="n1"] .tak-runs-1');
     check('Nedløpet har løp-velgeren i panelet', 'ja', !!b1, '');
     b1 && b1.click();
-    check('Klikk «1» på n1 → n1 1 løp (valgt), totalen i panelet endres i samme øyeblikk', '100,25 m', D('n1').runs === 1 && D('n1').runs_src === 'user' && domSum() === '100,25 m', domSum());
+    // 213: før 110,30 − 20,10 + 10,05 = 100,25. Nå 110,15 − 20,05 + 10,05 = 100,15.
+    check('Klikk «1» på n1 → n1 1 løp (valgt), totalen i panelet endres i samme øyeblikk', '100,15 m', D('n1').runs === 1 && D('n1').runs_src === 'user' && domSum() === '100,15 m', domSum());
     _takSetRuns(fid, 'n2', 1); _takSetRuns(fid, 'n3', 1);
     check('Filmens metode 1 (renne 2, nedløp 1) = 2 × 25 + 3 × 10,05 = 80,15 m', '80,15', eq(tot(), 80.15, 1e-9) && tot() >= 80.0 && tot() <= 80.5, tot());
     check('Panelet: 80,15 m', '80,15 m', domSum() === '80,15 m', domSum());
@@ -83310,27 +83333,31 @@ async function _takRegressionTest207() {
     ['n1', 'n2', 'n3'].forEach(id => _takSetRuns(fid, id, 2));
     _takSetDownspout(fid, 'n3', 'under', true);
     check('Nedløp ført 1,0 m under bakken, 2 løp → (10 + 1,0) × 2 = 22,0 m, ikke 20,1', '22,0', eq(D('n3').cable_total_m, 22, 1e-9), D('n3').cable_total_m);
-    check('Totalen da: 50 + 20,10 + 20,10 + 22,0 = 112,20 m', '112,20', eq(tot(), 112.2, 1e-9), tot());
+    // 213: før 50 + 20,10 + 20,10 + 22,0 = 112,20.
+    check('Totalen da: 50 + 20,05 + 20,05 + 22,0 = 112,10 m', '112,10', eq(tot(), 112.1, 1e-9), tot());
     _takSetDownspout(fid, 'n3', 'under', false);
 
     // ── Kenneths rute (blandet): r1.1 2 · r1.2 1 · r1.3 1 · r1.4 2 · n1 1 · n2 2 · n3 1 ──
     _takSetRuns(fid, 'r1.2', 1); _takSetRuns(fid, 'r1.3', 1); _takSetRuns(fid, 'n1', 1); _takSetRuns(fid, 'n3', 1);
     const sm = _takCableSummary(_takOf(fid));
     check('Blandet: renna 2×2,0 + 10,5 + 10,5 + 2×2,0 = 29,0 m', '29,0', eq(sm.gutter_m, 29, 1e-9), sm.gutter_m);
-    check('Blandet: nedløpene 10,05 + 2×10,05 + 10,05 = 40,20 m', '40,20', eq(sm.downspout_m, 40.2, 1e-9), sm.downspout_m);
-    check('Blandet: sum 69,20 m, og panelet viser det', '69,20 m', eq(sm.total_m, 69.2, 1e-9) && domSum() === '69,20 m', domSum());
+    // 213: før nedløpene 10,05 + 2×10,05 + 10,05 = 40,20 og sum 69,20.
+    check('Blandet: nedløpene 10,05 + (2×10 + 0,05) + 10,05 = 40,15 m', '40,15', eq(sm.downspout_m, 40.15, 1e-9), sm.downspout_m);
+    check('Blandet: sum 69,15 m, og panelet viser det', '69,15 m', eq(sm.total_m, 69.15, 1e-9) && domSum() === '69,15 m', domSum());
     // Arv ved deling: r1.2 (1 løp) deles av et nytt nedløp
     const n4 = _takAddDownspout(fid, g.id, 6);
     const gg = _takFeats(_takOf(fid), 'GUTTER')[0];
     check('Nytt nedløp i et delstrekk med 1 løp: begge halvdelene får 1 løp og posisjonen «bunn»', '1/1', gg.segments.length === 5 && gg.segments[1].runs === 1 && gg.segments[2].runs === 1 && gg.segments[1].run_pos.length === 1, gg.segments.map(s => s.runs).join());
-    check('Det nye nedløpet får standard 2 løp, og totalen tar det med straks', '69,20 + 20,10 = 89,30', n4 && n4.runs === 2 && eq(tot(), 89.3, 1e-9) && domSum() === '89,30 m', tot());
+    // 213: før 69,20 + 20,10 = 89,30.
+    check('Det nye nedløpet får standard 2 løp, og totalen tar det med straks', '69,15 + 20,05 = 89,20', n4 && n4.runs === 2 && eq(tot(), 89.2, 1e-9) && domSum() === '89,20 m', tot());
     _takDeleteFeature(fid, n4.id);
 
     // ── Gradrenne ──
     _takSetHeight(fid, 'ridge_m', '13');
     const v = _takAddValley(fid, { x: 1200, y: 500 }, { x: 1600, y: 500 });
     check('Gradrenne 5,0 m, standard 2 løp → 10,0 m kabel', '10,0', v && v.runs === 2 && eq(v.cable_total_m, 10, 1e-9), v && v.cable_total_m);
-    check('Gradrenna står i tabellen og summen', '79,20', eq(tot(), 79.2, 1e-9) && !!document.querySelector('.tak-cable-row[data-id="' + v.id + '"]'), tot());
+    // 213: før 79,20.
+    check('Gradrenna står i tabellen og summen', '79,15', eq(tot(), 79.15, 1e-9) && !!document.querySelector('.tak-cable-row[data-id="' + v.id + '"]'), tot());
     _takSetRuns(fid, v.id, 1);
     check('Gradrenne 1 løp → 5,0 m', '5,0', eq(_takFeat_(_takOf(fid), v.id).cable_total_m, 5, 1e-9), '');
     _takDeleteFeature(fid, v.id);
@@ -83344,14 +83371,17 @@ async function _takRegressionTest207() {
     _takFeatStart(fid, 'gutter'); _takFeatWhole(true);
     mus('mousemove', { x: 1250, y: 1000 }); render();
     const t0 = tot();
-    check('Forhåndsvisning av et rennestrekk på k3: «+50,0 m kabel (×2) → …»', '+50,0 m kabel', tekster.some(x => x.startsWith('+50,0 m kabel (×2) → ' + _takNum(t0 + 50))), tekster.filter(x => /kabel/.test(x)).join(' | '));
+    // 213: to desimaler som tabellen. Før: «+50,0 m kabel (×2) → » + én desimal.
+    check('Forhåndsvisning av et rennestrekk på k3: «+50,00 m kabel (×2) → …»', '+50,00 m kabel', tekster.some(x => x.startsWith('+50,00 m kabel (×2) → ' + _takNum(t0 + 50, 2))), tekster.filter(x => /kabel/.test(x)).join(' | '));
     mus('mousedown', { x: 1250, y: 1000 }); mus('mouseup', { x: 1250, y: 1000 });
     check('Strekket lagt med klikk → totalen i panelet øker med 50,0 m i samme øyeblikk', _takNum(t0 + 50, 2) + ' m', eq(tot(), t0 + 50, 1e-9) && domSum() === _takNum(t0 + 50, 2) + ' m', domSum());
     _takFeatStart(fid, 'downspout'); tekster.length = 0;
     mus('mousemove', { x: 1000, y: 1000 }); render();
-    check('Forhåndsvisning av et nedløp: «+20,1 m kabel (×2)»', '+20,1', tekster.some(x => x.startsWith('+20,1 m kabel (×2)')), tekster.filter(x => /kabel/.test(x)).join(' | '));
+    // 213: før «+20,1 m kabel (×2)» (= 2 × 10,05 med én desimal).
+    check('Forhåndsvisning av et nedløp: «+20,05 m kabel (×2)»', '+20,05', tekster.some(x => x.startsWith('+20,05 m kabel (×2) → ' + _takNum(t0 + 70.05, 2))), tekster.filter(x => /kabel/.test(x)).join(' | '));
     mus('mousedown', { x: 1000, y: 1000 }); mus('mouseup', { x: 1000, y: 1000 });
-    check('Nedløpet lagt med klikk → totalen øker med 20,10 m', _takNum(t0 + 70.1, 2) + ' m', eq(tot(), t0 + 70.1, 1e-6) && domSum() === _takNum(t0 + 70.1, 2) + ' m', domSum());
+    // 213: før +20,10 (t0 + 70,1).
+    check('Nedløpet lagt med klikk → totalen øker med 20,05 m', _takNum(t0 + 70.05, 2) + ' m', eq(tot(), t0 + 70.05, 1e-6) && domSum() === _takNum(t0 + 70.05, 2) + ' m', domSum());
     _takFeatStop();
     _takLabel = orig;
     tekster.length = 0; _takLabel = function (txt) { tekster.push(txt); return orig.apply(this, arguments); }; render(); _takLabel = orig;
@@ -83383,7 +83413,8 @@ async function _takRegressionTest207() {
     old.tak[fid].features = old.tak[fid].features.filter(f => f.gutter !== 'r2' && f.id !== 'r2');
     _restoreProject(old);
     const tO = _takOf(fid);
-    check('Tak lagret av 206 (uten løp) åpnes med 2 løp overalt («standard»)', '110,30', eq(_takCableSummary(tO).total_m, 110.3, 1e-9) && _takFeats(tO, 'GUTTER')[0].segments.every(s => s.runs === 2 && s.runs_src === 'standard'), _takCableSummary(tO).total_m);
+    // 213: før 110,30.
+    check('Tak lagret av 206 (uten løp) åpnes med 2 løp overalt («standard»)', '110,15', eq(_takCableSummary(tO).total_m, 110.15, 1e-9) && _takFeats(tO, 'GUTTER')[0].segments.every(s => s.runs === 2 && s.runs_src === 'standard'), _takCableSummary(tO).total_m);
     _resetProjectState(); addPart('indoor');
     check('Prosjekt uten tak: fortsatt ingen tak-nøkkel', 'ingen', !('tak' in _buildSaveData()), '');
   } catch (e) {
@@ -83396,6 +83427,111 @@ async function _takRegressionTest207() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_takRegressionTest207: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+// 213: svar på 207 spm. 2 — de 5 cm ut av nedløpet regnes ÉN gang per nedløp, ikke per løp.
+//   slutter over bakken: over × løp + 0,05 · under bakken: (over + under) × løp (ingen 0,05).
+// Låser formelen (ren funksjon), filmens bygg (metode 1 uendret 80,15, metode 2 110,15), Kenneths blandede
+// rute (69,15), at tabellen, nedløpsboksen og forhåndsvisningen viser samme tall, og minimums-linja.
+async function _takRegressionTest213() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '213: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
+                 part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId };
+  const eq = (a, b, tol) => a != null && b != null && Math.abs(a - b) < (tol || 1e-9);
+  const orig = _takLabel;
+  try {
+    window._showToast = () => {}; window._scheduleAutoSave = () => {}; window.confirm = () => true;
+    // ── Formelen (én kilde) ──
+    const F = (o, u, n) => _takDownpipeCableFor(o, u, n).cable_m;
+    check('10,0 m over bakken, 1 løp → 10,05', '10,05', eq(F(10, null, 1), 10.05), F(10, null, 1));
+    check('10,0 m over bakken, 2 løp → 20,05 (før 213: 20,10)', '20,05', eq(F(10, null, 2), 20.05), F(10, null, 2));
+    check('10,0 + 1,0 under bakken, 1 løp → 11,00 (ingen 0,05)', '11,00', eq(F(10, 1, 1), 11), F(10, 1, 1));
+    check('10,0 + 1,0 under bakken, 2 løp → 22,00 (ingen 0,05)', '22,00', eq(F(10, 1, 2), 22), F(10, 1, 2));
+    check('Ukjent høyde → null (ikke 0,05)', 'null', _takDownpipeCableFor(null, null, 2) === null, '');
+
+    // ── Filmens bygg ──
+    _resetProjectState();
+    addPart('roof');
+    const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+    S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null;
+    S.tak = { [fid]: _takManual([{ x: 0, y: 0 }, { x: 2500, y: 0 }, { x: 2500, y: 1000 }, { x: 0, y: 1000 }]) };
+    _takSetRoofType(fid, 'pitched');
+    _takSetHeight(fid, 'eave_m', '10');
+    const g = _takAddGutter(fid, 'k1');
+    _takAddDownspout(fid, g.id, 2); _takAddDownspout(fid, g.id, 12.5); _takAddDownspout(fid, g.id, 23);
+    const D = id => _takFeat_(_takOf(fid), id);
+    const tot = () => _takCableSummary(_takOf(fid)).total_m;
+    renderSidebar();
+    const domSum = () => { const e = document.querySelector('.tak-cable-sum-total'); return e ? e.textContent : null; };
+    const cells = id => { const r = document.querySelector('.tak-cable-row[data-id="' + id + '"]'); return r ? [...r.children].map(td => td.textContent) : []; };
+    check('Metode 2 (renne 2, nedløp 2) → 110,15 m (før 110,30)', '110,15 m', eq(tot(), 110.15) && domSum() === '110,15 m', domSum());
+    check('Hvert nedløp med 2 løp: 20,05 (før 20,10)', '20,05 ×3', ['n1', 'n2', 'n3'].every(id => eq(D(id).cable_total_m, 20.05)), ['n1', 'n2', 'n3'].map(id => D(id).cable_total_m).join());
+    check('206-feltet cable_m (ett løp) er uendret 10,05', '10,05', eq(D('n1').cable_m, 10.05), D('n1').cable_m);
+    check('Tabellen: ↓ n1 = 10,00+0,05 · 2 · 20,05', '↓ n1|10,00+0,05|2|20,05', cells('n1').join('|') === '↓ n1|10,00+0,05|2|20,05', cells('n1').join('|'));
+    const box = id => document.querySelector('.tak-downspout[data-id="' + id + '"]');
+    check('Nedløpsboksen: lengde per løp 10,00 m, «× 2 løp + 0,05 = 20,05 m»', '10,00 m / 20,05 m',
+      box('n1') && box('n1').querySelector('.tak-cable').textContent === '10,00 m' && box('n1').querySelector('.tak-cable-total').textContent === '20,05 m' && box('n1').textContent.includes('× 2 løp + 0,05 ='),
+      box('n1') && box('n1').querySelector('.tak-cable-total').textContent);
+    ['n1', 'n2', 'n3'].forEach(id => _takSetRuns(fid, id, 1));
+    check('Metode 1 (renne 2, nedløp 1) → 80,15 m (uendret)', '80,15 m', eq(tot(), 80.15) && domSum() === '80,15 m', domSum());
+    check('Tabellen med 1 løp: 10,00+0,05 · 1 · 10,05', '10,00+0,05|1|10,05', cells('n1').slice(1).join('|') === '10,00+0,05|1|10,05', cells('n1').join('|'));
+
+    // ── Under bakken ──
+    _takSetDownspout(fid, 'n3', 'under', true);
+    check('n3 10,0 + 1,0 under bakken, 1 løp → 11,00', '11,00', eq(D('n3').cable_total_m, 11), D('n3').cable_total_m);
+    _takSetRuns(fid, 'n3', 2);
+    check('n3 under bakken, 2 løp → 22,00, ingen +0,05 i tabellen', '11,00|2|22,00', eq(D('n3').cable_total_m, 22) && cells('n3').slice(1).join('|') === '11,00|2|22,00', cells('n3').join('|'));
+    _takSetDownspout(fid, 'n3', 'under', false); _takSetRuns(fid, 'n3', 1);
+
+    // ── Kenneths blandede rute: r1.1 2 · r1.2 1 · r1.3 1 · r1.4 2 · n1 1 · n2 2 · n3 1 ──
+    _takSetRuns(fid, 'r1.2', 1); _takSetRuns(fid, 'r1.3', 1); _takSetRuns(fid, 'n2', 2);
+    const sm = _takCableSummary(_takOf(fid));
+    check('Blandet: renna 29,00 (uendret)', '29,00', eq(sm.gutter_m, 29), sm.gutter_m);
+    check('Blandet: nedløpene 10,05 + 20,05 + 10,05 = 40,15 (før 40,20)', '40,15', eq(sm.downspout_m, 40.15), sm.downspout_m);
+    check('Blandet: sum 69,15 m i panelet (før 69,20)', '69,15 m', eq(sm.total_m, 69.15) && domSum() === '69,15 m', domSum());
+
+    // ── Minimums-linja ──
+    const minEl = () => document.querySelector('.tak-cable-minimum');
+    check('Minimums-linja står under summen når det finnes kabelmeter', TAK_CABLE_MINIMUM_NOTE, minEl() && minEl().textContent === TAK_CABLE_MINIMUM_NOTE, minEl() && minEl().textContent);
+    const html0 = _takCableSumHtml({ features: [{ id: 'n1', type: 'DOWNSPOUT', gutter: 'r9', at_m: 0, above_ground_m: { value: null }, runs: 2, cable_total_m: null }] });
+    check('Sum null (bare et nedløp uten høyde): tabellen vises, minimums-linja ikke', 'tabell, ingen linje', html0.includes('tak-cable-table') && !html0.includes('tak-cable-minimum'), '');
+    check('Ingen objekter: ingen tabell og ingen linje', "''", _takCableSumHtml({ features: [] }) === '', '');
+
+    // ── Forhåndsvisningen = tabellen etterpå ──
+    fitAll(); render();
+    const cr = canvas.getBoundingClientRect();
+    const mus = (type, w) => { const q = w2s(w.x, w.y); canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: cr.left + q.x, clientY: cr.top + q.y })); };
+    const tekster = [];
+    _takLabel = function (txt) { tekster.push(txt); return orig.apply(this, arguments); };
+    const pre = txt => { const m = /^\+([\d,]+) m kabel \(×\d\) → ([\d,]+) m$/.exec(txt || ''); return m ? { add: m[1], total: m[2] } : null; };
+    _takFeatStart(fid, 'gutter'); _takFeatWhole(true);
+    mus('mousemove', { x: 1250, y: 1000 }); render();
+    const pg = pre(tekster.find(x => /kabel \(×/.test(x)));
+    mus('mousedown', { x: 1250, y: 1000 }); mus('mouseup', { x: 1250, y: 1000 });
+    const g2 = _takFeats(_takOf(fid), 'GUTTER')[1];
+    check('Strekk: forhåndsvisningen viser samme tall som tabellen etterpå', (pg && pg.add) + ' / ' + (pg && pg.total) + ' m',
+      pg && g2 && cells(g2.id + '.1')[3] === pg.add && domSum() === pg.total + ' m', (pg && JSON.stringify(pg)) + ' → ' + cells(g2 && g2.id + '.1').join('|') + ' · ' + domSum());
+    _takFeatStart(fid, 'downspout'); tekster.length = 0;
+    mus('mousemove', { x: 1000, y: 1000 }); render();
+    const pd = pre(tekster.find(x => /kabel \(×/.test(x)));
+    mus('mousedown', { x: 1000, y: 1000 }); mus('mouseup', { x: 1000, y: 1000 });
+    const nNew = _takFeats(_takOf(fid), 'DOWNSPOUT').find(d => d.gutter === (g2 && g2.id));
+    check('Nedløp: forhåndsvisningen «+20,05» = tabellens kabel og panelets sum etterpå', '20,05 / ' + (pd && pd.total) + ' m',
+      pd && pd.add === '20,05' && nNew && cells(nNew.id)[3] === '20,05' && domSum() === pd.total + ' m', (pd && JSON.stringify(pd)) + ' → ' + (nNew && cells(nNew.id).join('|')) + ' · ' + domSum());
+    _takFeatStop();
+  } catch (e) {
+    check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 300));
+  } finally {
+    _takLabel = orig;
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
+    hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takFeat = null; _takFeatSel = null; _takFeatHover = null;
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest213: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
   return { ok: allOk, results };
 }
 function typer206(t) { return (t.edges || []).map(e => e.id + ':' + (e.type || '—')).join(' '); }
