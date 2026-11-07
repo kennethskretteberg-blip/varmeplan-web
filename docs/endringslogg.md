@@ -4,6 +4,15 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 206 — Tak: rennestrekk, delstrekk, nedløp og gradrenne med lengder (07.11.2026, `main`, ikke pushet)
+
+- Nye objekter i `S.tak[fid].features` (§6.3): `GUTTER` på en takfot (`on_edge`, polylinje med z = gesimsen), `DOWNSPOUT` på et strekk (`gutter`, `at_m`) og `VALLEY_GUTTER` (topp/bunn, lagret én gang). Lengder regnes alltid av geometrien (`_takRecalc`).
+- Rennestrekk: «Hele kanten» med ett klikk (verktøyet eller kantmenyen), eller «Fra–til» med to klikk. Bare kanter `_takEdgeTakesGutter` godtar. Flere strekk per kant er lov, overlapp avvises.
+- Nedløpene deler strekket i delstrekk (`segments`, id `r1.1` …) med egen lengde. 207 setter løp der, og egenskapene arves når et delstrekk deles.
+- Nedløp: `above_ground_m` (standard = gesimsen, merket som én verdi for hele bygget ±0,5 m), bryteren `continues_below_ground` og `below_ground_m` (standard 1,0). Etiketten viser «10,0 m» eller «10,0 + 1,0 m». Kabelfeltet `cable_m` = over + 0,05, eller over + under uten 5 cm (spørsmål 1).
+- Gradrenne tegnes for hånd med topp = mønet og bunn = gesimsen som anslag, og lengden regnes i 3D.
+- Ny `_takRegressionTest206` 59/59. Rapport i `docs/206/RAPPORT.md`.
+
 ## 205 — Tak: kanttyper med fargekode, forslag og retting (07.11.2026, `main`, ikke pushet)
 
 - Kantene ligger nå på taket og ikke på flaten: `S.tak[fid].edges`. Delte kanter (mønet) lagres én gang, med `planes: [a, b]`. Tak fra 204 med `surfaces[i].edges` flyttes opp når de åpnes (`_takNormalize`).
