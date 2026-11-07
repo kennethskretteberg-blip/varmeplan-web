@@ -56559,7 +56559,11 @@ function _stairBuilderTextRegressionTest202() {
   const check = (name, expected, got) => results.push({ name, ok: JSON.stringify(expected) === JSON.stringify(got), expected, got });
   const T = (n, h) => ({ type: 'steps', stepCount: n, stepDepth_cm: 30, stepHeight_cm: h || 17, width_cm: 100 });
   const L = () => ({ type: 'landing', depth_cm: 90, width_cm: 100 });
-  const LBL = { bottom: 'SEGMENTER (nederste først)', top: 'SEGMENTER (øverste først)' };
+  // 203 (svar 202/1): samme etikett i begge retninger. Før 203 (202):
+  //   LBL = { bottom: 'SEGMENTER (nederste først)', top: 'SEGMENTER (øverste først)' }
+  const LBL = { bottom: 'SEGMENTER (trinn 1 først)', top: 'SEGMENTER (trinn 1 først)' };
+  const FORBUDT = /øverste|nederste|topp → bunn|bunn → topp/;
+  const sett = [];   // 203: hver etikett lest fra hver rendringsvei
   const NOTE = 'Forhåndsvisningen viser trappa slik den står.';
   const $ = id => document.getElementById(id);
   const txt = el => el ? el.textContent.replace(/\s+/g, ' ').trim() : null;
@@ -56577,7 +56581,7 @@ function _stairBuilderTextRegressionTest202() {
       _showStraightStairBuilder();
       _stairBuilderSegs = [T(4), L(), T(4)]; _stairBuilderDir = dir; _renderStairBuilderModal();
       let v = seen();
-      check(`${dir} · første visning: etikett`, LBL[dir], v.label);
+      check(`${dir} · første visning: etikett`, LBL[dir], v.label); sett.push(v.label);
       check(`${dir} · første visning: «170 cm til gulvet over»`, true, (v.stats || '').includes('170 cm til gulvet over'));
       check(`${dir} · første visning: ingen «cm høyde»`, false, v.gammelHoyde);
       check(`${dir} · første visning: forklaringslinja under bildet`, [NOTE, true], [v.note, v.noteUnderBildet]);
@@ -56594,24 +56598,58 @@ function _stairBuilderTextRegressionTest202() {
       // Vei 4: legg til segment (_stairBuilderRefreshSegs).
       _stairBuilderAddSeg('steps');
       v = seen();
-      check(`${dir} · etter ＋ Trinn: etikett, forklaring, ingen «cm høyde»`, [LBL[dir], NOTE, true, false], [v.label, v.note, v.noteUnderBildet, v.gammelHoyde]);
+      check(`${dir} · etter ＋ Trinn: etikett, forklaring, ingen «cm høyde»`, [LBL[dir], NOTE, true, false], [v.label, v.note, v.noteUnderBildet, v.gammelHoyde]); sett.push(v.label);
       // Vei 5: bytt byggeretning i nedtrekket (som brukeren gjør) → etiketten følger.
       const sel = $('stair-build-dir'); sel.value = other; sel.dispatchEvent(new Event('change'));
       v = seen();
-      check(`${dir} → ${other} i nedtrekket: etikett`, LBL[other], v.label);
+      check(`${dir} → ${other} i nedtrekket: etikett`, LBL[other], v.label); sett.push(v.label);
       check(`${dir} → ${other} i nedtrekket: forklaringslinja står`, [NOTE, true], [v.note, v.noteUnderBildet]);
       $('stair-modal-bg').remove();
     }
     // Ny trapp med standardvalget (1 trinn): tallet beholdes (193/3), men er merket.
     _showStraightStairBuilder();
     check('ny trapp (1 trinn): «34 cm til gulvet over»', true, (seen().stats || '').includes('34 cm til gulvet over'));
-    check('etikettene er symmetriske (begge «… først)», ingen pil)', [true, true], Object.values(LBL).map(s => / først\)$/.test(s) && !/→/.test(s)));
+    // 203: erstatter 202-sjekken «etikettene er symmetriske (begge «… først)», ingen pil)».
+    sett.push(seen().label);
+    check('203: alle rendringsveier, begge retninger: «SEGMENTER (trinn 1 først)»', [true, 7], [sett.every(l => l === 'SEGMENTER (trinn 1 først)'), sett.length]);
+    check('203: ingen retningsord i etiketten (øverste/nederste/topp → bunn/bunn → topp)', false, sett.some(l => FORBUDT.test(l || '')));
+    check('203: hjelperen gir samme tekst for top og bottom', [true, false], (() => { const d = _stairBuilderDir;
+      try { _stairBuilderDir = 'top'; const a = _stairBuilderSegLabelText(); _stairBuilderDir = 'bottom'; const b = _stairBuilderSegLabelText(); return [a === b, FORBUDT.test(a + b)]; } finally { _stairBuilderDir = d; } })());
   } finally {
     const bg = document.getElementById('stair-modal-bg'); if (bg) bg.remove();
     _stairBuilderSegs = saved.segs; _stairBuilderDir = saved.dir; _stairBuilderEditingId = saved.edit; _stairBuilderNewIdx = saved.newIdx; _stairBuilderAnchorSeg = saved.anchor;
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_stairBuilderTextRegressionTest202: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return results;
+}
+
+// 203 (svar 202/2): PDF-ens båndinndeling av sidevisningen leser høydekjeden (_stairSidePrintBandCount).
+// Rette trapper uten repos er uendret; få trinn + lang repos går ned (2 → 1, 3 → 2); en hestesko med
+// toppflaten i plan med gulvet over kan gå opp (1 → 2). Grensene 4 og 8 er urørt.
+// Kjøres fra konsollen: _stairSideBandRegressionTest203().
+function _stairSideBandRegressionTest203() {
+  const results = [];
+  const check = (name, expected, got) => results.push({ name, ok: JSON.stringify(expected) === JSON.stringify(got), expected, got });
+  const T = (n, h, d) => ({ type: 'steps', stepCount: n, stepDepth_cm: d || 30, stepHeight_cm: h || 17, width_cm: 100 });
+  const L = d => ({ type: 'landing', depth_cm: d, width_cm: 100 });
+  const mk = segs => _createStairObj({ name: 'T203', width_cm: 100, step_depth_cm: 30, step_height_cm: 17, buildDirection: 'bottom',
+    edgeMargin_cm: 5, stepCC_cm: 10, landingCC_cm: 10, riserOffset_cm: 2, noseOffset_cm: 2, x_cm: 0, y_cm: 0, segments: segs });
+  const hs = h => _createStairObj({ name: 'T203', design: 'horseshoe', horseshoe: h, width_cm: 100, step_depth_cm: 30, step_height_cm: 17,
+    buildDirection: 'bottom', edgeMargin_cm: 5, stepCC_cm: 10, landingCC_cm: 10, riserOffset_cm: 2, noseOffset_cm: 2, x_cm: 0, y_cm: 0 });
+  const nb = st => _stairSidePrintBandCount(st);
+  check('8 trinn 17/30: 1 bånd (uendret)', 1, nb(mk([T(8)])));
+  check('4 + R120 + 6: 1 bånd (uendret)', 1, nb(mk([T(4), L(120), T(6)])));
+  check('1×17/24 + R120: 2 bånd (uendret, 144/34)', 2, nb(mk([T(1, 17, 24), L(120)])));
+  check('1 + R150 + 1: 1 bånd (før 203: 2 — repos telte 0)', 1, nb(mk([T(1), L(150), T(1)])));
+  check('2 + R300 + R300 + 2: 2 bånd (før 203: 3)', 2, nb(mk([T(2), L(300), L(300), T(2)])));
+  const hsBase = { topW_cm: 470, count: 1, front_cm: 46, stepHeight_cm: 17 };
+  const f = hs({ ...hsBase, topD_cm: 120, topLevel: 'flush' }), b = hs({ ...hsBase, topD_cm: 120 });
+  check('hestesko 1 trinn, topp 470×120, i plan: høyden er kjeden (34), 2 bånd (før 203: 51 → 1)', [34, 2], [_stairSideTotalHeightCm(f), nb(f)]);
+  check('hestesko 1 trinn, topp 470×120, eget trinn: høyden 51, 1 bånd (uendret)', [51, 1], [_stairSideTotalHeightCm(b), nb(b)]);
+  check('PDF-bildene følger tellingen (1 + R150 + 1 → ett bilde)', 1, _renderStairSidePrintImages(mk([T(1), L(150), T(1)])).length);
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_stairSideBandRegressionTest203: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
   return results;
 }
 
@@ -69639,11 +69677,12 @@ function showStairEditModal(stairId) {
 // den gamle overskriften «SEGMENTER (topp → bunn)». Lista er BYGGEREKKEFØLGEN: rad 0 er alltid
 // segs[0] (der kabelen starter), og bare etiketten snur. ▲/▼, draget og «＋ Trinn»/«＋ Repos»
 // regner i lista, ikke i bildet.
-// 202 (Kenneth 07.11.2026, svar 193/1): lista og bildet beskriver to forskjellige ting, og begge er
-// riktige. Lista er inntastingsrekkefølgen, og etiketten sier det: «(øverste først)» / «(nederste
-// først)», symmetrisk og uten pil (_stairBuilderSegLabelText). Forhåndsvisningen er trappa slik den
-// står (segs[0] nederst i begge retninger, 193), og det står under bildet
-// (_stairBuilderPreviewInnerHtml). Sidevisningen snus IKKE.
+// 203 (Kenneth 07.11.2026, svar 202/1): lista er TRINNREKKEFØLGEN. Første rad er trinn 1 = segs[0] =
+// trappas fysisk nederste trinn (der kabelen starter), i BEGGE byggeretninger; byggeretningen styrer
+// bare hvor trinn 1 tegnes i planen. Etiketten er «SEGMENTER (trinn 1 først)» i begge retninger
+// (_stairBuilderSegLabelText) — ingen retningsord. Forhåndsvisningen er trappa slik den står (segs[0]
+// nederst i begge retninger, 193), og det står under bildet (_stairBuilderPreviewInnerHtml).
+// Sidevisningen snus IKKE.
 // Visningsposisjon == array-indeks; alt som regner om går gjennom denne ene hjelperen.
 function _stairBuilderDisplayIdxs() { return _stairBuilderSegs.map((_, i) => i); }
 
@@ -69724,10 +69763,13 @@ function _stairBuilderSegListHtml() {
 // 202 (Kenneth 07.11.2026, svar 193/1 og 193/3): etiketten, forhåndsvisningens innhold og
 // statistikklinja ble hver rendret fra TO steder (dialogens HTML og oppdateringene) — samme
 // feilklasse som 193 ryddet i. Nå én hjelper per tekst, brukt av begge veier.
-// Etiketten sier hva LISTA er (inntastingsrekkefølgen), ikke en retning på bildet; de to er
-// symmetriske så ingen leser den ene som retning og den andre som rekkefølge.
+// 203 (Kenneth 07.11.2026, svar 202/1): lista er TRINNREKKEFØLGEN — første rad er alltid segs[0] =
+// trinn 1 = trappas fysisk NEDERSTE trinn, der kabelen starter, i BEGGE byggeretninger (se kommentaren
+// over _generateStairSurfaces og orienteringsregelen fra 11.09 i utskriften). Byggeretningen styrer bare
+// HVOR trinn 1 tegnes, og det sier nedtrekket. Etiketten sier derfor ingenting om retning — samme tekst
+// i begge. (202 hadde «(øverste først)» / «(nederste først)», som var feil om trappa slik den står.)
 function _stairBuilderSegLabelText() {
-  return 'SEGMENTER' + (_stairBuilderDir === 'top' ? ' (øverste først)' : ' (nederste først)');
+  return 'SEGMENTER (trinn 1 først)';
 }
 // Forhåndsvisningen + linja som sier hva bildet er (i begge byggeretninger).
 function _stairBuilderPreviewInnerHtml() {
@@ -90419,16 +90461,25 @@ function _stairDrawSideToCanvas(stair, opts) {
   return offCanvas;
 }
 
+// 203 (Kenneth 07.11.2026, svar 202/2): antall bånd = dybde / høyde, der høyden er HØYDEKJEDEN
+// (_stairSideTotalHeightCm, bakken → gulvet over). Den gamle formelen Σ opptrinn på trinnflater + 17
+// hadde to feil som gikk hver sin vei: repos telte 0 (for lav høyde → for mange bånd), og en hesteskos
+// toppflate i plan med gulvet over ble telt som trinn OG fikk +17 på toppen (for høy høyde → for få
+// bånd). Høydekjeden er den ene kilden begge leser, og den har allerede opptrinnet til gulvet over
+// (Regel 24, 193) — derfor ingen +17. Grensene 4 og 8 er urørt (hører til 197).
+function _stairSidePrintBandCount(stair) {
+  let totalD = 0;
+  for (const s of (stair.surfaces || [])) totalD += s.d_cm;
+  const ratio = totalD / Math.max(_stairSideTotalHeightCm(stair), 1);
+  return ratio > 8 ? 3 : ratio > 4 ? 2 : 1;
+}
+
 // 085: sidevisningen til PDF — 1–3 bånd langs lengderetningen (samme terskler som planen), aldri
 // rotert (profilen er liggende av natur). Returnerer [{dataUrl, aspect, kind:'side'}].
 function _renderStairSidePrintImages(stair) {
   const surfs = stair.surfaces || [];
   if (!surfs.length) return [];
-  let totalD = 0, totalH = 0;
-  for (const s of surfs) { totalD += s.d_cm; if (s.type !== 'landing') totalH += (s.stepHeight_cm || stair.step_height_cm || 17); }
-  const ratio = totalD / Math.max(totalH + 17, 1);
-  const nBands = ratio > 8 ? 3 : ratio > 4 ? 2 : 1;
-  return _stairSurfaceBands(surfs, nBands).map(range => {
+  return _stairSurfaceBands(surfs, _stairSidePrintBandCount(stair)).map(range => {
     const cv = _stairDrawSideToCanvas(stair, { surfaceRange: range });
     return { dataUrl: cv.toDataURL('image/png'), aspect: cv.width / cv.height, rotated: false, kind: 'side' };
   });

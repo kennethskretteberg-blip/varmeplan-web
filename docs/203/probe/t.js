@@ -1,0 +1,1 @@
+(() => { const o = {}; for (const f of ['_stairSideBandRegressionTest203', '_stairBuilderTextRegressionTest202']) { const r = window[f](); o[f] = r.filter(x => x.ok).length + '/' + r.length; o[f + '_feil'] = r.filter(x => !x.ok); } return o; })()

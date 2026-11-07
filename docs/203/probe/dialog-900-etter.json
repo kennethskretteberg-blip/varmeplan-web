@@ -1,0 +1,82 @@
+{
+ "bottom": {
+  "vindu": 900,
+  "linjeBredde": 447,
+  "innholdBredde": 447,
+  "rader": 1,
+  "modalScrollW": 495,
+  "modalClientW": 495,
+  "spans": [
+   {
+    "tekst": "8 trinn",
+    "x0": 246,
+    "x1": 302,
+    "y": 897,
+    "synlig": true
+   },
+   {
+    "tekst": "170 cm til gulvet over",
+    "x0": 318,
+    "x1": 457,
+    "y": 897,
+    "synlig": true
+   },
+   {
+    "tekst": "290 cm dybde",
+    "x0": 473,
+    "x1": 574,
+    "y": 897,
+    "synlig": true
+   },
+   {
+    "tekst": "⬜ 1 repos",
+    "x0": 590,
+    "x1": 649,
+    "y": 897,
+    "synlig": true
+   }
+  ],
+  "etikett": "SEGMENTER (trinn 1 først)",
+  "forklaring": "Sidevisning Forhåndsvisningen viser trappa slik den står."
+ },
+ "top": {
+  "vindu": 900,
+  "linjeBredde": 447,
+  "innholdBredde": 447,
+  "rader": 1,
+  "modalScrollW": 495,
+  "modalClientW": 495,
+  "spans": [
+   {
+    "tekst": "8 trinn",
+    "x0": 246,
+    "x1": 302,
+    "y": 897,
+    "synlig": true
+   },
+   {
+    "tekst": "170 cm til gulvet over",
+    "x0": 318,
+    "x1": 457,
+    "y": 897,
+    "synlig": true
+   },
+   {
+    "tekst": "290 cm dybde",
+    "x0": 473,
+    "x1": 574,
+    "y": 897,
+    "synlig": true
+   },
+   {
+    "tekst": "⬜ 1 repos",
+    "x0": 590,
+    "x1": 649,
+    "y": 897,
+    "synlig": true
+   }
+  ],
+  "etikett": "SEGMENTER (trinn 1 først)",
+  "forklaring": "Sidevisning Forhåndsvisningen viser trappa slik den står."
+ }
+}
