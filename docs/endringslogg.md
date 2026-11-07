@@ -4,6 +4,15 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 207 — Tak: ett eller to kabelløp per delstrekk, nedløp og gradrenne, med kabelmeter (07.11.2026, `main`, ikke pushet)
+
+- `runs: 1 | 2` (standard 2) og `runs_src` på hvert delstrekk (`segments`), nedløp og gradrenne. Delstrekket lagrer også `run_pos` (to løp: bunn 90° + hengkant 40°, ett løp: bunn). Arves ved deling.
+- Kabelmeter = lengde × løp (`cable_total_m`, avledet i `_takRecalc`); nedløp = kabelfeltet fra 206 × løp. `_takCableSummary` gir rader og sum; tabellen «Kabelmeter» i panelet, sum nederst.
+- «1 | 2»-velger per objekt og hurtigvalg «Alle delstrekk 1/2 løp». Forhåndsvisningen viser kabelmeter mens du tegner. Tegningen viser «×1»/«×2».
+- Ingen produkt, watt eller kursgrense: `TAK_CIRCUIT_LIMIT_M = null`, «Produkt ikke valgt. Kabelmeter er geometri.».
+- `_restoreProject` regner avledede tak-felt ved åpning, så 206-tak får 2 løp.
+- Ny `_takRegressionTest207` 39/39 (filmen: 80,15 / 110,30). Én 206-sjekk justert. Rapport i `docs/207/RAPPORT.md`.
+
 ## 206 — Tak: rennestrekk, delstrekk, nedløp og gradrenne med lengder (07.11.2026, `main`, ikke pushet)
 
 - Nye objekter i `S.tak[fid].features` (§6.3): `GUTTER` på en takfot (`on_edge`, polylinje med z = gesimsen), `DOWNSPOUT` på et strekk (`gutter`, `at_m`) og `VALLEY_GUTTER` (topp/bunn, lagret én gang). Lengder regnes alltid av geometrien (`_takRecalc`).
