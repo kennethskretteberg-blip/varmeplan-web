@@ -4,6 +4,15 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 211 — Tak: tegn bygget over en plantegning eller for frihånd, med høyder og taktype satt manuelt (07.11.2026, `main`, ikke pushet)
+
+- Uten omriss viser Tak-kortet tre veier: 1 Finn bygget fra adressen (204, standard), 2 Tegn over en plantegning, 3 Tegn for frihånd. For nybygg som ikke finnes i Kartverkets data.
+- Ingen ny tegnemotor: plantegning = rom-modulens polygonverktøy over rom-modulens bakgrunn (import, to-punkts-kalibrering / fast målestokk), frihånd = vegg-for-vegg. `createRoom` i tak-delen leverer omrisset til `S.tak[fid].surfaces[0].footprint` (samme form som tjenesten) via `_takRoomDrawCommit`.
+- Målestokken sperrer: plantegning kan verken startes eller fullføres før `_needsCalibration` er false; målestokken vises i panelet og lagres på omrisset (`prov.scale`). Kontroll: 25 × 10 m-tegning → 25,027 / 10,007 m (0,11 %), ekte klikk 25,010 / 10,031 m.
+- Tegnet bygg: eget statuskort, «Høydene er oppgitt av deg, ikke målt». Høyder USER_DRAWN/1 med height_ref; gesims påkrevd (varsel, nedløp «? m» uten), møne bare for skråtak, terreng 0 som standard. Taktype aldri forvalgt; kantene kan ikke merkes uten den (melding i kort og toast).
+- Funn (ikke rørt): med rastersnapp på snapper rom-modulens kalibreringsklikk til 50 cm i ukalibrert verden → 8 % feil målestokk (spm. 1).
+- Ny `_takRegressionTest211` 64/64; 204 C/I endret til ny regel; de 78 andre like med HEAD. Rapport i `docs/211/RAPPORT.md`, spørsmål i `docs/211/SPØRSMÅL.md`.
+
 ## 210 — Tak: snitt gjennom takfoten med renneprofil, kabelløp, nedløp over og under bakken, og mål (07.11.2026, `main`, ikke pushet)
 
 - «Vis snitt» på et nedløp (eller lista «Snitt gjennom takfoten» i panelet) viser et snitt nede til høyre på tegneflaten: takflate med vinkel og hengkant, renne Ø100 med løpene (bunn 90°, mot hengkant 40°), nedløp Ø80 med én tråd eller sløyfe, avlaster bøyd 90° med strips, terreng, strekning under bakken og hvor kabelen slutter (5 cm ut / frostfritt nivå). Detalj av renneprofilen og notater til høyre. × eller Esc lukker; rennestrekk uten nedløp gir snitt på midten.
