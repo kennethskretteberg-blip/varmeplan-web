@@ -4,6 +4,18 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 204 — Tak-modulen slås på (07.11.2026, `main`, ikke pushet)
+
+- `MODULE_TYPES.roof.available = true`. Flisa «Tak & renner» vises på dashbordet, med hengelås for kundebedrifter (170). 066-dialogen og modul-navet har fortsatt fire valg, se `docs/204/SPØRSMÅL.md` 3.
+- Tak-delen får etasjen «Tak», og sidepanelet viser ett kort: finn bygget, velg bygget, statuskort. I verktøylinja er rom-verktøyene erstattet med «Tegn omrisset selv».
+- Når et bygg velges (fra kortet, ved klikk i kartet med «Hent bygg» eller fra «Bytt bygg»), kalles `_roofApi.modelQuick`. Funksjonen var ikke i bruk før.
+- Ny state `S.tak[floorId] = { v, building, surfaces: [ { roof_type, footprint, heights, edges } ], features, model }`. `surfaces` er en liste fra første linje. Alle høyder har `height_ref` og `prov`.
+- Lokale meter regnes om til verden med `_geoToWorld(bg, origin.east + x, origin.north + y)`.
+- Statuskortet viser opphavet til hver verdi: målt i høydedata, anslag eller rettet. Taktypen er antatt eller valgt. Alle verdier kan redigeres, og retting gir `USER_CONFIRMED`/1. Byttes taktypen etter at kanter er merket, spør appen først.
+- Tjenestefeil vises i kortet med «Prøv igjen» og «Tegn omrisset selv». Manuell tegning skjer i en egen modus `_takDraw` med geo-snapping.
+- Lagres i `data.tak` bare når et tak finnes. Et prosjekt uten tak er identisk med HEAD (samme hash). Taket er med i angre, rydding ved sletting av etasje og flytting av bakgrunn.
+- Ny `_takRegressionTest204` 64/64. 170-testen B3 er snudd. Rapport i `docs/204/RAPPORT.md`.
+
 ## 178 — Hesteskotrapp: toppflate eget trinn eller i plan med øverste nivå (03.11.2026, `main`, ikke pushet)
 
 - Hesteskobyggeren har fått valget «Toppflate: Eget trinn / I plan med øverste nivå» med hjelpetekst. Det lagres som `stair.horseshoe.topLevel = below | flush`, og mangler feltet, gjelder `below`.
