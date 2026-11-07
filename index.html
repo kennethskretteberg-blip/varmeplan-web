@@ -56549,6 +56549,72 @@ function _stairBuilderHeightRegressionTest193() {
   return results;
 }
 
+// 202 (svar 193/1 og 193/3): etiketten sier rekkefølgen i lista, forhåndsvisningen er merket, og
+// høyden heter «til gulvet over» — i BEGGE byggeretninger og fra BEGGE rendringsveiene (dialogens
+// første HTML og oppdateringene _stairBuilderRefreshSegs / _stairBuilderRefreshPreviewStats).
+// Kjøres fra konsollen: _stairBuilderTextRegressionTest202().
+function _stairBuilderTextRegressionTest202() {
+  const saved = { segs: _stairBuilderSegs, dir: _stairBuilderDir, edit: _stairBuilderEditingId, newIdx: _stairBuilderNewIdx, anchor: _stairBuilderAnchorSeg };
+  const results = [];
+  const check = (name, expected, got) => results.push({ name, ok: JSON.stringify(expected) === JSON.stringify(got), expected, got });
+  const T = (n, h) => ({ type: 'steps', stepCount: n, stepDepth_cm: 30, stepHeight_cm: h || 17, width_cm: 100 });
+  const L = () => ({ type: 'landing', depth_cm: 90, width_cm: 100 });
+  const LBL = { bottom: 'SEGMENTER (nederste først)', top: 'SEGMENTER (øverste først)' };
+  const NOTE = 'Forhåndsvisningen viser trappa slik den står.';
+  const $ = id => document.getElementById(id);
+  const txt = el => el ? el.textContent.replace(/\s+/g, ' ').trim() : null;
+  const seen = () => {
+    const prev = $('stair-builder-preview'), note = $('stair-builder-preview-note'), svg = prev && prev.querySelector('svg');
+    return { label: txt($('stair-builder-seg-label')), stats: txt($('stair-builder-stats')),
+      note: txt(note), noteUnderBildet: !!(note && svg && prev.contains(note) && (svg.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING)),
+      gammelHoyde: /cm høyde/.test(txt($('stair-builder-stats')) || '') };
+  };
+  try {
+    _stairBuilderEditingId = null;
+    for (const dir of ['bottom', 'top']) {
+      const other = dir === 'top' ? 'bottom' : 'top';
+      // Vei 1: første visning (dialogens HTML).
+      _showStraightStairBuilder();
+      _stairBuilderSegs = [T(4), L(), T(4)]; _stairBuilderDir = dir; _renderStairBuilderModal();
+      let v = seen();
+      check(`${dir} · første visning: etikett`, LBL[dir], v.label);
+      check(`${dir} · første visning: «170 cm til gulvet over»`, true, (v.stats || '').includes('170 cm til gulvet over'));
+      check(`${dir} · første visning: ingen «cm høyde»`, false, v.gammelHoyde);
+      check(`${dir} · første visning: forklaringslinja under bildet`, [NOTE, true], [v.note, v.noteUnderBildet]);
+      const firstStatsHtml = $('stair-builder-stats').innerHTML, firstPrevHtml = $('stair-builder-preview').innerHTML;
+      // Vei 2: _stairBuilderRefreshPreviewStats uten endring → nøyaktig samme HTML som første visning.
+      _stairBuilderRefreshPreviewStats();
+      check(`${dir} · oppdatering uten endring = første visning (statistikk og forhåndsvisning)`, [true, true],
+        [$('stair-builder-stats').innerHTML === firstStatsHtml, $('stair-builder-preview').innerHTML === firstPrevHtml]);
+      // Vei 3: endre et tall (oninput → _stairBuilderUpd → _stairBuilderRefreshPreviewStats).
+      _stairBuilderUpd(2, 'stepCount', 5);
+      v = seen();
+      check(`${dir} · etter endret antall: «187 cm til gulvet over»`, true, (v.stats || '').includes('187 cm til gulvet over'));
+      check(`${dir} · etter endret antall: forklaringslinja står`, [NOTE, true], [v.note, v.noteUnderBildet]);
+      // Vei 4: legg til segment (_stairBuilderRefreshSegs).
+      _stairBuilderAddSeg('steps');
+      v = seen();
+      check(`${dir} · etter ＋ Trinn: etikett, forklaring, ingen «cm høyde»`, [LBL[dir], NOTE, true, false], [v.label, v.note, v.noteUnderBildet, v.gammelHoyde]);
+      // Vei 5: bytt byggeretning i nedtrekket (som brukeren gjør) → etiketten følger.
+      const sel = $('stair-build-dir'); sel.value = other; sel.dispatchEvent(new Event('change'));
+      v = seen();
+      check(`${dir} → ${other} i nedtrekket: etikett`, LBL[other], v.label);
+      check(`${dir} → ${other} i nedtrekket: forklaringslinja står`, [NOTE, true], [v.note, v.noteUnderBildet]);
+      $('stair-modal-bg').remove();
+    }
+    // Ny trapp med standardvalget (1 trinn): tallet beholdes (193/3), men er merket.
+    _showStraightStairBuilder();
+    check('ny trapp (1 trinn): «34 cm til gulvet over»', true, (seen().stats || '').includes('34 cm til gulvet over'));
+    check('etikettene er symmetriske (begge «… først)», ingen pil)', [true, true], Object.values(LBL).map(s => / først\)$/.test(s) && !/→/.test(s)));
+  } finally {
+    const bg = document.getElementById('stair-modal-bg'); if (bg) bg.remove();
+    _stairBuilderSegs = saved.segs; _stairBuilderDir = saved.dir; _stairBuilderEditingId = saved.edit; _stairBuilderNewIdx = saved.newIdx; _stairBuilderAnchorSeg = saved.anchor;
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_stairBuilderTextRegressionTest202: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return results;
+}
+
 // 192 — «Maks CC repos» er brukerens TAK, som «Maks CC trinn». Kjøres fra konsollen: _stairLandingCCRegressionTest192().
 // Trinn + repos (120, brukbar 110) + trinn; taket 10 → 6 → 15 gir N = ceil(110 / tak) + 1 (Regel 3/7) i tilstandene
 // (a) uten forslag, (b) valgt forslag, (c) manuelt sett, (d) låst avstand, (e) soner; Forslag bruker taket; angre; panelet.
@@ -69570,11 +69636,14 @@ function showStairEditModal(stairId) {
 // 110 (Kenneth 21.10.2026) · ÉN kilde for rekkefølgen segmentlista vises i, slik at både pilene,
 // draget og ＋-stripene regner likt. MÅLT i STEG 0.1: lista ble SNUDD for «Ovenfra og ned», og da
 // havnet segmentet som ligger NEDERST i planen (y=160 cm) øverst i lista — under overskriften
-// «SEGMENTER (topp → bunn)», og motsatt vei av sidevisningen rett under, som tegner segs[0]
-// øverst for nettopp den retningen. (193: forhåndsvisningen følger nå tegningen og legger segs[0]
-// NEDERST i begge retninger — se _stairBuilderPreviewStair.) Lista er BYGGEREKKEFØLGEN: rad 0 er alltid segs[0] (der
-// kabelen starter), og bare etiketten snur. Da peker ▲/▼ og draget samme vei som sidevisningen,
-// og «＋ Trinn»/«＋ Repos» nederst legger til i den enden brukeren ser dem i.
+// den gamle overskriften «SEGMENTER (topp → bunn)». Lista er BYGGEREKKEFØLGEN: rad 0 er alltid
+// segs[0] (der kabelen starter), og bare etiketten snur. ▲/▼, draget og «＋ Trinn»/«＋ Repos»
+// regner i lista, ikke i bildet.
+// 202 (Kenneth 07.11.2026, svar 193/1): lista og bildet beskriver to forskjellige ting, og begge er
+// riktige. Lista er inntastingsrekkefølgen, og etiketten sier det: «(øverste først)» / «(nederste
+// først)», symmetrisk og uten pil (_stairBuilderSegLabelText). Forhåndsvisningen er trappa slik den
+// står (segs[0] nederst i begge retninger, 193), og det står under bildet
+// (_stairBuilderPreviewInnerHtml). Sidevisningen snus IKKE.
 // Visningsposisjon == array-indeks; alt som regner om går gjennom denne ene hjelperen.
 function _stairBuilderDisplayIdxs() { return _stairBuilderSegs.map((_, i) => i); }
 
@@ -69652,6 +69721,29 @@ function _stairBuilderSegListHtml() {
   return segListHtml;
 }
 
+// 202 (Kenneth 07.11.2026, svar 193/1 og 193/3): etiketten, forhåndsvisningens innhold og
+// statistikklinja ble hver rendret fra TO steder (dialogens HTML og oppdateringene) — samme
+// feilklasse som 193 ryddet i. Nå én hjelper per tekst, brukt av begge veier.
+// Etiketten sier hva LISTA er (inntastingsrekkefølgen), ikke en retning på bildet; de to er
+// symmetriske så ingen leser den ene som retning og den andre som rekkefølge.
+function _stairBuilderSegLabelText() {
+  return 'SEGMENTER' + (_stairBuilderDir === 'top' ? ' (øverste først)' : ' (nederste først)');
+}
+// Forhåndsvisningen + linja som sier hva bildet er (i begge byggeretninger).
+function _stairBuilderPreviewInnerHtml() {
+  return '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Sidevisning</div>' + _stairBuilderPreviewSVG()
+    + '<div id="stair-builder-preview-note" style="font-size:11px;color:var(--muted);margin-top:6px">Forhåndsvisningen viser trappa slik den står.</div>';
+}
+// Statistikklinja. Høyden er bakken → gulvet over (høydekjeden, Regel 24/193), ikke trinnhøyden —
+// derfor «til gulvet over». Hvert felt holdes på én linje (nowrap); blir linja for bred (360 px),
+// brytes den MELLOM feltene (flex-wrap på #stair-builder-stats), aldri kuttet.
+function _stairBuilderStatsHtml(stats) {
+  const ruler = '<svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg>';
+  const sp = t => `<span style="white-space:nowrap">${t}</span>`;
+  return sp(`${ruler} ${stats.totalSteps} trinn`) + sp(`${ruler} ${stats.totalHeight} cm til gulvet over`)
+    + sp(`${ruler} ${stats.totalDepth} cm dybde`) + (stats.landings > 0 ? sp(`⬜ ${stats.landings} repos`) : '');
+}
+
 function _renderStairBuilderModal() {
   // Remove existing modal if any
   const existing = document.getElementById('stair-modal-bg');
@@ -69667,8 +69759,8 @@ function _renderStairBuilderModal() {
 
   const segListHtml = _stairBuilderSegListHtml();
 
-  // Side-view preview SVG
-  const previewSvg = _stairBuilderPreviewSVG();
+  // Side-view preview SVG (202: med «Sidevisning» over og forklaringslinja under — samme hjelper som oppdateringen)
+  const previewSvg = _stairBuilderPreviewInnerHtml();
 
   // Summary stats
   const stats = _stairBuilderStats();
@@ -69692,7 +69784,7 @@ function _renderStairBuilderModal() {
       </div>
 
       <!-- Segment list -->
-      <div id="stair-builder-seg-label" style="margin-bottom:8px;font-size:12px;color:var(--muted);font-weight:600">SEGMENTER${_stairBuilderDir==='top'?' (topp → bunn)':' (bunn → topp)'}</div>
+      <div id="stair-builder-seg-label" style="margin-bottom:8px;font-size:12px;color:var(--muted);font-weight:600">${_stairBuilderSegLabelText()}</div>
       <div id="stair-builder-segs" style="margin-bottom:8px">${segListHtml}</div>
 
       <!-- Add segment buttons -->
@@ -69705,18 +69797,10 @@ function _renderStairBuilderModal() {
       <div id="stair-builder-zone-warn" style="margin-bottom:12px">${_stairBuilderZoneWarnHtml()}</div>
 
       <!-- Side-view preview -->
-      <div id="stair-builder-preview" style="background:var(--surface2);border:1px solid var(--brd);border-radius:8px;padding:10px;margin-bottom:12px;text-align:center">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Sidevisning</div>
-        ${previewSvg}
-      </div>
+      <div id="stair-builder-preview" style="background:var(--surface2);border:1px solid var(--brd);border-radius:8px;padding:10px;margin-bottom:12px;text-align:center">${previewSvg}</div>
 
-      <!-- Stats -->
-      <div id="stair-builder-stats" style="display:flex;gap:16px;font-size:12px;color:var(--muted);margin-bottom:12px;justify-content:center">
-        <span><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> ${stats.totalSteps} trinn</span>
-        <span><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> ${stats.totalHeight} cm høyde</span>
-        <span><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> ${stats.totalDepth} cm dybde</span>
-        ${stats.landings > 0 ? `<span>⬜ ${stats.landings} repos</span>` : ''}
-      </div>
+      <!-- Stats (202: én kilde, _stairBuilderStatsHtml; flex-wrap så linja brytes mellom feltene på smal skjerm) -->
+      <div id="stair-builder-stats" style="display:flex;flex-wrap:wrap;gap:4px 16px;font-size:12px;color:var(--muted);margin-bottom:12px;justify-content:center">${_stairBuilderStatsHtml(stats)}</div>
 
       ${_stairBuilderEditingId != null ? `<div style="font-size:11px;color:var(--dim);margin-bottom:12px">Kabelvalg, CC og margin endres i innstillingspanelet — denne dialogen endrer kun form og soner.</div>` : `
       <!-- Cable product -->
@@ -69757,12 +69841,9 @@ function _stairBuilderRefreshPreviewStats() {
   const landingCcWrap = document.getElementById('stair-landing-cc-wrap');
   if (landingCcWrap) landingCcWrap.style.display = _stairBuilderSegs.some(sg => sg.type === 'landing') ? '' : 'none';
   const previewEl = document.getElementById('stair-builder-preview');
-  if (previewEl) previewEl.innerHTML = '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Sidevisning</div>' + _stairBuilderPreviewSVG();
+  if (previewEl) previewEl.innerHTML = _stairBuilderPreviewInnerHtml();
   const statsEl = document.getElementById('stair-builder-stats');
-  if (statsEl) {
-    const stats = _stairBuilderStats();
-    statsEl.innerHTML = `<span><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> ${stats.totalSteps} trinn</span><span><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> ${stats.totalHeight} cm høyde</span><span><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> ${stats.totalDepth} cm dybde</span>${stats.landings > 0 ? '<span>⬜ ' + stats.landings + ' repos</span>' : ''}`;
-  }
+  if (statsEl) statsEl.innerHTML = _stairBuilderStatsHtml(_stairBuilderStats());
 }
 
 // DEL A (spec-trapp-navn-oversikt.md): erstatter det tidligere kallet til _renderStairBuilderModal()
@@ -69771,7 +69852,7 @@ function _stairBuilderRefreshPreviewStats() {
 // rives aldri, feltene brukeren har fylt ut mister aldri verdien sin.
 function _stairBuilderRefreshSegs() {
   const labelEl = document.getElementById('stair-builder-seg-label');
-  if (labelEl) labelEl.textContent = 'SEGMENTER' + (_stairBuilderDir === 'top' ? ' (topp → bunn)' : ' (bunn → topp)');
+  if (labelEl) labelEl.textContent = _stairBuilderSegLabelText();   // 202: samme kilde som dialogens HTML
   const segsEl = document.getElementById('stair-builder-segs');
   if (segsEl) segsEl.innerHTML = _stairBuilderSegListHtml();
   const confirmBtn = document.querySelector('#stair-modal-bg button[onclick="_confirmAddStair()"]');
