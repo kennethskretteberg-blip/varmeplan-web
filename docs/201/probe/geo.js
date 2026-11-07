@@ -1,0 +1,1 @@
+(async () => { try { await _loadProducts(); } catch (e) {} const r = await _geoRegressionTest().async; return r.results.filter(x => !x.ok).map(x => 'FEIL ' + x.name + ' | ' + String(x.got).slice(0, 150)).join('\n') + '\n' + r.results.filter(x => x.ok).length + '/' + r.results.length; })()

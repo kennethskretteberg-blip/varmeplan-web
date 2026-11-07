@@ -28940,6 +28940,171 @@ function _geoRegressionTest() {
   return { ok, results, async };
 }
 
+// 201: «Hent bygg» ved klikk i kartet. Stubbet fetch — ingen ekte nettkall. Låser: kandidat med omriss for et
+// klikk i et kjent bygg, ingen duplikater, tydelig «Fant ingen bygning her», omrisset med i _geoSnapPolys,
+// g.chosen urørt, _roofApi-feiltekst ved feil, koordinaten 4 km fra nullpunktet, lagring — og at den VANLIGE
+// klikk-kaskaden er uendret når modusen er av (ekte mousedown/mouseup på lerretet velger rommet, intet kall).
+async function _geoPickRegressionTest201() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '201: ' + name, expected, got, ok: !!cond });
+  const E = 233598.159, N = 6682393.678, FID = 't201';
+  const lagret = { fetch: window.fetch, override: window.VARMEPLAN_ROOF_URL, bgs: S.bgs, geo: S.geo, view: { ...S.view },
+                   rooms: S.rooms, floors: S.floors, aktiv: S.ui.activeFloorId, part: S.ui.activePartId, sel: S.ui.selectedRoomId,
+                   toast: window._showToast, save: window._scheduleAutoSave, pick: _geoPick, ro: S.ui.readOnly, dm: S.ui.drawMode };
+  const toasts = [], kall = [];
+  // Bygg i geo-meter: kvadrat rundt (e, n) med side s.
+  const sq = (e, n, s) => [[e - s / 2, n - s / 2], [e + s / 2, n - s / 2], [e + s / 2, n + s / 2], [e - s / 2, n + s / 2], [e - s / 2, n - s / 2]];
+  const B4 = { e: E - 100 + 4000, n: N - 100 + 10 };   // 4 km øst for vinduets SV-hjørne (nullpunktet)
+  const bygg = [
+    { bygningsnr: '900001', type: 'Enebolig', e: B4.e, n: B4.n, s: 12 },
+    { bygningsnr: '900002', type: 'Garasje/uthus til bolig', e: B4.e + 20, n: B4.n, s: 6 },
+  ];
+  let modus = 'ok';
+  try {
+    window.VARMEPLAN_ROOF_URL = 'http://stub201';
+    window._showToast = (m, t) => toasts.push({ m: String(m), t });
+    window._scheduleAutoSave = () => {};
+    window.fetch = async (u, init) => {
+      u = String(u);
+      if (!u.includes('/roof/locate')) return new Response('{}', { status: 404 });
+      const q = JSON.parse(init.body); kall.push(q);
+      if (modus === '502') return new Response('{}', { status: 502 });
+      const cands = bygg.filter(b => Math.hypot(b.e - q.east, b.n - q.north) <= 40).map(b => ({
+        bygningsnr: b.bygningsnr, type: b.type, point: { east: b.e, north: b.n }, distance_m: Math.hypot(b.e - q.east, b.n - q.north),
+        footprint: { polygon: sq(b.e, b.n, b.s), area_m2: b.s * b.s, source: 'INSPIRE', prov: { source: 'FKB', confidence: 0.9 } } }));
+      return new Response(JSON.stringify({ query: { point: { east: q.east, north: q.north } }, candidates: cands }), { status: 200 });
+    };
+    S.floors = [{ id: FID, name: 'T', partId: null }]; S.rooms = [];
+    S.ui.activeFloorId = FID; S.ui.activePartId = null; S.ui.readOnly = false; S.ui.drawMode = null;
+    const bg = _installTileBackground(FID, { east: E, north: N }, 'Testveien 1');
+    S.bgs = { [FID]: bg };
+    const valgt = { bygningsnr: '159278689', type: 'Enebolig', footprintWorld: [{ x: 9500, y: -10500 }, { x: 10500, y: -10500 }, { x: 10500, y: -9500 }], footprintSource: 'INSPIRE', footprintConfidence: 0.9 };
+    S.geo = { [FID]: { address: 'Testveien 1', center: { east: E, north: N }, chosen: JSON.parse(JSON.stringify(valgt)),
+                       candidates: [{ bygningsnr: '159278689', type: 'Enebolig', distance_m: 0, footprintWorld: valgt.footprintWorld.map(p => ({ ...p })) }] } };
+    const chosen0 = JSON.stringify(S.geo[FID].chosen);
+    _rebuildActiveFloorRoomIds && _rebuildActiveFloorRoomIds();
+    const g = () => S.geo[FID];
+
+    // (1) koordinaten 4 km fra nullpunktet
+    const w4 = _geoToWorld(bg, B4.e, B4.n), tilbake = _worldToGeo(bg, w4.x, w4.y);
+    check('4 km øst for nullpunktet: verdens-x = 400 000 cm', '400000 / −1000', Math.abs(w4.x - 400000) < 1e-6 && Math.abs(w4.y + 1000) < 1e-6, w4.x + ' / ' + w4.y);
+    check('_worldToGeo tur-retur 4 km unna (< 1 mm)', `${B4.e}, ${B4.n}`, Math.abs(tilbake.east - B4.e) < 1e-3 && Math.abs(tilbake.north - B4.n) < 1e-3, tilbake.east + ', ' + tilbake.north);
+
+    // (2) knappen finnes bare på kart, og modusen slås på
+    check('«Hent bygg»-knappen står i kartets ctxbar-gruppe', 'ja', _bgCtxGroupHtml().includes('_geoPickToggle()'), '');
+    _geoPickStart();
+    check('modusen slås på', 'på', !!_geoPick, String(!!_geoPick));
+
+    // (3) klikk i et kjent bygg (2 m inn fra SV-hjørnet av eneboligen) → én kandidat med omriss
+    const klikk = _geoToWorld(bg, B4.e - 4, B4.n - 4);
+    const r1 = await _geoPickAt(klikk);
+    const sendt = kall[kall.length - 1];
+    check('locate sendes med east/north fra _worldToGeo (ikke adresse)', `${(B4.e - 4).toFixed(3)}, ${(B4.n - 4).toFixed(3)}`, sendt && !sendt.address && Math.abs(sendt.east - (B4.e - 4)) < 1e-6 && Math.abs(sendt.north - (B4.n - 4)) < 1e-6, JSON.stringify(sendt));
+    const rad = g().candidates.find(c => c.bygningsnr === '900001');
+    check('klikk i kjent bygg gir en kandidat med omriss', 'added, 5 punkter', r1.kind === 'added' && rad && rad.footprintWorld.length === 5, r1.kind + ' / ' + (rad && rad.footprintWorld.length));
+    check('bare bygget som ble klikket — ikke garasjen 20 m unna', '2 rader', g().candidates.length === 2 && !g().candidates.some(c => c.bygningsnr === '900002'), g().candidates.map(c => c.bygningsnr).join(','));
+    check('omrisset ligger i verdens-cm mot samme east0/north0', '399400…400600', rad && Math.abs(Math.min(...rad.footprintWorld.map(p => p.x)) - 399400) < 1e-6 && Math.abs(Math.max(...rad.footprintWorld.map(p => p.x)) - 400600) < 1e-6, rad && Math.min(...rad.footprintWorld.map(p => p.x)));
+    check('distance_m regnes fra adressens senter (for «Bytt bygg»)', '≈ 3900', rad && Math.abs(rad.distance_m - Math.hypot(B4.e - E, B4.n - N)) < 0.1, rad && rad.distance_m);
+    check('nytt omriss er med i _geoSnapPolys()', 'ja', _geoSnapPolys().includes(rad && rad.footprintWorld), _geoSnapPolys().length);
+    check('snapping virker: punkt 3 px fra hjørnet snapper til hjørnet', '399400,−1600', (() => { S.view.zoom = 1; const s = _geoSnap({ x: 399400 + 2, y: -1600 + 2 }); return s && Math.abs(s.x - 399400) < 1e-6 && Math.abs(s.y + 1600) < 1e-6; })(), '');
+    check('g.chosen er uendret etter henting', chosen0, JSON.stringify(g().chosen) === chosen0, JSON.stringify(g().chosen));
+    check('modusen avsluttes etter et treff', 'av', _geoPick === null, String(!!_geoPick));
+    check('toast sier hva som ble hentet', 'Hentet enebolig (144 m²)', toasts.some(t => t.m.startsWith('Hentet enebolig (144 m²)')), toasts.map(t => t.m).join(' | '));
+
+    // (4) samme bygg to ganger → én rad
+    _geoPickStart();
+    const r2 = await _geoPickAt(_geoToWorld(bg, B4.e + 3, B4.n + 3));
+    check('samme bygning klikket to ganger gir én rad', 'updated, 1 rad', r2.kind === 'updated' && g().candidates.filter(c => c.bygningsnr === '900001').length === 1 && g().candidates.length === 2, r2.kind + ' / ' + g().candidates.length);
+    check('chosen fortsatt uendret', 'uendret', JSON.stringify(g().chosen) === chosen0, '');
+
+    // (5) klikk uten bygning → melding, ingen rad, modusen står på
+    _geoPickStart(); toasts.length = 0;
+    const r3 = await _geoPickAt(_geoToWorld(bg, B4.e + 10, B4.n - 15));   // mellom husene, ingen omriss
+    check('klikk uten bygning: «Fant ingen bygning her»', 'none + melding', r3.kind === 'none' && toasts.some(t => t.m === 'Fant ingen bygning her'), r3.kind + ' / ' + toasts.map(t => t.m).join(' | '));
+    check('…og ingen ny rad', '2 rader', g().candidates.length === 2, g().candidates.length);
+    check('…og modusen står på (prøv igjen)', 'på', !!_geoPick, String(!!_geoPick));
+    const r3b = await _geoPickAt(_geoToWorld(bg, 1000000, -1000000));   // ingen bygg innen 40 m
+    check('klikk der tjenesten ikke finner noe: samme melding', 'none', r3b.kind === 'none' && g().candidates.length === 2, r3b.kind);
+
+    // (6) tjenesten nede → samme feiltekst som resten av _roofApi
+    modus = '502'; toasts.length = 0;
+    const r4 = await _geoPickAt(klikk);
+    check('502: samme melding som _roofFetch (139)', 'Kartverket svarer ikke akkurat nå — prøv igjen om litt.', r4.kind === 'error' && toasts.some(t => t.m === 'Kartverket svarer ikke akkurat nå — prøv igjen om litt.'), toasts.map(t => t.m).join(' | '));
+    check('…og ingen rad endret', '2 rader', g().candidates.length === 2, g().candidates.length);
+    modus = 'ok';
+
+    // (7) etasjen byttes mens kallet går → ingenting skrives (bundet ved klikket, 162)
+    _geoPick && _geoPickStop(); _geoPickStart();
+    const p5 = _geoPickAt(_geoToWorld(bg, B4.e + 20, B4.n));
+    check('mens kallet går: knappen sier «Henter bygg …»', 'ja', _geoPickBtnHtml().includes('Henter bygg …'), '');
+    S.bgs = {}; const r5 = await p5; S.bgs = { [FID]: bg };
+    check('kartet fjernet mens kallet gikk: ingen rad', 'gone', r5.kind === 'gone' && g().candidates.length === 2, r5.kind + ' / ' + g().candidates.length);
+    _geoPick && _geoPickStop();
+
+    // (8) Esc avslutter
+    _geoPickStart();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    check('Esc avslutter modusen', 'av', _geoPick === null, String(!!_geoPick));
+
+    // (9) lagring
+    const data = JSON.parse(JSON.stringify(_buildSaveData()));
+    const lr = data.geo && data.geo[FID] && data.geo[FID].candidates.find(c => c.bygningsnr === '900001');
+    check('ny kandidat lagres med prosjektet', 'med omriss', lr && lr.footprintWorld.length === 5, lr && JSON.stringify(lr).length + ' B');
+
+    // (10) DEN VANLIGE KASKADEN, modus AV: ekte mousedown/mouseup midt i et rom som ligger oppå bygget.
+    const pts = [{ x: 399000, y: -2000 }, { x: 401000, y: -2000 }, { x: 401000, y: 0 }, { x: 399000, y: 0 }];
+    S.rooms = [{ id: 994201, floorId: FID, partId: null, name: 'Rom over bygget', points: pts, walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [] }];
+    _rebuildActiveFloorRoomIds && _rebuildActiveFloorRoomIds();
+    // Lerretet er 0×0 bak innloggingsskjermen (headless) — vis appen midlertidig, så klikket er ekte.
+    const appEl = document.getElementById('app'), authEl = document.getElementById('auth-screen');
+    const vis0 = { app: appEl && appEl.style.display, auth: authEl && authEl.style.display };
+    if (!canvas.getBoundingClientRect().width) { if (authEl) authEl.style.display = 'none'; if (appEl) appEl.style.display = 'flex'; resizeCanvas(); }
+    lagret.restoreVis = () => { if (appEl) appEl.style.display = vis0.app; if (authEl) authEl.style.display = vis0.auth; try { resizeCanvas(); } catch (e) {} };
+    S.view.zoom = 0.5; S.view.panX = 400000; S.view.panY = -1000; S.ui.selectedRoomId = null;
+    const rect = canvas.getBoundingClientRect();
+    check('lerretet er synlig for de ekte klikkene', '> 0 px', rect.width > 0 && canvas.width > 0, rect.width + '×' + rect.height);
+    const tilKlient = (wx, wy) => { const s = w2s(wx, wy); return { clientX: rect.left + s.x * rect.width / canvas.width, clientY: rect.top + s.y * rect.height / canvas.height }; };
+    const ekteKlikk = (wx, wy) => { const c = tilKlient(wx, wy);
+      canvas.dispatchEvent(new MouseEvent('mousedown', { ...c, button: 0, bubbles: true }));
+      canvas.dispatchEvent(new MouseEvent('mouseup', { ...c, button: 0, bubbles: true })); };
+    const n0 = kall.length;
+    ekteKlikk(400300, -1300);
+    await new Promise(r => setTimeout(r, 50));   // et kall ville gått etter et par mikrooppgaver — vent på det
+    check('modus av: vanlig klikk på rommet velger rommet', '994201', S.ui.selectedRoomId === 994201, S.ui.selectedRoomId);
+    check('modus av: vanlig klikk gjør ingen kart-kall', '0 kall', kall.length === n0, kall.length - n0);
+    check('modus av: kandidatlista uendret', '2 rader', g().candidates.length === 2, g().candidates.length);
+    // Samme klikk MED modusen på: rommet skal IKKE velges, og bygget hentes.
+    S.ui.selectedRoomId = null;
+    _geoPickStart();
+    ekteKlikk(_geoToWorld(bg, B4.e + 20, B4.n).x, _geoToWorld(bg, B4.e + 20, B4.n).y);
+    await new Promise(r => setTimeout(r, 50));
+    check('modus på: samme slags klikk velger ikke rommet', 'null', S.ui.selectedRoomId == null, S.ui.selectedRoomId);
+    check('modus på: klikket henter bygget (garasjen)', '1 kall, 3 rader', kall.length === n0 + 1 && g().candidates.some(c => c.bygningsnr === '900002'), (kall.length - n0) + ' / ' + g().candidates.length);
+    // Trykk + dra i modusen = panorering, ikke henting
+    _geoPickStart(); const pan0 = S.view.panX, n1 = kall.length;
+    { const a = tilKlient(400000, -1000);
+      canvas.dispatchEvent(new MouseEvent('mousedown', { ...a, button: 0, bubbles: true }));
+      canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: a.clientX + 60, clientY: a.clientY, button: 0, bubbles: true }));
+      canvas.dispatchEvent(new MouseEvent('mouseup', { clientX: a.clientX + 60, clientY: a.clientY, button: 0, bubbles: true })); }
+    check('modus på: trykk + dra panorerer og henter ingenting', 'panX endret, 0 kall', S.view.panX !== pan0 && kall.length === n1 && !_panning, (S.view.panX - pan0).toFixed(0) + ' / ' + (kall.length - n1));
+    _geoPickStop();
+    check('chosen uendret gjennom hele testen', 'uendret', JSON.stringify(g().chosen) === chosen0, '');
+  } catch (e) {
+    results.push({ name: '201: uventet unntak', expected: 'ingen', got: e && e.stack || String(e), ok: false });
+  } finally {
+    _geoPick = lagret.pick; _panning = false;
+    if (lagret.restoreVis) lagret.restoreVis();
+    window.fetch = lagret.fetch; window._showToast = lagret.toast; window._scheduleAutoSave = lagret.save;
+    if (lagret.override === undefined) delete window.VARMEPLAN_ROOF_URL; else window.VARMEPLAN_ROOF_URL = lagret.override;
+    S.bgs = lagret.bgs; S.geo = lagret.geo; S.view = lagret.view; S.rooms = lagret.rooms; S.floors = lagret.floors;
+    S.ui.activeFloorId = lagret.aktiv; S.ui.activePartId = lagret.part; S.ui.selectedRoomId = lagret.sel; S.ui.readOnly = lagret.ro; S.ui.drawMode = lagret.dm;
+    try { _rebuildActiveFloorRoomIds && _rebuildActiveFloorRoomIds(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const ok = results.every(r => r.ok);
+  console[ok ? 'log' : 'error']('_geoPickRegressionTest201: ' + (ok ? 'BESTÅTT' : 'FEILET') + ` (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
+  return { ok, results };
+}
+
 // 194: flislaget. Fem ting låses: (1) riktig flis for en kjent koordinat, (2) nivåvalget, (3) målestokk/plassering
 // etter panorering og zoom (flisens skjermrekt = w2s av _geoToWorld-hjørnene), (4) PDF-bildet lages (toDataURL
 // kaster ikke — lerretet er ikke tainted) med ekte Kartverket-flis, (5) kreditering + lagring/gamle prosjekter.
@@ -73133,6 +73298,8 @@ function _showCycleBadge(clientX, clientY, idx, total) {
 function _hideCycleBadge() { if (_cycleBadgeEl) _cycleBadgeEl.style.display = 'none'; }
 
 canvas.addEventListener('mousedown', e=>{
+  // 201: «Hent bygg» eier venstreklikket mens den står på — før alt annet, så kaskaden under aldri ser det.
+  if (_geoPick && _geoPickMouseDown(e)) return;
   // Frihånds-matte: klikk setter neste bane (snappet til raster). Dobbeltklikk avslutter
   // (dobbeltklikkets første klikk la til en bane → angre den før commit).
   if (S.ui.drawMode === 'mat-freehand' && _matFree) {
@@ -74986,6 +75153,7 @@ canvas.addEventListener('mousemove', e=>{
   // syntetiske hendelsen `_endCanvasDrag` bruker ved blur/Esc. Settes før alt annet, så den
   // også er riktig når håndtereren returnerer tidlig lenger nede.
   _lastCanvasClient = { x: e.clientX, y: e.clientY };
+  if (_geoPick && _geoPickMouseMove(e)) return;   // 201: hover/panorering i «Hent bygg»
   // Frihånds-matte: ghost følger musa (vannrett/loddrett ut fra retning, snappet raster).
   if (S.ui.drawMode === 'mat-freehand' && _matFree) {
     const wp = getWorldPos(e);
@@ -76166,6 +76334,7 @@ canvas.addEventListener('mouseleave', () => {
 // kjøre NØYAKTIG samme avslutning (ingen parallell kopi som kan drifte fra denne). Se
 // `_endCanvasDrag` rett etter registreringen.
 function _canvasMouseUp(e){
+  if (_geoPick && _geoPickMouseUp(e)) return;   // 201: slipp uten bevegelse = hent bygget der
   // 032: gizmo-draget er sluppet — speil den nye geometrien tilbake til kundens tall.
   if (_planAktiv() && _planMouseUp()) return;
   if (_kundeMaalAktiv() && _movingWall) { _kundeGizmoSlipp(); return; }
@@ -76459,6 +76628,7 @@ window.addEventListener('mouseup', e => {
 window.addEventListener('blur', () => { _endCanvasDrag(); });
 
 canvas.addEventListener('dblclick', e=>{
+  if (_geoPick) { e.preventDefault(); return; }   // 201: dobbeltklikk i «Hent bygg» skal ikke nå noe annet
   // Frihånds-matte: dobbeltklikk avslutter og committer matta.
   if (S.ui.drawMode === 'mat-freehand') { _matFreeExit(true); e.preventDefault(); return; }
   // 186: dobbeltklikk på hesteskotrappas måltabell → standardplassering.
@@ -76729,6 +76899,8 @@ document.addEventListener('keydown', e=>{
   // change state. One extra render per key is cheap insurance.
   markDirty();
 
+  // 201: Esc avslutter «Hent bygg». Bare Esc — andre taster (zoom osv.) går videre som før.
+  if (_geoPick && e.key === 'Escape') { e.preventDefault(); _geoPickStop(); return; }
   // 034: Esc = ferdig med merkemodus. Må stå før alt annet, ellers tar en av grenene under den.
   if (_merkemodus) { if (e.key === 'Escape') { e.preventDefault(); _kundeAvsluttMerkemodus(true); } return; }
   // 046: vegg-sjekken eier tastaturet mens den står på — Esc avbryter påbegynt vegg, så modusen.
@@ -77556,6 +77728,7 @@ function _bgCtxGroupHtml() {
     <input type="range" class="ctxbar-slider" min="5" max="100" value="${opVal}" oninput="setBgOpacity(this.value)" onclick="event.stopPropagation()" title="Dimming">
     <button class="snap-chip" onclick="selectBgLayer(_activeBgLayer())" title="Velg plantegning for flytting/skalering/rotasjon">${IC('move',14)} Velg</button>
     <button class="snap-chip${bg.locked?' on':''}" onclick="toggleBgLock();renderSidebar()" title="${bg.locked?'Lås opp for å flytte, skalere eller rotere tegningen':'Lås underlaget mot utilsiktet flytting'}">${bg.locked?IC('lock',14):IC('lock-open',14)}</button>
+    ${_bgIsGeo(bg) ? _geoPickBtnHtml() : ''}
     <button class="snap-chip more" onclick="_bgCtxMore(event)" title="Bakgrunn: målestokk, bytt bilde, fjern">⋯</button>
     ${_bgIsGeo(bg) && _geoOffMap ? `<span id="geo-edge-msg" style="font-size:11px;color:var(--warn);padding:0 6px">Kartet slutter her — hent nytt utsnitt for å flytte deg</span>` : ''}
     <span class="tc-sep"></span>`;
@@ -77709,6 +77882,7 @@ function _ctxBarItems() {
         <input type="range" class="ctxbar-slider" min="5" max="100" value="${opVal}" oninput="setBgOpacity(this.value)" onclick="event.stopPropagation()" title="Dimming">
         <label class="snap-chip" style="gap:4px;cursor:pointer" title="Vis bygningsomriss som vektor oppå kartet"><input type="checkbox" ${S.ui.geoHideFootprint?'':'checked'} onchange="S.ui.geoHideFootprint=!this.checked;render()" onclick="event.stopPropagation()"> Omriss</label>
         <span class="tc-sep"></span>
+        ${_geoPickBtnHtml()}
         <button class="snap-chip more" onclick="_bgSelMore(event)" title="Hent nytt utsnitt, fjern">⋯</button>`;
     }
     return `<span class="ctxbar-lbl">${IC('map',14)} Plantegning</span>
@@ -80785,6 +80959,13 @@ function _geoViewOffMap() {
 function drawGeoFeatures() {
   const off = _geoViewOffMap();
   if (off !== _geoOffMap) { _geoOffMap = off; setTimeout(updateCtxBar, 0); }   // ikke bygg DOM midt i en tegning
+  // 201: «Henter bygg …» — en ring der brukeren klikket, til svaret er kommet.
+  if (_geoPick && _geoPick.busyPt && !S.ui?._pdfMode) {
+    const s = w2s(_geoPick.busyPt.x, _geoPick.busyPt.y), r = 9 + 3 * Math.sin(performance.now() / 160);
+    ctx.save(); ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(29,78,216,0.95)'; ctx.lineWidth = 2; ctx.setLineDash([4, 3]); ctx.stroke(); ctx.restore();
+    requestAnimationFrame(() => { if (_geoPick && _geoPick.busyPt) render(); });
+  }
   const g = _activeGeo();
   if (!g || S.ui.geoHideFootprint) return;
   const chosen = _chosenFootprintWorld();
@@ -80846,6 +81027,153 @@ function _geoChooseCandidate(bygningsnr) {
   _showToast && _showToast('Bygg byttet til ' + (c.type || 'bygning'), 'ok');
   renderSidebar(); updateObjInfo(); render();
   _scheduleAutoSave && _scheduleAutoSave();
+}
+
+// ═══ 201 · HENT BYGG — omriss for bygget brukeren klikker på ═════════════════════════════════
+// Etter 194 kan kartet dras hvor som helst, men omrissene kom bare fra adressesøket. Kenneth 06.11:
+// «omrisset skal hentes når brukeren klikker på bygget» — ett kall, bare for det bygget.
+//
+// Dette er en EGEN MODUS, ikke et lag i klikk-kaskaden (advarselen fra 006/007: rom tegnes oppå
+// bygget, og kaskaden er ømfintlig). Hele kaskaden er urørt når `_geoPick` er null: de tre krokene
+// (mousedown, mousemove, mouseup) og Esc-linja i keydown er alle `if (_geoPick …)`-grener som
+// returnerer før noe annet. Mens modusen står på eier den venstreklikket: trykk + dra = panorer
+// (samme _panMove som håndverktøyet), trykk + slipp uten bevegelse = hent bygget der.
+//
+// `/roof/locate` med east/north (EPSG:25833) returnerer bygningspunkter innen 40 m (SEARCH_RADIUS_M i
+// varmeplan-roof/app/api/locate.py) og omriss for de 5 nærmeste. Vi tar bare det omrisset klikket
+// faktisk ligger i (eller ≤ GEO_PICK_EDGE_TOL_M fra kanten) — et klikk på plenen ved siden av skal
+// si «Fant ingen bygning her», ikke stille legge inn naboen. `g.chosen` røres aldri her.
+let _geoPick = null;   // { fid, busy, press: {x,y}|null, busyPt: {x,y}|null } mens modusen står på
+const GEO_PICK_EDGE_TOL_M = 1.0;   // klikk på selve veggstreken teller som «i bygget»
+const GEO_PICK_CLICK_PX = 5;       // mer bevegelse enn dette mellom trykk og slipp = panorering
+
+function _geoPickAvailable() { return _bgIsGeo(S.bgs && S.bgs[S.ui.activeFloorId]); }
+function _geoPickToggle() { if (_geoPick) _geoPickStop(); else _geoPickStart(); }
+function _geoPickStart() {
+  if (S.ui.readOnly) { _lockToast(); return; }
+  if (!_geoPickAvailable()) { _showToast && _showToast('Hent et kart først.', 'warn'); return; }
+  if (S.ui.drawMode) { _showToast && _showToast('Avslutt tegningen først (Esc).', 'warn'); return; }
+  _geoPick = { fid: S.ui.activeFloorId, busy: false, press: null, busyPt: null };
+  canvas.style.cursor = 'crosshair';
+  _showToast && _showToast('Klikk på et bygg i kartet for å hente omrisset · Esc avslutter', 'info');
+  updateCtxBar(); render();
+}
+function _geoPickStop() {
+  if (!_geoPick) return;
+  if (_geoPick.press) _panning = false;
+  _geoPick = null;
+  canvas.style.cursor = 'default';
+  updateCtxBar(); render();
+}
+/** Knappen i kartets ctxbar-grupper. '' når aktiv etasje ikke har kart. */
+function _geoPickBtnHtml() {
+  if (!_geoPickAvailable()) return '';
+  const on = !!_geoPick, busy = on && _geoPick.busy;
+  return `<button class="snap-chip${on ? ' on' : ''}" id="geo-pick-btn" onclick="_geoPickToggle()" title="${on ? 'Avslutt «Hent bygg» (Esc)' : 'Klikk på et bygg i kartet for å hente omrisset — da kan du snappe til det'}">${IC('home', 14)} ${busy ? 'Henter bygg …' : 'Hent bygg'}</button>`;
+}
+
+// ── Krokene i lerretet. Alle er no-op når _geoPick er null. ──
+function _geoPickMouseDown(e) {
+  if (!_geoPick || e.button !== 0) return false;
+  if (!_geoPickAvailable()) { _geoPickStop(); return false; }   // etasjen byttet til en uten kart
+  _geoPick.press = { x: e.clientX, y: e.clientY };
+  _panning = true; _panStart = { x: e.clientX, y: e.clientY }; _panSV = { x: S.view.panX, y: S.view.panY };
+  e.preventDefault && e.preventDefault();
+  return true;
+}
+function _geoPickMouseMove(e) {
+  if (!_geoPick) return false;
+  if (!_geoPickAvailable()) { _geoPickStop(); return false; }
+  if (_panning && _geoPick.press) {
+    _panMove(e.clientX, e.clientY);
+    if (Math.hypot(e.clientX - _geoPick.press.x, e.clientY - _geoPick.press.y) > GEO_PICK_CLICK_PX) canvas.style.cursor = 'grabbing';
+  } else canvas.style.cursor = _geoPick.busy ? 'progress' : 'crosshair';
+  return true;
+}
+function _geoPickMouseUp(e) {
+  if (!_geoPick || !_geoPick.press) return false;
+  const p = _geoPick.press; _geoPick.press = null; _panning = false;
+  canvas.style.cursor = 'crosshair';
+  if (Math.hypot(e.clientX - p.x, e.clientY - p.y) <= GEO_PICK_CLICK_PX) _geoPickAt(getWorldPos(e));
+  return true;
+}
+
+/** Hent bygget i verdenspunktet (wx, wy). Returnerer et løfte med utfallet (for testene):
+ *  { kind: 'added'|'updated'|'none'|'error'|'busy'|'gone', cand? } */
+async function _geoPickAt(wp) {
+  const P = _geoPick;
+  if (!P) return { kind: 'gone' };
+  if (P.busy) { _showToast && _showToast('Henter fortsatt forrige bygg …', 'info'); return { kind: 'busy' }; }
+  if (S.ui.readOnly) { _lockToast(); return { kind: 'gone' }; }
+  // 162-lærdommen: bind etasje og bakgrunn NÅ — aldri les S.ui.activeFloorId etter await.
+  const fid = S.ui.activeFloorId, bg = S.bgs && S.bgs[fid];
+  if (!_bgIsGeo(bg)) { _geoPickStop(); return { kind: 'gone' }; }
+  const pt = _worldToGeo(bg, wp.x, wp.y);
+  P.busy = true; P.busyPt = { x: wp.x, y: wp.y };
+  updateCtxBar(); render();
+  let res = null, err = null;
+  try { res = await _roofApi.locate({ east: pt.east, north: pt.north }); }
+  catch (e) { err = e; }
+  P.busy = false; P.busyPt = null;
+  const still = _geoPick === P && S.bgs && S.bgs[fid] === bg;
+  if (!still) { if (_geoPick === P) _geoPickStop(); else render(); return { kind: 'gone' }; }
+  if (err) {
+    // 139: samme feiltekst som resten av _roofApi (err.message), ikke en ny variant.
+    _showToast && _showToast(err.roof ? err.message : 'Uventet feil: ' + (err && err.message), 'error');
+    updateCtxBar(); render();
+    return { kind: 'error', message: err.message };
+  }
+  const hit = _geoPickMatch(res && res.candidates, pt);
+  if (!hit) {
+    // Modusen står på: brukeren bommet, og skal kunne prøve igjen uten å trykke på knappen.
+    _showToast && _showToast('Fant ingen bygning her', 'warn');
+    updateCtxBar(); render();
+    return { kind: 'none' };
+  }
+  const out = _geoPickStore(fid, bg, hit);
+  _geoPickStop();
+  renderSidebar(); updateCtxBar(); render();
+  _scheduleAutoSave && _scheduleAutoSave();
+  const areal = hit.footprint.area_m2 != null ? ` (${Math.round(hit.footprint.area_m2)} m²)` : '';
+  _showToast && _showToast(out.kind === 'updated'
+    ? `${hit.type || 'Bygget'} var hentet fra før — omrisset er oppdatert`
+    : `Hentet ${(hit.type || 'bygning').toLowerCase()}${areal} — du kan snappe til omrisset`, 'ok');
+  return out;
+}
+
+/** Kandidaten hvis omriss klikkpunktet ligger i (eller ≤ 1 m fra). Geo-koordinater, meter. */
+function _geoPickMatch(cands, pt) {
+  const med = (cands || []).filter(c => c && c.footprint && c.footprint.polygon && c.footprint.polygon.length >= 3);
+  const ring = c => c.footprint.polygon.map(([e, n]) => ({ x: e, y: n }));
+  const inne = med.find(c => ptInPoly(pt.east, pt.north, ring(c)));
+  if (inne) return inne;
+  let best = null, bestD = GEO_PICK_EDGE_TOL_M;
+  for (const c of med) {
+    const q = _nearestPtOnPolyBoundary({ x: pt.east, y: pt.north }, ring(c));
+    if (q && q.d <= bestD) { best = c; bestD = q.d; }
+  }
+  return best;
+}
+
+/** Legg kandidaten inn i S.geo[fid].candidates — oppdater raden hvis bygningsnummeret finnes. */
+function _geoPickStore(fid, bg, c) {
+  if (!S.geo) S.geo = {};
+  if (!S.geo[fid]) S.geo[fid] = { address: null, addrPoint: null, center: null, chosen: null, candidates: [] };
+  const g = S.geo[fid];
+  if (!Array.isArray(g.candidates)) g.candidates = [];
+  // Avstanden menyen «Bytt bygg» viser, regnes fra adressens senter som for de andre radene.
+  const dist = g.center ? Math.hypot(c.point.east - g.center.east, c.point.north - g.center.north) : (c.distance_m || 0);
+  const row = {
+    bygningsnr: c.bygningsnr, type: c.type, distance_m: Math.round(dist * 10) / 10,
+    pointWorld: _geoToWorld(bg, c.point.east, c.point.north),
+    footprintWorld: c.footprint.polygon.map(([e, n]) => _geoToWorld(bg, e, n)),
+    footprintSource: c.footprint.source || null,
+    footprintConfidence: c.footprint.prov ? c.footprint.prov.confidence : null,
+  };
+  const i = c.bygningsnr != null ? g.candidates.findIndex(x => x.bygningsnr === c.bygningsnr) : -1;
+  if (i >= 0) { g.candidates[i] = { ...g.candidates[i], ...row }; return { kind: 'updated', cand: g.candidates[i] }; }
+  g.candidates.push(row);
+  return { kind: 'added', cand: row };
 }
 
 // ── Helning fra terrenget ─────────────────────────────────────────────────────────────────────

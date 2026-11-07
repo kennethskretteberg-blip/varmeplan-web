@@ -1,0 +1,1 @@
+(async () => { try { await _loadProducts(); } catch (e) {} const r = await _geoPickRegressionTest201(); return r.results.map(x => (x.ok ? 'OK  ' : 'FEIL') + ' ' + x.name + ' | ' + x.got).join('\n'); })()
