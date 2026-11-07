@@ -1,0 +1,84 @@
+{
+ "start": {
+  "tilbehor": [
+   "Tilkobling | 1",
+   "T-forgrening | 0",
+   "Endeavslutning | 1",
+   "Avlaster | 3",
+   "Klips | avstand ikke satt"
+  ],
+  "hvor": "r1: start: starten av r1 · avslutning i samme punkt",
+  "meldinger": [],
+  "knapper": [
+   "Sammenhengende løp: 110,15 m · 0 bokser",
+   "Boks ved hvert nedløp: 80,15 m · 3 bokser"
+  ],
+  "sum": "110,15 m"
+ },
+ "boks": {
+  "tilbehor": [
+   "Tilkobling | 1",
+   "T-forgrening | 2",
+   "Endeavslutning | 3",
+   "Avlaster | 3",
+   "Klips | avstand ikke satt"
+  ],
+  "hvor": "r1: tilkobling ved n1 · avslutning: bunnen av n1, bunnen av n2, bunnen av n3",
+  "meldinger": [],
+  "knapper": [
+   "Sammenhengende løp: 110,15 m · 0 bokser",
+   "Boks ved hvert nedløp: 80,15 m · 3 bokser"
+  ],
+  "sum": "80,15 m"
+ },
+ "sammenhengende": {
+  "tilbehor": [
+   "Tilkobling | 1",
+   "T-forgrening | 0",
+   "Endeavslutning | 1",
+   "Avlaster | 3",
+   "Klips | avstand ikke satt"
+  ],
+  "hvor": "r1: start: starten av r1 · avslutning i samme punkt",
+  "meldinger": [],
+  "knapper": [
+   "Sammenhengende løp: 110,15 m · 0 bokser",
+   "Boks ved hvert nedløp: 80,15 m · 3 bokser"
+  ],
+  "sum": "110,15 m"
+ },
+ "uten_boks": {
+  "tilbehor": [
+   "Tilkobling | 1",
+   "T-forgrening | 0",
+   "Endeavslutning | 2",
+   "Avlaster | 3",
+   "Klips | avstand ikke satt"
+  ],
+  "hvor": "r1: tilkobling ved n2 · avslutning: bunnen av n2, bunnen av n3",
+  "meldinger": [
+   "⚠ Her endrer antall løp seg uten boks — ved n3\nr1.3 2 · r1.4 2 · ↓ n3 1 løp"
+  ],
+  "knapper": [
+   "Sammenhengende løp: 110,15 m · 0 bokser",
+   "Boks ved hvert nedløp: 80,15 m · 3 bokser"
+  ],
+  "sum": "90,15 m"
+ },
+ "kenneth": {
+  "tilbehor": [
+   "Tilkobling | 1",
+   "T-forgrening | 0",
+   "Endeavslutning | 1",
+   "Avlaster | 3",
+   "Klips | avstand ikke satt"
+  ],
+  "hvor": "r1: start: bunnen av n1 · avslutning: bunnen av n3",
+  "meldinger": [],
+  "knapper": [
+   "Sammenhengende løp: 110,15 m · 0 bokser",
+   "Boks ved hvert nedløp: 80,15 m · 3 bokser"
+  ],
+  "sum": "69,15 m"
+ }
+}

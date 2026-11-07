@@ -82117,6 +82117,119 @@ function _takCircuitUsage(used_m, limit_m) {
   if (limit_m == null || !(limit_m > 0)) return { product: null, limit_m: null, used_m, share: null, note: TAK_CABLE_NO_PRODUCT };
   return { product: null, limit_m, used_m, share: used_m / limit_m, note: null };
 }
+// ═══ 208 · TILBEHØR — bokser, T-forgreninger, endeavslutninger, avlastere, telt av antall løp ═════════
+// Kenneth 07.11.2026 (svar på 207 spm. 6): tilbehøret telles ikke fra en tabell på antall nedløp, men av
+// HVOR antall løp endrer seg i ruten. Regelen (`_takAccessories`) ser hvert rennestrekk med nedløpene sine
+// som ett kabelnett:
+//   • Knutepunkt = rennas ender og hvert nedløps innløp. Et løp er én kabeltråd, så et delstrekk med 2 løp
+//     er to tråder. I et knutepunkt møtes trådene fra delstrekket til venstre, til høyre og nedløpet.
+//   • Partall tråder i et knutepunkt: kabelen går gjennom (f.eks. 2 inn, 1 videre, 1 ned).
+//   • ODDETALL i et innløp = antall løp endrer seg uten at en kabel kan gå gjennom (2 i renna → 1 ned er
+//     2 + 2 + 1 = 5). Det krever en BOKS. Uten boks: «Her endrer antall løp seg uten boks» — ikke leggbart.
+//     Den første boksen langs strekket er TILKOBLINGSBOKSEN, de neste er T-FORGRENINGER.
+//   • En ende (renneende eller nedløpets bunn) med 1 løp = kabelen slutter der → ENDEAVSLUTNING.
+//     Med 2 løp snur kabelen der (sløyfe), ingen ende.
+//   • Uten boks må nettet være ÉN kabel: 0 ender (lukket sløyfe — start og avslutning i samme punkt ved
+//     starten av renna) eller 2 ender (start = tilkobling i den ene, endeavslutning i den andre). Flere
+//     ender enn 2 uten boks kan ikke legges med én kabel → melding.
+//   • Avlaster: én per nedløp, ved innløpet. Klips: avstanden er en tom parameter (T1).
+// Ingenting rettes automatisk — appen sier fra, brukeren velger (som de usikre kantene i 205).
+//
+// Bokser lagres som `box: true` på nedløpet (boksen står rett FØR nedløpet, langs strekket). Ingen artikkel-
+// numre, priser eller watt (T1). Boksen påvirker ikke kabelmeter (213 spm. 4 er åpent).
+//
+// TABELLEN UNDER ER KONTROLL, IKKE KILDE. Lest ut av IceFix-filmen 07.11.2026 (25 m renne, tre nedløp,
+// 10 m) — IKKE bekreftet mot Cenikas datablad. Tallene i panelet kommer fra regelen over; testen
+// (_takRegressionTest208) sjekker at regelen gir tabellens tall. Stemmer de ikke, er REGELEN feil.
+//   n = antall nedløp på rennestrekket · ned = løp i nedløpene · renna har 2 løp i begge oppsettene
+const TAK_ACCESSORY_TABLE = [
+  { key: 'tilkobling',     label: 'Tilkobling',     when: 'alltid',                                antall: (n, ned) => 1 },
+  { key: 't_forgrening',   label: 'T-forgrening',   when: 'nedløpene 1 løp, renna 2',              antall: (n, ned) => ned === 1 ? Math.max(0, n - 1) : 0 },
+  { key: 'endeavslutning', label: 'Endeavslutning', when: 'én per kabelende',                      antall: (n, ned) => ned === 1 ? n : 1 },
+  { key: 'avlaster',       label: 'Avlaster',       when: 'ett per nedløp, ved innløpet',          antall: (n, ned) => n },
+  { key: 'klips',          label: 'Klips',          when: 'langs hengkanten — avstand venter på T1', antall: () => null },
+];
+var TAK_CLIP_SPACING_M = null;   // klipsavstand langs hengkanten — står TOM til T1. Ikke fyll inn et tall.
+const TAK_CLIP_NOT_SET = 'Klips: avstand ikke satt';
+const TAK_BOX_MM = { l: 190, w: 70, h: 50 };   // boksens mål fra filmen — bare for å tegne symbolet i riktig forhold
+const TAK_BOX_BEFORE_M = 0.6;                  // boksen står rett før nedløpet (filmen: 12,5 − 11,9 og 23 − 22,4)
+const TAK_MSG_NO_BOX = 'Her endrer antall løp seg uten boks';
+const TAK_MSG_TOO_MANY_ENDS = 'Flere kabelender enn én kabel kan ha uten boks';
+// To ferdige oppsett (filmens metode 2 og 1). Renna har 2 løp i begge.
+const TAK_PRESETS = {
+  sammenhengende: { label: 'Sammenhengende løp', segRuns: 2, downRuns: 2, box: false },
+  boks:           { label: 'Boks ved hvert nedløp', segRuns: 2, downRuns: 1, box: true },
+};
+/** Kursens farge. Taket har ingen kurser ennå (T8) — ett rennestrekk = ett kabelnett, med strekkets farge. */
+function _takKursColor(t, gutterId) { return TAK_FEAT_COLOR.GUTTER; }
+/** 208: REGELEN. → { nets: [ per rennestrekk ], totals, klips, problems }. Ren funksjon; leser runs/box. */
+function _takAccessories(t) {
+  const nets = [], problems = [];
+  for (const g of _takFeats(t, 'GUTTER')) {
+    const segs = g.segments || [];
+    const ds = _takFeats(t, 'DOWNSPOUT').filter(d => d.gutter === g.id).sort((a, b) => a.at_m - b.at_m);
+    if (!segs.length) continue;
+    // Knutepunkt langs renna: delstrekkenes grenser (start, nedløpene, slutt).
+    const nodes = [segs[0].from_m, ...segs.map(s => s.to_m)].map((at, i) => ({ i, at_m: at, gutterEnd: i === 0 || i === segs.length, threads: 0, down: null }));
+    segs.forEach((s, i) => { nodes[i].threads += s.runs; nodes[i + 1].threads += s.runs; });
+    for (const d of ds) {
+      let best = nodes[0];
+      for (const nd of nodes) if (Math.abs(nd.at_m - d.at_m) < Math.abs(best.at_m - d.at_m)) best = nd;
+      best.down = d; best.threads += d.runs;
+    }
+    const boxes = [], ends = [], netProblems = [];
+    // Endene: renneender uten nedløp, og nedløpenes bunn. 1 løp = kabelende, 2 løp = kabelen snur.
+    for (const nd of nodes) {
+      if (nd.down && nd.down.runs === 1) ends.push({ where: 'nedløp', id: nd.down.id, at_m: nd.at_m, label: 'bunnen av ' + nd.down.id });
+      if (!nd.down && nd.gutterEnd && nd.threads === 1) ends.push({ where: 'renneende', id: g.id, at_m: nd.at_m, label: (nd.i === 0 ? 'starten' : 'enden') + ' av ' + g.id });
+    }
+    // Innløpene i rekkefølge langs strekket. Trenger boks: oddetall tråder, eller brukeren har satt boks.
+    // Den FØRSTE av dem er tilkoblingsboksen («som uansett må være der») — også når brukeren ikke har
+    // satt boks der. De neste: satt boks = T-forgrening, ikke satt = melding.
+    for (const nd of nodes) {
+      if (!nd.down) continue;
+      const odd = nd.threads % 2 === 1;
+      if (!odd && !nd.down.box) continue;
+      if (!boxes.length || nd.down.box) { boxes.push({ downspout: nd.down.id, at_m: nd.at_m, needed: odd, kind: boxes.length ? 'T' : 'tilkobling', implicit: !nd.down.box }); continue; }
+      const L = nd.i > 0 ? segs[nd.i - 1] : null, R = nd.i < segs.length ? segs[nd.i] : null;
+      netProblems.push({ kind: 'no_box', gutter: g.id, downspout: nd.down.id, at_m: nd.at_m, msg: TAK_MSG_NO_BOX,
+        detail: [L ? L.id + ': ' + L.runs + ' løp' : null, R ? R.id + ': ' + R.runs + ' løp' : null, '↓ ' + nd.down.id + ': ' + nd.down.runs + ' løp'].filter(Boolean).join(' · ') });
+    }
+    let start = null, endeavslutning = ends.length;
+    if (!boxes.length) {
+      // Ingen boks: nettet må være ÉN kabel (alle innløp har partall tråder her).
+      if (ends.length === 0) { start = { where: 'renneende', id: g.id, at_m: 0, label: 'starten av ' + g.id, closed: true }; endeavslutning = 1; }
+      else if (ends.length === 2) { start = ends[0]; endeavslutning = 1; }
+      else { netProblems.push({ kind: 'too_many_ends', gutter: g.id, downspout: null, at_m: ends[0].at_m, ends: ends.map(e => e.label), msg: TAK_MSG_TOO_MANY_ENDS,
+               detail: ends.length + ' ender: ' + ends.map(e => e.label).join(', ') + '. Sett inn en boks eller endre antall løp.' }); endeavslutning = ends.length; }
+    } else start = boxes[0];
+    nets.push({ gutter: g.id, n: ds.length, boxes, ends, start, problems: netProblems,
+      counts: { tilkobling: 1, t_forgrening: Math.max(0, boxes.length - 1), endeavslutning, avlaster: ds.length, klips: null },
+      boxCount: boxes.length });
+    problems.push(...netProblems);
+  }
+  const totals = { tilkobling: 0, t_forgrening: 0, endeavslutning: 0, avlaster: 0, klips: null };
+  for (const n of nets) for (const k of ['tilkobling', 't_forgrening', 'endeavslutning', 'avlaster']) totals[k] += n.counts[k];
+  return { nets, totals, boxCount: nets.reduce((a, n) => a + n.boxCount, 0), problems,
+           klips: { spacing_m: TAK_CLIP_SPACING_M, count: null, note: TAK_CLIP_NOT_SET },
+           valleysIgnored: _takFeats(t, 'VALLEY_GUTTER').length };
+}
+/** 208: oppsettet på et strekk i minnet (ingen undo, ingen lagring) — brukes av knappen og forhåndsvisningen. */
+function _takPresetApplyTo(t, gutterId, key) {
+  const P = TAK_PRESETS[key], g = _takFeat_(t, gutterId);
+  if (!P || !g || g.type !== 'GUTTER') return false;
+  for (const s of (g.segments || [])) { s.runs = P.segRuns; s.runs_src = 'user'; }
+  for (const d of _takFeats(t, 'DOWNSPOUT').filter(d => d.gutter === g.id)) { d.runs = P.downRuns; d.runs_src = 'user'; if (P.box) d.box = true; else delete d.box; }
+  _takRecalc(t);
+  return true;
+}
+/** 208: hva knappen gir — regnet på en kopi, med samme funksjoner som panelet bruker etter klikket. */
+function _takPresetPreview(t, gutterId, key) {
+  const c = JSON.parse(JSON.stringify(t));
+  if (!_takPresetApplyTo(c, gutterId, key)) return null;
+  const A = _takAccessories(c);
+  return { total_m: _takCableSummary(c).total_m, boxes: A.boxCount, totals: A.totals, problems: A.problems.length };
+}
 /** Gesimsen i kortet er rettet → strekk og nedløp som fortsatt står på standardverdien, følger med. */
 function _takFeatFollowHeights(t, s) {
   if (!t || !s) return;
@@ -82288,6 +82401,25 @@ function _takSetGutterRuns(fid, gutterId, runs) {
   if (!segs.length || segs.every(s => s.runs === runs && s.runs_src === 'user')) return false;
   pushUndo();
   for (const s of segs) { s.runs = runs; s.runs_src = 'user'; }
+  _takFeatDone(t);
+  return true;
+}
+/** 208: boks rett før nedløpet — av/på. Brukerens valg; appen setter aldri boks selv (bare via oppsett-knappen). */
+function _takSetBox(fid, id, on) {
+  const t = _takFeatMut(fid); if (!t) { renderSidebar(); return false; }
+  const d = _takFeat_(t, id); if (!d || d.type !== 'DOWNSPOUT') return false;
+  on = !!on; if (!!d.box === on) return false;
+  pushUndo();
+  if (on) d.box = true; else delete d.box;
+  _takFeatDone(t);
+  return true;
+}
+/** 208: ferdig oppsett på et rennestrekk — 'sammenhengende' (alt 2 løp, ingen bokser) | 'boks' (renna 2, nedløp 1, boks ved hvert). */
+function _takApplyPreset(fid, gutterId, key) {
+  const t = _takFeatMut(fid); if (!t) { renderSidebar(); return false; }
+  const g = _takFeat_(t, gutterId); if (!g || g.type !== 'GUTTER' || !TAK_PRESETS[key]) return false;
+  pushUndo();
+  _takPresetApplyTo(t, gutterId, key);
   _takFeatDone(t);
   return true;
 }
@@ -82507,6 +82639,7 @@ function _takDrawFeatures(fid, t) {
     const under = d.continues_below_ground && d.continues_below_ground.value;
     _takLabel(_takDownpipeLabel(d) + (d.runs ? ' ×' + d.runs : ''), o.x + o.n.x * 30, o.y + o.n.y * 30, under ? '#7c2d12' : c, true);
   }
+  _takDrawAccessories(t);
   // Verktøyet: forhåndsvisning.
   const F = _takFeat;
   if (F && F.fid === fid && !pdf) {
@@ -82546,6 +82679,45 @@ function _takDrawFeatures(fid, t) {
   ctx.restore();
 }
 
+/** 208: bokser (rett før nedløpet), avlastere (ved innløpet) og meldinger, i kursens farge. */
+function _takDrawAccessories(t) {
+  const A = _takAccessories(t);
+  if (!A.nets.length) return;
+  const pxPerM = Math.abs(w2s(100, 0).x - w2s(0, 0).x);
+  for (const net of A.nets) {
+    const g = _takFeat_(t, net.gutter); if (!g || g.geometry.pts.length < 2) continue;
+    const col = _takKursColor(t, g.id), pts = g.geometry.pts;
+    const n = _takOutward(t, w2s(pts[0].x, pts[0].y), w2s(pts[pts.length - 1].x, pts[pts.length - 1].y));
+    const at = s => { const p = _takPolyAt(pts, Math.max(0, Math.min(g.length_m, s))), q = w2s(p.x, p.y); return { x: q.x + n.x * TAK_GUTTER_OFF_PX, y: q.y + n.y * TAK_GUTTER_OFF_PX }; };
+    const tan = s => { const a = at(s - 0.05), b = at(s + 0.05), L = Math.hypot(b.x - a.x, b.y - a.y) || 1; return { x: (b.x - a.x) / L, y: (b.y - a.y) / L }; };
+    // Boksen: 190 × 70 mm i riktig forhold, aldri mindre enn 22 px lang. Langs renna, litt utenfor den.
+    for (const b of net.boxes) {
+      const s = Math.max(0, b.at_m - TAK_BOX_BEFORE_M), c0 = at(s), u = tan(s);
+      const Lp = Math.max(22, TAK_BOX_MM.l / 1000 * pxPerM), Wp = Lp * TAK_BOX_MM.w / TAK_BOX_MM.l;
+      // Innenfor renna (mot taket): utsiden har lengde- og høydeetikettene.
+      const off = TAK_GUTTER_OFF_PX + Wp / 2 + 6, cx = c0.x - n.x * off, cy = c0.y - n.y * off;
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.atan2(u.y, u.x));
+      ctx.beginPath(); ctx.rect(-Lp / 2, -Wp / 2, Lp, Wp);
+      ctx.fillStyle = b.kind === 'tilkobling' ? col : '#fff'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+      if (b.kind === 'T') { ctx.beginPath(); ctx.moveTo(-Lp * 0.25, 0); ctx.lineTo(Lp * 0.25, 0); ctx.moveTo(0, 0); ctx.lineTo(0, Wp / 2); ctx.lineWidth = 1.5; ctx.stroke(); }
+      ctx.restore();
+      _takLabel(b.kind === 'tilkobling' ? 'tilkobling' : 'T', cx - n.x * (Wp / 2 + 9), cy - n.y * (Wp / 2 + 9), col, false);
+    }
+    // Avlasteren: bøyd 90°, ved innløpet — ett per nedløp.
+    for (const d of _takFeats(t, 'DOWNSPOUT').filter(d => d.gutter === g.id)) {
+      const o = _takFeatScreenPt(t, d); if (!o) continue;
+      const u = tan(d.at_m), p0 = { x: o.x + n.x * 11 - u.x * 5, y: o.y + n.y * 11 - u.y * 5 }, p1 = { x: p0.x + u.x * 10, y: p0.y + u.y * 10 }, p2 = { x: p1.x + n.x * 6, y: p1.y + n.y * 6 };
+      ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+      ctx.lineWidth = 2.5; ctx.strokeStyle = col; ctx.lineCap = 'butt'; ctx.stroke(); ctx.lineCap = 'round';
+    }
+    // Meldingene: punktet markert, ingenting rettet.
+    for (const p of net.problems) {
+      const q = p.downspout ? (_takFeatScreenPt(t, _takFeat_(t, p.downspout)) || at(p.at_m)) : at(p.at_m);
+      ctx.save(); ctx.setLineDash([4, 3]); ctx.beginPath(); ctx.arc(q.x, q.y, 15, 0, Math.PI * 2); ctx.lineWidth = 2.5; ctx.strokeStyle = '#dc2626'; ctx.stroke(); ctx.restore();
+      _takLabel('⚠ ' + p.msg, q.x - n.x * 26, q.y - n.y * 26, '#dc2626', true);
+    }
+  }
+}
 // ── Panelet ──
 function _takFeaturesCardHtml(fid, t, s) {
   if (!_takRoofTypeReady(s) || !t) return '';
@@ -82586,6 +82758,7 @@ function _takFeaturesCardHtml(fid, t, s) {
         `<table class="tak-seg" style="width:100%;font-size:10px;border-collapse:collapse;margin-top:1px"><tr style="font-size:10px">${['', 'lengde', 'løp', 'kabel'].map((c, i) => `<td style="text-align:${i ? (i === 2 ? 'center' : 'right') : 'left'}">${dim(c)}</td>`).join('')}</tr>` +
         segs.map(sg => `<tr class="tak-seg-row" data-id="${sg.id}"><td title="${_takNum(sg.from_m)}–${_takNum(sg.to_m)} m fra start">${dim(sg.id)}</td><td style="text-align:right">${_takNum(sg.length_m)}</td><td style="text-align:center;padding:0 2px">${runsSel(sg)}</td><td style="text-align:right">${km(sg.cable_total_m)}</td></tr>`).join('') +
         (segs.length > 1 ? `<tr style="border-top:1px solid var(--border)"><td>${dim('sum')}</td><td style="text-align:right">${_takNum(segs.reduce((a, b) => a + b.length_m, 0))} m</td><td></td><td style="text-align:right"><b>${km(g.cable_total_m)}</b></td></tr>` : '') + '</table>';
+      h += _takPresetButtonsHtml(fid, t, g);
     }
     for (const d of D.filter(d => d.gutter === g.id).sort((a, b) => a.at_m - b.at_m)) {
       const ag = d.above_ground_m || {}, under = !!(d.continues_below_ground && d.continues_below_ground.value), bg = d.below_ground_m || {};
@@ -82602,6 +82775,7 @@ function _takFeaturesCardHtml(fid, t, s) {
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="tak-under" ${under ? 'checked' : ''} onchange="_takSetDownspout(${fid},'${d.id}','under',this.checked)" style="margin:0"><span title="Ført under bakken til frostfritt nivå">Under bakken</span></label>
         ${under ? `<div class="tak-under-row">${fr('Under bakken', inp(bg.value, `_takSetDownspout(${fid},'${d.id}','below',this.value)`, 40))}<div style="font-size:10px;color:var(--dim)">${bg.prov && bg.prov.source === 'USER_CONFIRMED' ? 'rettet' : 'standard 1,0 m'}</div></div>` : ''}
         <div style="display:flex;align-items:center;justify-content:space-between;white-space:nowrap">${dim('Løp')}${runsSel(d)}</div>
+        ${_takDownspoutBoxHtml(fid, t, d)}
         <div style="white-space:nowrap">${dim('Per løp:')} <b class="tak-cable">${dc == null ? '—' : _takNum(dc.len_m, 2) + ' m'}</b></div><div style="font-size:10px;color:var(--dim)">${under ? 'over + under bakken, ingen 0,05' : 'høyde · + 0,05 ut av nedløpet, én gang'}</div>
         <div style="white-space:nowrap;text-align:right">${dim('× ' + d.runs + ' løp' + (dc && dc.tail_m ? ' + 0,05' : '') + ' =')} <b class="tak-cable-total">${km(d.cable_total_m)} m</b></div></div>`;
     }
@@ -82618,7 +82792,52 @@ function _takFeaturesCardHtml(fid, t, s) {
       ${noZ ? warn('Høyde mangler — lengden er målt i plan og blir for kort på et skrått tak.') : ''}</div>`;
   }
   h += _takCableSumHtml(t);
+  h += _takAccessoryHtml(t);
   return h + '</div>';
+}
+/** 208: de to ferdige oppsettene, med kabelmeter og bokser FØR du trykker. */
+function _takPresetButtonsHtml(fid, t, g) {
+  if (!_takFeats(t, 'DOWNSPOUT').some(d => d.gutter === g.id)) return '';
+  const btn = key => {
+    const P = TAK_PRESETS[key], pv = _takPresetPreview(t, g.id, key); if (!pv) return '';
+    const txt = `${_takNum(pv.total_m, 2)} m · ${pv.boxes} ${pv.boxes === 1 ? 'boks' : 'bokser'}`;
+    return `<button class="tak-preset tak-preset-${key}" data-total="${pv.total_m.toFixed(2)}" data-boxes="${pv.boxes}" onclick="_takApplyPreset(${fid},'${g.id}','${key}')" title="Renna ${P.segRuns} løp, alle nedløp ${P.downRuns} løp${P.box ? ', boks ved hvert nedløp' : ', ingen bokser'} · tilbehør: ${pv.totals.tilkobling} tilkobling, ${pv.totals.t_forgrening} T, ${pv.totals.endeavslutning} avslutning, ${pv.totals.avlaster} avlaster" style="display:block;width:100%;text-align:left;margin-top:2px;padding:2px 5px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--text);cursor:pointer;font-size:11px"><b>${P.label}</b><br><span class="tak-preset-txt" style="color:var(--dim)">${txt}</span></button>`;
+  };
+  return `<div class="tak-presets" style="margin-top:3px"><div style="font-size:10px;color:var(--dim)">Ferdige oppsett (setter antall løp på hele strekket):</div>${btn('sammenhengende')}${btn('boks')}</div>`;
+}
+/** 208: «Boks før nedløpet» på nedløpet, og meldingen når antall løp endrer seg uten boks. */
+function _takDownspoutBoxHtml(fid, t, d) {
+  const A = _takAccessories(t), net = A.nets.find(n => n.gutter === d.gutter);
+  const b = net && net.boxes.find(x => x.downspout === d.id), p = net && net.problems.find(x => x.downspout === d.id);
+  const role = b ? (b.kind === 'tilkobling' ? 'tilkoblingsboks' + (b.implicit ? ' (første overgang)' : '') : 'T-forgrening') + (b.needed ? '' : ' — trengs ikke her') : '';
+  return `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="tak-box" ${d.box ? 'checked' : ''} onchange="_takSetBox(${fid},'${d.id}',this.checked)" style="margin:0"><span title="Koblingsboks rett før nedløpet">Boks før nedløpet</span></label>` +
+    (role ? `<div class="tak-box-role" style="font-size:10px;color:var(--dim)">= ${role}</div>` : '') +
+    (p ? `<div class="tak-box-warn" style="color:#dc2626;font-size:11px">⚠ ${p.msg}<div style="font-size:10px">${p.detail}. Endre antall løp eller sett boks.</div></div>` : '');
+}
+/** 208: tabellen «Tilbehør» — antall, telt av regelen i _takAccessories. Ingen artikkelnumre (T1). */
+function _takAccessoryHtml(t) {
+  const A = _takAccessories(t);
+  if (!A.nets.length) return '';
+  const dim = x => `<span style="color:var(--dim)">${x}</span>`;
+  const T = A.totals;
+  const rows = [['tilkobling', 'Tilkobling', T.tilkobling], ['t_forgrening', 'T-forgrening', T.t_forgrening], ['endeavslutning', 'Endeavslutning', T.endeavslutning], ['avlaster', 'Avlaster', T.avlaster]];
+  const where = A.nets.map(n => {
+    const st = n.start ? (n.start.kind ? 'tilkobling ved ' + n.start.downspout : 'start: ' + n.start.label) : '';
+    const en = n.ends.filter(e => e !== n.start).map(e => e.label);
+    return `${n.gutter}: ${st}${en.length ? ' · avslutning: ' + en.join(', ') : n.start && n.start.closed ? ' · avslutning i samme punkt' : ''}`;
+  });
+  return `<div class="tak-acc" style="margin-top:6px;border-top:1px solid var(--border);padding-top:4px">
+    <div style="font-weight:700">Tilbehør</div>
+    <table class="tak-acc-table" style="width:100%;font-size:11px;border-collapse:collapse">
+      ${rows.map(r => `<tr class="tak-acc-row" data-key="${r[0]}"><td>${r[1]}</td><td style="text-align:right"><b>${r[2]}</b></td></tr>`).join('')}
+      <tr class="tak-acc-row" data-key="klips"><td>Klips</td><td style="text-align:right;white-space:nowrap">${dim('avstand ikke satt')}</td></tr>
+    </table>
+    ${A.problems.map(p => `<div class="tak-acc-problem" data-kind="${p.kind}" data-id="${p.downspout || p.gutter}" style="color:#dc2626;font-size:11px">⚠ ${p.msg}${p.downspout ? ' — ved ' + p.downspout : ''}<div style="font-size:10px">${p.detail}</div></div>`).join('')}
+    ${A.problems.length ? `<div style="font-size:10px;color:#dc2626">Kan ikke legges som vist. Appen retter ikke — endre antall løp eller sett boks.</div>` : ''}
+    <div class="tak-acc-where" style="font-size:10px;color:var(--dim)">${where.join('<br>')}</div>
+    ${A.valleysIgnored ? `<div style="font-size:10px;color:var(--dim)">Gradrenner er ikke med i tilbehøret.</div>` : ''}
+    <div style="font-size:10px;color:var(--dim)">Telt av antall løp. Regler fra IceFix-filmen — ikke bekreftet mot leverandørens datablad. Ingen artikkelnumre ennå.</div>
+  </div>`;
 }
 /** 207: tabellen «Kabelmeter» — objekt, lengde, løp, kabelmeter, sum nederst. Regnes ved hver tegning av panelet. */
 function _takCableSumHtml(t) {
@@ -83532,6 +83751,158 @@ async function _takRegressionTest213() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_takRegressionTest213: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+// 208: tilbehør telles av antall løp (regelen i _takAccessories), kontrollert mot filmens tabell; to ferdige
+// oppsett med forhåndsvisning = resultat etter klikk; sammenhengssjekken melder uten å rette; klips «ikke satt».
+async function _takRegressionTest208() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '208: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
+                 part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId };
+  const eq = (a, b) => a != null && b != null && Math.abs(a - b) < 1e-6;
+  const orig = _takLabel;
+  try {
+    window._showToast = () => {}; window._scheduleAutoSave = () => {}; window.confirm = () => true;
+    const bygg = (L, at) => {
+      _resetProjectState(); addPart('roof');
+      const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+      S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null;
+      S.tak = { [fid]: _takManual([{ x: 0, y: 0 }, { x: L * 100, y: 0 }, { x: L * 100, y: 600 }, { x: 0, y: 600 }]) };
+      _takSetRoofType(fid, 'pitched'); _takSetHeight(fid, 'eave_m', '10');
+      const g = _takAddGutter(fid, 'k1'); at.forEach(a => _takAddDownspout(fid, g.id, a));
+      return fid;
+    };
+    const C = fid => _takAccessories(_takOf(fid));
+    const cnt = a => [a.totals.tilkobling, a.totals.t_forgrening, a.totals.endeavslutning, a.totals.avlaster].join('/');
+    const tab = (n, ned) => ['tilkobling', 't_forgrening', 'endeavslutning', 'avlaster'].map(k => TAK_ACCESSORY_TABLE.find(r => r.key === k).antall(n, ned)).join('/');
+
+    // ── Filmens bygg, begge oppsett: tallene fra REGELEN, sammenlignet med tabellen ──
+    let fid = bygg(25, [2, 12.5, 23]);
+    _takApplyPreset(fid, 'r1', 'boks');
+    check('Filmen, boks ved hvert nedløp (nedløp 1 løp): 1 tilkobling, 2 T, 3 avslutninger, 3 avlastere', '1/2/3/3', cnt(C(fid)) === '1/2/3/3', cnt(C(fid)));
+    check('… = tabellen (n = 3, nedløp 1)', tab(3, 1), cnt(C(fid)) === tab(3, 1), cnt(C(fid)));
+    check('… tilkoblingen ved n1, T ved n2 og n3', 'tilkobling:n1 T:n2 T:n3', C(fid).nets[0].boxes.map(b => b.kind + ':' + b.downspout).join(' ') === 'tilkobling:n1 T:n2 T:n3', C(fid).nets[0].boxes.map(b => b.kind + ':' + b.downspout).join(' '));
+    check('… avslutningene i bunnen av hvert nedløp', 'n1,n2,n3', C(fid).nets[0].ends.map(e => e.id).join() === 'n1,n2,n3', C(fid).nets[0].ends.map(e => e.id).join());
+    _takApplyPreset(fid, 'r1', 'sammenhengende');
+    check('Filmen, sammenhengende (nedløp 2 løp): 1 tilkobling, 0 T, 1 avslutning, 3 avlastere', '1/0/1/3', cnt(C(fid)) === '1/0/1/3', cnt(C(fid)));
+    check('… = tabellen (n = 3, nedløp 2)', tab(3, 2), cnt(C(fid)) === tab(3, 2), cnt(C(fid)));
+    check('… ingen bokser, start og avslutning i samme punkt ved starten av renna', '0 bokser, lukket ved 0', C(fid).boxCount === 0 && C(fid).nets[0].start.closed && C(fid).nets[0].start.at_m === 0, JSON.stringify(C(fid).nets[0].start));
+    // Regelen mot tabellen for n = 1…5 — tallene skal komme ut av regelen, ikke av tabellen.
+    const rad = [];
+    for (let n = 1; n <= 5; n++) {
+      const pos = Array.from({ length: n }, (_, i) => 2 + i * 21 / Math.max(1, n - 1 || 1));
+      const f2 = bygg(25, pos);
+      for (const [key, ned] of [['boks', 1], ['sammenhengende', 2]]) { _takApplyPreset(f2, 'r1', key); const got = cnt(C(f2)); if (got !== tab(n, ned)) rad.push(`n=${n} ned=${ned}: regel ${got} ≠ tabell ${tab(n, ned)}`); }
+    }
+    check('Regelen = tabellen for n = 1…5, begge oppsett', 'ingen avvik', rad.length === 0, rad.join('; '));
+
+    // ── Ett nedløp ──
+    fid = bygg(10, [5]);
+    _takApplyPreset(fid, 'r1', 'boks');
+    check('Ett nedløp: 1 tilkobling, 0 T, 1 avlaster', '1/0/·/1', C(fid).totals.tilkobling === 1 && C(fid).totals.t_forgrening === 0 && C(fid).totals.avlaster === 1, cnt(C(fid)));
+
+    // ── Kenneths blandede rute (docs/207/RAPPORT.md) ──
+    fid = bygg(25, [2, 12.5, 23]);
+    ['r1.2', 'r1.3', 'n1', 'n3'].forEach(id => _takSetRuns(fid, id, 1));
+    const mix = C(fid);
+    check('Blandet rute: håndregning 1 tilkobling, 0 T, 1 avslutning, 3 avlastere', '1/0/1/3', cnt(mix) === '1/0/1/3', cnt(mix));
+    check('Blandet rute: én kabel, start nede i n1, avslutning nede i n3, ingen boks, ingen melding', 'n1 → n3',
+      mix.boxCount === 0 && !mix.problems.length && mix.nets[0].start.id === 'n1' && mix.nets[0].ends.map(e => e.id).join() === 'n1,n3', JSON.stringify({ s: mix.nets[0].start, e: mix.nets[0].ends.map(e => e.id), p: mix.problems }));
+    check('Blandet rute ≠ tabellens tall for noe oppsett (regelen er mer enn tabellen)', '≠ ' + tab(3, 1), cnt(mix) !== tab(3, 1), cnt(mix));
+
+    // ── Sammenhengssjekken: 2 inn, 1 ut, uten boks → melding, punktet markert, ingenting rettet ──
+    fid = bygg(25, [2, 12.5, 23]);
+    _takSetRuns(fid, 'n1', 1);
+    check('Første overgang (n1) dekkes av tilkoblingsboksen — ingen melding', '0 meldinger, tilkobling ved n1', !C(fid).problems.length && C(fid).nets[0].boxes[0].downspout === 'n1' && C(fid).nets[0].boxes[0].implicit, JSON.stringify(C(fid).problems));
+    _takSetRuns(fid, 'n2', 1);
+    const før = JSON.stringify(_takOf(fid).features);
+    const pr = C(fid).problems;
+    check('n2: renna 2 inn, 2 videre, 1 ned, uten boks → «Her endrer antall løp seg uten boks»', 'no_box ved n2', pr.length === 1 && pr[0].kind === 'no_box' && pr[0].downspout === 'n2' && pr[0].msg === TAK_MSG_NO_BOX, JSON.stringify(pr));
+    renderSidebar();
+    const warnEl = document.querySelector('.tak-downspout[data-id="n2"] .tak-box-warn'), accP = document.querySelector('.tak-acc-problem[data-id="n2"]');
+    check('Meldingen står i panelet, både ved nedløpet og under Tilbehør', TAK_MSG_NO_BOX, warnEl && warnEl.textContent.includes(TAK_MSG_NO_BOX) && accP && accP.textContent.includes(TAK_MSG_NO_BOX), warnEl && warnEl.textContent);
+    fitAll();
+    const tekster = []; _takLabel = function (txt, x, y, color) { tekster.push({ txt, x, y, color }); return orig.apply(this, arguments); };
+    render();
+    const mark = tekster.find(x => x.txt === '⚠ ' + TAK_MSG_NO_BOX);
+    const n2s = _takFeatScreenPt(_takOf(fid), _takFeat_(_takOf(fid), 'n2'));
+    check('Punktet er markert i tegningen, ved n2', 'rød merkelapp nær n2', mark && mark.color === '#dc2626' && Math.hypot(mark.x - n2s.x, mark.y - n2s.y) < 40, mark && JSON.stringify(mark));
+    check('Ingenting er rettet automatisk (løp og bokser uendret)', 'uendret', JSON.stringify(_takOf(fid).features) === før && !_takFeat_(_takOf(fid), 'n2').box && _takFeat_(_takOf(fid), 'n2').runs === 1, '');
+    // Brukeren setter boks → meldingen forsvinner, n2 blir T-forgrening.
+    document.querySelector('.tak-downspout[data-id="n2"] .tak-box').click();
+    check('Kryss «Boks før nedløpet» på n2 → meldingen borte, n2 = T-forgrening', '0 meldinger, T:n2', !C(fid).problems.length && C(fid).nets[0].boxes.some(b => b.downspout === 'n2' && b.kind === 'T') && !document.querySelector('.tak-acc-problem'), JSON.stringify(C(fid).problems));
+    undo();
+    check('Angre fjerner boksen igjen', 'melding tilbake', !_takFeat_(_takOf(fid), 'n2').box && C(fid).problems.length === 1, '');
+    // For mange ender uten boks.
+    fid = bygg(25, [8, 17]);
+    _takSetRuns(fid, 'r1.1', 1); _takSetRuns(fid, 'r1.3', 1); _takSetRuns(fid, 'n1', 1); _takSetRuns(fid, 'n2', 1);
+    check('Fire kabelender og ingen boks → «Flere kabelender enn én kabel kan ha»', 'too_many_ends', C(fid).problems.some(p => p.kind === 'too_many_ends'), JSON.stringify(C(fid).problems.map(p => p.kind)));
+
+    // ── Knappene: forhåndsvisning = resultatet etter klikk ──
+    fid = bygg(25, [2, 12.5, 23]);
+    renderSidebar();
+    const domSum = () => { const e = document.querySelector('.tak-cable-sum-total'); return e ? e.textContent : null; };
+    const btnTxt = k => { const b = document.querySelector('.tak-preset-' + k + ' .tak-preset-txt'); return b ? b.textContent : null; };
+    check('Knappen «Sammenhengende løp» viser 110,15 m · 0 bokser før trykk', '110,15 m · 0 bokser', btnTxt('sammenhengende') === '110,15 m · 0 bokser', btnTxt('sammenhengende'));
+    check('Knappen «Boks ved hvert nedløp» viser 80,15 m · 3 bokser før trykk', '80,15 m · 3 bokser', btnTxt('boks') === '80,15 m · 3 bokser', btnTxt('boks'));
+    for (const k of ['boks', 'sammenhengende']) {
+      const pv = btnTxt(k), b = document.querySelector('.tak-preset-' + k);
+      b.click();
+      const A = C(fid), t = _takOf(fid), g = _takFeat_(t, 'r1'), ds = _takFeats(t, 'DOWNSPOUT');
+      const want = TAK_PRESETS[k];
+      check(`Klikk «${want.label}»: alle delstrekk ${want.segRuns} løp, alle nedløp ${want.downRuns} løp, bokser ${want.box ? 'på' : 'av'}`, 'ja',
+        g.segments.every(s => s.runs === want.segRuns) && ds.every(d => d.runs === want.downRuns && !!d.box === want.box), g.segments.map(s => s.runs).join() + ' | ' + ds.map(d => d.runs + (d.box ? 'b' : '')).join());
+      check(`Klikk «${want.label}»: forhåndsvisningen «${pv}» = panelet etterpå`, pv, pv === `${domSum()} · ${A.boxCount} ${A.boxCount === 1 ? 'boks' : 'bokser'}`, `${domSum()} · ${A.boxCount}`);
+    }
+    // Totalen følger: ett nedløp til → sum og tilbehør endres.
+    _takApplyPreset(fid, 'r1', 'boks');
+    _takAddDownspout(fid, 'r1', 18);
+    check('Nytt nedløp etter oppsettet: avlastere 4; det nye får standard 2 løp og ingen boks (oppsettet arves ikke stille)', '4 avlastere, n4 2 løp uten boks',
+      C(fid).totals.avlaster === 4 && _takFeats(_takOf(fid), 'DOWNSPOUT').some(d => d.at_m === 18 && d.runs === 2 && !d.box), cnt(C(fid)) + ' ' + JSON.stringify(C(fid).problems.map(p => p.downspout)));
+    undo();
+
+    // ── Tilbehørstabellen i panelet, klips «ikke satt» ──
+    _takApplyPreset(fid, 'r1', 'boks'); renderSidebar();
+    const accRow = k => { const r = document.querySelector('.tak-acc-row[data-key="' + k + '"]'); return r ? r.children[1].textContent : null; };
+    check('Panelet: Tilkobling 1 · T 2 · Endeavslutning 3 · Avlaster 3', '1/2/3/3', ['tilkobling', 't_forgrening', 'endeavslutning', 'avlaster'].map(accRow).join('/') === '1/2/3/3', ['tilkobling', 't_forgrening', 'endeavslutning', 'avlaster'].map(accRow).join('/'));
+    check('Klips vises som «avstand ikke satt», aldri som et tall', 'avstand ikke satt', accRow('klips') === 'avstand ikke satt' && !/\d/.test(accRow('klips')) && TAK_CLIP_SPACING_M === null && C(fid).klips.count === null, accRow('klips'));
+    check('Tabellen i koden: klips = null', 'null', TAK_ACCESSORY_TABLE.find(r => r.key === 'klips').antall(3, 1) === null, '');
+    check('Ingen artikkelnumre, priser eller watt i tilbehøret', 'ingen', !/\bW\b|\bkr\b|art\.?\s?nr|\d+\s?W\/m/i.test(document.querySelector('.tak-acc').textContent), '');
+
+    // ── Symbolene i tegningen, kursens farge ──
+    tekster.length = 0; render();
+    const kc = _takKursColor(_takOf(fid), 'r1');
+    const boxLab = tekster.filter(x => x.txt === 'tilkobling' || x.txt === 'T');
+    check('Bokssymbolene tegnes: 1 tilkobling + 2 T, i kursens farge', '3 i ' + kc, boxLab.length === 3 && boxLab.filter(x => x.txt === 'T').length === 2 && boxLab.every(x => x.color === kc), boxLab.map(x => x.txt + ' ' + x.color).join());
+    const strokes = []; const sr = ctx.stroke; ctx.stroke = function () { strokes.push(ctx.strokeStyle); return sr.apply(this, arguments); };
+    try { render(); } finally { ctx.stroke = sr; }
+    const n1s = _takFeatScreenPt(_takOf(fid), _takFeat_(_takOf(fid), 'n1')), b1 = boxLab.find(x => x.txt === 'tilkobling');
+    check('Tilkoblingsboksen står før n1 langs renna', 'x(boks) < x(n1)', b1 && n1s && b1.x < n1s.x, b1 && n1s && b1.x + ' / ' + n1s.x);
+    check('Avlasterne tegnes i kursens farge (strøk i ' + kc + ')', 'ja', strokes.filter(s => String(s).toLowerCase() === kc).length >= 3, strokes.length);
+    _takApplyPreset(fid, 'r1', 'sammenhengende'); tekster.length = 0; render();
+    check('Sammenhengende: ingen bokssymboler', '0', !tekster.some(x => x.txt === 'tilkobling' || x.txt === 'T'), tekster.map(x => x.txt).join('|').slice(0, 100));
+
+    // ── readOnly, rundtur ──
+    S.ui.readOnly = true;
+    check('readOnly avviser oppsett og boks', 'false/false', _takApplyPreset(fid, 'r1', 'boks') === false && _takSetBox(fid, 'n1', true) === false && _takFeat_(_takOf(fid), 'n1').runs === 2, '');
+    S.ui.readOnly = false;
+    _takApplyPreset(fid, 'r1', 'boks');
+    const sd = _buildSaveData(); _restoreProject(JSON.parse(JSON.stringify(sd)));
+    const t2 = _takOf(fid);
+    check('Rundtur: boksene og tallene overlever lagring og åpning', '1/2/3/3, 3 bokser', t2 && cnt(_takAccessories(t2)) === '1/2/3/3' && _takAccessories(t2).boxCount === 3 && JSON.stringify(_buildSaveData().tak) === JSON.stringify(sd.tak), t2 && cnt(_takAccessories(t2)));
+  } catch (e) {
+    check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 300));
+  } finally {
+    _takLabel = orig;
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
+    hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takFeat = null; _takFeatSel = null; _takFeatHover = null;
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest208: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
   return { ok: allOk, results };
 }
 function typer206(t) { return (t.edges || []).map(e => e.id + ':' + (e.type || '—')).join(' '); }

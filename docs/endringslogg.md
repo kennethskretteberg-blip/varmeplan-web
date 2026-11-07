@@ -4,6 +4,14 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 208 — Tak: tilbehør telles av antall løp, to ferdige oppsett, bokser og avlastere i tegningen (07.11.2026, `main`, ikke pushet)
+
+- `_takAccessories`: tilbehøret telles av hvor antall løp endrer seg. Oddetall kabeltråder i et innløp krever boks (den første = tilkoblingsboksen, resten T-forgrening). 1 løp i en ende = endeavslutning. Uten boks må nettet være én kabel. Avlaster per nedløp; klips «avstand ikke satt».
+- Sammenhengssjekk: «Her endrer antall løp seg uten boks» i panelet og som rød ring i tegningen — ingenting rettes automatisk.
+- `box: true` på nedløpet (avkrysning «Boks før nedløpet»). Knappene «Sammenhengende løp» (110,15 m · 0 bokser) og «Boks ved hvert nedløp» (80,15 m · 3 bokser) med forhåndsvisning.
+- `TAK_ACCESSORY_TABLE` (fra IceFix-filmen, ikke bekreftet mot datablad) er bare kontroll i testen.
+- Ny `_takRegressionTest208` 37/37. Rapport i `docs/208/RAPPORT.md`.
+
 ## 207 — Tak: ett eller to kabelløp per delstrekk, nedløp og gradrenne, med kabelmeter (07.11.2026, `main`, ikke pushet)
 
 - `runs: 1 | 2` (standard 2) og `runs_src` på hvert delstrekk (`segments`), nedløp og gradrenne. Delstrekket lagrer også `run_pos` (to løp: bunn 90° + hengkant 40°, ett løp: bunn). Arves ved deling.
