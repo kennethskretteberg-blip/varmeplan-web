@@ -84438,11 +84438,16 @@ function _expPreviewLive(cfg) {
   const area = document.getElementById('exp-preview-area');
   if (!area) return;
   const ro = !!(S.ui && S.ui.readOnly);
+  // 200: romsiden i Nummer-modus har ingen labels — knappen og «dra labels» vises bare i Label-modus.
+  // (Etasjens plantegning beholder labels også i Nummer-modus, 196 spm 3.)
+  const lab = !(cfg.kind === 'room' && _pdfMarkDialogMode() === 'number');
+  const hjelp = lab ? (ro ? 'Skrivebeskyttet — utsnitt og labels kan ikke endres' : 'Rull for zoom · dra for å flytte · dra labels · dobbeltklikk label = auto')
+                    : (ro ? 'Skrivebeskyttet — utsnittet kan ikke endres' : 'Rull for zoom · dra for å flytte');
   area.innerHTML = `<div style="text-align:center;width:100%;align-self:stretch;padding:8px 0">
     <div style="display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:11px;color:var(--muted)">
       <button class="adm-btn ghost" id="exp-pv-reset" style="padding:3px 10px;font-size:11px" onclick="_pdfPrevResetView()" title="${_esc(cfg.resetTitle)}">Tilbakestill utsnitt</button>
-      <button class="adm-btn ghost" id="exp-pv-labels" style="padding:3px 10px;font-size:11px" onclick="_pdfPrevResetLabels()" title="${_esc(cfg.labelsTitle)}">Labels til auto</button>
-      <span>${ro ? 'Skrivebeskyttet — utsnitt og labels kan ikke endres' : 'Rull for zoom · dra for å flytte · dra labels · dobbeltklikk label = auto'}</span>
+      ${lab ? `<button class="adm-btn ghost" id="exp-pv-labels" style="padding:3px 10px;font-size:11px" onclick="_pdfPrevResetLabels()" title="${_esc(cfg.labelsTitle)}">Labels til auto</button>` : ''}
+      <span id="exp-pv-hjelp">${hjelp}</span>
       <span id="exp-pv-zoom" style="font-weight:600;color:var(--text)"></span>
     </div>
     ${cfg.tegnbar ? `<canvas id="exp-pv-canvas" style="max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:${ro ? 'default' : 'grab'};touch-action:none;display:block;margin:0 auto;background:#fff"></canvas>`
@@ -87532,13 +87537,22 @@ async function exportPDF(opts, lev) {
 
     // \u2500\u2500 Spec table \u2014 full width, Antall and Lengde as separate columns \u2500\u2500
     // (No _checkPage here \u2014 budgeted to share the page with image + metrics.)
+    // 200: radene kommer fra _pdfSpecRows (komma i Lengde; i Nummer-modus uten radene som allerede
+    // står i forklaringen). Er det ingen rader igjen, tegnes ikke kolonneoverskriften — og står det
+    // heller ikke CC eller advarsel, tegnes ikke «Spesifikasjon» heller. Label-modus har alltid minst
+    // én rad («Ingen produkter»), så der er alt som før.
+    const specRows = _pdfSpecRows(room, _numMode).rows;
+    const specCols = [M, M + 26, M + 110, M + 145, M + 170];
+    const _specShown = !!(specRows.length || _roomCablesCC.length || _roomWm2OverWarn(room));
+    if (_specShown) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(20, 60, 130);
     doc.text('Spesifikasjon', M, y); y += 5;
+    }
+    if (specRows.length) {
     doc.setFontSize(7);
     doc.setTextColor(120, 130, 150);
-    const specCols = [M, M + 26, M + 110, M + 145, M + 170];
     doc.text('Type', specCols[0], y);
     doc.text('Produkt', specCols[1], y);
     doc.text('Antall', specCols[2], y);
@@ -87547,6 +87561,7 @@ async function exportPDF(opts, lev) {
     y += 1.5;
     doc.setDrawColor(220, 228, 240);
     doc.line(M, y, M + pw, y); y += 3;
+    }
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(40, 50, 70);
     doc.setFontSize(8);
@@ -87558,21 +87573,6 @@ async function exportPDF(opts, lev) {
     //
     // Lengdekolonnen: kabler og aluboard-kabel har en meterlengde (`lengthM`); folie har lengde
     // per bredde; matter og plater har ikke en lineær lengde og viser «—», som før.
-    const specRows = _roomProductRows(room).map(r => {
-      let lengde = '\u2014';
-      if (r.kind === 'Folie') lengde = (r.lengthM != null ? r.lengthM.toFixed(1) : '\u2014') + ' m';
-      else if (r.lengthM != null) lengde = r.lengthM.toFixed(1) + ' m';
-      return {
-        type: r.kind, name: (r.product && r.product.name) || r.kind,
-        antall: r.count + ' stk',
-        lengde,
-        // 025: reservekabelen har 0 W (ikke tilkoblet) — vises som «—», ikke «0 W».
-        effekt: (r.kind === 'Reservekabel' && !r.effectW) ? '\u2014' : (r.effectW + ' W'),
-      };
-    });
-    if (specRows.length === 0) {
-      specRows.push({ type: '\u2014', name: 'Ingen produkter', antall: '', lengde: '', effekt: '' });
-    }
     for (const r of specRows) {
       _checkPage(5);
       doc.text(r.type, specCols[0], y);
@@ -87588,9 +87588,9 @@ async function exportPDF(opts, lev) {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8);
       doc.setTextColor(60, 70, 90);
-      const _ccTxt = _roomCablesCC.length === 1
-        ? _roomCablesCC[0].toFixed(1) + ' cm'
-        : _roomCablesCC.map(v => v.toFixed(1)).join(', ') + ' cm';
+      // 200: komma som desimaltegn (som resten av Spesifikasjon); flere verdier skilles med « / »,
+      // siden «7,5, 10,0» ville vært uleselig.
+      const _ccTxt = _roomCablesCC.map(v => v.toFixed(1).replace('.', ',')).join(' / ') + ' cm';
       const _ccwPdf = _roomCcOverWarn(room);   // 016
       doc.text('Senteravstand (CC): ' + _ccTxt +
         (_ccwPdf ? ' (' + _ccWarnText(_ccwPdf.prod, _ccwPdf.cc, false, _ccwPdf.roomId) + ')' : ''), M, y); y += 5;
@@ -87602,8 +87602,10 @@ async function exportPDF(opts, lev) {
       const _w2L = doc.splitTextToSize('Advarsel: ' + _w2Pdf.lang.replace(/\u00a0/g, ' '), pw - 2 * M);
       doc.text(_w2L, M, y); y += _w2L.length * 4 + 1;
     }
+    if (_specShown) {   // 200: skjult blokk → ingen tom strek
     y += 4;
     _line(y); y += 4;
+    }
 
     // 145: Motstandsmåling for rom med folie. Tegningen krympes ikke for denne blokken (Kenneth) —
     // får den ikke plass, tar `_checkPage` den til neste side. Blokkene under budsjetteres ikke
@@ -87691,7 +87693,7 @@ async function exportPDF(opts, lev) {
       y += 2;
     }
 
-    // 196: flere enn 15 nummer → forklaringen på egen side rett etter romsiden («<rom> – forklaring»).
+    // 196/200: får ikke hele forklaringen plass på romsiden (_pdfNumberLayout) → egen side rett etter.
     // Tegningen på romsiden er da like stor som i Label-modus.
     if (_numMode && _lay.place === 'page') {
       const _forklTittel = () => {
@@ -89016,7 +89018,6 @@ function _pdfRenderPx(targetWidthMm) {
 const PDF_MARK_LS_KEY = 'varmeplan_pdf_mark_mode';
 const PDF_NUM_DIA_MM = 4.6;          // sirkelens diameter på ferdig side (kravet er minst ca. 4 mm)
 const PDF_NUM_FONT_PT = 8;           // tallets skriftstørrelse på ferdig side
-const PDF_LEGEND_MAX_ROWS = 15;      // flere rader → forklaringen får egen side
 const PDF_LEGEND_SIDE_MIN_MM = 70;   // smaleste tabell ved siden av tegningen
 const PDF_LEGEND_SIDE_MAX_MM = 92;
 const PDF_LEGEND_GAP_MM = 5;         // luft mellom tegning og tabell
@@ -89276,7 +89277,7 @@ function _pdfLegendDraw(doc, m, x, y) {
   m.cols.forEach((ms, c) => _pdfLegendDrawCol(doc, ms, x + c * (m.cw + 6), y, m.cw));
   return m.h;
 }
-// Forklaring på EGEN side (flere enn PDF_LEGEND_MAX_ROWS rader): to spalter som fylles jevnt, ny side
+// Forklaring på EGEN side (får ikke plass på romsiden, _pdfNumberLayout): to spalter som fylles jevnt, ny side
 // når begge er fulle. o = { x, y, w, bottom, newPage: () => y på den nye siden }. → y etter tabellen.
 function _pdfLegendDrawPaged(doc, rows, o) {
   const cw = (o.w - 6) / 2, ms = _pdfLegendRowMetrics(doc, rows, cw);
@@ -89302,42 +89303,81 @@ function _pdfLegendHtml(room) {
   const td = 'padding:2px 10px 2px 0';
   const tr = rows.map(r => `<tr><td style="${td};font-weight:700">${r.n}</td><td style="${td}"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${r.color}"></span></td><td style="${td}">${_esc(r.name)}</td><td style="${td};white-space:nowrap">${_esc(r.dim)}</td><td style="padding:2px 0;text-align:right;white-space:nowrap">${_esc(r.effect)}</td></tr>`).join('');
   return `<div id="exp-pv-legend" style="margin-top:10px">
-    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Forklaring — ${rows.length} nummer${rows.length > PDF_LEGEND_MAX_ROWS ? ' (egen side i PDF-en)' : ''}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Forklaring — ${rows.length} nummer${_pdfNumberLayout(room).place === 'page' ? ' (egen side i PDF-en)' : ''}</div>
     <div style="max-height:140px;overflow:auto"><table style="border-collapse:collapse;font-size:11px;width:100%">${tr}</table></div></div>`;
 }
-// Romsidens oppsett i Nummer-modus: tegningens plass + hvor forklaringen står. Regelen (STEG 0.3,
-// docs/196/RAPPORT.md): den plasseringen som gir STØRST tegning vinner; ved likt står tabellen øverst
-// til høyre.
+// Romsidens Spesifikasjon-rader (exportPDF), med komma som desimaltegn i Lengde (200, begge moduser —
+// samme formatering som forklaringen). Label-modus: alle radene, som før.
+// 200 · Nummer-modus: en rad som ALLEREDE står i forklaringen, tas bort. Det er en rad med «1 stk» der
+// forklaringen har en rad for samme produkt og type med samme effekt (og samme lengde for folie og
+// kabel) — da sier de to radene nøyaktig det samme. Rader med flere stk er SUMMER (antall + samlet
+// effekt per produkt og lengde) og står ikke noe annet sted, så de blir stående; det gjør også alt
+// forklaringen ikke har (plater, Aluboard, «kun label»-matter). Hver forklaringsrad kan bare «bruke
+// opp» én Spesifikasjon-rad. → { rows, removed } (removed = radene som ble tatt bort, for testene).
+function _pdfSpecRows(room, numMode) {
+  const komma = v => v.toFixed(1).replace('.', ',');
+  const all = _roomProductRows(room).map(r => {
+    let lengde = '—';
+    if (r.kind === 'Folie') lengde = (r.lengthM != null ? komma(r.lengthM) : '—') + ' m';
+    else if (r.lengthM != null) lengde = komma(r.lengthM) + ' m';
+    return {
+      src: r, type: r.kind, name: (r.product && r.product.name) || r.kind,
+      antall: r.count + ' stk',
+      lengde,
+      // 025: reservekabelen har 0 W (ikke tilkoblet) — vises som «—», ikke «0 W».
+      effekt: (r.kind === 'Reservekabel' && !r.effectW) ? '—' : (r.effectW + ' W'),
+    };
+  });
+  if (!all.length) return { rows: [{ type: '—', name: 'Ingen produkter', antall: '', lengde: '', effekt: '' }], removed: [] };
+  if (!numMode) return { rows: all, removed: [] };
+  const items = _pdfNumberItems(room), used = new Set(), rows = [], removed = [];
+  for (const row of all) {
+    const r = row.src;
+    const i = r.count !== 1 ? -1 : items.findIndex((it, k) => !used.has(k) && it.kind === r.kind
+      && !!it.product && !!r.product && it.product.id === r.product.id
+      && Math.round(it.effectW || 0) === (r.effectW || 0)
+      && (r.kind === 'Folie' ? String(it.dim).endsWith(' × ' + row.lengde)
+        : (r.lengthM != null ? it.dim === row.lengde : true)));
+    if (i >= 0) { used.add(i); removed.push(row); } else rows.push(row);
+  }
+  return { rows, removed };
+}
+// Romsidens oppsett i Nummer-modus: tegningens plass + hvor forklaringen står.
+// 200 (svar på 196 spm 2): tegningen er ALLTID like stor som i Label-modus — den krympes aldri for å
+// gi tabellen plass. Ledig høyde måles etter at tegningen har fått sin vanlige størrelse; Spesifikasjon-
+// radene som ikke tegnes i Nummer-modus (_pdfSpecRows) regnes som ledig plass. Grensen på 15 rader er borte.
 //   'side'  — tabellen øverst til høyre, tegningen til venstre. Høye, smale rom: bildet er høydebegrenset
-//             og har ledig bredde (nedkjøringen: 81,5 mm bilde, 98,5 mm ledig) — tegningen krymper ikke.
-//   'below' — tabellen rett under tegningen, i to spalter fra fem rader. Brede rom: bildet fyller bredden,
-//             og ofte er det ledig høyde under, så tegningen krymper lite eller ikke i det hele tatt.
-//   'page'  — flere enn 15 rader: egen side rett etter romsiden; tegningen er som i Label-modus.
+//             og har ledig bredde (nedkjøringen: 81,5 mm bilde, 98,5 mm ledig). Vinner ved likt.
+//   'below' — tabellen rett under tegningen (to spalter fra fem rader), når HELE tabellen får plass der.
+//   'page'  — ellers: hele tabellen på egen side rett etter romsiden («<rom> – forklaring»).
 //   'none'  — ingen elementer å nummerere.
 function _pdfNumberLayout(room, doc, yTop) {
   const base = _pdfRoomImgLayout(room, doc, yTop);
   const rows = _pdfLegendRows(room);
-  const out = { ...base, place: 'none', rows, table: null };
+  const out = { ...base, place: 'none', rows, table: null, availN: base.availH };
   if (!rows.length) return out;
-  if (rows.length > PDF_LEGEND_MAX_ROWS) { out.place = 'page'; return out; }
-  const M = PDF_PAGE_M, pw = 210 - 2 * M, aspect = base.aspect, avail = Math.max(40, base.availH);
-  // A · ved siden av: tegningen aldri bredere enn i Label-modus, tabellen minst 70 mm
+  const M = PDF_PAGE_M, pw = 210 - 2 * M, b = base.budget;
+  // Spesifikasjonens høyde i Label-budsjettet (_pdfRoomImgLayout) mot det Nummer-modus faktisk tegner.
+  const nSpec = _pdfSpecRows(room, true).rows.length;
+  const specHead = nSpec > 0 || b.roomCablesCC.length > 0 || !!_roomWm2OverWarn(room);
+  const specHL = 5 + 5 + b.specRowCount * 5 + 4;
+  const specHN = specHead ? 5 + (nSpec ? 5 : 0) + nSpec * 5 + 4 : 0;
+  const availN = out.availN = base.availH + specHL - specHN;
+  // A · ved siden av: bare når tegningen beholder sin bredde; tabellen minst 70 mm
   const ws = Math.min(base.imgW2, pw - PDF_LEGEND_GAP_MM - PDF_LEGEND_SIDE_MIN_MM);
   const tw = Math.min(PDF_LEGEND_SIDE_MAX_MM, pw - PDF_LEGEND_GAP_MM - ws);
   const mS = _pdfLegendMeasure(doc, rows, tw, 1);
-  // B · under: tabellens høyde tas av bildets høydebudsjett
+  // B · under: får hele tabellen plass i høyden som er igjen under tegningen?
   const twoCol = rows.length >= 5, wT = twoCol ? pw : Math.min(pw, 110);
   const mB = _pdfLegendMeasure(doc, rows, wT, twoCol ? 2 : 1);
-  const hB = Math.min(pw * aspect, Math.max(40, base.availH - mB.h - 5));
-  const wB = hB < pw * aspect ? hB / aspect : pw;
-  if (mS.h <= avail && ws >= wB - 0.5) {
-    out.place = 'side'; out.imgW2 = ws; out.imgH = ws * aspect;
+  if (ws >= base.imgW2 - 0.5 && mS.h <= Math.max(40, availN)) {
+    out.place = 'side'; out.imgW2 = ws; out.imgH = ws * base.aspect;
     out.imgX = M + (pw - PDF_LEGEND_GAP_MM - tw - ws) / 2;
     out.table = { x: M + pw - tw, w: tw, m: mS };
-  } else {
-    out.place = 'below'; out.imgW2 = wB; out.imgH = hB; out.imgX = M + (pw - wB) / 2;
+  } else if (base.imgH + mB.h + 5 <= availN + 0.01) {
+    out.place = 'below';
     out.table = { x: M, w: wT, m: mB };
-  }
+  } else out.place = 'page';
   return out;
 }
 
@@ -89392,7 +89432,8 @@ async function _pdfNumberModeRegressionTest() {
     const mk = (id, navn, pts) => ({ id, floorId: null, partId: null, name: navn, points: pts, walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [] });
     const R1 = mk(996701, 'Nedkjøring', rect(0, 0, 570, 1600)), R2 = mk(996702, 'Lager', rect(1000, 0, 1400, 500));
     const R3 = mk(996703, 'Stue', rect(3000, 0, 800, 400)), R4 = mk(996704, 'Blandet', rect(4200, 0, 600, 500)), R5 = mk(996705, 'Tomt', rect(5200, 0, 300, 300));
-    S.rooms = [R1, R2, R3, R4, R5];
+    const R6 = mk(996706, 'Sal', rect(6000, 0, 1300, 1200));   // 200: tegningen fyller siden → forklaring på egen side
+    S.rooms = [R1, R2, R3, R4, R5, R6];
     S.cables = []; S.mats = []; S.matPaths = []; S.plates = []; S.aluboard = []; S.foilFree = []; S.strips = [];
     S.zones = []; S.hindrings = []; S.stairs = []; S.floors = []; S.ui.activeFloorId = null; S.ui.activePartId = null;
     S.project = { name: 'NUMMER-TEST', parts: [], revision: 0, lastExportedAt: null, createdAt: Date.now() };
@@ -89402,6 +89443,7 @@ async function _pdfNumberModeRegressionTest() {
       width_cm: xs[k][1].mat_width_mm / 10, length_cm: 1600, num_runs: 1, last_run_length_cm: null, gap_cm: 5, rotation_deg: 0, matCoordV: 2, startCorner: 'bl' }));
     // R2: 22 stående foliebaner · R3: 6 liggende (ulik lengde, samme start)
     for (let k = 0; k < 22; k++) S.strips.push({ id: 996900 + k, roomId: R2.id, productId: F60.id, direction: 'v', pos_cm: 1020 + k * 62, start_cm: 20, length_cm: 460 });
+    for (let k = 0; k < 20; k++) S.strips.push({ id: 996970 + k, roomId: R6.id, productId: F60.id, direction: 'v', pos_cm: 6020 + k * 62, start_cm: 20, length_cm: 1160 });
     for (let k = 0; k < 6; k++) S.strips.push({ id: 996950 + k, roomId: R3.id, productId: F60.id, direction: 'h', pos_cm: 15 + k * 62, start_cm: 3020, length_cm: 760 - k * 30 });
     // R4: matte med to bredder, frihåndsmatte, fri folie, kabel + reserve + «kun label»-kabel = 6 elementer
     S.mats.push({ id: 996820, roomId: R4.id, productId: M04.id, x_cm: 4220, y_cm: 20, width_cm: 50, length_cm: 200, num_runs: 2, last_run_length_cm: null, gap_cm: 5, rotation_deg: 0, matCoordV: 2, startCorner: 'bl' });
@@ -89471,9 +89513,11 @@ async function _pdfNumberModeRegressionTest() {
       materialList: false, resistance: false, cableTable: false, pricing: false, discount: 0, showDGDB: false, docs: false, signature: false, freeText: '' };
     const bygg = async ekstra => { logg = []; S.project.revision = 0; S.project.lastExportedAt = null; await exportPDF({ ...OPTS, ...(ekstra || {}) }); return logg.slice(); };
     const lNum = await bygg({ marking: 'number' });
-    // sidene: 1 Nedkjøring · 2 Lager · 3 Lager – forklaring · 4 Stue · 5 Blandet · 6 Tomt
+    // sidene (200): 1 Nedkjøring · 2 Lager (forklaringen under tegningen) · 3 Stue · 4 Blandet · 5 Blandet – forklaring
+    // · 6 Tomt · 7 Sal · 8 Sal – forklaring. Blandet (600 × 500) fyller høyden: 6 rader mangler noen mm under
+    // tegningen, og tegningen krympes ikke lenger (200, spm 2) → egen side.
     const sider = lNum.reduce((m, e) => Math.max(m, e.side), 0);
-    check('C1: 6 sider (5 rom + én forklaringsside)', 6, sider === 6, sider);
+    check('C1: 8 sider (6 rom + to forklaringssider)', 8, sider === 8, sider);
     const tekst = s => lNum.filter(e => e.side === s && e.t != null).map(e => e.t);
     const bilder = s => lNum.filter(e => e.side === s && e.img);
     const nrX = s => lNum.filter(e => e.side === s && e.t === 'Nr').map(e => e.x);
@@ -89489,22 +89533,55 @@ async function _pdfNumberModeRegressionTest() {
     check('C5: nedkjøringen — tabellen øverst til høyre, tegningen like stor som i Label-modus', 'side, ' + layL1.imgW2.toFixed(1) + ' mm',
       lay1.place === 'side' && Math.abs(im1[2] - layL1.imgW2) < 0.01 && nrX(1).length === 1 && nrX(1)[0] > im1[0] + im1[2], lay1.place + ', ' + im1[2].toFixed(1) + ' mm');
     const lay2 = _pdfNumberLayout(R2), layL2 = _pdfRoomImgLayout(R2), im2 = bilder(2)[0] ? bilder(2)[0].img : [0, 0, 0, 0];
-    check('C6: 22 rader → egen side «Lager – forklaring», tekst uten bilde', 'page, 22 rader, 0 bilder',
-      lay2.place === 'page' && tekst(3).includes('Lager – forklaring') && rader(3).join(',') === Array.from({ length: 22 }, (_, i) => i + 1).join(',') && bilder(3).length === 0 && rader(2).length === 0,
-      lay2.place + ', ' + rader(3).length + ' rader, ' + bilder(3).length + ' bilder');
+    // 200 (spm 2): 15-radersgrensen er borte — får tabellen plass under tegningen, står den der.
+    check('C6: 22 rader som får plass → under tegningen på romsiden, ingen forklaringsside', 'below, 22 rader på s. 2',
+      lay2.place === 'below' && rader(2).join(',') === Array.from({ length: 22 }, (_, i) => i + 1).join(',') && !lNum.some(e => e.t === 'Lager – forklaring')
+        && lNum.filter(e => e.side === 2 && e.t === 'Nr').every(e => e.y > im2[1] + im2[3]),
+      lay2.place + ', ' + rader(2).length + ' rader');
     check('C7: tegningen krympes ikke for en lang tabell', layL2.imgW2.toFixed(1) + ' × ' + layL2.imgH.toFixed(1),
       Math.abs(im2[2] - layL2.imgW2) < 0.01 && Math.abs(im2[3] - layL2.imgH) < 0.01, im2[2].toFixed(1) + ' × ' + im2[3].toFixed(1));
-    const lay3 = _pdfNumberLayout(R3), layL3 = _pdfRoomImgLayout(R3), im3 = bilder(4)[0] ? bilder(4)[0].img : [0, 0, 0, 0];
-    check('C8: bredt rom — tabellen under tegningen i to spalter, tegningen ikke større enn i Label-modus', 'below, 6 rader, 2 spalter',
-      lay3.place === 'below' && rader(4).length === 6 && nrX(4).length === 2 && lNum.filter(e => e.side === 4 && e.t === 'Nr').every(e => e.y > im3[1] + im3[3]) && im3[2] <= layL3.imgW2 + 0.01,
-      lay3.place + ', ' + rader(4).length + ' rader, ' + nrX(4).length + ' spalter');
-    check('C9: blandet rom — 6 rader', 6, rader(5).length === 6, rader(5).length);
+    const lay3 = _pdfNumberLayout(R3), layL3 = _pdfRoomImgLayout(R3), im3 = bilder(3)[0] ? bilder(3)[0].img : [0, 0, 0, 0];
+    check('C8: bredt rom — tabellen under tegningen i to spalter, tegningen like stor som i Label-modus', 'below, 6 rader, 2 spalter',
+      lay3.place === 'below' && rader(3).length === 6 && nrX(3).length === 2 && lNum.filter(e => e.side === 3 && e.t === 'Nr').every(e => e.y > im3[1] + im3[3]) && Math.abs(im3[2] - layL3.imgW2) < 0.01 && Math.abs(im3[3] - layL3.imgH) < 0.01,
+      lay3.place + ', ' + rader(3).length + ' rader, ' + nrX(3).length + ' spalter');
+    check('C9: blandet rom — 6 rader på egen side (får ikke plass uten å krympe tegningen)', 'page, 6',
+      _pdfNumberLayout(R4).place === 'page' && rader(4).length === 0 && rader(5).length === 6 && tekst(5).includes('Blandet – forklaring'), _pdfNumberLayout(R4).place + ', ' + rader(5).length);
     check('C10: rom uten produkter — ingen forklaring', 'none', nrX(6).length === 0 && _pdfNumberLayout(R5).place === 'none', _pdfNumberLayout(R5).place);
+    const lay6 = _pdfNumberLayout(R6), layL6 = _pdfRoomImgLayout(R6), im6 = bilder(7)[0] ? bilder(7)[0].img : [0, 0, 0, 0];
+    check('C10b: tabellen får ikke plass (tegningen fyller siden) → HELE tabellen på egen side «Sal – forklaring», tekst uten bilde', 'page, 20 rader på s. 8, 0 bilder',
+      lay6.place === 'page' && tekst(8).includes('Sal – forklaring') && rader(8).join(',') === Array.from({ length: 20 }, (_, i) => i + 1).join(',') && bilder(8).length === 0 && rader(7).length === 0,
+      lay6.place + ', ' + rader(8).length + ' rader, ' + bilder(8).length + ' bilder');
+    check('C10c: … og tegningen er like stor som i Label-modus', layL6.imgW2.toFixed(1) + ' × ' + layL6.imgH.toFixed(1),
+      Math.abs(im6[2] - layL6.imgW2) < 0.01 && Math.abs(im6[3] - layL6.imgH) < 0.01, im6[2].toFixed(1) + ' × ' + im6[3].toFixed(1));
+    // 200: ingen rom krymper tegningen i Nummer-modus
+    const krymp = S.rooms.filter(r => { const a = _pdfNumberLayout(r), b = _pdfRoomImgLayout(r); return Math.abs(a.imgW2 - b.imgW2) > 0.01 || Math.abs(a.imgH - b.imgH) > 0.01; });
+    check('C10d: ingen tegning er mindre (eller større) enn i Label-modus', 'ingen', krymp.length === 0, krymp.map(r => r.name).join(', '));
+
+    // ── D · Spesifikasjon i Nummer-modus (200, spm 8): ingen dobbeltlinjer, ingen informasjon borte ──
+    const specTxt = s => { const t = lNum.filter(e => e.side === s && e.t != null), i = t.findIndex(e => e.t === 'Spesifikasjon'); return i < 0 ? null : t.slice(i); };
+    const sp3 = _pdfSpecRows(R3, true), sp3L = _pdfSpecRows(R3, false);
+    check('D1: Stue — alle 6 Spesifikasjon-radene står i forklaringen → tatt bort, overskriften skjult', '0 rader, 6 tatt bort, ingen «Spesifikasjon»',
+      sp3.rows.length === 0 && sp3.removed.length === 6 && specTxt(3) === null, sp3.rows.length + ' / ' + sp3.removed.length + ' / ' + (specTxt(3) ? 'står' : 'borte'));
+    const leg3 = _pdfLegendRows(R3).map(r => r.name + '|' + r.dim.split(' × ').pop() + '|' + r.effect);
+    check('D2: … hver bortfalt rad står uendret i forklaringen (navn, lengde, effekt)', 'alle 6',
+      sp3.removed.every(r => leg3.includes(r.name + '|' + r.lengde + '|' + r.effekt)) && sp3.removed.length === sp3L.rows.length, sp3.removed.map(r => r.name + '|' + r.lengde + '|' + r.effekt).join(' ; '));
+    const sp1 = _pdfSpecRows(R1, true), sp2 = _pdfSpecRows(R2, true);
+    check('D3: summer blir stående — Nedkjøring 4 stk + 3 stk, Lager 22 stk', '2 rader / 1 rad',
+      sp1.rows.length === 2 && sp1.removed.length === 0 && sp2.rows.length === 1 && sp2.rows[0].antall === '22 stk' && !!specTxt(1) && specTxt(1).some(e => e.t === '4 stk') && !!specTxt(2) && specTxt(2).some(e => e.t === '22 stk'),
+      sp1.rows.map(r => r.antall).join('+') + ' / ' + sp2.rows.map(r => r.antall).join('+'));
+    const sp4 = _pdfSpecRows(R4, true), sp4L = _pdfSpecRows(R4, false);
+    check('D4: blandet rom — enkeltrader (fri folie, kabel, reserve, «kun label») tas bort, mattesummen blir stående', 'Matte igjen',
+      sp4.rows.length === 1 && sp4.rows[0].type === 'Matte' && sp4.rows.length + sp4.removed.length === sp4L.rows.length && sp4.removed.every(r => r.antall === '1 stk'),
+      sp4.rows.map(r => r.type + ' ' + r.antall).join(', ') + ' | bort: ' + sp4.removed.map(r => r.type).join(', '));
+    check('D5: Nummer-modus — komma i Spesifikasjon, ingen «4.6 m»', '4,6 m', !!specTxt(2) && specTxt(2).some(e => e.t === '4,6 m') && [1, 2, 3, 7].every(sd => !(specTxt(sd) || []).some(e => /^\d+\.\d m$/.test(e.t))), (specTxt(2) || []).map(e => e.t).filter(t => / m$/.test(t)).join(','));
     const sig = l => l.map(e => e.t != null ? 't|' + e.side + '|' + e.t + '|' + e.x + '|' + e.y : 'i|' + e.side + '|' + e.img.join(',')).join('\n');
     const lLab = await bygg({ marking: 'label' }), lUten = await bygg();
     check('C11: Label-modus = uten valget (samme tekster og bilder på samme plass)', 'identisk', lLab.length > 0 && sig(lLab) === sig(lUten), lLab.length + ' / ' + lUten.length);
-    check('C12: Label-modus har ingen forklaring og ingen ekstra side', '5 sider, ingen «Nr»',
-      lLab.reduce((m, e) => Math.max(m, e.side), 0) === 5 && !lLab.some(e => e.t === 'Nr' || /forklaring/.test(e.t || '')), lLab.reduce((m, e) => Math.max(m, e.side), 0));
+    check('C12: Label-modus har ingen forklaring og ingen ekstra side', '6 sider, ingen «Nr»',
+      lLab.reduce((m, e) => Math.max(m, e.side), 0) === 6 && !lLab.some(e => e.t === 'Nr' || /forklaring/.test(e.t || '')), lLab.reduce((m, e) => Math.max(m, e.side), 0));
+    const labAlle = lLab.filter(e => e.side === 3 && e.t != null).map(e => e.t), labSpec = labAlle.slice(labAlle.indexOf('Spesifikasjon'));
+    check('D6: Label-modus — Spesifikasjon har alle radene som før, nå med komma', 'Spesifikasjon + 6 rader, 7,6 m',
+      labSpec.includes('Spesifikasjon') && labSpec.filter(t => t === '1 stk').length === 6 && labSpec.includes('7,6 m') && !labSpec.some(t => /^\d+\.\d m$/.test(t)), labSpec.filter(t => / m$/.test(t)).join(','));
 
     // ── G · valget i PDF-dialogen, og at det huskes per bruker ───────────────────────────────
     saved.harLsSp = true; saved.lsSp = null; try { saved.lsSp = localStorage.getItem(PDF_SAVE_PICKER_LS_KEY); } catch (e) {}
@@ -89556,7 +89633,16 @@ async function _pdfNumberModeRegressionTest() {
     check('I6: … og tilbake til Nummer', 7, !!_pdfPrev && (_pdfPrev.res.numbers || []).length === 7 && !!document.getElementById('exp-pv-legend'), _pdfPrev && (_pdfPrev.res.numbers || []).length);
     _expPreviewRoom(R2.id);
     const leg2 = document.getElementById('exp-pv-legend');
-    check('I7: 22 rader → forhåndsvisningen sier «egen side i PDF-en»', true, !!leg2 && leg2.querySelectorAll('tr').length === 22 && /egen side i PDF-en/.test(leg2.textContent), leg2 ? leg2.textContent.slice(0, 60) : 'mangler');
+    check('I7: 22 rader som får plass → forhåndsvisningen sier IKKE «egen side»', '22 rader, uten «egen side»', !!leg2 && leg2.querySelectorAll('tr').length === 22 && !/egen side/.test(leg2.textContent), leg2 ? leg2.textContent.slice(0, 60) : 'mangler');
+    _expPreviewRoom(R6.id);
+    const leg6 = document.getElementById('exp-pv-legend');
+    check('I7b: Sal (får ikke plass) → «egen side i PDF-en»', true, !!leg6 && /egen side i PDF-en/.test(leg6.textContent), leg6 ? leg6.textContent.slice(0, 60) : 'mangler');
+    // 200 (spm 10): «Labels til auto» og «dra labels» bare i Label-modus
+    const hjelp = () => (document.getElementById('exp-pv-hjelp') || {}).textContent || '';
+    check('I8: Nummer → ingen «Labels til auto», ingen «dra labels»', 'skjult', !document.getElementById('exp-pv-labels') && !/label/i.test(hjelp()) && /dra for å flytte/.test(hjelp()), hjelp());
+    radio('label').checked = true; _expMarkChanged();
+    check('I9: Label → knappen og teksten er tilbake', 'synlig', !!document.getElementById('exp-pv-labels') && /dra labels/.test(hjelp()), hjelp());
+    radio('number').checked = true; _expMarkChanged();
   } catch (e) {
     results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
   } finally {

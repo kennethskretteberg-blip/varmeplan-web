@@ -1,0 +1,743 @@
+[
+ {
+  "rom": "Nedkjøring",
+  "spec": [
+   {
+    "type": "Matte",
+    "navn": "InSnow 300T 1x16m",
+    "antall": "3 stk",
+    "lengde": "—",
+    "effekt": "14400 W"
+   },
+   {
+    "type": "Matte",
+    "navn": "InSnow 300T 0,5x16m",
+    "antall": "4 stk",
+    "lengde": "—",
+    "effekt": "9600 W"
+   }
+  ],
+  "leg": [
+   {
+    "n": 1,
+    "navn": "InSnow 300T 0,5x16m",
+    "maal": "0,5 × 16,0 m",
+    "effekt": "2400 W"
+   },
+   {
+    "n": 2,
+    "navn": "InSnow 300T 0,5x16m",
+    "maal": "0,5 × 16,0 m",
+    "effekt": "2400 W"
+   },
+   {
+    "n": 3,
+    "navn": "InSnow 300T 0,5x16m",
+    "maal": "0,5 × 16,0 m",
+    "effekt": "2400 W"
+   },
+   {
+    "n": 4,
+    "navn": "InSnow 300T 0,5x16m",
+    "maal": "0,5 × 16,0 m",
+    "effekt": "2400 W"
+   },
+   {
+    "n": 5,
+    "navn": "InSnow 300T 1x16m",
+    "maal": "1,0 × 16,0 m",
+    "effekt": "4800 W"
+   },
+   {
+    "n": 6,
+    "navn": "InSnow 300T 1x16m",
+    "maal": "1,0 × 16,0 m",
+    "effekt": "4800 W"
+   },
+   {
+    "n": 7,
+    "navn": "InSnow 300T 1x16m",
+    "maal": "1,0 × 16,0 m",
+    "effekt": "4800 W"
+   }
+  ],
+  "place": "side",
+  "imgL": [
+   81.5,
+   178
+  ],
+  "imgN": [
+   81.5,
+   178
+  ],
+  "availH": 178,
+  "specRowCount": 2,
+  "cc": []
+ },
+ {
+  "rom": "Lager",
+  "spec": [
+   {
+    "type": "Folie",
+    "navn": "FlexFoil 60W B=60cm",
+    "antall": "8 stk",
+    "lengde": "4.6 m",
+    "effekt": "1325 W"
+   },
+   {
+    "type": "Folie",
+    "navn": "FlexFoil 60W B=60cm",
+    "antall": "7 stk",
+    "lengde": "4.4 m",
+    "effekt": "1109 W"
+   },
+   {
+    "type": "Folie",
+    "navn": "FlexFoil 60W B=60cm",
+    "antall": "7 stk",
+    "lengde": "4.2 m",
+    "effekt": "1058 W"
+   }
+  ],
+  "leg": [
+   {
+    "n": 1,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,6 m",
+    "effekt": "166 W"
+   },
+   {
+    "n": 2,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,4 m",
+    "effekt": "158 W"
+   },
+   {
+    "n": 3,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,2 m",
+    "effekt": "151 W"
+   },
+   {
+    "n": 4,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,6 m",
+    "effekt": "166 W"
+   },
+   {
+    "n": 5,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,4 m",
+    "effekt": "158 W"
+   },
+   {
+    "n": 6,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,2 m",
+    "effekt": "151 W"
+   },
+   {
+    "n": 7,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,6 m",
+    "effekt": "166 W"
+   },
+   {
+    "n": 8,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,4 m",
+    "effekt": "158 W"
+   },
+   {
+    "n": 9,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,2 m",
+    "effekt": "151 W"
+   },
+   {
+    "n": 10,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,6 m",
+    "effekt": "166 W"
+   },
+   {
+    "n": 11,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,4 m",
+    "effekt": "158 W"
+   },
+   {
+    "n": 12,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,2 m",
+    "effekt": "151 W"
+   },
+   {
+    "n": 13,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,6 m",
+    "effekt": "166 W"
+   },
+   {
+    "n": 14,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,4 m",
+    "effekt": "158 W"
+   },
+   {
+    "n": 15,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,2 m",
+    "effekt": "151 W"
+   },
+   {
+    "n": 16,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,6 m",
+    "effekt": "166 W"
+   },
+   {
+    "n": 17,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,4 m",
+    "effekt": "158 W"
+   },
+   {
+    "n": 18,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,2 m",
+    "effekt": "151 W"
+   },
+   {
+    "n": 19,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,6 m",
+    "effekt": "166 W"
+   },
+   {
+    "n": 20,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,4 m",
+    "effekt": "158 W"
+   },
+   {
+    "n": 21,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,2 m",
+    "effekt": "151 W"
+   },
+   {
+    "n": 22,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 4,6 m",
+    "effekt": "166 W"
+   }
+  ],
+  "place": "below",
+  "imgL": [
+   180,
+   84.7
+  ],
+  "imgN": [
+   180,
+   84.7
+  ],
+  "availH": 183,
+  "specRowCount": 1,
+  "cc": []
+ },
+ {
+  "rom": "Stue",
+  "spec": [
+   {
+    "type": "Folie",
+    "navn": "FlexFoil 60W B=60cm",
+    "antall": "1 stk",
+    "lengde": "7.6 m",
+    "effekt": "274 W"
+   },
+   {
+    "type": "Folie",
+    "navn": "FlexFoil 60W B=60cm",
+    "antall": "1 stk",
+    "lengde": "7.3 m",
+    "effekt": "263 W"
+   },
+   {
+    "type": "Folie",
+    "navn": "FlexFoil 60W B=60cm",
+    "antall": "1 stk",
+    "lengde": "7.0 m",
+    "effekt": "252 W"
+   },
+   {
+    "type": "Folie",
+    "navn": "FlexFoil 60W B=60cm",
+    "antall": "1 stk",
+    "lengde": "6.7 m",
+    "effekt": "241 W"
+   },
+   {
+    "type": "Folie",
+    "navn": "FlexFoil 60W B=60cm",
+    "antall": "1 stk",
+    "lengde": "6.4 m",
+    "effekt": "230 W"
+   },
+   {
+    "type": "Folie",
+    "navn": "FlexFoil 60W B=60cm",
+    "antall": "1 stk",
+    "lengde": "6.1 m",
+    "effekt": "220 W"
+   }
+  ],
+  "leg": [
+   {
+    "n": 1,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 7,6 m",
+    "effekt": "274 W"
+   },
+   {
+    "n": 2,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 7,3 m",
+    "effekt": "263 W"
+   },
+   {
+    "n": 3,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 7,0 m",
+    "effekt": "252 W"
+   },
+   {
+    "n": 4,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 6,7 m",
+    "effekt": "241 W"
+   },
+   {
+    "n": 5,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 6,4 m",
+    "effekt": "230 W"
+   },
+   {
+    "n": 6,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 6,1 m",
+    "effekt": "220 W"
+   }
+  ],
+  "place": "below",
+  "imgL": [
+   180,
+   114.5
+  ],
+  "imgN": [
+   180,
+   114.5
+  ],
+  "availH": 183,
+  "specRowCount": 1,
+  "cc": []
+ },
+ {
+  "rom": "Bad",
+  "spec": [
+   {
+    "type": "Kabel",
+    "navn": "TestKabel 10T 400W 40m",
+    "antall": "1 stk",
+    "lengde": "40.0 m",
+    "effekt": "400 W"
+   }
+  ],
+  "leg": [
+   {
+    "n": 1,
+    "navn": "TestKabel 10T 400W 40m",
+    "maal": "40,0 m",
+    "effekt": "400 W"
+   }
+  ],
+  "place": "below",
+  "imgL": [
+   180,
+   165
+  ],
+  "imgN": [
+   180,
+   165
+  ],
+  "availH": 178,
+  "specRowCount": 1,
+  "cc": [
+   7.5
+  ]
+ },
+ {
+  "rom": "Gang",
+  "spec": [
+   {
+    "type": "Kabel",
+    "navn": "TestKabel 10T 600W 60m",
+    "antall": "1 stk",
+    "lengde": "60.0 m",
+    "effekt": "600 W"
+   },
+   {
+    "type": "Kabel",
+    "navn": "TestKabel 10T 400W 40m",
+    "antall": "1 stk",
+    "lengde": "40.0 m",
+    "effekt": "400 W"
+   }
+  ],
+  "leg": [
+   {
+    "n": 1,
+    "navn": "TestKabel 10T 600W 60m",
+    "maal": "60,0 m",
+    "effekt": "600 W"
+   },
+   {
+    "n": 2,
+    "navn": "TestKabel 10T 400W 40m",
+    "maal": "40,0 m",
+    "effekt": "400 W"
+   }
+  ],
+  "place": "below",
+  "imgL": [
+   180,
+   154.3
+  ],
+  "imgN": [
+   180,
+   154.3
+  ],
+  "availH": 173,
+  "specRowCount": 2,
+  "cc": [
+   10
+  ]
+ },
+ {
+  "rom": "Kontor",
+  "spec": [
+   {
+    "type": "Folie",
+    "navn": "FlexFoil 60W B=30cm",
+    "antall": "24 stk",
+    "lengde": "3.6 m",
+    "effekt": "1555 W"
+   }
+  ],
+  "leg": [
+   {
+    "n": 1,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 2,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 3,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 4,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 5,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 6,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 7,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 8,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 9,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 10,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 11,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 12,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 13,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 14,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 15,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 16,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 17,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 18,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 19,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 20,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 21,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 22,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 23,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   },
+   {
+    "n": 24,
+    "navn": "FlexFoil 60W B=30cm",
+    "maal": "0,29 × 3,6 m",
+    "effekt": "65 W"
+   }
+  ],
+  "place": "below",
+  "imgL": [
+   180,
+   116.7
+  ],
+  "imgN": [
+   180,
+   116.7
+  ],
+  "availH": 183,
+  "specRowCount": 1,
+  "cc": []
+ },
+ {
+  "rom": "Sal",
+  "spec": [
+   {
+    "type": "Folie",
+    "navn": "FlexFoil 60W B=60cm",
+    "antall": "20 stk",
+    "lengde": "11.6 m",
+    "effekt": "8352 W"
+   }
+  ],
+  "leg": [
+   {
+    "n": 1,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 2,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 3,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 4,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 5,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 6,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 7,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 8,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 9,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 10,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 11,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 12,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 13,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 14,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 15,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 16,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 17,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 18,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 19,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   },
+   {
+    "n": 20,
+    "navn": "FlexFoil 60W B=60cm",
+    "maal": "0,59 × 11,6 m",
+    "effekt": "418 W"
+   }
+  ],
+  "place": "page",
+  "imgL": [
+   180,
+   168.8
+  ],
+  "imgN": [
+   180,
+   168.8
+  ],
+  "availH": 183,
+  "specRowCount": 1,
+  "cc": []
+ }
+]
