@@ -4,6 +4,14 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 210 — Tak: snitt gjennom takfoten med renneprofil, kabelløp, nedløp over og under bakken, og mål (07.11.2026, `main`, ikke pushet)
+
+- «Vis snitt» på et nedløp (eller lista «Snitt gjennom takfoten» i panelet) viser et snitt nede til høyre på tegneflaten: takflate med vinkel og hengkant, renne Ø100 med løpene (bunn 90°, mot hengkant 40°), nedløp Ø80 med én tråd eller sløyfe, avlaster bøyd 90° med strips, terreng, strekning under bakken og hvor kabelen slutter (5 cm ut / frostfritt nivå). Detalj av renneprofilen og notater til høyre. × eller Esc lukker; rennestrekk uten nedløp gir snitt på midten.
+- Mål i trappas stil: takfot over terreng, nedløp over bakken (fra takfot), under bakken, 5 cm, 0,16 m til rennesenter, utløp over terreng. Høyden brytes (bruddlinjer) — renne, rør og kabel i riktig forhold.
+- Ingen ny formel: kabelmeter fra `_takDownpipeCable` (213), løp fra `segments[].run_pos` (207). Takvinkel: flatt 0 · brukerens `pitch_deg` (USER_CONFIRMED) · (møne − gesims)/avstand til mønet · ellers skjematisk.
+- «Snitt som PDF»: én liggende A4-side, bildet tegnet på hovedlerretet og lest som JPEG. `exportPDF` ikke rørt (spm. 7).
+- Ny `_takRegressionTest210` 49/49, de 77 andre like med HEAD. Rapport i `docs/210/RAPPORT.md`, spørsmål (med T9) i `docs/210/SPØRSMÅL.md`.
+
 ## 209 — Tak: takvindu, hindringer, «finn like», startpunkt for kabel og symboler i kursens farge (07.11.2026, `main`, ikke pushet)
 
 - Nye typer i `S.tak[fid].features`: `SKYLIGHT` (v<n>) og `OBSTACLE` (h<n>) med bredde/høyde som `{value, prov}`, `prov.source = USER_DRAWN`. En hindring på et rennestrekk følger det (`gutter`, `at_m`) men deler ikke delstrekket; «Kabel må forbi» + tillegg per løp gir egen rad ⤳ i Kabelmeter.

@@ -1,0 +1,14 @@
+const fs = require('fs');
+let h = fs.readFileSync('index.html', 'utf8');
+const rep = (a, b, label) => { const i = h.indexOf(a); if (i < 0 || h.indexOf(a, i + 1) >= 0) throw new Error('ikke unik: ' + label); h = h.slice(0, i) + b + h.slice(i + a.length); };
+const blokk = fs.readFileSync('docs/210/probe/blokk.js', 'utf8');
+rep('// 204: tak-modulen. Stubbet fetch mot /roof/model?level=quick', blokk + '// 204: tak-modulen. Stubbet fetch mot /roof/model?level=quick', 'blokk');
+rep('  drawSnapDot();\n  // DEL A (Kenneth 25.08.2026)', '  drawSnapDot();\n  _takDrawSectionInset();   // 210: snittet gjennom takfoten, innfelt øverst til høyre (aldri i PDF-modus)\n  // DEL A (Kenneth 25.08.2026)', 'render');
+rep("  if (_takDraw && _takDrawMouseDown(e)) return;   // 204", "  if (_takSectionMouseDown(e)) return;   // 210: klikk i snitt-innfeltet tilhører innfeltet (× lukker)\n  if (_takDraw && _takDrawMouseDown(e)) return;   // 204", 'mousedown');
+rep("  if (_takDraw && _takDrawKey(e)) return;   // 204: Esc avbryter", "  if (_takDraw && _takDrawKey(e)) return;   // 204: Esc avbryter, Enter lukker, Backspace angrer siste punkt\n  if (_takSection && e.key === 'Escape') { e.preventDefault(); _takSectionClose(); return; }   // 210: Esc lukker snittet\n  if (false) return;   // 204: Esc avbryter", 'key');
+rep("  S.tak = {}; _takFetchState = {}; _takDraw = null;   // 204", "  S.tak = {}; _takFetchState = {}; _takDraw = null; _takSection = null; _takSectionBox = null;   // 204 · 210", 'reset');
+rep("  _takFeatSel = { fid, id: f.id };\n  renderSidebar(); render();\n  e.preventDefault && e.preventDefault();", "  _takFeatSel = { fid, id: f.id };\n  if (_takSection && _takSection.fid === fid && f.type === 'DOWNSPOUT') _takSection.on = { type: 'DOWNSPOUT', id: f.id };   // 210: åpent snitt følger nedløpet du klikker\n  renderSidebar(); render();\n  e.preventDefault && e.preventDefault();", 'pick');
+rep("  h += _takObjectsCardHtml(fid, t);   // 209", "  h += _takSectionCardHtml(fid, t, s);   // 210: snitt gjennom takfoten\n  h += _takObjectsCardHtml(fid, t);   // 209", 'card');
+rep("        ${_takDownspoutBoxHtml(fid, t, d)}\n", "        ${_takDownspoutBoxHtml(fid, t, d)}\n        <div class=\"tak-section-btn\">${_takBtn(`_takSectionShow(${fid},'DOWNSPOUT','${d.id}')`, _takSection && _takSection.fid === fid && _takSection.on.id === d.id ? 'Skjul snitt' : 'Vis snitt', !!(_takSection && _takSection.fid === fid && _takSection.on.id === d.id))}</div>\n", 'dsbtn');
+fs.writeFileSync('index.html', h);
+console.log('ok');
