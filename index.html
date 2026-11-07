@@ -82086,6 +82086,7 @@ function _takRecalc(t) {
   // 213: ikke cable_m × løp — 0,05 regnes én gang per nedløp (_takDownpipeCableFor).
   for (const d of _takFeats(t, 'DOWNSPOUT')) { _takRunsFill(d, TAK_RUNS_DEFAULT.DOWNSPOUT); const c = _takDownpipeCable(d, d.runs); d.cable_total_m = c ? c.cable_m : null; }
   for (const v of _takFeats(t, 'VALLEY_GUTTER')) { _takRunsFill(v, TAK_RUNS_DEFAULT.VALLEY_GUTTER); v.cable_total_m = v.length_m * v.runs; }
+  _takRecalcObjects(t);   // 209: hindringer på et rennestrekk følger strekket, startpunktet følger objektet sitt
 }
 /** 207: mangler `runs` (nytt objekt, eller lagret før 207) → standardverdien, merket «standard». */
 function _takRunsFill(o, def) {
@@ -82096,20 +82097,27 @@ function _takRunsFill(o, def) {
 function _takCableRows(t) {
   const rows = [];
   const G = _takFeats(t, 'GUTTER');
-  for (const g of G) for (const sg of (g.segments || [])) rows.push({ id: sg.id, kind: 'segment', of: g.id, length_m: sg.length_m, runs: sg.runs, cable_m: sg.cable_total_m });
+  for (const g of G) for (const sg of (g.segments || [])) {
+    rows.push({ id: sg.id, kind: 'segment', of: g.id, length_m: sg.length_m, runs: sg.runs, cable_m: sg.cable_total_m });
+    rows.push(..._takBypassRows(t, g, sg));   // 209: «kabel må forbi» — tillegget rett etter delstrekket det ligger på
+  }
   const order = id => { const i = G.findIndex(g => g.id === id); return i < 0 ? 1e9 : i; };
   const D = _takFeats(t, 'DOWNSPOUT').slice().sort((a, b) => order(a.gutter) - order(b.gutter) || a.at_m - b.at_m);
   // 213: lengde = nedløpets lengde per løp, tail_m = 0,05 ut av nedløpet (én gang). kabel = lengde × løp + tail.
   for (const d of D) { const c = _takDownpipeCable(d, d.runs); rows.push({ id: d.id, kind: 'DOWNSPOUT', of: d.gutter, length_m: c ? c.len_m : null, tail_m: c ? c.tail_m : 0, runs: d.runs, cable_m: d.cable_total_m }); }
   for (const v of _takFeats(t, 'VALLEY_GUTTER')) rows.push({ id: v.id, kind: 'VALLEY_GUTTER', of: null, length_m: v.length_m, runs: v.runs, cable_m: v.cable_total_m });
-  return rows;
+  // 209: startpunktet bestemmer REKKEFØLGEN — samme rader, samme tall, bare sortert. Uten start: som før.
+  const ord = _takCableOrder(t);
+  if (!ord) return rows;
+  const pos = new Map(ord.map((id, i) => [id, i]));
+  return rows.map((r, i) => ({ r, i })).sort((a, b) => (pos.has(a.r.id) ? pos.get(a.r.id) : 1e6 + a.i) - (pos.has(b.r.id) ? pos.get(b.r.id) : 1e6 + b.i)).map(x => x.r);
 }
 /** 207: kabelmeter for hele taket. `circuit` er strukturen for kurslengde-forbruk — grensen står tom. */
 function _takCableSummary(t) {
   const rows = _takCableRows(t);
   const sum = k => rows.filter(r => !k || r.kind === k).reduce((a, r) => a + (r.cable_m || 0), 0);
   const total_m = sum();
-  return { rows, total_m, gutter_m: sum('segment'), downspout_m: sum('DOWNSPOUT'), valley_m: sum('VALLEY_GUTTER'),
+  return { rows, total_m, gutter_m: sum('segment'), downspout_m: sum('DOWNSPOUT'), valley_m: sum('VALLEY_GUTTER'), bypass_m: sum('BYPASS'),
            missing: rows.filter(r => r.cable_m == null).map(r => r.id), circuit: _takCircuitUsage(total_m, TAK_CIRCUIT_LIMIT_M) };
 }
 /** Kurslengde-forbruk. Uten grense (intet produkt valgt) regnes ingenting — ingen tall blir funnet på. */
@@ -82160,8 +82168,14 @@ const TAK_PRESETS = {
   sammenhengende: { label: 'Sammenhengende løp', segRuns: 2, downRuns: 2, box: false },
   boks:           { label: 'Boks ved hvert nedløp', segRuns: 2, downRuns: 1, box: true },
 };
-/** Kursens farge. Taket har ingen kurser ennå (T8) — ett rennestrekk = ett kabelnett, med strekkets farge. */
-function _takKursColor(t, gutterId) { return TAK_FEAT_COLOR.GUTTER; }
+/** Kursens farge. Taket har ingen kurser ennå (T8) — ett rennestrekk = ett kabelnett.
+ *  209: hvert nett får sin egen farge (r1 = strekkets gamle farge, så ett strekk ser ut som før), så montøren
+ *  ser hvilke nedløp som hører sammen. Ukjent strekk (gradrenne, løs hindring) → null. */
+const TAK_KURS_PALETTE = ['#0891b2', '#c026d3', '#ea580c', '#7c3aed', '#0d9488', '#a16207'];
+function _takKursColor(t, gutterId) {
+  const i = _takFeats(t, 'GUTTER').findIndex(g => g.id === gutterId);
+  return i < 0 ? null : TAK_KURS_PALETTE[i % TAK_KURS_PALETTE.length];
+}
 /** 208: REGELEN. → { nets: [ per rennestrekk ], totals, klips, problems }. Ren funksjon; leser runs/box. */
 function _takAccessories(t) {
   const nets = [], problems = [];
@@ -82249,7 +82263,7 @@ function _takFeatFollowHeights(t, s) {
 
 // ── Mutasjoner (alle: readOnly-gate, pushUndo, ny utregning) ──
 function _takFeatMut(fid) { if (S.ui.readOnly) { _lockToast(); return null; } const t = _takOf(fid); if (t && !t.features) t.features = []; return t; }
-function _takFeatDone(t) { _takRecalc(t); renderSidebar(); render(); _scheduleAutoSave && _scheduleAutoSave(); }
+function _takFeatDone(t) { _takLikeMsg = null; _takRecalc(t); renderSidebar(); render(); _scheduleAutoSave && _scheduleAutoSave(); }
 function _takGutterEdgeMsg(t, e) {
   const s = (t.surfaces || []).find(x => x.id === e.surface);
   if (e.type === 'eave' && s && s.roof_type && s.roof_type.value === 'flat') return 'Flatt tak: bekreft at kanten har utvendig renne (klikk kanten utenfor verktøyet og velg Takfot).';
@@ -82430,12 +82444,15 @@ function _takFeatStart(fid, kind) {
   if (_geoPick) _geoPickStop();
   if (_takDraw) _takDrawStop();
   if (S.ui.drawMode) { _showToast && _showToast('Avslutt tegningen først (Esc).', 'warn'); return; }
-  hideCtx(); _takEdgeSel = null;
+  hideCtx(); _takEdgeSel = null; _takLikeMsg = null;
   _takFeat = { fid, kind, whole: _takFeat && _takFeat.kind === kind ? _takFeat.whole : true, pts: [], edgeId: null, hover: null };
   canvas.style.cursor = 'crosshair';
   const msg = { gutter: 'Klikk en takfot (grønn) · «Fra–til» i panelet for del av kanten · Esc avslutter',
                 downspout: 'Klikk på et rennestrekk for å sette et nedløp · Esc avslutter',
-                valley: 'Klikk toppen av gradrenna, så bunnen · Esc avslutter' }[kind];
+                valley: 'Klikk toppen av gradrenna, så bunnen · Esc avslutter',
+                skylight: 'Klikk på taket for å plassere et takvindu · Esc avslutter',
+                obstacle: 'Klikk på taket eller på et rennestrekk for å plassere en hindring · Esc avslutter',
+                start: 'Klikk på et nedløp (start nede i nedløpet) eller på et rennestrekk · Esc avslutter' }[kind];
   _showToast && _showToast(msg, 'info');
   renderSidebar(); render();
 }
@@ -82512,6 +82529,7 @@ function _takFeatMouseDown(e) {
     _takAddValley(F.fid, top, p);
     return true;
   }
+  if (F.kind === 'skylight' || F.kind === 'obstacle' || F.kind === 'start' || F.kind === 'like') return _takObjMouseDown(F, w, sx, sy);   // 209
   return false;
 }
 function _takFeatMouseMove(e) {
@@ -82519,6 +82537,7 @@ function _takFeatMouseMove(e) {
   const { x: sx, y: sy } = _evToCanvas(e), w = s2w(sx, sy);
   if (F.kind === 'gutter') { const h = _takHitGutterEdge(F.fid, w, sx, sy, F.edgeId); F.hover = h ? { edgeId: h.e.id, s: h.s, ok: _takEdgeTakesGutter(_takOf(F.fid), h.e) } : null; }
   else if (F.kind === 'downspout') { const h = _takHitGutter(F.fid, w, sx, sy); F.hover = h ? { gutter: h.g.id, s: h.s } : null; }
+  else if (F.kind === 'skylight' || F.kind === 'obstacle' || F.kind === 'start' || F.kind === 'like') F.hover = _takObjHover(F, w, sx, sy);   // 209
   else F.hover = { pt: _takValleySnap(F.fid, w) };
   markDirty();
 }
@@ -82533,6 +82552,7 @@ function _takFeatKey(e) {
 // ── Velge et objekt (utenfor verktøyene): nedløp > rennestrekk > gradrenne, FØR kantene ──
 function _takHitFeature(fid, sx, sy) {
   const t = _takOf(fid); if (!t) return null;
+  const o209 = _takHitObject(t, sx, sy); if (o209) return o209;   // 209: startpunkt, hindring, takvindu — de ligger oppå
   for (const d of _takFeats(t, 'DOWNSPOUT')) { const o = _takFeatScreenPt(t, d); if (o && Math.hypot(sx - o.x, sy - o.y) < 10) return d; }
   let best = null, bd = 7;
   for (const g of _takFeats(t, 'GUTTER').concat(_takFeats(t, 'VALLEY_GUTTER'))) {
@@ -82615,7 +82635,7 @@ function _takDrawFeatures(fid, t) {
     _takLabel(_takNum(v.length_m) + ' m' + (v.runs ? ' ×' + v.runs : ''), m.x + 14, m.y - 10, c, true);
   }
   for (const g of _takFeats(t, 'GUTTER')) {
-    const P = _takFeatScreenLine(t, g), c = TAK_FEAT_COLOR.GUTTER;
+    const P = _takFeatScreenLine(t, g), c = _takKursColor(t, g.id) || TAK_FEAT_COLOR.GUTTER;   // 209: r1 = samme farge som før
     if (P.length < 2) continue;
     const n = _takOutward(t, ...g.geometry.pts.filter((_, i, a) => i === 0 || i === a.length - 1).map(p => w2s(p.x, p.y)));
     if (isSel(g) || isHov(g)) { ctx.globalAlpha = 0.3; line(P, c, 16); ctx.globalAlpha = 1; }
@@ -82631,7 +82651,7 @@ function _takDrawFeatures(fid, t) {
   }
   for (const d of _takFeats(t, 'DOWNSPOUT')) {
     const o = _takFeatScreenPt(t, d); if (!o) continue;
-    const c = TAK_FEAT_COLOR.DOWNSPOUT;
+    const c = _takKursColor(t, d.gutter) || TAK_FEAT_COLOR.DOWNSPOUT;   // 209: kursens farge — nedløp på samme nett har samme farge
     if (isSel(d) || isHov(d)) { ctx.beginPath(); ctx.arc(o.x, o.y, 13, 0, Math.PI * 2); ctx.fillStyle = 'rgba(14,116,144,0.25)'; ctx.fill(); }
     ctx.beginPath(); ctx.arc(o.x, o.y, 7, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
     ctx.lineWidth = 3; ctx.strokeStyle = c; ctx.stroke();
@@ -82640,6 +82660,7 @@ function _takDrawFeatures(fid, t) {
     _takLabel(_takDownpipeLabel(d) + (d.runs ? ' ×' + d.runs : ''), o.x + o.n.x * 30, o.y + o.n.y * 30, under ? '#7c2d12' : c, true);
   }
   _takDrawAccessories(t);
+  _takDrawObjects(fid, t, isSel, isHov);   // 209: takvinduer, hindringer, startpunkt, «finn like»-felt
   // Verktøyet: forhåndsvisning.
   const F = _takFeat;
   if (F && F.fid === fid && !pdf) {
@@ -82735,7 +82756,9 @@ function _takFeaturesCardHtml(fid, t, s) {
   const anyEave = _takEdgesOf(t).some(e => e.kind === 'outline' && _takEdgeTakesGutter(t, e));
   const F = _takFeat && _takFeat.fid === fid ? _takFeat : null;
   let h = `<div class="tak-feat-card" style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px"><div style="font-weight:700">Renner og nedløp</div>`;
-  if (F) {
+  if (F && TAK_OBJ_TOOLS.includes(F.kind)) {
+    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk')}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp') : ''}${_takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne')}</div>`;   // 209: verktøyboksen står under «Takvindu og hindringer»
+  } else if (F) {
     const txt = { gutter: F.whole ? 'Klikk en takfot — hele kanten blir ett strekk.' : (F.edgeId ? 'Klikk sluttpunktet på samme kant.' : 'Klikk startpunktet på en takfot.'),
                   downspout: 'Klikk på et rennestrekk.', valley: F.pts.length ? 'Klikk bunnen av gradrenna.' : 'Klikk toppen av gradrenna.' }[F.kind];
     h += `<div class="tak-feat-mode" style="background:var(--bg2,rgba(8,145,178,0.08));border-radius:6px;padding:4px 6px;margin:3px 0">
@@ -82791,6 +82814,7 @@ function _takFeaturesCardHtml(fid, t, s) {
       <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;white-space:nowrap">${dim('Løp')}${runsSel(v)}</div><div style="font-size:11px;white-space:nowrap;text-align:right">${dim('kabel')} <b class="tak-cable-total">${km(v.cable_total_m)} m</b></div>
       ${noZ ? warn('Høyde mangler — lengden er målt i plan og blir for kort på et skrått tak.') : ''}</div>`;
   }
+  h += _takObjectsCardHtml(fid, t);   // 209: takvinduer, hindringer, startpunkt
   h += _takCableSumHtml(t);
   h += _takAccessoryHtml(t);
   return h + '</div>';
@@ -82845,13 +82869,15 @@ function _takCableSumHtml(t) {
   if (!S7.rows.length) return '';
   const dim = x => `<span style="color:var(--dim)">${x}</span>`;
   const km = v => v == null ? '—' : _takNum(v, 2);
-  const name = r => r.kind === 'segment' ? r.id : r.kind === 'DOWNSPOUT' ? '↓ ' + r.id : '◇ ' + r.id;   // smalt panel: r1.1 = delstrekk, ↓ = nedløp, ◇ = gradrenne
+  const name = r => r.kind === 'segment' ? r.id : r.kind === 'DOWNSPOUT' ? '↓ ' + r.id : r.kind === 'BYPASS' ? '⤳ ' + r.id : '◇ ' + r.id;   // smalt panel: r1.1 = delstrekk, ↓ = nedløp, ◇ = gradrenne, ⤳ = forbi hindring (209)
   const c = S7.circuit;
+  const st = _takStartOf(t), stLbl = st && _takStartLabel(t, st);   // 209: rekkefølgen starter i startpunktet
   return `<div class="tak-cable-sum" style="margin-top:6px;border-top:1px solid var(--border);padding-top:4px">
     <div style="font-weight:700">Kabelmeter</div>
+    ${stLbl ? `<div class="tak-cable-order" style="font-size:10px;color:var(--dim)">Rekkefølge fra start: <b style="color:var(--text)">${stLbl}</b>. Summen er den samme uansett start.</div>` : ''}
     <table class="tak-cable-table" style="width:100%;font-size:10px;border-collapse:collapse">
       <tr style="font-size:10px"><td>${dim('objekt')}</td><td style="text-align:right">${dim('lengde')}</td><td style="text-align:center;padding:0 4px">${dim('løp')}</td><td style="text-align:right">${dim('kabel')}</td></tr>
-      ${S7.rows.map(r => `<tr class="tak-cable-row" data-id="${r.id}"><td style="white-space:nowrap" title="${r.kind === 'segment' ? 'Delstrekk av renne ' + r.of : r.kind === 'DOWNSPOUT' ? 'Nedløp på ' + r.of + ' (lengde per løp; +0,05 = kabelen ut av nedløpet, én gang)' : 'Gradrenne'}">${name(r)}</td><td style="text-align:right;white-space:nowrap">${km(r.length_m)}${r.tail_m ? dim('+0,05') : ''}</td><td style="text-align:center;padding:0 4px">${r.runs}</td><td style="text-align:right">${km(r.cable_m)}</td></tr>`).join('')}
+      ${S7.rows.map(r => `<tr class="tak-cable-row" data-id="${r.id}"><td style="white-space:nowrap" title="${r.kind === 'segment' ? 'Delstrekk av renne ' + r.of : r.kind === 'DOWNSPOUT' ? 'Nedløp på ' + r.of + ' (lengde per løp; +0,05 = kabelen ut av nedløpet, én gang)' : r.kind === 'BYPASS' ? 'Kabel må forbi hindring ' + r.id + ' på ' + r.of + ' (tillegg per løp)' : 'Gradrenne'}">${name(r)}</td><td style="text-align:right;white-space:nowrap">${km(r.length_m)}${r.tail_m ? dim('+0,05') : ''}</td><td style="text-align:center;padding:0 4px">${r.runs}</td><td style="text-align:right">${km(r.cable_m)}</td></tr>`).join('')}
       <tr style="border-top:1px solid var(--border)"><td><b>Sum</b></td><td></td><td></td><td style="text-align:right;white-space:nowrap"><b class="tak-cable-sum-total">${_takNum(S7.total_m, 2)} m</b></td></tr>
     </table>
     ${S7.missing.length ? `<div style="color:var(--warn,#d97706);font-size:11px">⚠ Summen mangler ${S7.missing.join(', ')} (høyden er ikke kjent).</div>` : ''}
@@ -82860,6 +82886,489 @@ function _takCableSumHtml(t) {
     <div class="tak-cable-note" style="font-size:10px;color:var(--dim)">${c.note || ''}</div>
     <div class="tak-circuit" style="font-size:10px;color:var(--dim)">Kurslengde: ${c.limit_m == null ? 'grense ikke satt' : _takNum(c.limit_m) + ' m'}</div>
   </div>`;
+}
+
+// ═══ 209 · OBJEKTER PÅ TAKET — takvindu, hindring, «finn like», startpunkt for kabel, kursens farge ══════
+// Kenneth 07.11.2026 (v3 §3 steg 4). Alt ligger i S.tak[fid].features, i samme mønster som 206-objektene:
+//
+// SKYLIGHT (takvindu) = { id: 'v<n>', type: 'SKYLIGHT', geometry: { kind: 'point', pt: {x, y, z: null} },
+//   width_m: { value, prov }, height_m: { value, prov },  // i plan: bredde langs nærmeste takkant, høyde på tvers
+//   angle_deg,                                          // breddens retning i verden (fra nærmeste omrisskant)
+//   prov: { source: 'USER_DRAWN', … } }
+// OBSTACLE (generell hindring) = som SKYLIGHT, id 'h<n>', type 'OBSTACLE'. Står den på et rennestrekk:
+//   gutter: 'r<n>', at_m,                               // følger strekket som et nedløp, men DELER IKKE delstrekket
+//   bypass: { value: bool, extra_m: { value, prov } }   // «kabel må forbi» + tillegg PER LØP på delstrekket
+// CABLE_START = { id: 's1', type: 'CABLE_START', on: { type: 'DOWNSPOUT', id } | { type: 'GUTTER', id, at_m },
+//   geometry: { kind: 'point', pt }, prov }             // ett per tak. Nede i et nedløp er lovlig (Kenneth 07.11).
+//
+// SNOW_GUARD/ROOF_DRAIN står i planen (§6.3), men finnes ikke i koden — de er ikke laget her.
+// Startpunktet endrer ALDRI kabelmeter: det sorterer bare radene i _takCableRows (_takCableOrder).
+// «Kabel må forbi» er brukerens eget tillegg — en egen rad (⤳) i Kabelmeter, aldri et tall appen finner på.
+// «Finn like»: taket har ingen takflater (planes = []), så «like steder» kan bare komme fra OMRISSET:
+// speilinger og halv-rotasjon som omrisset faktisk tåler (sjekket mot omrisset, ikke antatt), mønelinja hvis
+// den er tegnet, og ett steg videre i en rad av like vinduer. Ingenting plasseres før brukeren klikker.
+const TAK_OBJ_TOOLS = ['skylight', 'obstacle', 'start', 'like'];
+const TAK_OBJ_DEFAULT = {
+  SKYLIGHT: { w: 0.78, h: 1.18, pre: 'v', lbl: 'Takvindu', note: 'standardmål 78 × 118 cm — rett til målt' },
+  OBSTACLE: { w: 0.5, h: 0.5, pre: 'h', lbl: 'Hindring', note: 'standardmål — rett til målt' },
+};
+const TAK_OBJ_COLOR = '#475569';    // løse objekter hører ikke til noen kurs
+const TAK_LIKE_COLOR = '#0f766e';
+const TAK_LIKE_TOL_CM = 25;         // omrisset må treffe seg selv innen 25 cm for at en speiling skal regnes
+const TAK_LIKE_SAME_CM = 30;        // et felt nærmere enn 30 cm et objekt som finnes = samme sted
+const TAK_MSG_NO_LIKE = 'Fant ingen like';
+var _takLikeMsg = null;             // { fid, src } — siste «Finn like» uten treff (transient, forsvinner ved neste endring)
+
+function _takObjs(t) { return _takFeats(t).filter(f => f.type === 'SKYLIGHT' || f.type === 'OBSTACLE'); }
+function _takStartOf(t) { return _takFeats(t, 'CABLE_START')[0] || null; }
+function _takStartTarget(t, s) { const f = s && s.on && _takFeat_(t, s.on.id); return f && f.type === s.on.type ? f : null; }
+function _takStartLabel(t, s) {
+  const tg = _takStartTarget(t, s); if (!tg) return null;
+  return s.on.type === 'DOWNSPOUT' ? 'bunnen av ' + tg.id : tg.id + ' ved ' + _takNum(s.on.at_m) + ' m';
+}
+function _takObjDims(o) { return { w: o.width_m && o.width_m.value, h: o.height_m && o.height_m.value }; }
+function _takOutline(t) { const s = t && t.surfaces && t.surfaces[0]; return _takRing(s && s.footprint && s.footprint.world); }
+/** Rektangelets fire hjørner (cm) — sentrum, bredde/høyde i meter, breddens retning i grader. */
+function _takObjCorners(c, w_m, h_m, deg) {
+  const a = (deg || 0) * Math.PI / 180, u = { x: Math.cos(a), y: Math.sin(a) }, v = { x: -u.y, y: u.x }, W = w_m * 50, H = h_m * 50;
+  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => ({ x: c.x + u.x * W * i + v.x * H * j, y: c.y + u.y * W * i + v.y * H * j }));
+}
+function _takInPoly(P, p) {
+  let ins = false;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) ins = !ins; }
+  return ins;
+}
+function _takDistToRing(P, p) {
+  let d = Infinity;
+  for (let i = 0; i < P.length; i++) d = Math.min(d, _takPolyProject([{ ...P[i], z: null }, { ...P[(i + 1) % P.length], z: null }], p).d);
+  return d;
+}
+function _takDeg180(d) { return ((d % 180) + 180) % 180; }
+/** Retningen (0–180°) til omrisskanten nærmest punktet — et takvindu ligger parallelt med takfoten. */
+function _takNearestEdgeDeg(t, p) {
+  const P = _takOutline(t); let best = null;
+  for (let i = 0; i < P.length; i++) {
+    const a = P[i], b = P[(i + 1) % P.length], d = _takPolyProject([{ ...a, z: null }, { ...b, z: null }], p).d;
+    if (!best || d < best.d) best = { d, deg: Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI };
+  }
+  return best ? _takDeg180(best.deg) : 0;
+}
+function _takGutterDeg(g) { const P = g.geometry.pts, a = P[0], b = P[P.length - 1]; return _takDeg180(Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI); }
+
+/** Kalles fra _takRecalc: hindringer på et strekk følger det, startpunktet følger objektet sitt. Idempotent. */
+function _takRecalcObjects(t) {
+  if (!t || !t.features) return;
+  for (const o of _takFeats(t, 'OBSTACLE')) {
+    if (o.gutter == null) continue;
+    const g = _takFeat_(t, o.gutter);
+    if (!g || g.type !== 'GUTTER') { delete o.gutter; delete o.at_m; delete o.bypass; continue; }   // strekket er slettet → hindringen står igjen, løs
+    o.at_m = Math.max(0, Math.min(g.length_m, o.at_m || 0));
+    const p = _takPolyAt(g.geometry.pts, o.at_m);
+    o.geometry = { kind: 'point', pt: { x: p.x, y: p.y, z: p.z ?? null } };
+  }
+  // Startpunktet hører til et nedløp eller et strekk. Er det borte, er startpunktet borte (angre henter begge).
+  const bad = _takFeats(t, 'CABLE_START').filter((s, i) => i > 0 || !_takStartTarget(t, s));
+  if (bad.length) t.features = t.features.filter(f => !bad.includes(f));
+  const s = _takStartOf(t);
+  if (s) {
+    const tg = _takStartTarget(t, s);
+    if (s.on.type === 'GUTTER') s.on.at_m = Math.max(0, Math.min(tg.length_m, s.on.at_m || 0));
+    const p = s.on.type === 'DOWNSPOUT' ? tg.geometry && tg.geometry.pt : _takPolyAt(tg.geometry.pts, s.on.at_m);
+    s.geometry = { kind: 'point', pt: p ? { x: p.x, y: p.y, z: p.z ?? null } : null };
+  }
+}
+/** «Kabel må forbi»: én rad per hindring med tillegg, på delstrekket der den står. Hvert løp må forbi. */
+function _takBypassRows(t, g, sg) {
+  const out = [], last = Math.abs(sg.to_m - g.length_m) < 1e-9;
+  for (const o of _takFeats(t, 'OBSTACLE')) {
+    if (o.gutter !== g.id || !o.bypass || !o.bypass.value) continue;
+    const ex = o.bypass.extra_m && o.bypass.extra_m.value; if (ex == null) continue;
+    if (!(o.at_m >= sg.from_m - 1e-9 && (o.at_m < sg.to_m - 1e-9 || last))) continue;   // på en grense: delstrekket etter
+    out.push({ id: o.id, kind: 'BYPASS', of: sg.id, length_m: ex, runs: sg.runs, cable_m: ex * sg.runs });
+  }
+  return out;
+}
+/** REKKEFØLGEN fra startpunktet → [id, …] for nettet startpunktet ligger på, eller null uten start.
+ *  Nedløpet startpunktet står i kommer først. Så den KORTESTE grenen fra start (montøren gjør den ferdig og
+ *  kommer tilbake), så den lengste — hver gren i avstand fra start. Ved et innløp: nedløpet før delstrekket
+ *  videre. «Forbi»-tillegg rett etter delstrekket sitt. Andre strekk og gradrenner følger etter i vanlig
+ *  rekkefølge. Ingen lengder endres. */
+function _takCableOrder(t) {
+  const st = _takStartOf(t), tg = st && _takStartTarget(t, st); if (!tg) return null;
+  const g = st.on.type === 'GUTTER' ? tg : _takFeat_(t, tg.gutter); if (!g || !g.segments) return null;
+  const s0 = st.on.type === 'GUTTER' ? st.on.at_m : tg.at_m, L = g.length_m, eps = 1e-6;
+  const items = [];
+  for (const sg of g.segments) items.push({ id: sg.id, lo: sg.from_m, hi: sg.to_m, rank: 1 });
+  for (const d of _takFeats(t, 'DOWNSPOUT')) if (d.gutter === g.id && d !== tg) items.push({ id: d.id, lo: d.at_m, hi: d.at_m, rank: 0 });
+  const here = [], left = [], right = [];
+  for (const it of items) {
+    if ((it.lo < s0 - eps && it.hi > s0 + eps) || (Math.abs(it.lo - s0) < eps && Math.abs(it.hi - s0) < eps)) here.push({ ...it, d: 0 });
+    else if (it.hi <= s0 + eps) left.push({ ...it, d: s0 - it.hi });
+    else right.push({ ...it, d: it.lo - s0 });
+  }
+  const by = (a, b) => a.d - b.d || a.rank - b.rank;
+  const first = s0 <= L - s0 ? [left, right] : [right, left];   // kortest gren først; likt → mot strekkets start
+  const ids = [...(st.on.type === 'DOWNSPOUT' ? [tg.id] : []), ...[...here.sort((a, b) => a.rank - b.rank), ...first[0].sort(by), ...first[1].sort(by)].map(it => it.id)];
+  // «Kabel må forbi»-tillegget står alltid rett etter delstrekket det ligger på.
+  return ids.flatMap(id => { const sg = g.segments.find(s => s.id === id); return sg ? [id, ..._takBypassRows(t, g, sg).map(r => r.id)] : [id]; });
+}
+
+// ── Mutasjoner (readOnly-gate via _takFeatMut, pushUndo, ny utregning) ──
+/** Takvindu ('SKYLIGHT') eller hindring ('OBSTACLE') i et verdenspunkt. opts: { gutter, at_m } (hindring på et
+ *  strekk), { w, h, dimsProv, angle_deg, note } (kopi fra «Finn like»). */
+function _takAddObject(fid, type, pt, opts) {
+  const t = _takFeatMut(fid); if (!t) return null;
+  const D = TAK_OBJ_DEFAULT[type]; if (!D || !pt) return null;
+  opts = opts || {};
+  let c = { x: pt.x, y: pt.y }, gutter = null, at_m = null, deg = opts.angle_deg;
+  if (type === 'OBSTACLE' && opts.gutter) {
+    const g = _takFeat_(t, opts.gutter);
+    if (g && g.type === 'GUTTER') { gutter = g.id; at_m = Math.max(0, Math.min(g.length_m, opts.at_m || 0)); const p = _takPolyAt(g.geometry.pts, at_m); c = { x: p.x, y: p.y }; if (deg == null) deg = _takGutterDeg(g); }
+  }
+  const P = _takOutline(t);
+  if (!gutter && P.length >= 3 && !_takInPoly(P, c)) { _showToast && _showToast(D.lbl + ' må stå på taket — klikk innenfor omrisset' + (type === 'OBSTACLE' ? ' eller på et rennestrekk.' : '.'), 'warn'); return null; }
+  if (deg == null) deg = _takNearestEdgeDeg(t, c);
+  const est = { source: 'ESTIMATE', confidence: 0.3, note: D.note };
+  pushUndo();
+  const o = { id: _takNextId(t, D.pre), type, geometry: { kind: 'point', pt: { x: c.x, y: c.y, z: null } },
+    width_m: { value: opts.w ?? D.w, prov: opts.dimsProv ? { ...opts.dimsProv.w } : { ...est } },
+    height_m: { value: opts.h ?? D.h, prov: opts.dimsProv ? { ...opts.dimsProv.h } : { ...est } },
+    angle_deg: Math.round(_takDeg180(deg) * 100) / 100,
+    prov: { source: 'USER_DRAWN', confidence: 1, note: opts.note || (gutter ? 'klikket på rennestrekket' : 'klikket på taket') } };
+  if (gutter) { o.gutter = gutter; o.at_m = at_m; o.bypass = { value: false, extra_m: { value: null, prov: null } }; }
+  t.features.push(o);
+  _takFeatSel = { fid, id: o.id };
+  _takFeatDone(t);
+  return o;
+}
+/** Felt på takvindu/hindring: 'w' | 'h' (meter), 'at' (meter fra strekkets start), 'bypass' (bryter), 'extra' (meter per løp). */
+function _takSetObj(fid, id, key, val) {
+  const t = _takFeatMut(fid); if (!t) { renderSidebar(); return false; }
+  const o = _takFeat_(t, id); if (!o || (o.type !== 'SKYLIGHT' && o.type !== 'OBSTACLE')) return false;
+  const UC = note => ({ source: 'USER_CONFIRMED', confidence: 1, note });
+  const bad = msg => { _showToast && _showToast(msg, 'warn'); renderSidebar(); return false; };
+  if (key === 'bypass') {
+    if (!o.gutter) return false;
+    const v = !!val; if (!!(o.bypass && o.bypass.value) === v) return false;
+    pushUndo();
+    o.bypass = { value: v, extra_m: (o.bypass && o.bypass.extra_m) || { value: null, prov: null } };
+  } else if (key === 'extra') {
+    if (!o.gutter || !o.bypass) return false;
+    const v = _takParse(val);
+    if (v == null || v < 0 || v > 20) return bad('Skriv tillegget i meter per løp, f.eks. 0,6');
+    const old = o.bypass.extra_m || {};
+    if (old.value != null && Math.abs(old.value - v) < 1e-9) return false;
+    pushUndo();
+    o.bypass.extra_m = { value: v, prov: UC(old.value != null ? 'rettet fra ' + _takNum(old.value, 2) : 'satt av bruker') };
+  } else if (key === 'at') {
+    const g = o.gutter && _takFeat_(t, o.gutter), v = _takParse(val);
+    if (!g || v == null || v < 0 || v > g.length_m + 1e-9) return bad(`Skriv en avstand fra strekkets start, 0–${_takNum(g ? g.length_m : 0)} m`);
+    if (Math.abs(o.at_m - v) < 1e-9) return false;
+    pushUndo(); o.at_m = v;
+  } else if (key === 'w' || key === 'h') {
+    const v = _takParse(val), f = key === 'w' ? 'width_m' : 'height_m';
+    if (v == null || v < 0.05 || v > 30) return bad('Skriv et mål i meter, f.eks. 0,78');
+    const old = o[f] || {};
+    if (old.value != null && Math.abs(old.value - v) < 1e-9 && old.prov && old.prov.source === 'USER_CONFIRMED') return false;
+    pushUndo();
+    o[f] = { value: v, prov: UC(old.value != null ? 'rettet fra ' + _takNum(old.value, 2) : 'satt av bruker') };
+  } else return false;
+  _takFeatDone(t);
+  return true;
+}
+/** Startpunktet: { type: 'DOWNSPOUT', id } (nede i nedløpet) | { type: 'GUTTER', id, at_m }. Ett per tak — erstatter. */
+function _takSetStart(fid, on) {
+  const t = _takFeatMut(fid); if (!t || !on) { renderSidebar(); return false; }
+  const tg = _takFeat_(t, on.id); if (!tg || tg.type !== on.type || (on.type !== 'DOWNSPOUT' && on.type !== 'GUTTER')) return false;
+  const at = on.type === 'GUTTER' ? Math.max(0, Math.min(tg.length_m, +on.at_m || 0)) : null;
+  const cur = _takStartOf(t);
+  if (cur && cur.on.type === on.type && cur.on.id === on.id && (on.type === 'DOWNSPOUT' || Math.abs(cur.on.at_m - at) < 1e-9)) return false;
+  pushUndo();
+  t.features = t.features.filter(f => f.type !== 'CABLE_START');
+  t.features.push({ id: 's1', type: 'CABLE_START', on: on.type === 'GUTTER' ? { type: 'GUTTER', id: tg.id, at_m: at } : { type: 'DOWNSPOUT', id: tg.id },
+    geometry: { kind: 'point', pt: null }, prov: { source: 'USER_DRAWN', confidence: 1, note: on.type === 'DOWNSPOUT' ? 'nede i nedløpet' : 'på rennestrekket' } });
+  _takFeatSel = { fid, id: 's1' };
+  _takFeatDone(t);
+  return true;
+}
+
+// ── «Finn like» ──
+function _takAreaCentroid(P) {
+  let A = 0, cx = 0, cy = 0;
+  for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], k = a.x * b.y - b.x * a.y; A += k; cx += (a.x + b.x) * k; cy += (a.y + b.y) * k; }
+  if (Math.abs(A) < 1e-9) return { x: P.reduce((s, p) => s + p.x, 0) / P.length, y: P.reduce((s, p) => s + p.y, 0) / P.length };
+  return { x: cx / (3 * A), y: cy / (3 * A) };
+}
+function _takInRect(c, w_m, h_m, deg, p) {
+  const a = (deg || 0) * Math.PI / 180, dx = p.x - c.x, dy = p.y - c.y;
+  return Math.abs(dx * Math.cos(a) + dy * Math.sin(a)) <= w_m * 50 + 1e-6 && Math.abs(-dx * Math.sin(a) + dy * Math.cos(a)) <= h_m * 50 + 1e-6;
+}
+function _takRectsOverlap(A, B) {
+  const pa = [A.c, ..._takObjCorners(A.c, A.w, A.h, A.deg)], pb = [B.c, ..._takObjCorners(B.c, B.w, B.h, B.deg)];
+  return pa.some(p => _takInRect(B.c, B.w, B.h, B.deg, p)) || pb.some(p => _takInRect(A.c, A.w, A.h, A.deg, p));
+}
+/** Felt med samme form som kilden: speilinger/halv-rotasjon omrisset tåler, mønelinja, neste i en rad.
+ *  → [{ pt, angle_deg, how }]. Ren funksjon. */
+function _takLikeCandidates(t, src) {
+  const P = _takOutline(t);
+  if (P.length < 3 || !src || !src.geometry || !src.geometry.pt || src.gutter) return [];
+  const { w, h } = _takObjDims(src), c0 = src.geometry.pt, a0 = src.angle_deg || 0;
+  if (!(w > 0) || !(h > 0)) return [];
+  const C = _takAreaCentroid(P);
+  const refl = (p0, deg, how) => {
+    const r = deg * Math.PI / 180, ux = Math.cos(r), uy = Math.sin(r);
+    return { how, f: p => { const dx = p.x - p0.x, dy = p.y - p0.y, k = dx * ux + dy * uy; return { x: p0.x + 2 * k * ux - dx, y: p0.y + 2 * k * uy - dy }; }, ang: a => 2 * deg - a };
+  };
+  const dirs = [];
+  for (let i = 0; i < P.length; i++) {
+    const a = P[i], b = P[(i + 1) % P.length], d = _takDeg180(Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI);
+    for (const x of [d, _takDeg180(d + 90)]) if (!dirs.some(y => Math.abs(y - x) < 0.5 || Math.abs(y - x) > 179.5)) dirs.push(x);
+  }
+  const maps = dirs.map(d => refl(C, d, 'speilet'));
+  for (const e of (t.edges || [])) if (e.kind === 'line' && e.type === 'ridge') maps.push(refl(e.a, Math.atan2(e.b.y - e.a.y, e.b.x - e.a.x) * 180 / Math.PI, 'speilet om mønet'));
+  maps.push({ how: 'dreid 180°', f: p => ({ x: 2 * C.x - p.x, y: 2 * C.y - p.y }), ang: a => a + 180 });
+  const sym = m => { const Q = P.map(m.f); return Q.every(q => _takDistToRing(P, q) < TAK_LIKE_TOL_CM) && P.every(p => _takDistToRing(Q, p) < TAK_LIKE_TOL_CM); };
+  const ex = _takObjs(t).filter(o => o.geometry && o.geometry.pt).map(o => { const d = _takObjDims(o); return { c: o.geometry.pt, w: d.w || 0.1, h: d.h || 0.1, deg: o.angle_deg || 0 }; });
+  const out = [];
+  const add = (pt, ang, how) => {
+    ang = _takDeg180(ang);
+    if (!_takObjCorners(pt, w, h, ang).every(q => _takInPoly(P, q))) return;                 // må ligge helt på taket
+    if (ex.some(o => Math.hypot(o.c.x - pt.x, o.c.y - pt.y) < TAK_LIKE_SAME_CM)) return;      // står der allerede (også kilden)
+    if (ex.some(o => _takRectsOverlap(o, { c: pt, w, h, deg: ang }))) return;                // ville overlappe noe som finnes
+    if (out.some(o => Math.hypot(o.pt.x - pt.x, o.pt.y - pt.y) < TAK_LIKE_SAME_CM)) return;
+    out.push({ pt: { x: pt.x, y: pt.y }, angle_deg: Math.round(ang * 100) / 100, how });
+  };
+  for (const m of maps) if (sym(m)) add(m.f(c0), m.ang(a0), m.how);
+  // En rad: et annet objekt av samme type, mål og retning → ett steg videre hver vei.
+  for (const o of _takObjs(t)) {
+    if (o === src || o.type !== src.type || o.gutter || !o.geometry || !o.geometry.pt) continue;
+    const d = _takObjDims(o), da = Math.abs(_takDeg180((o.angle_deg || 0) - a0));
+    if (Math.abs(d.w - w) > 0.05 || Math.abs(d.h - h) > 0.05 || Math.min(da, 180 - da) > 2) continue;
+    const dx = o.geometry.pt.x - c0.x, dy = o.geometry.pt.y - c0.y;
+    add({ x: o.geometry.pt.x + dx, y: o.geometry.pt.y + dy }, a0, 'neste i raden');
+    add({ x: c0.x - dx, y: c0.y - dy }, a0, 'neste i raden');
+  }
+  return out;
+}
+/** Knappen «Finn like»: markerer feltene (verktøymodus 'like'), eller sier «Fant ingen like». Plasserer ingenting. */
+function _takFindLike(fid, srcId) {
+  if (S.ui.readOnly) { _lockToast(); return null; }
+  const t = _takOf(fid), src = t && _takFeat_(t, srcId);
+  if (!src || (src.type !== 'SKYLIGHT' && src.type !== 'OBSTACLE')) return null;
+  if (_geoPick) _geoPickStop();
+  if (_takDraw) _takDrawStop();
+  hideCtx(); _takEdgeSel = null;
+  const cands = _takLikeCandidates(t, src);
+  if (!cands.length) {
+    _takFeat = null; canvas.style.cursor = 'default';
+    _takLikeMsg = { fid, src: srcId };
+    _showToast && _showToast(TAK_MSG_NO_LIKE + ' — taket har ingen takflater, så appen leter bare i omrisset.', 'info');
+    renderSidebar(); render();
+    return cands;
+  }
+  _takLikeMsg = null;
+  _takFeat = { fid, kind: 'like', src: srcId, cands, whole: true, pts: [], edgeId: null, hover: null };
+  canvas.style.cursor = 'pointer';
+  _showToast && _showToast(`${cands.length} ${cands.length === 1 ? 'likt sted' : 'like steder'} markert — klikk et stiplet felt for å plassere`, 'info');
+  renderSidebar(); render();
+  return cands;
+}
+/** Plasser kandidat nr. i (samme handling som et klikk på feltet). */
+function _takLikePlace(i) {
+  const F = _takFeat; if (!F || F.kind !== 'like') return null;
+  const t = _takOf(F.fid), src = t && _takFeat_(t, F.src), c = F.cands[i];
+  if (!src) { _takFeatStop(); return null; }
+  if (!c) return null;
+  const d = _takObjDims(src);
+  const o = _takAddObject(F.fid, src.type, c.pt, { w: d.w, h: d.h, angle_deg: c.angle_deg,
+    dimsProv: { w: src.width_m.prov || {}, h: src.height_m.prov || {} }, note: `«Finn like»: ${c.how} av ${src.id}` });
+  if (!o) return null;
+  if (_takFeat === F) { F.cands.splice(i, 1); F.hover = null; if (!F.cands.length) _takFeatStop(); else { renderSidebar(); render(); } }
+  return o;
+}
+
+// ── Skjermgeometri, treff og verktøy ──
+/** Hjørnene på skjermen. En hindring på et strekk tegnes der renna tegnes (litt utenfor takfoten). */
+function _takObjScreen(t, o) {
+  const d = _takObjDims(o);
+  let P = _takObjCorners(o.geometry.pt, d.w || 0.1, d.h || 0.1, o.angle_deg).map(p => w2s(p.x, p.y));
+  const g = o.gutter && _takFeat_(t, o.gutter);
+  if (g) {
+    const G = g.geometry.pts, n = _takOutward(t, w2s(G[0].x, G[0].y), w2s(G[G.length - 1].x, G[G.length - 1].y));
+    P = P.map(p => ({ x: p.x + n.x * TAK_GUTTER_OFF_PX, y: p.y + n.y * TAK_GUTTER_OFF_PX }));
+  }
+  // Aldri mindre enn 12 px — et lite objekt skal kunne sees og klikkes.
+  const c = { x: P.reduce((s, p) => s + p.x, 0) / 4, y: P.reduce((s, p) => s + p.y, 0) / 4 };
+  const sz = Math.max(Math.hypot(P[1].x - P[0].x, P[1].y - P[0].y), Math.hypot(P[2].x - P[1].x, P[2].y - P[1].y));
+  if (sz < 12) { const k = 12 / Math.max(sz, 1e-6); P = P.map(p => ({ x: c.x + (p.x - c.x) * k, y: c.y + (p.y - c.y) * k })); }
+  return P;
+}
+/** Startpunktets symbol: på strekket der det står, eller ved siden av nedløpets symbol. */
+function _takStartScreen(t, s) {
+  const tg = _takStartTarget(t, s); if (!tg) return null;
+  const g = s.on.type === 'GUTTER' ? tg : _takFeat_(t, tg.gutter); if (!g) return null;
+  const G = g.geometry.pts, a = w2s(G[0].x, G[0].y), b = w2s(G[G.length - 1].x, G[G.length - 1].y);
+  const n = _takOutward(t, a, b), L = Math.hypot(b.x - a.x, b.y - a.y) || 1, u = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+  if (s.on.type === 'DOWNSPOUT') { const o = _takFeatScreenPt(t, tg); return o ? { x: o.x + u.x * 17, y: o.y + u.y * 17, n, u } : null; }
+  const p = _takPolyAt(G, s.on.at_m), q = w2s(p.x, p.y);
+  return { x: q.x + n.x * TAK_GUTTER_OFF_PX, y: q.y + n.y * TAK_GUTTER_OFF_PX, n, u };
+}
+/** Treff utenfor verktøyene: startpunkt > hindring/takvindu (øverste først). */
+function _takHitObject(t, sx, sy) {
+  const st = _takStartOf(t);
+  if (st) { const q = _takStartScreen(t, st); if (q && Math.hypot(sx - q.x, sy - q.y) < 9) return st; }
+  const O = _takObjs(t);
+  for (let i = O.length - 1; i >= 0; i--) { const o = O[i]; if (o.geometry && o.geometry.pt && _takInPoly(_takObjScreen(t, o), { x: sx, y: sy })) return o; }
+  return null;
+}
+function _takLikeHit(F, sx, sy) {
+  const t = _takOf(F.fid), src = t && _takFeat_(t, F.src); if (!src) return -1;
+  const d = _takObjDims(src);
+  return F.cands.findIndex(c => _takInPoly(_takObjCorners(c.pt, d.w, d.h, c.angle_deg).map(p => w2s(p.x, p.y)), { x: sx, y: sy }));
+}
+function _takObjHover(F, w, sx, sy) {
+  const t = _takOf(F.fid);
+  if (F.kind === 'like') { const i = _takLikeHit(F, sx, sy); return i < 0 ? null : { cand: i }; }
+  if (F.kind === 'start') {
+    for (const d of _takFeats(t, 'DOWNSPOUT')) { const o = _takFeatScreenPt(t, d); if (o && Math.hypot(sx - o.x, sy - o.y) < 12) return { on: { type: 'DOWNSPOUT', id: d.id } }; }
+    const h = _takHitGutter(F.fid, w, sx, sy);
+    return h ? { on: { type: 'GUTTER', id: h.g.id, at_m: h.s } } : null;
+  }
+  if (F.kind === 'obstacle') { const h = _takHitGutter(F.fid, w, sx, sy); if (h) return { gutter: h.g.id, s: h.s, pt: _takPolyAt(h.g.geometry.pts, h.s) }; }
+  return { pt: { x: Math.round(w.x), y: Math.round(w.y) } };   // hel cm — skjermklikket er ikke mer nøyaktig enn det
+}
+function _takObjMouseDown(F, w, sx, sy) {
+  if (F.kind === 'like') {
+    const i = _takLikeHit(F, sx, sy);
+    if (i < 0) { _showToast && _showToast('Klikk et stiplet felt for å plassere — eller Ferdig.', 'info'); return true; }
+    _takLikePlace(i);
+    return true;
+  }
+  const h = _takObjHover(F, w, sx, sy);
+  if (F.kind === 'start') {
+    if (!h) { _showToast && _showToast('Startpunktet settes på et nedløp eller et rennestrekk.', 'info'); return true; }
+    _takSetStart(F.fid, h.on);
+    if (_takFeat === F) _takFeatStop();   // ett startpunkt — verktøyet er ferdig
+    return true;
+  }
+  _takAddObject(F.fid, F.kind === 'skylight' ? 'SKYLIGHT' : 'OBSTACLE', h.pt, h.gutter ? { gutter: h.gutter, at_m: h.s } : {});
+  return true;
+}
+
+// ── Tegning ──
+function _takDrawObjects(fid, t, isSel, isHov) {
+  const pdf = !!(S.ui && S.ui._pdfMode);
+  const poly = (P, close) => { ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); if (close) ctx.closePath(); };
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const rect = (P, fill, stroke, kind, lw) => {
+    poly(P, true); ctx.fillStyle = fill; ctx.fill(); ctx.lineWidth = lw || 2; ctx.strokeStyle = stroke; ctx.stroke();
+    ctx.beginPath();
+    if (kind === 'SKYLIGHT') { const a = mid(P[0], P[1]), b = mid(P[2], P[3]), c = mid(P[1], P[2]), d = mid(P[3], P[0]); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.moveTo(c.x, c.y); ctx.lineTo(d.x, d.y); }
+    else { ctx.moveTo(P[0].x, P[0].y); ctx.lineTo(P[2].x, P[2].y); ctx.moveTo(P[1].x, P[1].y); ctx.lineTo(P[3].x, P[3].y); }
+    ctx.lineWidth = 1; ctx.stroke();
+  };
+  ctx.save(); ctx.setLineDash([]); ctx.lineCap = 'round';
+  for (const o of _takObjs(t)) {
+    if (!o.geometry || !o.geometry.pt) continue;
+    const P = _takObjScreen(t, o), col = (o.gutter && _takKursColor(t, o.gutter)) || TAK_OBJ_COLOR;
+    if (isSel(o) || isHov(o)) { poly(P, true); ctx.lineWidth = 10; ctx.strokeStyle = col; ctx.globalAlpha = 0.25; ctx.stroke(); ctx.globalAlpha = 1; }
+    rect(P, o.type === 'SKYLIGHT' ? 'rgba(186,230,253,0.75)' : 'rgba(148,163,184,0.45)', col, o.type);
+    const c = { x: P.reduce((s, p) => s + p.x, 0) / 4, y: P.reduce((s, p) => s + p.y, 0) / 4 };
+    const by = o.bypass && o.bypass.value, ex = by && o.bypass.extra_m && o.bypass.extra_m.value;
+    let txt = o.id;
+    if (o.gutter && by) { const sg = (_takFeat_(t, o.gutter).segments || []).find(s => o.at_m >= s.from_m - 1e-9 && o.at_m <= s.to_m + 1e-9); txt += ' · forbi ' + (ex != null ? '+' + _takNum(ex, 2) + (sg ? ' ×' + sg.runs : '') : '?'); }
+    const g = o.gutter && _takFeat_(t, o.gutter);
+    if (g) { const G = g.geometry.pts, n = _takOutward(t, w2s(G[0].x, G[0].y), w2s(G[G.length - 1].x, G[G.length - 1].y)); _takLabel(txt, c.x - n.x * 22, c.y - n.y * 22, col, !!by); }
+    else _takLabel(txt, c.x, Math.min(...P.map(p => p.y)) - 9, col, false);
+  }
+  // Startpunktet — i kursens farge, en trekant som peker langs kabelen.
+  const st = _takStartOf(t), sq = st && _takStartScreen(t, st);
+  if (sq) {
+    const tg = _takStartTarget(t, st), col = _takKursColor(t, st.on.type === 'GUTTER' ? tg.id : tg.gutter) || TAK_OBJ_COLOR;
+    if (isSel(st) || isHov(st)) { ctx.beginPath(); ctx.arc(sq.x, sq.y, 13, 0, Math.PI * 2); ctx.fillStyle = col; ctx.globalAlpha = 0.25; ctx.fill(); ctx.globalAlpha = 1; }
+    ctx.beginPath(); ctx.arc(sq.x, sq.y, 7.5, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sq.x - 2.5, sq.y - 4); ctx.lineTo(sq.x + 4, sq.y); ctx.lineTo(sq.x - 2.5, sq.y + 4); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill();
+    _takLabel('start', sq.x - sq.n.x * 17, sq.y - sq.n.y * 17, col, true);
+  }
+  // Verktøyene: «Finn like»-feltene og forhåndsvisningen.
+  const F = _takFeat;
+  if (F && F.fid === fid && !pdf) {
+    if (F.kind === 'like') {
+      const src = _takFeat_(t, F.src), d = src && _takObjDims(src);
+      if (d) F.cands.forEach((c, i) => {
+        const P = _takObjCorners(c.pt, d.w, d.h, c.angle_deg).map(p => w2s(p.x, p.y)), hov = F.hover && F.hover.cand === i;
+        ctx.setLineDash([5, 4]); poly(P, true); ctx.fillStyle = hov ? 'rgba(15,118,110,0.30)' : 'rgba(15,118,110,0.10)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = TAK_LIKE_COLOR; ctx.stroke(); ctx.setLineDash([]);
+        const m = { x: P.reduce((s, p) => s + p.x, 0) / 4, y: P.reduce((s, p) => s + p.y, 0) / 4 };
+        _takLabel('+', m.x, m.y, TAK_LIKE_COLOR, true);
+      });
+    } else if ((F.kind === 'skylight' || F.kind === 'obstacle') && F.hover && F.hover.pt) {
+      const D = TAK_OBJ_DEFAULT[F.kind === 'skylight' ? 'SKYLIGHT' : 'OBSTACLE'];
+      const g = F.hover.gutter && _takFeat_(t, F.hover.gutter);
+      const deg = g ? _takGutterDeg(g) : _takNearestEdgeDeg(t, F.hover.pt);
+      const fake = { geometry: { pt: F.hover.pt }, width_m: { value: D.w }, height_m: { value: D.h }, angle_deg: deg, gutter: g ? g.id : null };
+      const P = _takObjScreen(t, fake);
+      ctx.globalAlpha = 0.55; rect(P, 'rgba(186,230,253,0.5)', g ? (_takKursColor(t, g.id) || TAK_OBJ_COLOR) : TAK_OBJ_COLOR, F.kind === 'skylight' ? 'SKYLIGHT' : 'OBSTACLE'); ctx.globalAlpha = 1;
+      if (g) _takLabel(`på ${g.id} · ${_takNum(F.hover.s)} m — deler ikke delstrekket`, P[0].x, P[0].y - 14, _takKursColor(t, g.id) || TAK_OBJ_COLOR, false);
+    } else if (F.kind === 'start' && F.hover && F.hover.on) {
+      const fake = { on: F.hover.on }, q = _takStartScreen(t, fake);
+      if (q) { ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.arc(q.x, q.y, 8, 0, Math.PI * 2); ctx.fillStyle = TAK_OBJ_COLOR; ctx.fill(); ctx.globalAlpha = 1;
+        _takLabel(F.hover.on.type === 'DOWNSPOUT' ? 'start nede i ' + F.hover.on.id : 'start på ' + F.hover.on.id + ' · ' + _takNum(F.hover.on.at_m) + ' m', q.x - q.n.x * 18, q.y - q.n.y * 18, TAK_OBJ_COLOR, false); }
+    }
+  }
+  ctx.restore();
+}
+
+// ── Panelet ──
+function _takObjectsCardHtml(fid, t) {
+  const dim = x => `<span style="color:var(--dim)">${x}</span>`;
+  const warn = x => `<div style="color:var(--warn,#d97706);font-size:11px;margin-top:2px">⚠ ${x}</div>`;
+  const inp = (val, on, w, d) => `<input type="text" inputmode="decimal" value="${_takNum(val, d == null ? 2 : d)}" placeholder="—" onchange="${on}" onkeydown="if(event.key==='Enter')this.blur()" style="width:${w || 44}px;padding:1px 4px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">`;
+  const x = id => `<button class="tak-feat-del" title="Slett" onclick="_takDeleteFeature(${fid},'${id}')" style="border:0;background:transparent;color:var(--dim);cursor:pointer;padding:0 2px;font-size:12px">✕</button>`;
+  const sel = f => _takFeatSel && _takFeatSel.fid === fid && _takFeatSel.id === f.id;
+  const fr = (lbl, field, cls) => `<div class="${cls || ''}" style="display:flex;align-items:center;justify-content:space-between;gap:3px;white-space:nowrap"><span style="color:var(--dim)">${lbl}</span><span>${field} m</span></div>`;
+  const O = _takObjs(t), st = _takStartOf(t), G = _takFeats(t, 'GUTTER');
+  const F = _takFeat && _takFeat.fid === fid && TAK_OBJ_TOOLS.includes(_takFeat.kind) ? _takFeat : null;
+  let h = `<div class="tak-obj-card" style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px"><div style="font-weight:700">Takvindu og hindringer</div>`;
+  if (F) {
+    const src = F.kind === 'like' && _takFeat_(t, F.src);
+    const txt = { skylight: 'Klikk på taket. Takvinduet legges parallelt med nærmeste takkant.',
+                  obstacle: 'Klikk på taket — eller på et rennestrekk (hindringen deler ikke delstrekket).',
+                  start: 'Klikk på et nedløp (start nede i nedløpet) eller på et rennestrekk.',
+                  like: F.kind !== 'like' ? '' : `${F.cands.length} ${F.cands.length === 1 ? 'sted' : 'steder'} med samme form som ${src ? src.id : ''} er markert (${[...new Set(F.cands.map(c => c.how))].join(', ')}). Klikk et stiplet felt for å plassere.` }[F.kind];
+    h += `<div class="tak-obj-mode" data-kind="${F.kind}" style="background:var(--bg2,rgba(71,85,105,0.08));border-radius:6px;padding:4px 6px;margin:3px 0">
+      <div style="font-weight:600">${{ skylight: 'Plasserer takvindu', obstacle: 'Plasserer hindring', start: 'Setter startpunkt', like: 'Finn like' }[F.kind]}</div><div>${txt}</div>
+      <div>${_takBtn('_takFeatStop()', 'Ferdig', true)}</div></div>`;
+  } else {
+    h += `<div>${_takBtn(`_takFeatStart(${fid},'skylight')`, '+ Takvindu')}${_takBtn(`_takFeatStart(${fid},'obstacle')`, '+ Hindring')}${G.length ? _takBtn(`_takFeatStart(${fid},'start')`, st ? 'Flytt startpunkt' : 'Startpunkt for kabel', !st) : ''}</div>`;
+  }
+  if (_takLikeMsg && _takLikeMsg.fid === fid) h += `<div class="tak-like-msg" style="font-size:11px;margin:2px 0"><b>${TAK_MSG_NO_LIKE}</b> ${dim('for ' + _takLikeMsg.src + '. Taket har ingen takflater, så appen leter bare etter speilinger av omrisset og rader av like vinduer. Plasser resten selv.')}</div>`;
+  for (const o of O) {
+    const D = TAK_OBJ_DEFAULT[o.type], col = (o.gutter && _takKursColor(t, o.gutter)) || TAK_OBJ_COLOR;
+    const est = [o.width_m, o.height_m].some(m => m && m.prov && m.prov.source === 'ESTIMATE');
+    h += `<div class="tak-obj" data-id="${o.id}" data-type="${o.type}" style="margin-top:4px;padding:2px 4px;border-left:2px solid ${col};font-size:11px;${sel(o) ? 'background:rgba(71,85,105,0.12)' : ''}">
+      <div style="display:flex;justify-content:space-between;font-size:12px"><b style="color:${col}">${D.lbl} ${o.id}</b><span>${x(o.id)}</span></div>
+      ${fr('Bredde', `<span class="tak-obj-w">${inp(o.width_m && o.width_m.value, `_takSetObj(${fid},'${o.id}','w',this.value)`, 40)}</span>`)}
+      ${fr('Høyde', `<span class="tak-obj-h">${inp(o.height_m && o.height_m.value, `_takSetObj(${fid},'${o.id}','h',this.value)`, 40)}</span>`)}
+      <div style="font-size:10px;color:${est ? 'var(--warn,#d97706)' : 'var(--dim)'}">${est ? D.note : 'i plan: bredde langs kanten, høyde på tvers'}</div>`;
+    if (o.type === 'SKYLIGHT' && !F) h += `<div>${_takBtn(`_takFindLike(${fid},'${o.id}')`, 'Finn like')}</div>`.replace('class="snap-chip', 'class="tak-find-like snap-chip');
+    if (o.gutter) {
+      const by = !!(o.bypass && o.bypass.value), ex = by && o.bypass.extra_m ? o.bypass.extra_m.value : null;
+      const g = _takFeat_(t, o.gutter), sg = g && (g.segments || []).find(s => _takBypassRows(t, g, s).some(r => r.id === o.id)) || (g && (g.segments || []).find(s => o.at_m >= s.from_m - 1e-9 && o.at_m <= s.to_m + 1e-9));
+      h += `${fr('På ' + o.gutter + ', fra start', `<span class="tak-obj-at">${inp(o.at_m, `_takSetObj(${fid},'${o.id}','at',this.value)`, 40, 1)}</span>`)}
+        <div style="font-size:10px;color:var(--dim)">deler ikke delstrekket${sg ? ' (' + sg.id + ')' : ''}</div>
+        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="tak-bypass" ${by ? 'checked' : ''} onchange="_takSetObj(${fid},'${o.id}','bypass',this.checked)" style="margin:0"><span>Kabel må forbi</span></label>`;
+      if (by) h += fr('Tillegg per løp', `<span class="tak-bypass-extra">${inp(ex, `_takSetObj(${fid},'${o.id}','extra',this.value)`, 40)}</span>`) +
+        (ex == null ? warn('Skriv hvor mye ekstra kabel hvert løp trenger for å komme forbi.') : `<div class="tak-bypass-sum" style="font-size:10px;color:var(--dim)">× ${sg ? sg.runs : '?'} løp = <b style="color:var(--text)">${_takNum(ex * (sg ? sg.runs : 1), 2)} m</b> i Kabelmeter (⤳ ${o.id})</div>`);
+    }
+    h += '</div>';
+  }
+  if (st) {
+    const tg = _takStartTarget(t, st), col = _takKursColor(t, st.on.type === 'GUTTER' ? tg.id : tg.gutter) || TAK_OBJ_COLOR;
+    h += `<div class="tak-start" data-id="${st.id}" style="margin-top:4px;padding:2px 4px;border-left:2px solid ${col};font-size:11px;${sel(st) ? 'background:rgba(71,85,105,0.12)' : ''}">
+      <div style="display:flex;justify-content:space-between;font-size:12px"><span><b style="color:${col}">▶ Start</b> <span class="tak-start-lbl">${_takStartLabel(t, st)}</span></span>${x(st.id)}</div>
+      <div style="font-size:10px;color:var(--dim)">Første punkt i kabelrekkefølgen. Endrer ikke kabelmeterne.</div></div>`;
+  } else if (G.length && !F) h += `<div style="font-size:10px;color:var(--dim)">Ingen startpunkt — Kabelmeter listes i tegnerekkefølge.</div>`;
+  return h + '</div>';
 }
 
 // 204: tak-modulen. Stubbet fetch mot /roof/model?level=quick (ingen eksterne kall). Låser: modulen er på
@@ -83903,6 +84412,232 @@ async function _takRegressionTest208() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_takRegressionTest208: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+// 209: takvindu og hindring (klikk, mål, prov), hindring på et rennestrekk deler ikke delstrekket, «kabel må
+// forbi» som egen rad, «Finn like» (treff på symmetrisk tak, «Fant ingen like» uten), startpunkt nede i et
+// nedløp og på et strekk (rekkefølgen starter der, kabelmeter UENDRET for alle startpunkt), symboler og
+// etiketter i kursens farge, lagre/åpne, readOnly, sletting/angre, og klikk utenfor tak-modulen uberørt.
+async function _takRegressionTest209() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '209: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
+                 part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId };
+  const eq = (a, b, tol) => a != null && b != null && Math.abs(a - b) < (tol || 1e-6);
+  const orig = _takLabel;
+  let toasts = [];
+  try {
+    window._showToast = m => { toasts.push(String(m)); }; window._scheduleAutoSave = () => {}; window.confirm = () => true;
+    const bygg = (R) => {
+      _resetProjectState(); addPart('roof');
+      const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+      S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null;
+      S.tak = { [fid]: _takManual(R) };
+      _takSetRoofType(fid, 'pitched'); _takSetHeight(fid, 'eave_m', '10');
+      fitAll(); render(); renderSidebar();
+      return fid;
+    };
+    // IceFix-bygget: 25 × 10 m, renne på k1 med tre nedløp (206/208).
+    const RECT = [{ x: 0, y: 0 }, { x: 2500, y: 0 }, { x: 2500, y: 1000 }, { x: 0, y: 1000 }];
+    let fid = bygg(RECT);
+    const T = () => _takOf(fid);
+    _takAddGutter(fid, 'k1'); [2, 12.5, 23].forEach(a => _takAddDownspout(fid, 'r1', a));
+    _takFeatSel = null; fitAll(); render(); renderSidebar();
+    const cr = canvas.getBoundingClientRect();
+    const musS = (type, q) => canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: cr.left + q.x, clientY: cr.top + q.y }));
+    const klikkS = q => { musS('mousemove', q); musS('mousedown', q); musS('mouseup', q); musS('click', q); };
+    const klikk = w => klikkS(w2s(w.x, w.y));
+    const segsFør = JSON.stringify(_takFeat_(T(), 'r1').segments.map(s => [s.id, s.from_m, s.to_m]));
+    const sumFør = _takCableSummary(T()).total_m;
+    const radFør = _takCableRows(T()).map(r => r.id).join();
+
+    // ── A. Takvindu og hindring med klikk ──
+    _takFeatStart(fid, 'skylight');
+    klikk({ x: 600, y: 300 });
+    let v1 = _takFeat_(T(), 'v1');
+    check('Takvindu: klikk på taket plasserer v1 der det ble klikket', '(600, 300)', v1 && v1.type === 'SKYLIGHT' && eq(v1.geometry.pt.x, 600, 2.01) && eq(v1.geometry.pt.y, 300, 2.01), v1 && JSON.stringify(v1.geometry.pt));
+    check('Takvindu: bredde og høyde er felter med standardmål (ESTIMATE), prov.source = USER_DRAWN', '0,78 × 1,18 · USER_DRAWN',
+      v1 && v1.width_m.value === 0.78 && v1.height_m.value === 1.18 && v1.width_m.prov.source === 'ESTIMATE' && v1.prov.source === 'USER_DRAWN', v1 && JSON.stringify([v1.width_m, v1.prov]));
+    check('Takvindu: parallelt med nærmeste takkant (k1, 0°)', '0', v1 && v1.angle_deg === 0, v1 && v1.angle_deg);
+    const nF = T().features.length; toasts = [];
+    klikk({ x: -300, y: 300 });
+    check('Klikk utenfor omrisset plasserer ikke noe, og sier fra', 'uendret + melding', T().features.length === nF && toasts.some(m => /innenfor omrisset/.test(m)), toasts.join(' | '));
+    _takFeatStop();
+    _takFeatStart(fid, 'obstacle');
+    klikk({ x: 1800, y: 500 });
+    const h1 = _takFeat_(T(), 'h1');
+    check('Hindring: klikk på taket plasserer h1 (løs, 0,5 × 0,5, USER_DRAWN)', 'h1 løs', h1 && h1.type === 'OBSTACLE' && !h1.gutter && h1.width_m.value === 0.5 && h1.prov.source === 'USER_DRAWN', h1 && JSON.stringify(h1));
+    klikk({ x: 700, y: 0 });
+    let h2 = _takFeat_(T(), 'h2');
+    check('Hindring på rennestrekket: h2 på r1 ved 7,0 m', 'r1 · 7,0', h2 && h2.gutter === 'r1' && eq(h2.at_m, 7, 0.051), h2 && (h2.gutter + ' ' + h2.at_m));
+    check('Hindringen deler IKKE delstrekket (samme fire delstrekk, samme grenser)', segsFør, JSON.stringify(_takFeat_(T(), 'r1').segments.map(s => [s.id, s.from_m, s.to_m])) === segsFør, JSON.stringify(_takFeat_(T(), 'r1').segments.map(s => [s.id, s.from_m, s.to_m])));
+    check('… og kabelmeter er uendret så lenge «kabel må forbi» ikke er krysset av', _takNum(sumFør, 2), eq(_takCableSummary(T()).total_m, sumFør), _takCableSummary(T()).total_m);
+    _takFeatStop(); renderSidebar();
+    // «Kabel må forbi» + tillegg — via panelet.
+    document.querySelector('.tak-obj[data-id="h2"] .tak-bypass').click();
+    check('«Kabel må forbi» krysset av: ingen tall funnet på — panelet ber om tillegget', 'ber om lengde', _takFeat_(T(), 'h2').bypass.value === true && _takFeat_(T(), 'h2').bypass.extra_m.value == null && document.querySelector('.tak-obj[data-id="h2"]').textContent.includes('Skriv hvor mye') && eq(_takCableSummary(T()).total_m, sumFør), '');
+    const exIn = document.querySelector('.tak-obj[data-id="h2"] .tak-bypass-extra input'); exIn.value = '0,6'; exIn.dispatchEvent(new Event('change'));
+    h2 = _takFeat_(T(), 'h2');
+    const byRow = _takCableRows(T()).find(r => r.id === 'h2');
+    check('Tillegg 0,6 m per løp på r1.2 (2 løp) → egen rad ⤳ h2 = 1,20 m, summen +1,20', '1,20 / ' + _takNum(sumFør + 1.2, 2),
+      byRow && byRow.kind === 'BYPASS' && byRow.of === 'r1.2' && eq(byRow.cable_m, 1.2) && eq(_takCableSummary(T()).total_m, sumFør + 1.2) && h2.bypass.extra_m.prov.source === 'USER_CONFIRMED', byRow && JSON.stringify(byRow));
+    check('Raden står rett etter delstrekket sitt i Kabelmeter', 'r1.2,h2', _takCableRows(T()).map(r => r.id).join().includes('r1.2,h2') && document.querySelector('.tak-cable-row[data-id="h2"]'), _takCableRows(T()).map(r => r.id).join());
+    const sumMed = _takCableSummary(T()).total_m;
+    // Mål rettes i panelet.
+    const wIn = document.querySelector('.tak-obj[data-id="v1"] .tak-obj-w input'); wIn.value = '0,94'; wIn.dispatchEvent(new Event('change'));
+    check('Bredde rettet i feltet → 0,94 (USER_CONFIRMED)', '0,94', _takFeat_(T(), 'v1').width_m.value === 0.94 && _takFeat_(T(), 'v1').width_m.prov.source === 'USER_CONFIRMED', JSON.stringify(_takFeat_(T(), 'v1').width_m));
+    undo();
+    check('Angre setter bredden tilbake', '0,78', _takFeat_(T(), 'v1').width_m.value === 0.78, _takFeat_(T(), 'v1').width_m.value);
+
+    // ── C. Startpunkt ──
+    _takFeatStart(fid, 'start');
+    const n3s = _takFeatScreenPt(T(), _takFeat_(T(), 'n3'));
+    klikkS(n3s);
+    let st = _takStartOf(T());
+    check('Startpunkt nede i nedløpet n3 er lovlig (klikk på nedløpets symbol)', 'DOWNSPOUT n3', st && st.on.type === 'DOWNSPOUT' && st.on.id === 'n3' && st.prov.source === 'USER_DRAWN' && !_takFeat, st && JSON.stringify(st.on));
+    renderSidebar();
+    const domRows = () => [...document.querySelectorAll('.tak-cable-row')].map(r => r.dataset.id).join();
+    const forvent = 'n3,r1.4,r1.3,n2,r1.2,h2,n1,r1.1';
+    check('Rekkefølgen i panelet starter i n3: kortest gren først (r1.4), så resten innover', forvent, domRows() === forvent, domRows());
+    check('Panelet sier hvor rekkefølgen starter', 'bunnen av n3', (document.querySelector('.tak-cable-order') || {}).textContent?.includes('bunnen av n3'), (document.querySelector('.tak-cable-order') || {}).textContent);
+    check('Kabelmeter er UENDRET av startpunktet (sum)', _takNum(sumMed, 2), eq(_takCableSummary(T()).total_m, sumMed) && (document.querySelector('.tak-cable-sum-total') || {}).textContent === _takNum(sumMed, 2) + ' m', (document.querySelector('.tak-cable-sum-total') || {}).textContent);
+    // Egen sjekk: hvert mulig startpunkt gir samme rader (som mengde) og samme sum.
+    const radSett = () => JSON.stringify(_takCableRows(T()).map(r => [r.id, r.cable_m]).sort((a, b) => a[0] < b[0] ? -1 : 1));
+    const fasit = radSett(), avvik = [];
+    for (const on of [{ type: 'DOWNSPOUT', id: 'n1' }, { type: 'DOWNSPOUT', id: 'n2' }, { type: 'DOWNSPOUT', id: 'n3' }, ...[0, 5, 7, 12.5, 18, 25].map(a => ({ type: 'GUTTER', id: 'r1', at_m: a }))]) {
+      _takSetStart(fid, on);
+      if (!eq(_takCableSummary(T()).total_m, sumMed) || radSett() !== fasit) avvik.push(JSON.stringify(on) + ' → ' + _takCableSummary(T()).total_m);
+    }
+    check('Alle ni startpunkt (tre nedløp, seks steder på renna): samme rader og samme sum', '0 avvik', avvik.length === 0, avvik.join('; '));
+    _takSetStart(fid, { type: 'GUTTER', id: 'r1', at_m: 5 });
+    check('Start på renna ved 5,0 m: r1.2 først (der starten står), så korteste gren (n1, r1.1), så resten', 'r1.2,h2,n1,r1.1,n2,r1.3,n3,r1.4',
+      _takCableRows(T()).map(r => r.id).join() === 'r1.2,h2,n1,r1.1,n2,r1.3,n3,r1.4' && _takStartLabel(T(), _takStartOf(T())) === 'r1 ved 5,0 m', _takCableRows(T()).map(r => r.id).join());
+    check('Ett startpunkt per tak (flytting erstatter)', '1', _takFeats(T(), 'CABLE_START').length === 1, _takFeats(T(), 'CABLE_START').length);
+    check('Tilbehøret (208) er det samme med og uten startpunkt', 'likt', (() => { const a = JSON.stringify(_takAccessories(T())); const s0 = _takStartOf(T()); _takDeleteFeature(fid, s0.id); const b = JSON.stringify(_takAccessories(T())); undo(); return a === b; })(), '');
+    _takDeleteFeature(fid, 's1');
+    check('Uten startpunkt: rekkefølgen er som før 209 (tegnerekkefølge)', radFør.replace('r1.2', 'r1.2,h2'), _takCableRows(T()).map(r => r.id).join() === radFør.replace('r1.2', 'r1.2,h2'), _takCableRows(T()).map(r => r.id).join());
+    undo();
+    _takSetStart(fid, { type: 'DOWNSPOUT', id: 'n3' });
+
+    // ── B. Lagre og åpne ──
+    const NS = d => { d = JSON.parse(JSON.stringify(d)); if (d.project) { delete d.project.savedAt; delete d.project.stampedAt; } return JSON.stringify(d); };
+    const j0 = NS(_buildSaveData()); _restoreProject(JSON.parse(j0));
+    const j1 = NS(_buildSaveData()); _restoreProject(JSON.parse(j1));
+    check('Rundtur med takvindu, hindringer og startpunkt er byte-identisk', j1.length + ' B', NS(_buildSaveData()) === j1, '');
+    const tR = T(), pick = id => { const f = _takFeat_(tR, id); return f && JSON.stringify([f.type, f.geometry.pt && [Math.round(f.geometry.pt.x), Math.round(f.geometry.pt.y)], f.width_m && f.width_m.value, f.height_m && f.height_m.value, f.gutter, f.at_m, f.bypass, f.on]); };
+    check('Etter åpning ligger alt likt: v1, h1, h2 (på r1, forbi 0,6), start nede i n3', 'likt',
+      _takFeat_(tR, 'v1') && eq(_takFeat_(tR, 'v1').geometry.pt.x, 600, 2.01) && _takFeat_(tR, 'h1') && _takFeat_(tR, 'h2').gutter === 'r1' && _takFeat_(tR, 'h2').bypass.extra_m.value === 0.6 && _takStartOf(tR).on.id === 'n3' && eq(_takCableSummary(tR).total_m, sumMed),
+      ['v1', 'h1', 'h2', 's1'].map(pick).join(' '));
+
+    // ── D. Symboler og etiketter i kursens farge ──
+    _takAddGutter(fid, 'k3'); _takAddDownspout(fid, 'r2', 4);
+    const t4 = T(), c1 = _takKursColor(t4, 'r1'), c2 = _takKursColor(t4, 'r2');
+    check('To rennestrekk = to kurser med hver sin farge; r1 har samme farge som før 209', '#0891b2 ≠ c2', c1 === TAK_FEAT_COLOR.GUTTER && c2 && c2 !== c1, c1 + ' / ' + c2);
+    const tekster = []; _takLabel = function (txt, x, y, color) { tekster.push({ txt, x, y, color }); return orig.apply(this, arguments); };
+    render();
+    const labFor = d => { const o = _takFeatScreenPt(t4, d); return tekster.filter(x => x.txt === _takDownpipeLabel(d) + ' ×' + d.runs).sort((a, b) => Math.hypot(a.x - o.x, a.y - o.y) - Math.hypot(b.x - o.x, b.y - o.y))[0]; };
+    const dl = _takFeats(t4, 'DOWNSPOUT').map(d => ({ d, l: labFor(d) }));
+    check('Etiketten ved hvert nedløp viser lengden fra 206 («10,0 m ×2»), nær symbolet', '4 etiketter', dl.every(x => x.l && x.l.txt.startsWith('10,0 m')), dl.map(x => x.d.id + ':' + (x.l && x.l.txt)).join(' '));
+    check('Nedløpene har kursens farge: n1–n3 i r1-farge, n4 i r2-farge', 'ja', dl.every(x => x.l && x.l.color === (x.d.gutter === 'r1' ? c1 : c2)), dl.map(x => x.d.id + ':' + (x.l && x.l.color)).join(' '));
+    const hl = tekster.find(x => x.txt.startsWith('h2'));
+    check('Hindringen på r1 har kursens farge og viser tillegget', 'h2 · forbi +0,60 ×2 i ' + c1, hl && hl.txt === 'h2 · forbi +0,60 ×2' && hl.color === c1, hl && JSON.stringify(hl));
+    const sl = tekster.find(x => x.txt === 'start');
+    check('Startpunktet tegnes i kursens farge, ved n3', 'start i ' + c1, sl && sl.color === c1 && Math.hypot(sl.x - n3s.x, sl.y - n3s.y) < 45, sl && JSON.stringify(sl));
+    const vl = tekster.find(x => x.txt === 'v1');
+    check('Et løst takvindu hører ikke til noen kurs (nøytral farge)', TAK_OBJ_COLOR, vl && vl.color === TAK_OBJ_COLOR, vl && vl.color);
+    _takLabel = orig;
+    // Klikk velger objektet (i tak-modulen).
+    _takFeatSel = null; klikk({ x: 600, y: 300 });
+    check('Klikk på takvinduet i tak-modulen velger det', 'v1', _takFeatSel && _takFeatSel.id === 'v1', JSON.stringify(_takFeatSel));
+    _takFeatSel = null; klikkS(_takStartScreen(T(), _takStartOf(T())));
+    check('Klikk på startsymbolet velger startpunktet', 's1', _takFeatSel && _takFeatSel.id === 's1', JSON.stringify(_takFeatSel));
+    _takDeleteFeature(fid, 'r2'); _takFeatSel = null;
+
+    // ── G. Sletting: hindringen står igjen, startpunktet går med objektet sitt ──
+    _takDeleteFeature(fid, 'n3');
+    check('Nedløpet med startpunktet slettes → startpunktet er borte (ingen hengende referanse)', '0 start', !_takStartOf(T()) && !_takCableOrder(T()), '');
+    undo();
+    check('Angre henter nedløpet og startpunktet tilbake', 'n3', _takStartOf(T()) && _takStartOf(T()).on.id === 'n3', '');
+    _takDeleteFeature(fid, 'r1');
+    const h2d = _takFeat_(T(), 'h2');
+    check('Rennestrekket slettes → hindringen h2 står igjen, løs (og uten «forbi»)', 'h2 løs', h2d && !h2d.gutter && !h2d.bypass && !_takStartOf(T()) && !_takCableRows(T()).some(r => r.id === 'h2'), h2d && JSON.stringify(h2d));
+    undo();
+    check('Angre: h2 på r1 igjen med tillegget, start i n3', 'ja', _takFeat_(T(), 'h2').gutter === 'r1' && _takFeat_(T(), 'h2').bypass.extra_m.value === 0.6 && _takStartOf(T()).on.id === 'n3', '');
+
+    // ── B. «Finn like» ──
+    renderSidebar();
+    const nFør = T().features.length; toasts = [];
+    document.querySelector('.tak-obj[data-id="v1"] .tak-find-like').click();
+    const F = _takFeat;
+    const pos = F && F.kind === 'like' ? F.cands.map(c => Math.round(c.pt.x / 10) * 10 + ',' + Math.round(c.pt.y / 10) * 10).sort().join(' ') : '';
+    check('Finn like på det symmetriske taket markerer tre steder (speilet over mønet/midtlinja og dreid 180°)', '1900,300 1900,700 600,700', pos === '1900,300 1900,700 600,700', pos + ' ' + (F && F.cands.map(c => c.how).join('/')));
+    check('… og plasserer INGENTING av seg selv', nFør, T().features.length === nFør, T().features.length);
+    renderSidebar();
+    check('Panelet sier hvor mange steder som er markert', '3 steder', (document.querySelector('.tak-obj-mode[data-kind="like"]') || {}).textContent?.includes('3 steder'), (document.querySelector('.tak-obj-mode') || {}).textContent);
+    const c0 = F.cands.find(c => Math.abs(c.pt.y - 700) < 5 && Math.abs(c.pt.x - 600) < 5);
+    klikk(c0.pt);
+    const v2 = _takFeats(T(), 'SKYLIGHT').find(o => o.id !== 'v1');
+    check('Ett klikk på feltet plasserer et takvindu med samme mål der', 'v2 (600, 700) 0,78 × 1,18', v2 && eq(v2.geometry.pt.x, c0.pt.x, 0.01) && eq(v2.geometry.pt.y, c0.pt.y, 0.01) && v2.width_m.value === 0.78 && v2.height_m.value === 1.18 && v2.prov.source === 'USER_DRAWN' && /Finn like/.test(v2.prov.note), v2 && JSON.stringify([v2.geometry.pt, v2.prov]));
+    check('… feltet forsvinner, de to andre står igjen', '2', _takFeat && _takFeat.kind === 'like' && _takFeat.cands.length === 2, _takFeat && _takFeat.cands.length);
+    _takFeatStop();
+    // Ingen like: vindu midt på taket (alle speilinger lander på seg selv). Nytt bygg, ellers gir v1/v2 en rad.
+    fid = bygg(RECT);
+    _takAddObject(fid, 'SKYLIGHT', { x: 1250, y: 500 }); const vc = _takFeats(T(), 'SKYLIGHT').slice(-1)[0];
+    toasts = []; const n2 = T().features.length;
+    const r0 = _takFindLike(fid, vc.id);
+    renderSidebar();
+    check('Vindu midt på taket: «Fant ingen like» — melding i panelet og som toast, ikke stilltiende ingenting', TAK_MSG_NO_LIKE,
+      r0 && r0.length === 0 && !_takFeat && (document.querySelector('.tak-like-msg') || {}).textContent?.includes(TAK_MSG_NO_LIKE) && toasts.some(m => m.startsWith(TAK_MSG_NO_LIKE)) && T().features.length === n2, toasts.join(' | '));
+    // L-formet (usymmetrisk) bygg: ingen like.
+    fid = bygg([{ x: 0, y: 0 }, { x: 1200, y: 0 }, { x: 1200, y: 400 }, { x: 500, y: 400 }, { x: 500, y: 900 }, { x: 0, y: 900 }]);
+    _takAddObject(fid, 'SKYLIGHT', { x: 250, y: 150 }); toasts = [];
+    const n3 = T().features.length, rL = _takFindLike(fid, 'v1'); renderSidebar();
+    check('L-formet bygg (ingen symmetri i omrisset): «Fant ingen like», ingenting plassert', '0 · melding', rL && rL.length === 0 && T().features.length === n3 && !!document.querySelector('.tak-like-msg'), rL && rL.length);
+    _takAddObject(fid, 'SKYLIGHT', { x: 250, y: 400 });
+    const rR = _takFindLike(fid, 'v1');
+    check('L-formet bygg med to like vinduer: neste i raden foreslås, men bare den som ligger på taket', '250,650 (250,-100 er utenfor)', rR && rR.length === 1 && Math.abs(rR[0].pt.x - 250) < 1 && Math.abs(rR[0].pt.y - 650) < 1 && rR[0].how === 'neste i raden', rR && JSON.stringify(rR));
+    _takFeatStop();
+
+    // ── readOnly ──
+    fid = bygg(RECT); _takAddGutter(fid, 'k1'); _takAddDownspout(fid, 'r1', 5); _takAddObject(fid, 'SKYLIGHT', { x: 600, y: 300 });
+    S.ui.readOnly = true;
+    const jR = JSON.stringify(T().features);
+    check('readOnly avviser takvindu, hindring, startpunkt, mål og «Finn like»', 'uendret',
+      _takAddObject(fid, 'SKYLIGHT', { x: 900, y: 300 }) === null && _takAddObject(fid, 'OBSTACLE', { x: 900, y: 300 }) === null && _takSetStart(fid, { type: 'DOWNSPOUT', id: 'n1' }) === false &&
+      _takSetObj(fid, 'v1', 'w', '1') === false && _takFindLike(fid, 'v1') === null && JSON.stringify(T().features) === jR, '');
+    S.ui.readOnly = false;
+
+    // ── E. Klikk utenfor tak-modulen er uendret ──
+    _takSetStart(fid, { type: 'DOWNSPOUT', id: 'n1' });
+    const tKopiS = JSON.parse(JSON.stringify(T()));
+    _resetProjectState(); addPart('indoor');
+    const fIn = S.floors[0].id; S.ui.activeFloorId = fIn; S.ui.drawMode = null;
+    const room = createRoom([{ x: 0, y: 0 }, { x: 2500, y: 0 }, { x: 2500, y: 1000 }, { x: 0, y: 1000 }], 'rect', 'Stue', fIn, true);
+    fitAll(); render();
+    const snap = () => JSON.stringify(Object.keys(S.ui).filter(x => /sel|hover|drag|mode/i.test(x)).sort().map(x => [x, S.ui[x] instanceof Set ? [...S.ui[x]] : S.ui[x]]));
+    const steder = [{ x: 600, y: 300 }, { x: 500, y: 0 }, { x: 600, y: 500 }];   // takvinduet, ved n1/startpunktet, midt i rommet
+    const runde = medTak => {
+      hideCtx(); S.ui.selectedRoomId = null; S.ui.selectedWall = null; _takFeatSel = null;
+      S.tak = medTak ? { [fIn]: JSON.parse(JSON.stringify(tKopiS)) } : {};
+      return steder.map(w => { klikk(w); return snap() + '|' + JSON.stringify(_takFeatSel); });
+    };
+    const uten = runde(false), med = runde(true);
+    check('Innendørs: rommet blir faktisk valgt av klikket (testen måler noe)', room && room.id, room && S.ui.selectedRoomId === room.id, S.ui.selectedRoomId);
+    check('Innendørs: tre klikk gir samme tilstand med og uten takvindu/hindring/startpunkt i etasjen', 'likt', uten.join() === med.join(), med.find((m, i) => m !== uten[i]) || '');
+    check('Innendørs: ingen tak-objekt blir truffet eller valgt', 'null', !_takFeatSel && _takFeatActiveFid() === null, JSON.stringify(_takFeatSel));
+    S.tak = {};
+  } catch (e) {
+    check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 300));
+  } finally {
+    _takLabel = orig;
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
+    hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takFeat = null; _takFeatSel = null; _takFeatHover = null; _takLikeMsg = null;
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest209: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
   return { ok: allOk, results };
 }
 function typer206(t) { return (t.edges || []).map(e => e.id + ':' + (e.type || '—')).join(' '); }

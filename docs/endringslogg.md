@@ -4,6 +4,14 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 209 — Tak: takvindu, hindringer, «finn like», startpunkt for kabel og symboler i kursens farge (07.11.2026, `main`, ikke pushet)
+
+- Nye typer i `S.tak[fid].features`: `SKYLIGHT` (v<n>) og `OBSTACLE` (h<n>) med bredde/høyde som `{value, prov}`, `prov.source = USER_DRAWN`. En hindring på et rennestrekk følger det (`gutter`, `at_m`) men deler ikke delstrekket; «Kabel må forbi» + tillegg per løp gir egen rad ⤳ i Kabelmeter.
+- «Finn like»: speilinger/halv-rotasjon omrisset tåler, mønelinja og «neste i raden» — markerer felt, plasserer ingenting før klikk; ellers «Fant ingen like». Tynn uten takflater (spm. 1).
+- `CABLE_START` (ett per tak), nede i et nedløp eller på et strekk: styrer rekkefølgen i Kabelmeter (`_takCableOrder`), endrer aldri kabelmeter (ni startpunkt testet).
+- `_takKursColor` gir én farge per rennestrekk (r1 som før); nedløp, hindringer på strekket og startpunktet tegnes i den.
+- Ny `_takRegressionTest209` 48/48, resten likt HEAD. Rapport i `docs/209/RAPPORT.md`.
+
 ## 208 — Tak: tilbehør telles av antall løp, to ferdige oppsett, bokser og avlastere i tegningen (07.11.2026, `main`, ikke pushet)
 
 - `_takAccessories`: tilbehøret telles av hvor antall løp endrer seg. Oddetall kabeltråder i et innløp krever boks (den første = tilkoblingsboksen, resten T-forgrening). 1 løp i en ende = endeavslutning. Uten boks må nettet være én kabel. Avlaster per nedløp; klips «avstand ikke satt».

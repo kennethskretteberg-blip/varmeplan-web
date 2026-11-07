@@ -1,0 +1,28 @@
+{
+ "uten_start": {
+  "rader": "r1.1 4,00 · r1.2 21,00 · h2 1,20 · r1.3 21,00 · r1.4 4,00 · r2.1 12,00 · r2.2 38,00 · n1 20,05 · n2 20,05 · n3 20,05 · n4 20,05",
+  "sum": "181,40 m"
+ },
+ "start_n3": {
+  "rader": "n3 20,05 · r1.4 4,00 · r1.3 21,00 · n2 20,05 · r1.2 21,00 · h2 1,20 · n1 20,05 · r1.1 4,00 · r2.1 12,00 · r2.2 38,00 · n4 20,05",
+  "sum": "181,40 m",
+  "orden": "Rekkefølge fra start: bunnen av n3. Summen er den samme uansett start."
+ },
+ "start_r1_5": {
+  "rader": "r1.2 21,00 · h2 1,20 · n1 20,05 · r1.1 4,00 · n2 20,05 · r1.3 21,00 · n3 20,05 · r1.4 4,00 · r2.1 12,00 · r2.2 38,00 · n4 20,05",
+  "sum": "181,40 m",
+  "orden": "Rekkefølge fra start: r1 ved 5,0 m. Summen er den samme uansett start."
+ },
+ "finn_like": {
+  "rader": "r1.2 21,00 · h2 1,20 · n1 20,05 · r1.1 4,00 · n2 20,05 · r1.3 21,00 · n3 20,05 · r1.4 4,00 · r2.1 12,00 · r2.2 38,00 · n4 20,05",
+  "sum": "181,40 m",
+  "orden": "Rekkefølge fra start: r1 ved 5,0 m. Summen er den samme uansett start.",
+  "like": "Finn like\n3 steder med samme form som v1 er markert (speilet, dreid 180°). Klikk et stiplet felt for å plassere.\nFerdig"
+ },
+ "ingen_like": {
+  "rader": "r1.2 21,00 · h2 1,20 · n1 20,05 · r1.1 4,00 · n2 20,05 · r1.3 21,00 · n3 20,05 · r1.4 4,00 · r2.1 12,00 · r2.2 38,00 · n4 20,05",
+  "sum": "181,40 m",
+  "orden": "Rekkefølge fra start: r1 ved 5,0 m. Summen er den samme uansett start.",
+  "like": "Fant ingen like for v1. Taket har ingen takflater, så appen leter bare etter speilinger av omrisset og rader av like vinduer. Plasser resten selv."
+ }
+}
