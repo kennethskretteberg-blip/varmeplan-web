@@ -1,0 +1,677 @@
+{
+ "v": 1,
+ "building": null,
+ "surfaces": [
+  {
+   "id": "f1",
+   "roof_type": {
+    "value": "flat",
+    "prov": {
+     "source": "USER_CONFIRMED",
+     "confidence": 1,
+     "note": "valgt av bruker"
+    }
+   },
+   "footprint": {
+    "world": [
+     {
+      "x": 0,
+      "y": 0
+     },
+     {
+      "x": 4000,
+      "y": 0
+     },
+     {
+      "x": 4000,
+      "y": 2000
+     },
+     {
+      "x": 0,
+      "y": 2000
+     }
+    ],
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "tegnet for frihånd med mål",
+     "method": "free"
+    }
+   },
+   "heights": {
+    "eave_m": {
+     "value": 12,
+     "height_ref": "terreng",
+     "prov": {
+      "source": "USER_DRAWN",
+      "confidence": 1,
+      "note": "oppgitt av bruker — ikke målt"
+     }
+    },
+    "ridge_m": {
+     "value": null,
+     "height_ref": "terreng",
+     "prov": null
+    },
+    "ground_z": {
+     "value": 0,
+     "height_ref": "terreng",
+     "prov": {
+      "source": "USER_DRAWN",
+      "confidence": 1,
+      "note": "standard 0 — terrenget er nullpunktet",
+      "standard": true
+     }
+    }
+   },
+   "planes": [
+    {
+     "id": "f1.a",
+     "prov": {
+      "source": "AI_SUGGESTION",
+      "confidence": 0.5,
+      "note": "flatt tak: parapet/takkant — ingen renne før du sier at den finnes"
+     }
+    }
+   ],
+   "edge_suggestion": {
+    "kind": "flat"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "id": "k1",
+   "kind": "outline",
+   "i": 0,
+   "a": {
+    "x": 0,
+    "y": 0
+   },
+   "b": {
+    "x": 4000,
+    "y": 0
+   },
+   "type": "parapet",
+   "surface": "f1",
+   "planes": [
+    "f1.a"
+   ],
+   "prov": {
+    "source": "AI_SUGGESTION",
+    "confidence": 0.5,
+    "note": "flatt tak: parapet/takkant — ingen renne før du sier at den finnes"
+   }
+  },
+  {
+   "id": "k2",
+   "kind": "outline",
+   "i": 1,
+   "a": {
+    "x": 4000,
+    "y": 0
+   },
+   "b": {
+    "x": 4000,
+    "y": 2000
+   },
+   "type": "parapet",
+   "surface": "f1",
+   "planes": [
+    "f1.a"
+   ],
+   "prov": {
+    "source": "AI_SUGGESTION",
+    "confidence": 0.5,
+    "note": "flatt tak: parapet/takkant — ingen renne før du sier at den finnes"
+   }
+  },
+  {
+   "id": "k3",
+   "kind": "outline",
+   "i": 2,
+   "a": {
+    "x": 4000,
+    "y": 2000
+   },
+   "b": {
+    "x": 0,
+    "y": 2000
+   },
+   "type": "parapet",
+   "surface": "f1",
+   "planes": [
+    "f1.a"
+   ],
+   "prov": {
+    "source": "AI_SUGGESTION",
+    "confidence": 0.5,
+    "note": "flatt tak: parapet/takkant — ingen renne før du sier at den finnes"
+   }
+  },
+  {
+   "id": "k4",
+   "kind": "outline",
+   "i": 3,
+   "a": {
+    "x": 0,
+    "y": 2000
+   },
+   "b": {
+    "x": 0,
+    "y": 0
+   },
+   "type": "parapet",
+   "surface": "f1",
+   "planes": [
+    "f1.a"
+   ],
+   "prov": {
+    "source": "AI_SUGGESTION",
+    "confidence": 0.5,
+    "note": "flatt tak: parapet/takkant — ingen renne før du sier at den finnes"
+   }
+  }
+ ],
+ "features": [],
+ "model": null,
+ "flat": {
+  "v": 1,
+  "cable": {
+   "product_id": 921201,
+   "family": "InSnow 30T",
+   "name": "InSnow 30T 1000W 33m",
+   "watt_per_m": 30,
+   "min_spacing_mm": 60,
+   "max_spacing_mm": 200,
+   "prov": {
+    "source": "CATALOG",
+    "confidence": 1,
+    "note": "heating_products — W/m leses fra katalogen"
+   }
+  },
+  "setup": "valleys",
+  "features": [
+   {
+    "id": "sl1",
+    "type": "ROOF_DRAIN",
+    "surface": "f1",
+    "geometry": {
+     "kind": "point",
+     "pt": {
+      "x": 666.7,
+      "y": 333.3
+     }
+    },
+    "ring_runs": {
+     "value": 2,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 2 ringer"
+     }
+    },
+    "ring_r_m": {
+     "value": 0.4,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 0,40 m — hentet fra Cenikas animasjon «Flatt tak» (0,33–0,42 m)"
+     }
+    },
+    "pipe_cable_m": {
+     "value": 1.5,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "ring_m": 5.026548245743669,
+    "cable_total_m": 6.526548245743669,
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "klikket på takflaten"
+    }
+   },
+   {
+    "id": "sl2",
+    "type": "ROOF_DRAIN",
+    "surface": "f1",
+    "geometry": {
+     "kind": "point",
+     "pt": {
+      "x": 666.7,
+      "y": 1000
+     }
+    },
+    "ring_runs": {
+     "value": 2,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 2 ringer"
+     }
+    },
+    "ring_r_m": {
+     "value": 0.4,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 0,40 m — hentet fra Cenikas animasjon «Flatt tak» (0,33–0,42 m)"
+     }
+    },
+    "pipe_cable_m": {
+     "value": 1.5,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "ring_m": 5.026548245743669,
+    "cable_total_m": 6.526548245743669,
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "klikket på takflaten"
+    }
+   },
+   {
+    "id": "sl3",
+    "type": "ROOF_DRAIN",
+    "surface": "f1",
+    "geometry": {
+     "kind": "point",
+     "pt": {
+      "x": 666.7,
+      "y": 1666.7
+     }
+    },
+    "ring_runs": {
+     "value": 2,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 2 ringer"
+     }
+    },
+    "ring_r_m": {
+     "value": 0.4,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 0,40 m — hentet fra Cenikas animasjon «Flatt tak» (0,33–0,42 m)"
+     }
+    },
+    "pipe_cable_m": {
+     "value": 1.5,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "ring_m": 5.026548245743669,
+    "cable_total_m": 6.526548245743669,
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "klikket på takflaten"
+    }
+   },
+   {
+    "id": "sl4",
+    "type": "ROOF_DRAIN",
+    "surface": "f1",
+    "geometry": {
+     "kind": "point",
+     "pt": {
+      "x": 2000,
+      "y": 333.3
+     }
+    },
+    "ring_runs": {
+     "value": 2,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 2 ringer"
+     }
+    },
+    "ring_r_m": {
+     "value": 0.4,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 0,40 m — hentet fra Cenikas animasjon «Flatt tak» (0,33–0,42 m)"
+     }
+    },
+    "pipe_cable_m": {
+     "value": 1.5,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "ring_m": 5.026548245743669,
+    "cable_total_m": 6.526548245743669,
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "klikket på takflaten"
+    }
+   },
+   {
+    "id": "sl5",
+    "type": "ROOF_DRAIN",
+    "surface": "f1",
+    "geometry": {
+     "kind": "point",
+     "pt": {
+      "x": 2000,
+      "y": 1000
+     }
+    },
+    "ring_runs": {
+     "value": 2,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 2 ringer"
+     }
+    },
+    "ring_r_m": {
+     "value": 0.4,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 0,40 m — hentet fra Cenikas animasjon «Flatt tak» (0,33–0,42 m)"
+     }
+    },
+    "pipe_cable_m": {
+     "value": 1.5,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "ring_m": 5.026548245743669,
+    "cable_total_m": 6.526548245743669,
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "klikket på takflaten"
+    }
+   },
+   {
+    "id": "sl6",
+    "type": "ROOF_DRAIN",
+    "surface": "f1",
+    "geometry": {
+     "kind": "point",
+     "pt": {
+      "x": 2000,
+      "y": 1666.7
+     }
+    },
+    "ring_runs": {
+     "value": 2,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 2 ringer"
+     }
+    },
+    "ring_r_m": {
+     "value": 0.4,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 0,40 m — hentet fra Cenikas animasjon «Flatt tak» (0,33–0,42 m)"
+     }
+    },
+    "pipe_cable_m": {
+     "value": 1.5,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "ring_m": 5.026548245743669,
+    "cable_total_m": 6.526548245743669,
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "klikket på takflaten"
+    }
+   },
+   {
+    "id": "sl7",
+    "type": "ROOF_DRAIN",
+    "surface": "f1",
+    "geometry": {
+     "kind": "point",
+     "pt": {
+      "x": 3333.3,
+      "y": 333.3
+     }
+    },
+    "ring_runs": {
+     "value": 2,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 2 ringer"
+     }
+    },
+    "ring_r_m": {
+     "value": 0.4,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 0,40 m — hentet fra Cenikas animasjon «Flatt tak» (0,33–0,42 m)"
+     }
+    },
+    "pipe_cable_m": {
+     "value": 1.5,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "ring_m": 5.026548245743669,
+    "cable_total_m": 6.526548245743669,
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "klikket på takflaten"
+    }
+   },
+   {
+    "id": "sl8",
+    "type": "ROOF_DRAIN",
+    "surface": "f1",
+    "geometry": {
+     "kind": "point",
+     "pt": {
+      "x": 3333.3,
+      "y": 1000
+     }
+    },
+    "ring_runs": {
+     "value": 2,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 2 ringer"
+     }
+    },
+    "ring_r_m": {
+     "value": 0.4,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 0,40 m — hentet fra Cenikas animasjon «Flatt tak» (0,33–0,42 m)"
+     }
+    },
+    "pipe_cable_m": {
+     "value": 1.5,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "ring_m": 5.026548245743669,
+    "cable_total_m": 6.526548245743669,
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "klikket på takflaten"
+    }
+   },
+   {
+    "id": "sl9",
+    "type": "ROOF_DRAIN",
+    "surface": "f1",
+    "geometry": {
+     "kind": "point",
+     "pt": {
+      "x": 3333.3,
+      "y": 1666.7
+     }
+    },
+    "ring_runs": {
+     "value": 2,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 2 ringer"
+     }
+    },
+    "ring_r_m": {
+     "value": 0.4,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 0.5,
+      "note": "standard 0,40 m — hentet fra Cenikas animasjon «Flatt tak» (0,33–0,42 m)"
+     }
+    },
+    "pipe_cable_m": {
+     "value": 1.5,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "ring_m": 5.026548245743669,
+    "cable_total_m": 6.526548245743669,
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "klikket på takflaten"
+    }
+   },
+   {
+    "id": "gr1",
+    "type": "VALLEY_GUTTER",
+    "roof": "flat",
+    "surface": "f1",
+    "geometry": {
+     "kind": "polyline",
+     "pts": [
+      {
+       "x": 666.7,
+       "y": 1000
+      },
+      {
+       "x": 1466.7,
+       "y": 1000
+      }
+     ]
+    },
+    "width_m": {
+     "value": 0.6,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "covered_width_m": {
+     "value": 0.6,
+     "prov": {
+      "source": "ESTIMATE",
+      "confidence": 1,
+      "note": "standard = rennas bredde",
+      "from": "width_m"
+     }
+    },
+    "wm2": {
+     "value": 300,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "length_m": 8,
+    "cable_total_m": 48,
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "ende og ende klikket"
+    }
+   },
+   {
+    "id": "vf1",
+    "type": "HEAT_FIELD",
+    "surface": "f1",
+    "whole": false,
+    "geometry": {
+     "kind": "polygon",
+     "pts": [
+      {
+       "x": 2600,
+       "y": 200
+      },
+      {
+       "x": 3800,
+       "y": 200
+      },
+      {
+       "x": 3800,
+       "y": 900
+      },
+      {
+       "x": 2600,
+       "y": 900
+      }
+     ]
+    },
+    "wm2": {
+     "value": 300,
+     "prov": {
+      "source": "USER_CONFIRMED",
+      "confidence": 1,
+      "note": "satt av bruker"
+     }
+    },
+    "area_m2": 84,
+    "cable_total_m": 840,
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "hjørnene klikket"
+    }
+   }
+  ]
+ }
+}

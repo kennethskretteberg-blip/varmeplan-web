@@ -4,6 +4,12 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 219 — 3D fase 0: motoren som bygger taket fra prosjektets egne data (08.11.2026, `main`, ikke pushet)
+
+Ny fil `varmeplan-3d.js` med `byggTak`, `maal` og `tegnScene` (three.js 0.160.0, lastes først når 3D åpnes). `index.html` er urørt. Forhåndsvisning på `docs/3d/forhandsvisning.html`. `docs/3d/test-3d.mjs` sammenligner med den ekte 2D-motoren, skåret ut av `index.html`: 640 av 640, filmens bygg 110,15/80,15 m. Funn: L-formede skråtak har ingen lagret mønelinje og kan ikke reises. Se `docs/219/RAPPORT.md`.
+
+---
+
 ## 218 — Tak: penselmodus for kantmerking (08.11.2026, `main`, ikke pushet)
 
 «Merk som:» med fem typeknapper i steg 3, i verktøylinja og panelet. Ett klikk merker en kant, ett dra merker flere, og Esc eller samme knapp slår av. Menyen står som før. 8-kants L-tak: 16 klikk før, 12 med klikk, 8 med dra. Ny `_takRegressionTest218`. Se `docs/218/RAPPORT.md`.

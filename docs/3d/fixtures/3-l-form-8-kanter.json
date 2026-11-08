@@ -1,0 +1,766 @@
+{
+ "v": 1,
+ "building": null,
+ "surfaces": [
+  {
+   "id": "f1",
+   "roof_type": {
+    "value": "pitched",
+    "prov": {
+     "source": "USER_CONFIRMED",
+     "confidence": 1,
+     "note": "valgt av bruker"
+    }
+   },
+   "footprint": {
+    "world": [
+     {
+      "x": 0,
+      "y": 0
+     },
+     {
+      "x": 1400,
+      "y": 0
+     },
+     {
+      "x": 1400,
+      "y": 700
+     },
+     {
+      "x": 900,
+      "y": 700
+     },
+     {
+      "x": 900,
+      "y": 1200
+     },
+     {
+      "x": 200,
+      "y": 1200
+     },
+     {
+      "x": 200,
+      "y": 900
+     },
+     {
+      "x": 0,
+      "y": 900
+     }
+    ],
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "tegnet for frihånd med mål",
+     "method": "free"
+    }
+   },
+   "heights": {
+    "eave_m": {
+     "value": 5.4,
+     "height_ref": "terreng",
+     "prov": {
+      "source": "USER_DRAWN",
+      "confidence": 1,
+      "note": "oppgitt av bruker — ikke målt"
+     }
+    },
+    "ridge_m": {
+     "value": 8.2,
+     "height_ref": "terreng",
+     "prov": {
+      "source": "USER_DRAWN",
+      "confidence": 1,
+      "note": "oppgitt av bruker — ikke målt"
+     }
+    },
+    "ground_z": {
+     "value": 142.3,
+     "height_ref": "terreng",
+     "prov": {
+      "source": "USER_DRAWN",
+      "confidence": 1,
+      "note": "oppgitt av bruker — ikke målt"
+     }
+    }
+   },
+   "planes": [],
+   "edge_suggestion": {
+    "kind": "complex",
+    "reason": "8 kanter — L-form, ark eller sammensatt"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "id": "k1",
+   "kind": "outline",
+   "i": 0,
+   "a": {
+    "x": 0,
+    "y": 0
+   },
+   "b": {
+    "x": 1400,
+    "y": 0
+   },
+   "type": "eave",
+   "surface": "f1",
+   "planes": [],
+   "prov": {
+    "source": "USER_CONFIRMED",
+    "confidence": 1,
+    "note": "rettet fra ikke valgt"
+   }
+  },
+  {
+   "id": "k2",
+   "kind": "outline",
+   "i": 1,
+   "a": {
+    "x": 1400,
+    "y": 0
+   },
+   "b": {
+    "x": 1400,
+    "y": 700
+   },
+   "type": "rake",
+   "surface": "f1",
+   "planes": [],
+   "prov": {
+    "source": "USER_CONFIRMED",
+    "confidence": 1,
+    "note": "rettet fra ikke valgt"
+   }
+  },
+  {
+   "id": "k3",
+   "kind": "outline",
+   "i": 2,
+   "a": {
+    "x": 1400,
+    "y": 700
+   },
+   "b": {
+    "x": 900,
+    "y": 700
+   },
+   "type": "eave",
+   "surface": "f1",
+   "planes": [],
+   "prov": {
+    "source": "USER_CONFIRMED",
+    "confidence": 1,
+    "note": "rettet fra ikke valgt"
+   }
+  },
+  {
+   "id": "k4",
+   "kind": "outline",
+   "i": 3,
+   "a": {
+    "x": 900,
+    "y": 700
+   },
+   "b": {
+    "x": 900,
+    "y": 1200
+   },
+   "type": "eave",
+   "surface": "f1",
+   "planes": [],
+   "prov": {
+    "source": "USER_CONFIRMED",
+    "confidence": 1,
+    "note": "rettet fra ikke valgt"
+   }
+  },
+  {
+   "id": "k5",
+   "kind": "outline",
+   "i": 4,
+   "a": {
+    "x": 900,
+    "y": 1200
+   },
+   "b": {
+    "x": 200,
+    "y": 1200
+   },
+   "type": "rake",
+   "surface": "f1",
+   "planes": [],
+   "prov": {
+    "source": "USER_CONFIRMED",
+    "confidence": 1,
+    "note": "rettet fra ikke valgt"
+   }
+  },
+  {
+   "id": "k6",
+   "kind": "outline",
+   "i": 5,
+   "a": {
+    "x": 200,
+    "y": 1200
+   },
+   "b": {
+    "x": 200,
+    "y": 900
+   },
+   "type": "eave",
+   "surface": "f1",
+   "planes": [],
+   "prov": {
+    "source": "USER_CONFIRMED",
+    "confidence": 1,
+    "note": "rettet fra ikke valgt"
+   }
+  },
+  {
+   "id": "k7",
+   "kind": "outline",
+   "i": 6,
+   "a": {
+    "x": 200,
+    "y": 900
+   },
+   "b": {
+    "x": 0,
+    "y": 900
+   },
+   "type": "eave",
+   "surface": "f1",
+   "planes": [],
+   "prov": {
+    "source": "USER_CONFIRMED",
+    "confidence": 1,
+    "note": "rettet fra ikke valgt"
+   }
+  },
+  {
+   "id": "k8",
+   "kind": "outline",
+   "i": 7,
+   "a": {
+    "x": 0,
+    "y": 900
+   },
+   "b": {
+    "x": 0,
+    "y": 0
+   },
+   "type": "eave",
+   "surface": "f1",
+   "planes": [],
+   "prov": {
+    "source": "USER_CONFIRMED",
+    "confidence": 1,
+    "note": "rettet fra ikke valgt"
+   }
+  }
+ ],
+ "features": [
+  {
+   "id": "r1",
+   "type": "GUTTER",
+   "on_edge": "k1",
+   "geometry": {
+    "kind": "polyline",
+    "pts": [
+     {
+      "x": 0,
+      "y": 0,
+      "z": 5.4
+     },
+     {
+      "x": 1400,
+      "y": 0,
+      "z": 5.4
+     }
+    ]
+   },
+   "z_prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "oppgitt av bruker — ikke målt",
+    "from": "eave_m"
+   },
+   "length_m": 14,
+   "connects_to": [
+    "n1",
+    "n2"
+   ],
+   "segments": [
+    {
+     "runs": 2,
+     "runs_src": "standard",
+     "run_pos": [
+      {
+       "at": "bunn",
+       "deg": 90
+      },
+      {
+       "at": "hengkant",
+       "deg": 40
+      }
+     ],
+     "cable_total_m": 2,
+     "id": "r1.1",
+     "from_m": 0,
+     "to_m": 1,
+     "length_m": 1
+    },
+    {
+     "runs": 2,
+     "runs_src": "standard",
+     "run_pos": [
+      {
+       "at": "bunn",
+       "deg": 90
+      },
+      {
+       "at": "hengkant",
+       "deg": 40
+      }
+     ],
+     "cable_total_m": 24,
+     "id": "r1.2",
+     "from_m": 1,
+     "to_m": 13,
+     "length_m": 12
+    },
+    {
+     "runs": 2,
+     "runs_src": "standard",
+     "run_pos": [
+      {
+       "at": "bunn",
+       "deg": 90
+      },
+      {
+       "at": "hengkant",
+       "deg": 40
+      }
+     ],
+     "cable_total_m": 2,
+     "id": "r1.3",
+     "from_m": 13,
+     "to_m": 14,
+     "length_m": 1
+    }
+   ],
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "hele kanten"
+   },
+   "cable_total_m": 28
+  },
+  {
+   "id": "r2",
+   "type": "GUTTER",
+   "on_edge": "k3",
+   "geometry": {
+    "kind": "polyline",
+    "pts": [
+     {
+      "x": 1400,
+      "y": 700,
+      "z": 5.4
+     },
+     {
+      "x": 900,
+      "y": 700,
+      "z": 5.4
+     }
+    ]
+   },
+   "z_prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "oppgitt av bruker — ikke målt",
+    "from": "eave_m"
+   },
+   "length_m": 5,
+   "connects_to": [
+    "n3"
+   ],
+   "segments": [
+    {
+     "runs": 2,
+     "runs_src": "standard",
+     "run_pos": [
+      {
+       "at": "bunn",
+       "deg": 90
+      },
+      {
+       "at": "hengkant",
+       "deg": 40
+      }
+     ],
+     "cable_total_m": 9,
+     "id": "r2.1",
+     "from_m": 0,
+     "to_m": 4.5,
+     "length_m": 4.5
+    },
+    {
+     "runs": 2,
+     "runs_src": "standard",
+     "run_pos": [
+      {
+       "at": "bunn",
+       "deg": 90
+      },
+      {
+       "at": "hengkant",
+       "deg": 40
+      }
+     ],
+     "cable_total_m": 1,
+     "id": "r2.2",
+     "from_m": 4.5,
+     "to_m": 5,
+     "length_m": 0.5
+    }
+   ],
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "hele kanten"
+   },
+   "cable_total_m": 10
+  },
+  {
+   "id": "r3",
+   "type": "GUTTER",
+   "on_edge": "k6",
+   "geometry": {
+    "kind": "polyline",
+    "pts": [
+     {
+      "x": 200,
+      "y": 1200,
+      "z": 5.4
+     },
+     {
+      "x": 200,
+      "y": 900,
+      "z": 5.4
+     }
+    ]
+   },
+   "z_prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "oppgitt av bruker — ikke målt",
+    "from": "eave_m"
+   },
+   "length_m": 3,
+   "connects_to": [
+    "n4"
+   ],
+   "segments": [
+    {
+     "runs": 2,
+     "runs_src": "standard",
+     "run_pos": [
+      {
+       "at": "bunn",
+       "deg": 90
+      },
+      {
+       "at": "hengkant",
+       "deg": 40
+      }
+     ],
+     "cable_total_m": 6,
+     "id": "r3.1",
+     "from_m": 0,
+     "to_m": 3,
+     "length_m": 3
+    }
+   ],
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "hele kanten"
+   },
+   "cable_total_m": 6
+  },
+  {
+   "id": "n1",
+   "type": "DOWNSPOUT",
+   "gutter": "r1",
+   "at_m": 1,
+   "geometry": {
+    "kind": "point",
+    "pt": {
+     "x": 100,
+     "y": 0,
+     "z": 5.4
+    }
+   },
+   "height_ref": "takfot",
+   "above_ground_m": {
+    "value": 5.4,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "gesimsen — én verdi for hele bygget (±0,5 m)",
+     "from": "eave_m"
+    }
+   },
+   "continues_below_ground": {
+    "value": false,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard: slutter over bakken"
+    }
+   },
+   "below_ground_m": {
+    "value": 1,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard 1,0 m til frostfritt nivå"
+    }
+   },
+   "cable_m": 5.45,
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1
+   },
+   "runs": 2,
+   "runs_src": "standard",
+   "cable_total_m": 10.850000000000001
+  },
+  {
+   "id": "n2",
+   "type": "DOWNSPOUT",
+   "gutter": "r1",
+   "at_m": 13,
+   "geometry": {
+    "kind": "point",
+    "pt": {
+     "x": 1300,
+     "y": 0,
+     "z": 5.4
+    }
+   },
+   "height_ref": "takfot",
+   "above_ground_m": {
+    "value": 5.4,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "gesimsen — én verdi for hele bygget (±0,5 m)",
+     "from": "eave_m"
+    }
+   },
+   "continues_below_ground": {
+    "value": false,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard: slutter over bakken"
+    }
+   },
+   "below_ground_m": {
+    "value": 1,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard 1,0 m til frostfritt nivå"
+    }
+   },
+   "cable_m": 5.45,
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1
+   },
+   "runs": 2,
+   "runs_src": "standard",
+   "cable_total_m": 10.850000000000001
+  },
+  {
+   "id": "n3",
+   "type": "DOWNSPOUT",
+   "gutter": "r2",
+   "at_m": 4.5,
+   "geometry": {
+    "kind": "point",
+    "pt": {
+     "x": 950,
+     "y": 700,
+     "z": 5.4
+    }
+   },
+   "height_ref": "takfot",
+   "above_ground_m": {
+    "value": 5.4,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "gesimsen — én verdi for hele bygget (±0,5 m)",
+     "from": "eave_m"
+    }
+   },
+   "continues_below_ground": {
+    "value": false,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard: slutter over bakken"
+    }
+   },
+   "below_ground_m": {
+    "value": 1,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard 1,0 m til frostfritt nivå"
+    }
+   },
+   "cable_m": 5.45,
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1
+   },
+   "runs": 2,
+   "runs_src": "standard",
+   "cable_total_m": 10.850000000000001
+  },
+  {
+   "id": "n4",
+   "type": "DOWNSPOUT",
+   "gutter": "r3",
+   "at_m": 3,
+   "geometry": {
+    "kind": "point",
+    "pt": {
+     "x": 200,
+     "y": 900,
+     "z": 5.4
+    }
+   },
+   "height_ref": "takfot",
+   "above_ground_m": {
+    "value": 5.4,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "gesimsen — én verdi for hele bygget (±0,5 m)",
+     "from": "eave_m"
+    }
+   },
+   "continues_below_ground": {
+    "value": false,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard: slutter over bakken"
+    }
+   },
+   "below_ground_m": {
+    "value": 1,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard 1,0 m til frostfritt nivå"
+    }
+   },
+   "cable_m": 5.45,
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1
+   },
+   "runs": 2,
+   "runs_src": "standard",
+   "cable_total_m": 10.850000000000001
+  },
+  {
+   "id": "g1",
+   "type": "VALLEY_GUTTER",
+   "height_ref": "terreng",
+   "surface": "f1",
+   "planes": [],
+   "geometry": {
+    "kind": "polyline",
+    "pts": [
+     {
+      "x": 650,
+      "y": 350,
+      "z": 8.2
+     },
+     {
+      "x": 900,
+      "y": 700,
+      "z": 5.4
+     }
+    ]
+   },
+   "z_prov": [
+    {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "oppgitt av bruker — ikke målt",
+     "from": "ridge_m"
+    },
+    {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "oppgitt av bruker — ikke målt",
+     "from": "eave_m"
+    }
+   ],
+   "length_m": 5.132250968142536,
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "topp og bunn klikket"
+   },
+   "runs": 2,
+   "runs_src": "standard",
+   "cable_total_m": 10.264501936285072
+  },
+  {
+   "id": "sf1",
+   "type": "SNOW_GUARD",
+   "on_edge": "k1",
+   "geometry": {
+    "kind": "polyline",
+    "pts": [
+     {
+      "x": 0,
+      "y": 0,
+      "z": null
+     },
+     {
+      "x": 1400,
+      "y": 0,
+      "z": null
+     }
+    ]
+   },
+   "offset_m": {
+    "value": 0.5,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "Kenneths regel 08.11.2026, ikke fra datablad"
+    }
+   },
+   "length_m": 14,
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "hele kanten"
+   }
+  }
+ ],
+ "model": null
+}

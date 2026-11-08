@@ -1,0 +1,482 @@
+{
+ "v": 1,
+ "building": null,
+ "surfaces": [
+  {
+   "id": "f1",
+   "roof_type": {
+    "value": "pitched",
+    "prov": {
+     "source": "USER_CONFIRMED",
+     "confidence": 1,
+     "note": "valgt av bruker"
+    }
+   },
+   "footprint": {
+    "world": [
+     {
+      "x": 0,
+      "y": 0
+     },
+     {
+      "x": 2500,
+      "y": 0
+     },
+     {
+      "x": 2500,
+      "y": 1000
+     },
+     {
+      "x": 0,
+      "y": 1000
+     }
+    ],
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "tegnet for frihånd med mål",
+     "method": "free"
+    }
+   },
+   "heights": {
+    "eave_m": {
+     "value": 10,
+     "height_ref": "terreng",
+     "prov": {
+      "source": "USER_DRAWN",
+      "confidence": 1,
+      "note": "oppgitt av bruker — ikke målt"
+     }
+    },
+    "ridge_m": {
+     "value": 13,
+     "height_ref": "terreng",
+     "prov": {
+      "source": "USER_DRAWN",
+      "confidence": 1,
+      "note": "oppgitt av bruker — ikke målt"
+     }
+    },
+    "ground_z": {
+     "value": 0,
+     "height_ref": "terreng",
+     "prov": {
+      "source": "USER_DRAWN",
+      "confidence": 1,
+      "note": "standard 0 — terrenget er nullpunktet",
+      "standard": true
+     }
+    }
+   },
+   "planes": [
+    {
+     "id": "f1.a",
+     "eaves": [
+      "k1"
+     ],
+     "prov": {
+      "source": "AI_SUGGESTION",
+      "confidence": 0.4,
+      "note": "enkelt saltak antatt fra rektangulært omriss — kan være valm- eller pulttak"
+     }
+    },
+    {
+     "id": "f1.b",
+     "eaves": [
+      "k3"
+     ],
+     "prov": {
+      "source": "AI_SUGGESTION",
+      "confidence": 0.4,
+      "note": "enkelt saltak antatt fra rektangulært omriss — kan være valm- eller pulttak"
+     }
+    }
+   ],
+   "edge_suggestion": {
+    "kind": "gable"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "id": "k1",
+   "kind": "outline",
+   "i": 0,
+   "a": {
+    "x": 0,
+    "y": 0
+   },
+   "b": {
+    "x": 2500,
+    "y": 0
+   },
+   "type": "eave",
+   "surface": "f1",
+   "planes": [
+    "f1.a"
+   ],
+   "prov": {
+    "source": "AI_SUGGESTION",
+    "confidence": 0.4,
+    "note": "enkelt saltak antatt fra rektangulært omriss — kan være valm- eller pulttak"
+   }
+  },
+  {
+   "id": "k2",
+   "kind": "outline",
+   "i": 1,
+   "a": {
+    "x": 2500,
+    "y": 0
+   },
+   "b": {
+    "x": 2500,
+    "y": 1000
+   },
+   "type": "rake",
+   "surface": "f1",
+   "planes": [
+    "f1.a",
+    "f1.b"
+   ],
+   "prov": {
+    "source": "AI_SUGGESTION",
+    "confidence": 0.4,
+    "note": "enkelt saltak antatt fra rektangulært omriss — kan være valm- eller pulttak"
+   }
+  },
+  {
+   "id": "k3",
+   "kind": "outline",
+   "i": 2,
+   "a": {
+    "x": 2500,
+    "y": 1000
+   },
+   "b": {
+    "x": 0,
+    "y": 1000
+   },
+   "type": "eave",
+   "surface": "f1",
+   "planes": [
+    "f1.b"
+   ],
+   "prov": {
+    "source": "AI_SUGGESTION",
+    "confidence": 0.4,
+    "note": "enkelt saltak antatt fra rektangulært omriss — kan være valm- eller pulttak"
+   }
+  },
+  {
+   "id": "k4",
+   "kind": "outline",
+   "i": 3,
+   "a": {
+    "x": 0,
+    "y": 1000
+   },
+   "b": {
+    "x": 0,
+    "y": 0
+   },
+   "type": "rake",
+   "surface": "f1",
+   "planes": [
+    "f1.a",
+    "f1.b"
+   ],
+   "prov": {
+    "source": "AI_SUGGESTION",
+    "confidence": 0.4,
+    "note": "enkelt saltak antatt fra rektangulært omriss — kan være valm- eller pulttak"
+   }
+  },
+  {
+   "id": "m1",
+   "kind": "line",
+   "a": {
+    "x": 2500,
+    "y": 500
+   },
+   "b": {
+    "x": 0,
+    "y": 500
+   },
+   "type": "ridge",
+   "surface": "f1",
+   "planes": [
+    "f1.a",
+    "f1.b"
+   ],
+   "prov": {
+    "source": "AI_SUGGESTION",
+    "confidence": 0.3,
+    "note": "mønet antatt midt mellom takfotene, langs lengste akse"
+   }
+  }
+ ],
+ "features": [
+  {
+   "id": "r1",
+   "type": "GUTTER",
+   "on_edge": "k1",
+   "geometry": {
+    "kind": "polyline",
+    "pts": [
+     {
+      "x": 0,
+      "y": 0,
+      "z": 10
+     },
+     {
+      "x": 2500,
+      "y": 0,
+      "z": 10
+     }
+    ]
+   },
+   "z_prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "oppgitt av bruker — ikke målt",
+    "from": "eave_m"
+   },
+   "length_m": 25,
+   "connects_to": [
+    "n1",
+    "n2",
+    "n3"
+   ],
+   "segments": [
+    {
+     "runs": 2,
+     "runs_src": "standard",
+     "run_pos": [
+      {
+       "at": "bunn",
+       "deg": 90
+      },
+      {
+       "at": "hengkant",
+       "deg": 40
+      }
+     ],
+     "cable_total_m": 4,
+     "id": "r1.1",
+     "from_m": 0,
+     "to_m": 2,
+     "length_m": 2
+    },
+    {
+     "runs": 2,
+     "runs_src": "standard",
+     "run_pos": [
+      {
+       "at": "bunn",
+       "deg": 90
+      },
+      {
+       "at": "hengkant",
+       "deg": 40
+      }
+     ],
+     "cable_total_m": 21,
+     "id": "r1.2",
+     "from_m": 2,
+     "to_m": 12.5,
+     "length_m": 10.5
+    },
+    {
+     "runs": 2,
+     "runs_src": "standard",
+     "run_pos": [
+      {
+       "at": "bunn",
+       "deg": 90
+      },
+      {
+       "at": "hengkant",
+       "deg": 40
+      }
+     ],
+     "cable_total_m": 21,
+     "id": "r1.3",
+     "from_m": 12.5,
+     "to_m": 23,
+     "length_m": 10.5
+    },
+    {
+     "runs": 2,
+     "runs_src": "standard",
+     "run_pos": [
+      {
+       "at": "bunn",
+       "deg": 90
+      },
+      {
+       "at": "hengkant",
+       "deg": 40
+      }
+     ],
+     "cable_total_m": 4,
+     "id": "r1.4",
+     "from_m": 23,
+     "to_m": 25,
+     "length_m": 2
+    }
+   ],
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "hele kanten"
+   },
+   "cable_total_m": 50
+  },
+  {
+   "id": "n1",
+   "type": "DOWNSPOUT",
+   "gutter": "r1",
+   "at_m": 2,
+   "geometry": {
+    "kind": "point",
+    "pt": {
+     "x": 200,
+     "y": 0,
+     "z": 10
+    }
+   },
+   "height_ref": "takfot",
+   "above_ground_m": {
+    "value": 10,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "gesimsen — én verdi for hele bygget (±0,5 m)",
+     "from": "eave_m"
+    }
+   },
+   "continues_below_ground": {
+    "value": false,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard: slutter over bakken"
+    }
+   },
+   "below_ground_m": {
+    "value": 1,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard 1,0 m til frostfritt nivå"
+    }
+   },
+   "cable_m": 10.05,
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1
+   },
+   "runs": 2,
+   "runs_src": "standard",
+   "cable_total_m": 20.05
+  },
+  {
+   "id": "n2",
+   "type": "DOWNSPOUT",
+   "gutter": "r1",
+   "at_m": 12.5,
+   "geometry": {
+    "kind": "point",
+    "pt": {
+     "x": 1250,
+     "y": 0,
+     "z": 10
+    }
+   },
+   "height_ref": "takfot",
+   "above_ground_m": {
+    "value": 10,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "gesimsen — én verdi for hele bygget (±0,5 m)",
+     "from": "eave_m"
+    }
+   },
+   "continues_below_ground": {
+    "value": false,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard: slutter over bakken"
+    }
+   },
+   "below_ground_m": {
+    "value": 1,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard 1,0 m til frostfritt nivå"
+    }
+   },
+   "cable_m": 10.05,
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1
+   },
+   "runs": 2,
+   "runs_src": "standard",
+   "cable_total_m": 20.05
+  },
+  {
+   "id": "n3",
+   "type": "DOWNSPOUT",
+   "gutter": "r1",
+   "at_m": 23,
+   "geometry": {
+    "kind": "point",
+    "pt": {
+     "x": 2300,
+     "y": 0,
+     "z": 10
+    }
+   },
+   "height_ref": "takfot",
+   "above_ground_m": {
+    "value": 10,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "gesimsen — én verdi for hele bygget (±0,5 m)",
+     "from": "eave_m"
+    }
+   },
+   "continues_below_ground": {
+    "value": false,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard: slutter over bakken"
+    }
+   },
+   "below_ground_m": {
+    "value": 1,
+    "prov": {
+     "source": "ESTIMATE",
+     "confidence": 0.5,
+     "note": "standard 1,0 m til frostfritt nivå"
+    }
+   },
+   "cable_m": 10.05,
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1
+   },
+   "runs": 2,
+   "runs_src": "standard",
+   "cable_total_m": 20.05
+  }
+ ],
+ "model": null
+}
