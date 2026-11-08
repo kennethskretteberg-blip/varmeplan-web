@@ -1,0 +1,148 @@
+[
+ {
+  "navn": "meldingen kommer",
+  "ok": true,
+  "fikk": "3D-visningen kunne ikke lastes. Tegningen virker som før.\nPrøv igjen"
+ },
+ {
+  "navn": "med «Prøv igjen»",
+  "ok": true,
+  "fikk": "3D-visningen kunne ikke lastes. Tegningen virker som før.\nPrøv igjen"
+ },
+ {
+  "navn": "ingen kastede feil i siden",
+  "ok": true,
+  "fikk": []
+ },
+ {
+  "navn": "2D: nytt nedløp med ekte klikk",
+  "ok": true
+ },
+ {
+  "navn": "lagring bygges",
+  "ok": true,
+  "fikk": 7649
+ },
+ {
+  "navn": "PDF lages",
+  "ok": true,
+  "fikk": 11839
+ },
+ {
+  "navn": "lista og advarslene virker uten three.js",
+  "ok": true
+ },
+ {
+  "navn": "«Prøv igjen» virker når nettet er tilbake",
+  "ok": true,
+  "fikk": ""
+ },
+ {
+  "navn": "meldingen kommer",
+  "ok": true,
+  "fikk": "3D-visningen kunne ikke lastes. Tegningen virker som før.\nPrøv igjen"
+ },
+ {
+  "navn": "med «Prøv igjen»",
+  "ok": true,
+  "fikk": "3D-visningen kunne ikke lastes. Tegningen virker som før.\nPrøv igjen"
+ },
+ {
+  "navn": "ingen kastede feil i siden",
+  "ok": true,
+  "fikk": []
+ },
+ {
+  "navn": "2D: nytt nedløp med ekte klikk",
+  "ok": true
+ },
+ {
+  "navn": "lagring bygges",
+  "ok": true,
+  "fikk": 7649
+ },
+ {
+  "navn": "PDF lages",
+  "ok": true,
+  "fikk": 11839
+ },
+ {
+  "navn": "«Prøv igjen» virker når nettet er tilbake",
+  "ok": true,
+  "fikk": ""
+ },
+ {
+  "navn": "testprosjektet har rom",
+  "ok": true,
+  "fikk": 7
+ },
+ {
+  "navn": "3D står åpen under PDF",
+  "ok": true,
+  "fikk": 605
+ },
+ {
+  "navn": "3D står fortsatt åpen etter PDF",
+  "ok": true
+ },
+ {
+  "navn": "lerretet er tilbake i ruta-størrelse",
+  "ok": true
+ },
+ {
+  "navn": "PDF: åpen 3D = lukket, byte for byte",
+  "ok": true,
+  "fikk": {
+   "lengde": [
+    2100041,
+    2100041,
+    2100041
+   ],
+   "sha_lukket": "03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082",
+   "sha_aapen": "03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082",
+   "sha_lukket_igjen": "03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082",
+   "sider": 8,
+   "snitt": {
+    "lengde": [
+     287748,
+     287748
+    ],
+    "sha_lukket": "21e337e03494713886449be5a400f9d14881eca06835d9feef7dcbb3599d775c",
+    "sha_aapen": "21e337e03494713886449be5a400f9d14881eca06835d9feef7dcbb3599d775c"
+   }
+  }
+ },
+ {
+  "navn": "PDF: lukket igjen = første",
+  "ok": true,
+  "fikk": {
+   "lengde": [
+    2100041,
+    2100041,
+    2100041
+   ],
+   "sha_lukket": "03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082",
+   "sha_aapen": "03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082",
+   "sha_lukket_igjen": "03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082",
+   "sider": 8,
+   "snitt": {
+    "lengde": [
+     287748,
+     287748
+    ],
+    "sha_lukket": "21e337e03494713886449be5a400f9d14881eca06835d9feef7dcbb3599d775c",
+    "sha_aapen": "21e337e03494713886449be5a400f9d14881eca06835d9feef7dcbb3599d775c"
+   }
+  }
+ },
+ {
+  "navn": "snitt-PDF: åpen 3D = lukket, byte for byte",
+  "ok": true,
+  "fikk": [
+   287748,
+   287748,
+   "21e337e03494713886449be5a400f9d14881eca06835d9feef7dcbb3599d775c",
+   "21e337e03494713886449be5a400f9d14881eca06835d9feef7dcbb3599d775c"
+  ]
+ }
+]

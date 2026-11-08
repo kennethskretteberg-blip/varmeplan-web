@@ -1,0 +1,323 @@
+[
+ {
+  "navn": "steg 3: knappen står i verktøylinja, ruta er av",
+  "ok": true
+ },
+ {
+  "navn": "2D til venstre, 3D til høyre",
+  "ok": true,
+  "fikk": {
+   "a": {
+    "l": 185,
+    "t": 56,
+    "w": 604.5,
+    "h": 814,
+    "r": 789.5,
+    "b": 870
+   },
+   "b": {
+    "l": 795.5,
+    "t": 56,
+    "w": 604.5,
+    "h": 814,
+    "r": 1400,
+    "b": 870
+   }
+  }
+ },
+ {
+  "navn": "standard 50/50",
+  "ok": true,
+  "fikk": [
+   604.5,
+   604.5
+  ]
+ },
+ {
+  "navn": "lerretet følger ruta (backing = CSS)",
+  "ok": true,
+  "fikk": 605
+ },
+ {
+  "navn": "three-lerretet fyller visningen",
+  "ok": true
+ },
+ {
+  "navn": "skillelinja kan dras (ruta blir bredere)",
+  "ok": true,
+  "fikk": [
+   452.25,
+   756.75
+  ]
+ },
+ {
+  "navn": "lerretet har fulgt draget",
+  "ok": true
+ },
+ {
+  "navn": "forholdet er lagret",
+  "ok": true,
+  "fikk": "0.6259259259259259"
+ },
+ {
+  "navn": "nytt trykk på 3D lukker",
+  "ok": true
+ },
+ {
+  "navn": "lerretet har fått hele bredden tilbake",
+  "ok": true
+ },
+ {
+  "navn": "forholdet huskes ved ny åpning",
+  "ok": true,
+  "fikk": 756.75
+ },
+ {
+  "navn": "forholdet ligger utenfor prosjektet (ny fane, nytt prosjekt)",
+  "ok": true
+ },
+ {
+  "navn": "Esc med verktøy på: verktøyet slås av, ruta står",
+  "ok": true
+ },
+ {
+  "navn": "Esc uten verktøy: ruta lukkes",
+  "ok": true
+ },
+ {
+  "navn": "steg 2: knappen finnes (DOM)",
+  "ok": true
+ },
+ {
+  "navn": "steg 3: knappen finnes (DOM)",
+  "ok": true
+ },
+ {
+  "navn": "steg 4: knappen finnes (DOM)",
+  "ok": true
+ },
+ {
+  "navn": "steg 1: ingen knapp (DOM)",
+  "ok": true
+ },
+ {
+  "navn": "går du til steg 1, lukkes ruta (ingen knapp å lukke den med)",
+  "ok": true
+ },
+ {
+  "navn": "ikke delt: ruta dekker lerretet, ingen skillelinje",
+  "ok": true,
+  "fikk": {
+   "a": {
+    "l": 185,
+    "t": 56,
+    "w": 635,
+    "h": 814,
+    "r": 820,
+    "b": 870
+   },
+   "b": {
+    "l": 185,
+    "t": 56,
+    "w": 635,
+    "h": 814,
+    "r": 820,
+    "b": 870
+   }
+  }
+ },
+ {
+  "navn": "knappen sier 2D, og er fortsatt synlig over ruta",
+  "ok": true
+ },
+ {
+  "navn": "trykk på 2D: tilbake til tegningen",
+  "ok": true
+ },
+ {
+  "navn": "vindu smalnes med åpen rute: går over til enkeltvisning og beholder modellen",
+  "ok": true
+ },
+ {
+  "navn": "og tilbake til delt",
+  "ok": true
+ },
+ {
+  "navn": "sum før = 110,15 m",
+  "ok": true,
+  "fikk": "110,15 m"
+ },
+ {
+  "navn": "nedløpet er tegnet med ekte klikk i 2D",
+  "ok": true,
+  "fikk": [
+   3,
+   4
+  ]
+ },
+ {
+  "navn": "3D viser det innen ett sekund",
+  "ok": true,
+  "fikk": 547
+ },
+ {
+  "navn": "målt tid klikk → liste (ms)",
+  "ok": true,
+  "fikk": 547
+ },
+ {
+  "navn": "ikke før et halvt sekund etter endringen",
+  "ok": true,
+  "fikk": 547
+ },
+ {
+  "navn": "Sum har endret seg",
+  "ok": true,
+  "fikk": [
+   "110,15 m",
+   "130,20 m"
+  ]
+ },
+ {
+  "navn": "Sum er lik panelet i 2D etter endringen",
+  "ok": true,
+  "fikk": [
+   "130,20 m",
+   "130,20 m"
+  ]
+ },
+ {
+  "navn": "nytt nedløp står i lista",
+  "ok": true
+ },
+ {
+  "navn": "seks endringer med 160 ms mellomrom gir én nybygging",
+  "ok": true,
+  "fikk": 1
+ },
+ {
+  "navn": "modellen har faktisk dreid (bildet er endret)",
+  "ok": true
+ },
+ {
+  "navn": "S.tak er byte-lik",
+  "ok": true,
+  "fikk": "d61412ff2c62"
+ },
+ {
+  "navn": "hele lagringen er byte-lik",
+  "ok": true,
+  "fikk": "b32edf923a13"
+ },
+ {
+  "navn": "nybygging beholder vinkelen brukeren har dreid til",
+  "ok": true
+ },
+ {
+  "navn": "Nullstill vinkel gir standardbildet",
+  "ok": true
+ },
+ {
+  "navn": "Farge bytter stil",
+  "ok": true
+ },
+ {
+  "navn": "1-filmens-bygg: Sum i 3D = 110,15 m",
+  "ok": true,
+  "fikk": "110,15 m"
+ },
+ {
+  "navn": "1-filmens-bygg: panelet i 2D viser samme tall",
+  "ok": true,
+  "fikk": "Kabel 110,15 m"
+ },
+ {
+  "navn": "1-filmens-bygg: hver kabelrad i 2D-panelet finnes i 3D-lista",
+  "ok": true,
+  "fikk": {
+   "r1.1": "4,00",
+   "r1.2": "21,00",
+   "r1.3": "21,00",
+   "r1.4": "4,00",
+   "n1": "20,05",
+   "n2": "20,05",
+   "n3": "20,05"
+  }
+ },
+ {
+  "navn": "1-filmens-bygg: ingen uenighetslinje",
+  "ok": true,
+  "fikk": ""
+ },
+ {
+  "navn": "3-l-form-8-kanter: Sum i 3D = 97,66 m",
+  "ok": true,
+  "fikk": "97,66 m"
+ },
+ {
+  "navn": "3-l-form-8-kanter: panelet i 2D viser samme tall",
+  "ok": true,
+  "fikk": "Kabel 97,66 m"
+ },
+ {
+  "navn": "3-l-form-8-kanter: hver kabelrad i 2D-panelet finnes i 3D-lista",
+  "ok": true,
+  "fikk": {
+   "r1.1": "2,00",
+   "r1.2": "24,00",
+   "r1.3": "2,00",
+   "r2.1": "9,00",
+   "r2.2": "1,00",
+   "r3.1": "6,00",
+   "n1": "10,85",
+   "n2": "10,85",
+   "n3": "10,85",
+   "n4": "10,85",
+   "g1": "10,26"
+  }
+ },
+ {
+  "navn": "3-l-form-8-kanter: ingen uenighetslinje",
+  "ok": true,
+  "fikk": ""
+ },
+ {
+  "navn": "påtvunget avvik gir linja",
+  "ok": true,
+  "fikk": "⚠ 3D og 2D er uenige om r1 (25,00 mot 24,80 m)."
+ },
+ {
+  "navn": "appen velger ikke side: det lagrede tallet er urørt",
+  "ok": true
+ },
+ {
+  "navn": "appen velger ikke side: 3D viser fortsatt geometrien",
+  "ok": true
+ },
+ {
+  "navn": "L-form uten møne: advarselen står i ruta",
+  "ok": true,
+  "fikk": [
+   {
+    "t": "⚠ Takflate f1: taket er ikke reist, fordi det er ingen lagret mønelinje. Det vises som et lokk ved gesimsen.",
+    "c": "rgb(208, 88, 32)",
+    "f": "11px"
+   }
+  ]
+ },
+ {
+  "navn": "samme gule stil som i 2D-panelet",
+  "ok": true,
+  "fikk": [
+   {
+    "t": "⚠ Takflate f1: taket er ikke reist, fordi det er ingen lagret mønelinje. Det vises som et lokk ved gesimsen.",
+    "c": "rgb(208, 88, 32)",
+    "f": "11px"
+   },
+   {
+    "c": "rgb(208, 88, 32)",
+    "f": "11px"
+   }
+  ]
+ }
+]

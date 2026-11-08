@@ -617,6 +617,26 @@ export function maal(scene) {
              ikke_tegnet: scene.ikkeTegnet.slice(), ikke_tegnet_m, sum_m: tak_m + sluk_ring_m + sluk_ror_m + ikke_tegnet_m } };
 }
 
+// ── Lista ved siden av modellen. Delt mellom forhåndsvisningen og appen (221). ──
+const tallD = (v, d = 2) => v.toFixed(d).replace('.', ',');
+const rent = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+/** maal(scene) → HTML: rennestrekk med delstrekk, nedløp med kabel, møner, gradrenner, snøfangere … og Sum. */
+export function maalHtml(M) {
+  const r = (a, b) => `<tr><td>${a}</td><td>${b}</td></tr>`;
+  let h = '';
+  if (M.renner.length) h += '<h2>Rennestrekk</h2><table>' + M.renner.map(g => r(rent(g.id), tallD(g.lengde_m) + ' m') + g.delstrekk.map(s => r('&nbsp;&nbsp;' + rent(s.id) + ' · ' + s.lop + ' løp', tallD(s.kabel_m) + ' m kabel')).join('')).join('') + '</table>';
+  if (M.nedlop.length) h += '<h2>Nedløp</h2><table>' + M.nedlop.map(d => r(rent(d.id) + ' · ' + d.lop + ' løp', tallD(d.over_m) + (d.under_m ? ' + ' + tallD(d.under_m) : '') + ' m') + r('&nbsp;&nbsp;kabel', tallD(d.kabel_m) + ' m')).join('') + '</table>';
+  if (M.moner.length) h += '<h2>Møne</h2><table>' + M.moner.map(m => r(rent(m.id), tallD(m.lengde_m) + ' m')).join('') + '</table>';
+  if (M.gradrenner.length) h += '<h2>Gradrenner</h2><table>' + M.gradrenner.map(g => r(rent(g.id) + (g.lop ? ' · ' + g.lop + ' løp' : ''), tallD(g.lengde_m) + ' m') + (g.lop ? r('&nbsp;&nbsp;kabel', tallD(g.kabel_m) + ' m') : '')).join('') + '</table>';
+  if (M.snofangere.length) h += '<h2>Snøfangere</h2><table>' + M.snofangere.map(g => r(rent(g.id), tallD(g.lengde_m) + ' m')).join('') + '</table>';
+  if (M.forbi.length) h += '<h2>Kabel forbi hindring</h2><table>' + M.forbi.map(f => r(rent(f.id) + ' · ' + f.lop + ' løp', tallD(f.kabel_m) + ' m')).join('') + '</table>';
+  if (M.sluk.length) h += `<h2>Sluk (${M.sluk.length})</h2><table>` + r('ringer', tallD(M.kabel.sluk_ring_m) + ' m') + r('i rør', tallD(M.kabel.sluk_ror_m) + ' m') + '</table>';
+  if (M.varmefelt.length) h += '<h2>Varmefelt</h2><table>' + M.varmefelt.map(f => r(rent(f.id), tallD(f.areal_m2, 1) + ' m²')).join('') + '</table>';
+  const K = M.kabel;
+  h += '<h2>Kabel</h2><table>' + r('tegnet', tallD(K.tegnet_m) + ' m') + K.ikke_tegnet.map(x => r(rent(x.id) + ' (fra data, ikke tegnet' + (x.i_sum ? '' : ', utenfor oppsettet') + ')', tallD(x.kabel_m) + ' m')).join('') + `<tr class="sum"><td>Sum</td><td>${tallD(K.sum_m)} m</td></tr></table>`;
+  return h;
+}
+
 // ── Tegneren (three.js lastes først her) ─────────────────────────────────────────────────────
 const nokkel = d => (d.type === 'nedlop' && d.del === 'under' ? 'nedlop_u' : d.type);
 const tall = v => v.toFixed(2).replace('.', ',');
@@ -636,7 +656,7 @@ function etiketter(scene) {
   return ut;
 }
 
-/** Tegner scenen i `beholder`. → { settStil, settVisMaal, tilbakestill, bilde, lukk }. Ortografisk kamera, OrbitControls. */
+/** Tegner scenen i `beholder`. → { settStil, settVisMaal, settScene, tilbakestill, bilde, lukk }. Ortografisk kamera, OrbitControls. */
 export async function tegnScene(scene, beholder, valg = {}) {
   const THREE = await import(/* webpackIgnore: true */ THREE_URL);
   const { OrbitControls } = await import(/* webpackIgnore: true */ ORBIT_URL);
@@ -659,12 +679,17 @@ export async function tegnScene(scene, beholder, valg = {}) {
   kontroll.enableDamping = false;
 
   let gruppe = null;
-  const B = scene.boks || { min: [-5, 0, -5], max: [5, 5, 5] };
-  const senter = [0, 1, 2].map(k => (B.min[k] + B.max[k]) / 2);
+  let B, senter, side, radius;
+  let rort = false;   // 221: har brukeren dreid? Da skal en ny scene ikke flytte kameraet
+  function rammer() {
+  B = scene.boks || { min: [-5, 0, -5], max: [5, 5, 5] };
+  senter = [0, 1, 2].map(k => (B.min[k] + B.max[k]) / 2);
   // Standardvinkelen ser på siden med flest nedløp og renner: det er dem 3D er til for å kontrollere.
   const utSum = scene.deler.filter(d => d.ut).reduce((a, d) => [a[0] + d.ut[0] * (d.type === 'nedlop' ? 2 : 1), a[1] + d.ut[1] * (d.type === 'nedlop' ? 2 : 1)], [0, 0]);
-  const side = utSum.map(v => (v < -1e-6 ? -1 : 1));
-  const radius = Math.max(1, Math.hypot(B.max[0] - B.min[0], B.max[1] - B.min[1], B.max[2] - B.min[2]) / 2 * 1.1);
+  side = utSum.map(v => (v < -1e-6 ? -1 : 1));
+  radius = Math.max(1, Math.hypot(B.max[0] - B.min[0], B.max[1] - B.min[1], B.max[2] - B.min[2]) / 2 * 1.1);
+  }
+  rammer();
 
   function bygg() {
     if (gruppe) { treScene.remove(gruppe); gruppe.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }
@@ -730,13 +755,18 @@ export async function tegnScene(scene, beholder, valg = {}) {
     treScene.add(gruppe);
   }
 
-  const etikettData = etiketter(scene);
-  const etikettEl = etikettData.map(e => {
+  let etikettData, etikettEl;
+  function byggEtiketter() {
+    lag.textContent = '';
+    etikettData = etiketter(scene);
+    etikettEl = etikettData.map(e => {
     const el = document.createElement('div');
     el.textContent = e.tekst;
     el.style.cssText = 'position:absolute;white-space:nowrap;background:rgba(255,255,255,.9);color:#111;border:1px solid #9ca3af;border-radius:3px;padding:1px 4px;transform:translate(-50%,-50%)';
     lag.appendChild(el); return el;
-  });
+    });
+  }
+  byggEtiketter();
   function plasserEtiketter() {
     lag.style.display = visMaal ? 'block' : 'none';
     if (!visMaal) return;
@@ -754,19 +784,23 @@ export async function tegnScene(scene, beholder, valg = {}) {
     camera.updateProjectionMatrix(); renderer.setSize(W, H); tegn();
   }
   function tilbakestill() {
+    rort = false;
     kontroll.target.set(senter[0], senter[1], senter[2]);
     camera.position.set(senter[0] + side[0] * radius, senter[1] + radius * 0.65, senter[2] + side[1] * radius);
     camera.zoom = 1; camera.lookAt(kontroll.target); camera.updateProjectionMatrix(); kontroll.update(); tegn();
   }
   bygg(); meld(); tilbakestill();
   kontroll.addEventListener('change', tegn);
+  kontroll.addEventListener('start', () => { rort = true; });
   const ro = new ResizeObserver(meld); ro.observe(beholder);
 
   return {
     settStil(s) { stil = s === 'farge' ? 'farge' : 'strek'; bygg(); tegn(); },
     settVisMaal(v) { visMaal = !!v; tegn(); },
+    // 221: ny scene i samme lerret, så vinkelen brukeren har dreid til står. Har hen ikke dreid, følger utsnittet bygget.
+    settScene(ny) { scene = ny; rammer(); byggEtiketter(); bygg(); if (rort) meld(); else { meld(); tilbakestill(); } },
     tilbakestill,
     bilde() { tegn(); return renderer.domElement.toDataURL('image/png'); },
-    lukk() { ro.disconnect(); kontroll.dispose(); renderer.dispose(); beholder.removeChild(renderer.domElement); beholder.removeChild(lag); },
+    lukk() { ro.disconnect(); kontroll.dispose(); renderer.dispose(); renderer.forceContextLoss(); beholder.removeChild(renderer.domElement); beholder.removeChild(lag); },
   };
 }

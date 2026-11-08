@@ -1,0 +1,19 @@
+{
+ "lengde": [
+  2100041,
+  2100041,
+  2100041
+ ],
+ "sha_lukket": "03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082",
+ "sha_aapen": "03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082",
+ "sha_lukket_igjen": "03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082",
+ "sider": 8,
+ "snitt": {
+  "lengde": [
+   287748,
+   287748
+  ],
+  "sha_lukket": "21e337e03494713886449be5a400f9d14881eca06835d9feef7dcbb3599d775c",
+  "sha_aapen": "21e337e03494713886449be5a400f9d14881eca06835d9feef7dcbb3599d775c"
+ }
+}

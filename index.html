@@ -691,6 +691,31 @@ body.light-theme .room-name-prompt{background:rgba(255,255,255,0.97);border-colo
 
 /* ── CANVAS ── */
 #canvas-wrap{position:relative;flex:1;overflow:hidden;background:var(--bg)}
+/* 221: 3D ved siden av 2D. Fordelingen er flex-grow på ruta, så lerretet følger av seg selv (ResizeObserver → resizeCanvas). */
+#tak3d-split{flex:0 0 6px;cursor:col-resize;background:var(--border);touch-action:none}
+#tak3d-split:hover,#tak3d-split.drar{background:var(--accent)}
+#tak3d-pane{position:relative;flex:1 1 0;min-width:0;background:var(--surface);color:var(--text);container-type:inline-size;overflow:hidden}
+#tak3d-pane.smal{position:absolute;inset:0;z-index:15;padding-top:58px;box-sizing:border-box}
+.tak3d-inner{display:grid;grid-template-columns:minmax(0,1fr) 250px;height:100%}
+#tak3d-view{position:relative;min-width:0;min-height:0;overflow:hidden;background:#fff}
+#tak3d-view canvas{display:block}
+#tak3d-msg{position:absolute;inset:0;z-index:2;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;text-align:center;background:var(--surface);color:var(--text);font-size:13px}
+#tak3d-side{overflow:auto;padding:10px;border-left:1px solid var(--border);font-size:12px;min-height:0}
+#tak3d-side h2{font-size:12px;margin:12px 0 3px}
+#tak3d-side table{border-collapse:collapse;width:100%;font-size:11px}
+#tak3d-side td{padding:1px 3px;border-bottom:1px solid var(--border)}
+#tak3d-side td:last-child{text-align:right;white-space:nowrap}
+#tak3d-side .sum td{font-weight:700;position:sticky;bottom:-10px;background:var(--surface)}
+/* Halv bredde: verktøylinja skal ikke bli tre rader over tegningen */
+#ctxbar:has(.tak3d-chip.on){width:max-content;max-width:calc(100% - 24px);flex-wrap:wrap}
+#ctxbar:has(.tak3d-chip.on) .snap-chip{padding:0 6px}
+#ctxbar:has(.tak3d-chip.on) .tak-brush>span:first-child{display:none}
+.tak3d-kn{display:flex;flex-wrap:wrap;gap:4px;align-items:center;min-height:0}
+.tak3d-kn .snap-chip{height:24px}
+.tak3d-uenig{color:#dc2626;font-size:12px;font-weight:700;margin-top:6px}
+.tak3d-adv{color:var(--warn,#d97706);font-size:11px;margin-top:4px}
+@container (max-width:640px){.tak3d-inner{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,3fr) minmax(0,2fr)}#tak3d-side{border-left:0;border-top:1px solid var(--border)}}
+@media print{#tak3d-split,#tak3d-pane{display:none!important}}
 /* STEG 6: empty-state startvalg */
 #canvas-empty-state{position:absolute;inset:0;z-index:15;display:none;align-items:center;justify-content:center;pointer-events:none}
 #canvas-empty-state .ces-inner{pointer-events:auto;text-align:center;max-width:520px;padding:24px}
@@ -3000,6 +3025,7 @@ const _SHORTCUTS = [
   { group: 'Presentasjonsmodus',    keys: ['Esc'],                 what: 'Avslutt presentasjon' },                              // :41064
   { group: 'Tak',                   keys: ['M'],                   what: 'Kontrollmål: mål en vegg og se at tallet stemmer (lagres ikke). D gjør det samme' },   // 214
   { group: 'Tak',                   keys: ['Esc'],                 what: 'Slå av penselen for kantmerking' },   // 218
+  { group: 'Tak',                   keys: ['Esc'],                 what: 'Lukk 3D-visningen, når ingen verktøy står på' },   // 221
   { group: 'Trapp: kabelforslag',   keys: ['↑', '↓'],              what: 'Bla i kabler (forrige / neste kabel i produktgruppa, med passform live)' }, // 188
 ];
 
@@ -77018,6 +77044,7 @@ document.addEventListener('keydown', e=>{
     // _manualPlaceSession (under), ville Escape drept artikkellista i stedet for måleverktøyet.
     // Høyreklikk gjorde alltid det riktige her; Escape gjorde ikke.
     if (S.ui.drawMode === 'dim') { cancelDrawing(); return; }
+    if (_tak3d && !_takEdgeSel) { e.preventDefault(); _tak3dClose(); return; }   // 221: verktøyene over har allerede fått sin Esc
     if (_matRunDeselect()) return;   // 124 / Regel 26: første Esc velger bort bredden, ikke matta
     if (S.ui.selectedLabelStripId != null || S.ui.selectedLabelCableId != null || S.ui.selectedLabelMatId != null || S.ui.selectedLabelMatRectId != null) { S.ui.selectedLabelStripId = null; S.ui.selectedLabelCableId = null; S.ui.selectedLabelMatId = null; S.ui.selectedLabelMatRectId = null; render(); return; }
     if (S.ui.selectedBg) { deselectBg(); return; }
@@ -82227,19 +82254,20 @@ function _takToolbarHtml(fid) {
       + chip(`_takFreeStart(${fid})`, nr(3) + 'Tegn frihånd', 'Skriv lengden på hver kant (vegg-for-vegg)');
   }
   const map = f.bg ? sep + _takMapChipHtml(fid) : '';
+  const lbl3d = lbl + _tak3dChipHtml(fid, n);   // 221: fra steg 2, når det finnes et omriss å reise
   if (!f.s) return lbl + `<span style="font-size:11px;color:var(--dim);padding:0 6px">Finn bygget i steg 1 først</span>`;
-  if (n === 2) return lbl + chip('_takCheckToggle()', IC('ruler', 14) + ' Kontrollmål', 'Mål en vegg du kjenner lengden på (M)') + chip(`_takToDrawing(${fid})`, 'Gjør om til tegning', 'Kartet legges bort, bygget fyller skjermen') + map;
+  if (n === 2) return lbl3d + chip('_takCheckToggle()', IC('ruler', 14) + ' Kontrollmål', 'Mål en vegg du kjenner lengden på (M)') + chip(`_takToDrawing(${fid})`, 'Gjør om til tegning', 'Kartet legges bort, bygget fyller skjermen') + map;
   if (n === 3) {
-    if (!f.roofReady) return lbl + `<span style="font-size:11px;color:var(--dim);padding:0 6px">Velg taktype i steg 2 først</span>` + map;
+    if (!f.roofReady) return lbl3d + `<span style="font-size:11px;color:var(--dim);padding:0 6px">Velg taktype i steg 2 først</span>` + map;
     const G = _takFeats(f.t, 'GUTTER').length;
     const deler = f.flat
       ? start('drain', '+ Sluk') + start('fvalley', '+ Gradrenne') + start('field', '+ Varmefelt')
       : start('gutter', '+ Rennestrekk') + (G ? start('downspout', '+ Nedløp') : '') + start('ridge', '+ Møne') + start('valley', '+ Gradrenne') + start('guard', '+ Snøfanger');
-    return lbl + _takBrushChipsHtml(fid) + sep + deler + start('skylight', '+ Takvindu') + start('obstacle', '+ Hindring') + stop + map;
+    return lbl3d + _takBrushChipsHtml(fid) + sep + deler + start('skylight', '+ Takvindu') + start('obstacle', '+ Hindring') + stop + map;
   }
   let sum = f.flat && !f.items.length ? (f.flatSum && f.flatSum.total ? _takFlatMeters(f.flatSum.total) : '') : (f.items.length ? 'Kabel ' + _takNum(f.cable.total_m, 2) + ' m' : '');
   if (f.guard && f.guard.heated) sum += (sum ? ' + felt ' : 'Felt ') + _takFlatMeters(f.guard);   // 215: feltet regnes for seg
-  return lbl + (_takFeats(f.t, 'GUTTER').length ? start('start', 'Startpunkt for kabel') : '') + stop + (sum ? `<span class="tak-bar-sum" style="font-size:11px;padding:0 6px">${sum}</span>` : '') + map;
+  return lbl3d + (_takFeats(f.t, 'GUTTER').length ? start('start', 'Startpunkt for kabel') : '') + stop + (sum ? `<span class="tak-bar-sum" style="font-size:11px;padding:0 6px">${sum}</span>` : '') + map;
 }
 /** Bare for testene 206–213: de klikker og leser i hele kortet slik det sto i DOM-en før veiviseren. Hvert
  *  stegs innhold er testet i _takRegressionTest214. Returnerer funksjonen som setter veiviseren tilbake. */
@@ -85694,6 +85722,201 @@ function _takGuardSumHtml(t) {
     <div style="font-size:10px;color:var(--dim)">Regnes for seg: rennas tabell over er uendret av feltet.</div></div>`;
 }
 
+// ═══ 221 · 3D VED SIDEN AV 2D — kontroll, ikke tegneflate ═══════════════════════════════════════════
+// Kenneth 08.11.2026: «2D for å jobbe med … Så kan man kontrollere i 3D at nedløpene går helt ned og at
+// målene stemmer.» Motoren er varmeplan-3d.js (219/220); den og three.js lastes først når knappen trykkes.
+//
+// Alt her er visning: `_tak3d` lagres aldri, og ingenting i ruta kan endre S. Motoren får en KOPI av taket.
+// three.js tegner på sitt eget lerret, så PDF-en (hovedlerretet, `_renderRoomToImage`) ser det aldri.
+// Endringer fanges ved å sammenligne taket som tekst noen ganger i sekundet mens ruta er åpen: det dekker
+// alle veiene S.tak endres på, uten en krok i hver av dem og uten å røre render().
+const TAK3D_VENT_MS = 500;    // 3D-planen §5: nybygging et halvt sekund etter siste endring
+const TAK3D_POLL_MS = 150;
+const TAK3D_SMAL_PX = 900;    // under dette: ikke delt, knappen bytter
+const TAK3D_LS = 'varmeplan_tak3d_andel';   // fordelingen er en vane hos brukeren, ikke prosjektdata
+const TAK3D_FEIL = '3D-visningen kunne ikke lastes. Tegningen virker som før.';
+const TAK3D_TOL_M = 0.005;    // under et halvt centimeter viser begge panelene samme tall
+var _tak3d = null;            // mens ruta er åpen: { fid, pane, split, view, gen, sist, vent, poll, vis, stil, visMaal, feilet, smal }
+var _tak3dMotor = null;       // import()-løftet for varmeplan-3d.js
+
+/** Etasjen 3D kan vise nå, eller null. Bare i tak-delen, fra steg 2, og aldri i presentasjons-/kundevisning. */
+function _tak3dFid() {
+  const fid = S.ui.activeFloorId;
+  if (fid == null || S.ui.present || S.ui.kundeMode || !_takPartOfFloor(fid) || !_takSurface(fid)) return null;
+  return _takWizardStep(fid) >= 2 ? fid : null;
+}
+function _tak3dChipHtml(fid, n) {
+  if (!(n >= 2) || _tak3dFid() !== fid) return '';
+  const pa = !!_tak3d, label = pa && _tak3d.smal ? '2D' : '3D';
+  return `<button class="snap-chip tak3d-chip${pa ? ' on' : ''}" aria-pressed="${pa}" onclick="_tak3dToggle()" title="${pa ? 'Lukk 3D-visningen (Esc)' : 'Se bygget i 3D. Du tegner fortsatt i 2D.'}">${label}</button>`;
+}
+function _tak3dAndel() {
+  let v = NaN;
+  try { v = parseFloat(localStorage.getItem(TAK3D_LS)); } catch (e) {}
+  return v >= 0.25 && v <= 0.75 ? v : 0.5;
+}
+function _tak3dSettAndel(v, lagre) {
+  const r = Math.max(0.25, Math.min(0.75, v));
+  if (_tak3d && !_tak3d.smal) _tak3d.pane.style.flexGrow = String(r / (1 - r));
+  if (lagre) { try { localStorage.setItem(TAK3D_LS, String(r)); } catch (e) {} }
+  return r;
+}
+/** Delt på brei skjerm (søsken til lerretet), over lerretet på smal. Lerretets størrelse følger av seg selv. */
+function _tak3dLayout() {
+  const T = _tak3d; if (!T) return;
+  const smal = window.innerWidth < TAK3D_SMAL_PX, wrap = document.getElementById('canvas-wrap');
+  if (smal === T.smal) return;
+  T.smal = smal;
+  T.pane.classList.toggle('smal', smal);
+  T.split.style.display = smal ? 'none' : '';
+  if (smal) { T.pane.style.flexGrow = ''; wrap.appendChild(T.pane); }
+  else { wrap.after(T.split, T.pane); _tak3dSettAndel(_tak3dAndel()); }
+  updateCtxBar();
+}
+function _tak3dDraStart(e) {
+  const T = _tak3d; if (!T || e.button !== 0) return;
+  e.preventDefault();
+  const split = T.split, wrap = document.getElementById('canvas-wrap');
+  split.setPointerCapture(e.pointerId); split.classList.add('drar');
+  let r = _tak3dAndel();
+  const flytt = ev => {
+    const v = wrap.getBoundingClientRect().left, h = T.pane.getBoundingClientRect().right;
+    r = _tak3dSettAndel((h - ev.clientX) / (h - v));
+  };
+  const slipp = () => {
+    split.removeEventListener('pointermove', flytt); split.removeEventListener('pointerup', slipp); split.removeEventListener('pointercancel', slipp);
+    split.classList.remove('drar');
+    _tak3dSettAndel(r, true);
+  };
+  split.addEventListener('pointermove', flytt); split.addEventListener('pointerup', slipp); split.addEventListener('pointercancel', slipp);
+}
+/** Står hele omrisset innenfor lerretet? */
+function _tak3dOmrissSynlig(fid) {
+  const W = (_takSurface(fid).footprint || {}).world || [];
+  return W.every(p => { const q = w2s(p.x, p.y); return q.x >= 0 && q.y >= 0 && q.x <= canvas.width && q.y <= canvas.height; });
+}
+function _tak3dToggle() { return _tak3d ? _tak3dClose() : _tak3dOpen(); }
+function _tak3dOpen() {
+  const fid = _tak3dFid();
+  if (_tak3d || fid == null) return false;
+  const split = document.createElement('div'); split.id = 'tak3d-split'; split.setAttribute('role', 'separator'); split.setAttribute('aria-orientation', 'vertical'); split.title = 'Dra for å endre fordelingen';
+  split.addEventListener('pointerdown', _tak3dDraStart);
+  const pane = document.createElement('div'); pane.id = 'tak3d-pane';
+  pane.innerHTML = `<div class="tak3d-inner"><div id="tak3d-view"><div id="tak3d-msg"></div></div><div id="tak3d-side">
+    <div class="tak3d-kn"><b style="margin-right:auto">3D-kontroll</b><button class="snap-chip" id="tak3d-farge" aria-pressed="false" onclick="_tak3dFarge()">Farge</button><button class="snap-chip" onclick="_tak3dNullstill()">Nullstill vinkel</button></div>
+    <label style="display:block;margin-top:6px;font-size:11px"><input type="checkbox" id="tak3d-vismaal" onchange="_tak3dVisMaal(this.checked)"> Vis mål i modellen</label>
+    <div id="tak3d-uenig"></div><div id="tak3d-adv"></div><div id="tak3d-liste"></div></div></div>`;
+  const wrap = document.getElementById('canvas-wrap'), helt = _tak3dOmrissSynlig(fid);
+  wrap.after(split, pane);
+  _tak3d = { fid, pane, split, view: pane.querySelector('#tak3d-view'), gen: 0, sist: null, vent: null, poll: null, vis: null, stil: 'strek', visMaal: false, feilet: false, smal: false };
+  _tak3dSettAndel(_tak3dAndel());
+  _tak3dLayout();
+  // Så du hele bygget før, skal du se hele bygget i den halve bredden. Står du zoomet inn på en detalj, står du der.
+  if (helt && !_tak3d.smal) { resizeCanvas(); if (!_tak3dOmrissSynlig(fid)) fitAll(); }
+  window.addEventListener('resize', _tak3dLayout);
+  _tak3dPoll();
+  clearTimeout(_tak3d.vent);       // første tegning skal ikke vente
+  _tak3d.poll = setInterval(_tak3dPoll, TAK3D_POLL_MS);
+  updateCtxBar();
+  _tak3dTegn();
+  return true;
+}
+function _tak3dClose() {
+  const T = _tak3d; if (!T) return false;
+  _tak3d = null;
+  clearInterval(T.poll); clearTimeout(T.vent);
+  window.removeEventListener('resize', _tak3dLayout);
+  if (T.vis) { try { T.vis.lukk(); } catch (e) { console.warn('[3D] lukk:', e); } }
+  T.pane.remove(); T.split.remove();
+  updateCtxBar(); markDirty();
+  return true;
+}
+function _tak3dPoll() {
+  const T = _tak3d; if (!T) return;
+  const fid = _tak3dFid();
+  if (fid == null) { _tak3dClose(); return; }
+  const sig = fid + '|' + JSON.stringify(_takOf(fid));
+  if (sig === T.sist) return;
+  T.sist = sig; T.fid = fid;
+  clearTimeout(T.vent); T.vent = setTimeout(_tak3dTegn, TAK3D_VENT_MS);
+}
+function _tak3dMelding(tekst, knapp) {
+  const m = _tak3d && _tak3d.view.querySelector('#tak3d-msg'); if (!m) return;
+  m.style.display = tekst ? 'flex' : 'none';
+  m.innerHTML = tekst ? `<div>${tekst}</div>` + (knapp ? '<button class="snap-chip" style="height:28px" onclick="_tak3dProvIgjen()">Prøv igjen</button>' : '') : '';
+}
+function _tak3dProvIgjen() { if (_tak3d) { _tak3d.feilet = false; _tak3dTegn(); } }
+function _tak3dLastMotor() {
+  // Et mislykket forsøk skal ikke huskes: «Prøv igjen» må faktisk prøve igjen.
+  return _tak3dMotor || (_tak3dMotor = import('./varmeplan-3d.js').catch(e => { _tak3dMotor = null; throw e; }));
+}
+/** Bygger scenen av en kopi av taket, fyller lista og tegner. Nyeste kall vinner. */
+async function _tak3dTegn() {
+  const T = _tak3d; if (!T) return;
+  clearTimeout(T.vent);
+  const gen = ++T.gen, nyest = () => T === _tak3d && gen === T.gen;
+  const tekst = JSON.stringify(_takOf(T.fid));
+  if (!T.vis && !T.feilet) _tak3dMelding('Laster 3D-visningen …');
+  let mod;
+  try { mod = await _tak3dLastMotor(); }
+  catch (e) { console.warn('[3D] motoren kunne ikke lastes:', e); if (nyest()) { T.feilet = true; _tak3dMelding(TAK3D_FEIL, true); } return; }
+  if (!nyest()) return;
+  let scene;
+  try {
+    scene = mod.byggTak(JSON.parse(tekst), { stil: T.stil });
+    const M = mod.maal(scene);
+    T.pane.querySelector('#tak3d-liste').innerHTML = mod.maalHtml(M);
+    T.pane.querySelector('#tak3d-uenig').innerHTML = _tak3dUenig(JSON.parse(tekst), M).map(x => `<div class="tak3d-uenig">⚠ ${esc(x)}</div>`).join('');
+    T.pane.querySelector('#tak3d-adv').innerHTML = scene.advarsler.map(a => `<div class="tak3d-adv">⚠ ${esc(a)}</div>`).join('');
+  } catch (e) { console.warn('[3D] scenen kunne ikke bygges:', e); _tak3dMelding('3D-modellen kunne ikke bygges av dette taket. Tegningen virker som før.', true); return; }
+  if (T.feilet) return;   // lista og advarslene gjelder uansett; selve modellen venter på «Prøv igjen»
+  try {
+    if (T.vis) { T.vis.settScene(scene); _tak3dMelding(''); return; }
+    const v = await mod.tegnScene(scene, T.view, { stil: T.stil, visMaal: T.visMaal });
+    if (!nyest()) { v.lukk(); return; }
+    T.vis = v; _tak3dMelding('');
+  } catch (e) { console.warn('[3D] three.js kunne ikke lastes:', e); if (nyest()) { T.feilet = true; _tak3dMelding(TAK3D_FEIL, true); } }
+}
+function _tak3dFarge() {
+  const T = _tak3d; if (!T) return;
+  T.stil = T.stil === 'farge' ? 'strek' : 'farge';
+  const b = T.pane.querySelector('#tak3d-farge');
+  b.setAttribute('aria-pressed', String(T.stil === 'farge')); b.classList.toggle('on', T.stil === 'farge');
+  if (T.vis) T.vis.settStil(T.stil);
+}
+function _tak3dNullstill() { if (_tak3d && _tak3d.vis) _tak3d.vis.tilbakestill(); }
+function _tak3dVisMaal(v) { if (!_tak3d) return; _tak3d.visMaal = !!v; if (_tak3d.vis) _tak3d.vis.settVisMaal(!!v); }
+/** Målene fra den tegnede geometrien mot tallene 2D-panelet viser. Appen sier fra og velger ikke side. */
+function _tak3dUenig(t, M) {
+  const ut = [];
+  const sjekk = (navn, a3, b2, enhet) => {
+    if (a3 == null || b2 == null || Math.abs(a3 - b2) <= TAK3D_TOL_M) return;
+    ut.push(`3D og 2D er uenige om ${navn} (${_takNum(a3, 2)} mot ${_takNum(b2, 2)} ${enhet || 'm'}).`);
+  };
+  const v = x => (x && typeof x === 'object' ? x.value : x);
+  for (const g of _takFeats(t, 'GUTTER')) { const r = M.renner.find(x => x.id === g.id); if (r) sjekk(g.id, r.lengde_m, g.length_m); }
+  const S7 = _takCableSummary(t), delstrekk = M.renner.flatMap(r => r.delstrekk);
+  for (const r of S7.rows) {
+    if (r.kind === 'segment') { const d = delstrekk.find(x => x.id === r.id); if (d) { sjekk(r.id, d.lengde_m, r.length_m); sjekk('kabel ' + r.id, d.kabel_m, r.cable_m); } }
+    else if (r.kind === 'DOWNSPOUT') {
+      const d = M.nedlop.find(x => x.id === r.id), f = _takFeats(t, 'DOWNSPOUT').find(x => x.id === r.id);
+      if (d) { sjekk(r.id + ' over bakken', d.over_m, v(f.above_ground_m)); if (v(f.continues_below_ground)) sjekk(r.id + ' under bakken', d.under_m, v(f.below_ground_m)); sjekk('kabel ' + r.id, d.kabel_m, r.cable_m); }
+    } else if (r.kind === 'VALLEY_GUTTER') { const d = M.gradrenner.find(x => x.id === r.id); if (d) { sjekk(r.id, d.lengde_m, r.length_m); sjekk('kabel ' + r.id, d.kabel_m, r.cable_m); } }
+    else if (r.kind === 'BYPASS') { const d = M.forbi.find(x => x.id === r.id); if (d) sjekk('kabel ' + r.id, d.kabel_m, r.cable_m); }
+  }
+  for (const g of _takFeats(t, 'SNOW_GUARD')) { const d = M.snofangere.find(x => x.id === g.id); if (d) sjekk(g.id, d.lengde_m, g.length_m); }
+  if (!S7.missing.length) sjekk('kabelsummen', M.kabel.tak_m, S7.total_m);
+  if (t.flat) {
+    const FS = _takFlatFeats(t);
+    for (const d of FS.filter(f => f.type === 'ROOF_DRAIN')) { const s = M.sluk.find(x => x.id === d.id), c = _takFlatDrainCable(d); if (s && c) { sjekk('ringene på ' + d.id, s.ring_m, c.ring_m); sjekk('røret på ' + d.id, s.ror_m, c.pipe_m || 0); } }
+    for (const g of FS.filter(f => f.type === 'VALLEY_GUTTER')) { const d = M.gradrenner.find(x => x.id === g.id); if (d) sjekk(g.id, d.lengde_m, g.length_m); }
+    for (const f of FS.filter(x => x.type === 'HEAT_FIELD')) { const d = M.varmefelt.find(x => x.id === f.id); if (d) sjekk(f.id, d.areal_m2, f.area_m2, 'm²'); }
+    const sum = _takFlatSummary(t);
+    if (sum.total && sum.total.complete && !S7.rows.length) sjekk('summen', M.kabel.sum_m, sum.total.total_m);
+  }
+  return ut;
+}
+
 // 212: flatt tak — formelen begge veier, ni sluk, manglende rørlengde, tom flateeffekt, advarslene (rommenes),
 // oppsettene, lagring, og at skråtak, prosjekt uten tak og rommenes 159-advarsel er uendret.
 async function _takRegressionTest212() {
@@ -88475,6 +88698,50 @@ async function _takRegressionTest218() {
 
 // 220: tegn møne med ekte hendelser — snapping, delt punkt, koblingen i lerretet, retting med klikk, melding, hint,
 // lagring, og at musa utenfor tak-modulen er uendret. Geometrien i 3D testes i docs/3d/test-3d.mjs.
+// 221: knappen per steg og uenighetslinja. Selve ruta (lasting, drag, nettkall, PDF) testes med ekte hendelser i docs/221/probe.
+async function _takRegressionTest221() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '221: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId };
+  const app = document.getElementById('app'), appD = app.style.display;
+  try {
+    window._showToast = () => {}; window._scheduleAutoSave = () => {};
+    app.style.display = 'flex'; resizeCanvas();
+    _resetProjectState(); addPart('roof');
+    const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+    S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null;
+    const har = () => _takToolbarHtml(fid).includes('_tak3dToggle()');
+    _takStepOpen[fid] = 2;
+    check('uten omriss: ingen knapp, heller ikke i steg 2', 'ingen', !har(), har());
+    const R = [[0,0],[2500,0],[2500,1000],[0,1000]].map(([x, y]) => ({ x, y }));
+    S.tak = { [fid]: _takManual(R) }; _takSetRoofType(fid, 'pitched');
+    for (const n of [1, 2, 3, 4]) { _takStepOpen[fid] = n; check(`steg ${n}: knappen`, n === 1 ? 'ingen' : 'finnes', har() === (n > 1), har()); }
+    _takStepOpen[fid] = 3; S.ui.present = true;
+    check('presentasjon: ingen knapp', 'ingen', !har(), har()); S.ui.present = false;
+    check('ruta er av som standard', 'av', _tak3d == null, _tak3d);
+    const t = S.tak[fid], tom = { renner: [], nedlop: [], gradrenner: [], snofangere: [], forbi: [], sluk: [], varmefelt: [], kabel: { tak_m: 0, sum_m: 0 } };
+    _takSetHeight(fid, 'eave_m', '10'); _takSetHeight(fid, 'ridge_m', '13'); _takSetEdgeType(fid, 'k1', 'eave');
+    const g = _takAddGutter(fid, 'k1'), seg = g.segments[0], tot = _takCableSummary(t).total_m;
+    const M = (rL, sum) => ({ ...tom, renner: [{ id: g.id, lengde_m: rL, delstrekk: [{ id: seg.id, lengde_m: seg.length_m, kabel_m: seg.cable_total_m }] }], kabel: { tak_m: sum, sum_m: sum } });
+    check('like tall: ingen linje', '[]', _tak3dUenig(t, M(g.length_m, tot)).length === 0, _tak3dUenig(t, M(g.length_m, tot)));
+    const L = _tak3dUenig(t, M(g.length_m + 0.2, tot));
+    check('avvik: begge tallene står i linja', `3D og 2D er uenige om ${g.id}`, L.length === 1 && L[0] === `3D og 2D er uenige om ${g.id} (${_takNum(g.length_m + 0.2, 2)} mot ${_takNum(g.length_m, 2)} m).`, L);
+    check('under et halvt centimeter: ingen linje', '[]', _tak3dUenig(t, M(g.length_m + 0.004, tot)).length === 0, '');
+    check('avvik i summen meldes', 'linje', _tak3dUenig(t, M(g.length_m, tot + 1)).some(x => x.includes('kabelsummen')), '');
+  } catch (e) {
+    check('testen kastet ikke', 'ingen feil', false, e.stack || String(e));
+  } finally {
+    S.ui.present = false;
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save;
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    app.style.display = appD; renderSidebar(); updateCtxBar(); render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest221: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+
 async function _takRegressionTest220() {
   const results = [];
   const check = (name, expected, cond, got) => results.push({ name: '220: ' + name, expected, got, ok: !!cond });
@@ -91303,7 +91570,7 @@ function _geomVisAapningsbanner(merket, sett) {
 
 function _restoreProject(data) {
   if (!data._version||!data.project||!data.rooms) { alert('Ugyldig prosjektfil.'); return; }
-  _takStepOpen = {}; _takBrushClear(); _takCheckDims = {};   // 214: åpnes på det steget prosjektet står på; kontrollmål lagres ikke
+  _takStepOpen = {}; _takBrushClear(); _takCheckDims = {}; _tak3dClose();   // 214: åpnes på det steget prosjektet står på; kontrollmål lagres ikke
   // ⚠ 037: kundelenke-cachen tilhører prosjektet som var åpent, og MÅ nullstilles her.
   // Målt før fiksen: åpnet man prosjekt A via e-postlenken og deretter prosjekt B fra lista,
   // viste B fortsatt «✉ Svar fra kunde (8. okt., Ola)» — As lenke. «Gå gjennom» ville da gitt
@@ -115368,7 +115635,7 @@ function _resetToNpScreen() {
 }
 function _resetProjectState() {
   _projectDirty = false;
-  _takStepOpen = {}; _takBrushClear(); _takCheckDims = {};   // 214: visning, ikke prosjektdata
+  _takStepOpen = {}; _takBrushClear(); _takCheckDims = {}; _tak3dClose();   // 214: visning, ikke prosjektdata
   _takAddrReset();   // 216: etasje-id-er går igjen mellom prosjekter, skrevet tekst skal ikke det
   // 052: bekreft-linja og rom-kortet er løse DOM-elementer utenfor #app. Uten dette blir de
   // stående igjen over NESTE prosjekt (samme felle som #_plan-bar hadde, STEG 0.2).

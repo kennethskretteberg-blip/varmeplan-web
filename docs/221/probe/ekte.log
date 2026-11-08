@@ -1,0 +1,59 @@
+A · delt skjerm
+  ok steg 3: knappen står i verktøylinja, ruta er av
+  ok 2D til venstre, 3D til høyre
+  ok standard 50/50
+  ok lerretet følger ruta (backing = CSS)
+  ok three-lerretet fyller visningen
+  ok skillelinja kan dras (ruta blir bredere)
+  ok lerretet har fulgt draget
+  ok forholdet er lagret
+  ok nytt trykk på 3D lukker
+  ok lerretet har fått hele bredden tilbake
+  ok forholdet huskes ved ny åpning
+  ok forholdet ligger utenfor prosjektet (ny fane, nytt prosjekt)
+B · Esc og hvor knappen finnes
+  ok Esc med verktøy på: verktøyet slås av, ruta står
+  ok Esc uten verktøy: ruta lukkes
+  ok steg 2: knappen finnes (DOM)
+  ok steg 3: knappen finnes (DOM)
+  ok steg 4: knappen finnes (DOM)
+  ok steg 1: ingen knapp (DOM)
+  ok går du til steg 1, lukkes ruta (ingen knapp å lukke den med)
+C · smal skjerm
+  ok ikke delt: ruta dekker lerretet, ingen skillelinje
+  ok knappen sier 2D, og er fortsatt synlig over ruta
+  ok trykk på 2D: tilbake til tegningen
+  ok vindu smalnes med åpen rute: går over til enkeltvisning og beholder modellen
+  ok og tilbake til delt
+D · 3D følger 2D
+  ok sum før = 110,15 m
+  ok nedløpet er tegnet med ekte klikk i 2D
+  ok 3D viser det innen ett sekund
+  ok ikke før et halvt sekund etter endringen
+  ok Sum har endret seg
+  ok Sum er lik panelet i 2D etter endringen
+  ok nytt nedløp står i lista
+  ok seks endringer med 160 ms mellomrom gir én nybygging
+E · klikk og dra i 3D endrer ingen data
+  ok modellen har faktisk dreid (bildet er endret)
+  ok S.tak er byte-lik
+  ok hele lagringen er byte-lik
+  ok nybygging beholder vinkelen brukeren har dreid til
+  ok Nullstill vinkel gir standardbildet
+  ok Farge bytter stil
+F · målene mot panelet, uenighet, advarsler
+  ok 1-filmens-bygg: Sum i 3D = 110,15 m
+  ok 1-filmens-bygg: panelet i 2D viser samme tall
+  ok 1-filmens-bygg: hver kabelrad i 2D-panelet finnes i 3D-lista
+  ok 1-filmens-bygg: ingen uenighetslinje
+  ok 3-l-form-8-kanter: Sum i 3D = 97,66 m
+  ok 3-l-form-8-kanter: panelet i 2D viser samme tall
+  ok 3-l-form-8-kanter: hver kabelrad i 2D-panelet finnes i 3D-lista
+  ok 3-l-form-8-kanter: ingen uenighetslinje
+  ok påtvunget avvik gir linja
+  ok appen velger ikke side: det lagrede tallet er urørt
+  ok appen velger ikke side: 3D viser fortsatt geometrien
+  ok L-form uten møne: advarselen står i ruta
+  ok samme gule stil som i 2D-panelet
+
+BESTÅTT 52 av 52

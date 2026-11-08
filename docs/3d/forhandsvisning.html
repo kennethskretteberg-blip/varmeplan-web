@@ -35,29 +35,13 @@
   <div id="liste"></div>
 </aside>
 <script type="module">
-import { byggTak, maal, tegnScene } from '../../varmeplan-3d.js';
+import { byggTak, maal, maalHtml, tegnScene } from '../../varmeplan-3d.js';
 const FIXTURER = [
   ['1-filmens-bygg', 'Filmens bygg'], ['2-saltak', 'Saltak'], ['3-l-form-8-kanter', 'L-form, 8 kanter'],
   ['4-flatt-tak', 'Flatt tak 40 × 20 m'], ['5-nedlop-under-bakken', 'Nedløp under bakken'],
 ];
 const $ = id => document.getElementById(id);
 let visning = null, stil = 'strek';
-const tall = (v, d = 2) => v.toFixed(d).replace('.', ',');
-function radene(M) {
-  const r = (a, b) => `<tr><td>${a}</td><td>${b}</td></tr>`;
-  let h = '';
-  if (M.renner.length) h += '<h2>Rennestrekk</h2><table>' + M.renner.map(g => r(g.id, tall(g.lengde_m) + ' m') + g.delstrekk.map(s => r('&nbsp;&nbsp;' + s.id + ' · ' + s.lop + ' løp', tall(s.kabel_m) + ' m kabel')).join('')).join('') + '</table>';
-  if (M.nedlop.length) h += '<h2>Nedløp</h2><table>' + M.nedlop.map(d => r(d.id + ' · ' + d.lop + ' løp', tall(d.over_m) + (d.under_m ? ' + ' + tall(d.under_m) : '') + ' m') + r('&nbsp;&nbsp;kabel', tall(d.kabel_m) + ' m')).join('') + '</table>';
-  if (M.moner.length) h += '<h2>Møne</h2><table>' + M.moner.map(m => r(m.id, tall(m.lengde_m) + ' m')).join('') + '</table>';
-  if (M.gradrenner.length) h += '<h2>Gradrenner</h2><table>' + M.gradrenner.map(g => r(g.id, tall(g.lengde_m) + ' m')).join('') + '</table>';
-  if (M.snofangere.length) h += '<h2>Snøfangere</h2><table>' + M.snofangere.map(g => r(g.id, tall(g.lengde_m) + ' m')).join('') + '</table>';
-  if (M.forbi.length) h += '<h2>Kabel forbi hindring</h2><table>' + M.forbi.map(f => r(f.id + ' · ' + f.lop + ' løp', tall(f.kabel_m) + ' m')).join('') + '</table>';
-  if (M.sluk.length) h += `<h2>Sluk (${M.sluk.length})</h2><table>` + r('ringer', tall(M.kabel.sluk_ring_m) + ' m') + r('i rør', tall(M.kabel.sluk_ror_m) + ' m') + '</table>';
-  if (M.varmefelt.length) h += '<h2>Varmefelt</h2><table>' + M.varmefelt.map(f => r(f.id, tall(f.areal_m2, 1) + ' m²')).join('') + '</table>';
-  const K = M.kabel;
-  h += '<h2>Kabel</h2><table>' + r('tegnet', tall(K.tegnet_m) + ' m') + K.ikke_tegnet.map(x => r(x.id + ' (fra data, ikke tegnet' + (x.i_sum ? '' : ', utenfor oppsettet') + ')', tall(x.kabel_m) + ' m')).join('') + `<tr class="sum"><td>Sum</td><td>${tall(K.sum_m)} m</td></tr></table>`;
-  return h;
-}
 async function vis(id) {
   $('feil').textContent = '';
   try {
@@ -65,7 +49,7 @@ async function vis(id) {
     if (visning) visning.lukk();
     const scene = byggTak(tak, { stil });
     $('adv').innerHTML = scene.advarsler.map(a => `<div class="adv">⚠ ${a}</div>`).join('');
-    $('liste').innerHTML = radene(maal(scene));
+    $('liste').innerHTML = maalHtml(maal(scene));
     visning = await tegnScene(scene, $('vis'), { stil, visMaal: $('vismaal').checked });
     window.__vis = { scene, visning, ferdig: true };
   } catch (e) { $('feil').textContent = String(e && e.stack || e); throw e; }

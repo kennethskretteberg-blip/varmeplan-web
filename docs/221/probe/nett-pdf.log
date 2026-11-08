@@ -1,0 +1,34 @@
+three.js blokkert
+  ok meldingen kommer
+  ok med «Prøv igjen»
+  ok ingen kastede feil i siden
+  ok 2D: nytt nedløp med ekte klikk
+  ok lagring bygges
+  ok PDF lages
+  ok lista og advarslene virker uten three.js
+  ok «Prøv igjen» virker når nettet er tilbake
+varmeplan-3d.js blokkert
+  ok meldingen kommer
+  ok med «Prøv igjen»
+  ok ingen kastede feil i siden
+  ok 2D: nytt nedløp med ekte klikk
+  ok lagring bygges
+  ok PDF lages
+  ok «Prøv igjen» virker når nettet er tilbake
+PDF med 3D åpen mot lukket
+  ok testprosjektet har rom
+  ok 3D står åpen under PDF
+  ok 3D står fortsatt åpen etter PDF
+  ok lerretet er tilbake i ruta-størrelse
+{
+  lengde: [ 2100041, 2100041, 2100041 ],
+  sha_lukket: '03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082',
+  sha_aapen: '03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082',
+  sha_lukket_igjen: '03094d30f76e8fe33a3bf177e68cda09675a44603bf6450cfb55552c0bf1e082',
+  sider: 8
+}
+  ok PDF: åpen 3D = lukket, byte for byte
+  ok PDF: lukket igjen = første
+  ok snitt-PDF: åpen 3D = lukket, byte for byte
+
+BESTÅTT 22 av 22
