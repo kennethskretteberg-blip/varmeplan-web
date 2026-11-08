@@ -557,6 +557,10 @@ body.app-embed #embed-bar{display:flex;flex-direction:column;gap:6px;padding:8px
 
 /* ── CONTEXT BAR (floating over canvas) ── */
 #ctxbar{position:absolute;top:12px;left:50%;transform:translateX(-50%) scale(0.96);z-index:20;display:flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(18,24,34,0.93);border:1px solid var(--border);border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,0.5);backdrop-filter:blur(10px);opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease;white-space:nowrap}
+/* 218: de fem penselknappene skal ikke brekke linja — to rader dekker øverste takkant, og kanten kan ikke klikkes */
+#ctxbar:has(.tak-brush){width:max-content;max-width:calc(100% - 24px);flex-wrap:wrap}
+#ctxbar:has(.tak-brush) .snap-chip{padding:0 6px}
+canvas.tak-brush-on{cursor:crosshair !important}   /* 218: resten av mousemove setter markøren etter hover — penselen skal synes uansett */
 #ctxbar.show{opacity:1;pointer-events:auto;transform:translateX(-50%) scale(1)}
 /* spec-auto-folie-boks-flyttbar.md (Kenneth 10.09.2026): position:fixed, ingen transform — boksen
    flyttes nå med _initPaletteDrag (samme mønster som .rwp-manual-box), som regner i vindus-
@@ -2994,6 +2998,7 @@ const _SHORTCUTS = [
   { group: 'Presentasjonsmodus',    keys: ['←', '→'],              what: 'Forrige / neste rom (når ett rom er åpnet i venstrepanelet)' }, // 138
   { group: 'Presentasjonsmodus',    keys: ['Esc'],                 what: 'Avslutt presentasjon' },                              // :41064
   { group: 'Tak',                   keys: ['M'],                   what: 'Kontrollmål: mål en vegg og se at tallet stemmer (lagres ikke). D gjør det samme' },   // 214
+  { group: 'Tak',                   keys: ['Esc'],                 what: 'Slå av penselen for kantmerking' },   // 218
   { group: 'Trapp: kabelforslag',   keys: ['↑', '↓'],              what: 'Bla i kabler (forrige / neste kabel i produktgruppa, med passform live)' }, // 188
 ];
 
@@ -73327,6 +73332,7 @@ canvas.addEventListener('mousedown', e=>{
   if (_takSectionMouseDown(e)) return;   // 210: klikk i snitt-innfeltet tilhører innfeltet (× lukker)
   if (_takDraw && _takDrawMouseDown(e)) return;   // 204: «Tegn omrisset selv» eier venstreklikket
   if (_takFeat && _takFeatMouseDown(e)) return;   // 206: rennestrekk/nedløp/gradrenne-verktøyet eier venstreklikket
+  if (_takBrush && _takBrushMouseDown(e)) return;   // 218: penselen eier venstreklikket — også der en renne ligger på kanten
   if (_takFeatPickMouseDown(e)) return;   // 206: klikk på et rennestrekk/nedløp velger det — før kantene (renna ligger på takfoten)
   if (_takFlatPickMouseDown(e)) return;   // 212: klikk på et sluk, en gradrenne eller et varmefelt velger det
   if (_takEdgeMouseDown(e)) return;   // 205: klikk på en takkant → typemenyen. Bare i tak-modulen; bom går videre
@@ -75185,10 +75191,11 @@ canvas.addEventListener('mousemove', e=>{
   // syntetiske hendelsen `_endCanvasDrag` bruker ved blur/Esc. Settes før alt annet, så den
   // også er riktig når håndtereren returnerer tidlig lenger nede.
   _lastCanvasClient = { x: e.clientX, y: e.clientY };
+  if (_takBrush) canvas.classList.toggle('tak-brush-on', _takBrushFid() != null);   // 218: også når du har byttet etasje
   if (_geoPick && _geoPickMouseMove(e)) return;   // 201: hover/panorering i «Hent bygg»
   if (_takDraw) _takDrawMouseMove(e);              // 204: gummistrikk — returnerer ikke, panorering virker som før
   else if (_takFeat) _takFeatMouseMove(e);        // 206: forhåndsvisning i verktøyet
-  else if (S.tak && S.tak[S.ui.activeFloorId]) { if (!_takFeatHoverMove(e)) _takEdgeMouseMove(e); }   // 205/206: hover på objekt, ellers takkant (bare tak-modulen)
+  else if (S.tak && S.tak[S.ui.activeFloorId]) { if (!_takBrushMouseMove(e) && !_takFeatHoverMove(e)) _takEdgeMouseMove(e); }   // 205/206: hover på objekt, ellers takkant (bare tak-modulen)
   // Frihånds-matte: ghost følger musa (vannrett/loddrett ut fra retning, snappet raster).
   if (S.ui.drawMode === 'mat-freehand' && _matFree) {
     const wp = getWorldPos(e);
@@ -76359,6 +76366,7 @@ canvas.addEventListener('mouseleave', () => {
   S.drawing.mousePos = null;
   if (_hoveredStripId !== null) { _hoveredStripId = null; }
   if (_hoveredWallId !== null) { _hoveredWallId = null; }
+  if (_takBrush) { _takBrush.at = null; _takEdgeHover = null; }   // 218: merkelappen følger ikke musa ut av tegningen
   render();
 });
 
@@ -76940,6 +76948,7 @@ document.addEventListener('keydown', e=>{
   if (_takFeat && _takFeatKey(e)) return;   // 206: Esc avbryter påbegynt strekk, så verktøyet
   if (_takDraw && _takDrawKey(e)) return;   // 204: Esc avbryter, Enter lukker, Backspace angrer siste punkt
   if (_takSection && e.key === 'Escape') { e.preventDefault(); _takSectionClose(); return; }   // 210: Esc lukker snittet
+  if (_takBrush && _takBrushKey(e)) return;   // 218: Esc slår av penselen
   // 034: Esc = ferdig med merkemodus. Må stå før alt annet, ellers tar en av grenene under den.
   if (_merkemodus) { if (e.key === 'Escape') { e.preventDefault(); _kundeAvsluttMerkemodus(true); } return; }
   // 046: vegg-sjekken eier tastaturet mens den står på — Esc avbryter påbegynt vegg, så modusen.
@@ -81939,6 +81948,7 @@ function _takWizardStep(fid) {
 function _takStepGo(fid, n) {
   if (!(n >= 1 && n <= 4)) return false;
   if (_takFeat) _takFeatStop();
+  _takBrushClear();   // 218: penselen hører til steg 3
   hideCtx(); _takEdgeSel = null;
   _takStepOpen[fid] = n;
   renderSidebar(); updateCtxBar(); render();
@@ -82222,7 +82232,7 @@ function _takToolbarHtml(fid) {
     const deler = f.flat
       ? start('drain', '+ Sluk') + start('fvalley', '+ Gradrenne') + start('field', '+ Varmefelt')
       : start('gutter', '+ Rennestrekk') + (G ? start('downspout', '+ Nedløp') : '') + start('valley', '+ Gradrenne') + start('guard', '+ Snøfanger');
-    return lbl + deler + start('skylight', '+ Takvindu') + start('obstacle', '+ Hindring') + stop + map;
+    return lbl + _takBrushChipsHtml(fid) + sep + deler + start('skylight', '+ Takvindu') + start('obstacle', '+ Hindring') + stop + map;
   }
   let sum = f.flat && !f.items.length ? (f.flatSum && f.flatSum.total ? _takFlatMeters(f.flatSum.total) : '') : (f.items.length ? 'Kabel ' + _takNum(f.cable.total_m, 2) + ' m' : '');
   if (f.guard && f.guard.heated) sum += (sum ? ' + felt ' : 'Felt ') + _takFlatMeters(f.guard);   // 215: feltet regnes for seg
@@ -82238,6 +82248,7 @@ function _takHintText() {
   if (_takFeat) return 'Klikk i tegningen · Esc avslutter verktøyet';
   if (_geoPick) return 'Klikk på et bygg i kartet · Esc avslutter';
   const fid = S.ui.activeFloorId;
+  if (_takBrushFid() != null) return base + ' · Pensel: klikk eller dra over kantene · Esc slår av';
   if (fid != null && _takWizardStep(fid) === 3) return base + ' · Klikk en kant for å endre typen';
   return base;
 }
@@ -82390,14 +82401,19 @@ function _takSetEdgeType(fid, id, type) {
   if (!e || !TAK_EDGE_TYPES[type]) return false;
   if (e.type === type && e.prov && e.prov.source === 'USER_CONFIRMED') { hideCtx(); _takEdgeSel = null; render(); return false; }
   pushUndo();
-  const old = e.type;
-  e.type = type;
-  // Samme type som forslaget = bekreftet. Opphavet til det gamle står i notatet.
-  e.prov = { source: 'USER_CONFIRMED', confidence: 1,
-             note: old === type ? 'bekreftet forslag' : 'rettet fra ' + (old ? TAK_EDGE_TYPES[old].short : 'ikke valgt') };
+  _takStampEdge(e, type);
   _takEdgeDone();
   return true;
 }
+/** Menyen og penselen (218) merker likt. Samme type som forslaget = bekreftet; opphavet til det gamle står i notatet. */
+function _takStampEdge(e, type) {
+  const old = e.type;
+  e.type = type;
+  e.prov = { source: 'USER_CONFIRMED', confidence: 1,
+             note: old === type ? 'bekreftet forslag' : 'rettet fra ' + (old ? TAK_EDGE_TYPES[old].short : 'ikke valgt') };
+}
+/** Hvilke typer en kant kan ha. En linje inne i flaten (mønet) kan ikke være takfot. */
+function _takEdgeTypesFor(e) { return e.kind === 'line' ? ['ridge', 'valley'] : TAK_EDGE_ORDER; }
 function _takRemoveEdgeLine(fid, id) {
   const t = _takEdgeMut(fid); if (!t) { hideCtx(); return false; }
   const e = (t.edges || []).find(x => x.id === id);
@@ -82460,9 +82476,10 @@ function _takEdgeActiveFid() {
   if (!_takPartOfFloor(fid) || !(S.tak[fid].edges || []).length) return null;
   return fid;
 }
-function _takHitEdge(fid, sx, sy) {
+function _takHitEdge(fid, sx, sy, accept) {
   let best = null, bd = 8;
   for (const e of _takEdgesOf(_takOf(fid))) {
+    if (accept && !accept(e)) continue;   // 218: penselen ser ikke kanter den ikke kan merke
     const a = w2s(e.a.x, e.a.y), b = w2s(e.b.x, e.b.y);
     const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy;
     const u = L2 ? Math.max(0, Math.min(1, ((sx - a.x) * dx + (sy - a.y) * dy) / L2)) : 0;
@@ -82498,7 +82515,7 @@ function _takEdgeMenu(fid, id, cx, cy) {
   const s = (t.surfaces || []).find(x => x.id === e.surface);
   const flat = s && s.roof_type && s.roof_type.value === 'flat';
   const sw = st => `<span style="display:inline-block;width:16px;height:0;border-top:${st.w}px ${st.dash.length ? 'dashed' : 'solid'} ${st.color};vertical-align:middle;margin-right:7px"></span>`;
-  const types = e.kind === 'line' ? ['ridge', 'valley'] : TAK_EDGE_ORDER;
+  const types = _takEdgeTypesFor(e);
   const pv = e.prov ? (e.prov.source === 'USER_CONFIRMED' ? 'merket av deg' : e.type ? 'forslag' : 'usikker') : 'ikke valgt';
   const items = types.map(k => {
     const st = TAK_EDGE_TYPES[k];
@@ -82524,10 +82541,132 @@ document.addEventListener('click', e => {
   _takEdgeMenu(p.fid, p.id, e.clientX, e.clientY);
 }, true);
 
+// ── 218 · Penselen: velg type én gang, klikk eller dra over kantene ──────────────────────────────
+// 214 målte 16 klikk for 8 kanter, og nesten alle ekte tak merkes for hånd. Penselen ligger VED SIDEN AV
+// menyen (205): når den er av, er ingenting endret. _takBrushFid() er eneste bryter: er den null,
+// oppfører musa seg som før — utenfor tak-modulen svarer den null via _takEdgeActiveFid (samme lås som 205).
+var _takBrush = null;        // { fid, type, at:{x,y}|null } mens penselen står på. Transient, lagres aldri
+var _takBrushStroke = null;  // { type, last:{x,y}, n, undo } mens venstre knapp er nede
+const TAK_BRUSH_END_PX = 12; // midt i et dra teller ikke de ytterste pikslene av en kant: den som drar langs
+                             // en takfot og litt forbi hjørnet, skal ikke merke nabokanten
+
+function _takBrushFid() {
+  if (!_takBrush || S.ui.readOnly || S.ui.present || S.ui.kundeMode || _takFeat) return null;
+  if (S.ui.toolMode === 'hand' || S.ui.spacePan) return null;   // hånden panorerer som før
+  const fid = _takEdgeActiveFid();
+  if (fid == null || fid !== _takBrush.fid || _takWizardStep(fid) !== 3 || !_takRoofTypeReady(_takSurface(fid))) return null;
+  return fid;
+}
+function _takBrushClear() {
+  if (_takBrushStroke) _takBrushEnd();
+  if (_takBrush) { _takBrush = null; _takEdgeHover = null; canvas.classList.remove('tak-brush-on'); canvas.style.cursor = 'default'; }
+}
+function _takBrushToggle(fid, type) {
+  if (S.ui.readOnly) { _lockToast(); return false; }
+  if (!TAK_EDGE_TYPES[type]) return false;
+  if (_takFeat) _takFeatStop();
+  const same = _takBrush && _takBrush.fid === fid && _takBrush.type === type;
+  hideCtx(); _takEdgeSel = null;
+  _takBrushClear();
+  if (!same) { _takBrush = { fid, type, at: null }; _takFeatHover = null; canvas.classList.add('tak-brush-on'); }
+  renderSidebar(); updateCtxBar(); render();
+  return !same;
+}
+function _takBrushKey(e) {
+  if (e.key !== 'Escape' || _takBrushFid() == null || document.getElementById('shortcuts-overlay')) return false;
+  e.preventDefault();
+  _takBrushClear();
+  renderSidebar(); updateCtxBar(); render();
+  return true;
+}
+function _takBrushCan(type) { return e => _takEdgeTypesFor(e).includes(type); }
+function _takBrushPaint(st, e) {
+  if (e.type === st.type && e.prov && e.prov.source === 'USER_CONFIRMED') return;
+  if (!st.undo) { pushUndo(); st.undo = true; }   // ett dra = ett angre-steg
+  _takStampEdge(e, st.type);
+  st.n++;
+}
+function _takBrushEnd() {
+  const st = _takBrushStroke; if (!st) return;
+  _takBrushStroke = null;
+  if (st.n) _takEdgeDone();
+}
+function _takBrushMouseDown(e) {
+  if (e.button !== 0 || e.altKey) return false;   // midtknapp og Alt panorerer som før
+  const fid = _takBrushFid(); if (fid == null) return false;
+  e.preventDefault && e.preventDefault();
+  // Herfra eier penselen venstreklikket: et dra som starter ved siden av en kant merker ingenting og flytter ingenting.
+  const { x, y } = _evToCanvas(e), type = _takBrush.type;
+  const hit = _takHitEdge(fid, x, y, _takBrushCan(type));
+  if (!hit) {
+    if (_takHitEdge(fid, x, y)) _showToast && _showToast('En linje inne i taket kan bare være møne eller gradrenne.', 'warn');
+    return true;
+  }
+  _takEdgePending = null; hideCtx(); _takEdgeSel = null;
+  _takBrushStroke = { type, last: { x, y }, n: 0, undo: false };
+  _takBrushPaint(_takBrushStroke, hit);
+  render();
+  return true;
+}
+/** Sveip fra forrige musepunkt: en rask hånd hopper ellers over korte kanter. */
+function _takBrushSweep(fid, st, x, y) {
+  const can = _takBrushCan(st.type), steps = Math.max(1, Math.ceil(Math.hypot(x - st.last.x, y - st.last.y) / 3));
+  let n0 = st.n;
+  for (let i = 1; i <= steps; i++) {
+    const sx = st.last.x + (x - st.last.x) * i / steps, sy = st.last.y + (y - st.last.y) * i / steps;
+    const hit = _takHitEdge(fid, sx, sy, e => {
+      if (!can(e)) return false;
+      const a = w2s(e.a.x, e.a.y), b = w2s(e.b.x, e.b.y), r = Math.min(TAK_BRUSH_END_PX, Math.hypot(b.x - a.x, b.y - a.y) / 4);
+      return Math.hypot(sx - a.x, sy - a.y) >= r && Math.hypot(sx - b.x, sy - b.y) >= r;
+    });
+    if (hit) _takBrushPaint(st, hit);
+  }
+  st.last = { x, y };
+  return st.n !== n0;
+}
+function _takBrushMouseMove(e) {
+  const fid = _takBrushFid();
+  if (fid == null) { if (_takBrushStroke) _takBrushEnd(); return false; }
+  const { x, y } = _evToCanvas(e);
+  _takBrush.at = { x, y };
+  if (_takBrushStroke && !(e.buttons & 1)) _takBrushEnd();   // slippet gikk tapt
+  if (_takBrushStroke) _takBrushSweep(fid, _takBrushStroke, x, y);
+  const hit = _takHitEdge(fid, x, y, _takBrushCan(_takBrush.type));
+  _takEdgeHover = hit ? { fid, id: hit.id } : null;
+  markDirty();   // merkelappen følger musa
+  return true;
+}
+// Slipp hvor som helst (sidepanelet, verktøylinja, utenfor vinduet) avslutter draget. Capture: kommer før alt annet.
+window.addEventListener('mouseup', () => { if (_takBrushStroke) _takBrushEnd(); }, true);
+window.addEventListener('blur', () => { if (_takBrushStroke) _takBrushEnd(); });
+/** «Merk som: takfot · gavl · møne · gradrenne · parapet». Ett trykk = valgt (ikke en nedtrekksliste: det ville kostet to). */
+function _takBrushChipsHtml(fid, panel) {
+  const on = _takBrush && _takBrush.fid === fid ? _takBrush.type : null;
+  const chips = TAK_EDGE_ORDER.map(k => {
+    const st = TAK_EDGE_TYPES[k], act = on === k, ink = k === 'ridge' || k === 'rake' ? '#111827' : '#fff';
+    const sw = `<span style="display:inline-block;width:12px;height:0;border-top:3px solid ${act ? ink : st.color};vertical-align:middle"></span>`;
+    return `<button class="snap-chip" data-tak-brush="${k}" aria-pressed="${act}" onclick="_takBrushToggle(${fid},'${k}')" title="${act ? 'Slå av penselen (Esc)' : `Merk kanter som ${st.short}: klikk dem eller dra over dem`}" style="${panel ? 'height:26px;padding:0 6px;' : ''}${act ? `background:${st.color};border-color:${st.color};color:${ink};font-weight:700` : ''}">${sw}${st.short}</button>`;
+  }).join('');
+  return `<span class="tak-brush" style="display:inline-flex;${panel ? 'flex-wrap:wrap;' : ''}align-items:center;gap:4px"><span style="font-size:11px;white-space:nowrap">Merk som:</span>${chips}</span>`;
+}
+/** Merkelappen ved markøren: hva penselen maler nå. */
+function _takBrushDrawTag(fid) {
+  if (_takBrushFid() !== fid || !_takBrush.at) return;
+  const k = _takBrush.type, st = TAK_EDGE_TYPES[k], txt = 'Merk: ' + st.short, { x, y } = _takBrush.at;
+  ctx.save();
+  ctx.font = '700 12px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.setLineDash([]);
+  const w = ctx.measureText(txt).width + 12, h = 20;
+  const bx = x + 14 + w > canvas.width ? x - 14 - w : x + 14, by = y + 14 + h > canvas.height ? y - 14 - h : y + 14;
+  ctx.fillStyle = st.color; ctx.beginPath(); ctx.rect(bx, by, w, h); ctx.fill();
+  ctx.fillStyle = k === 'ridge' || k === 'rake' ? '#111827' : '#fff'; ctx.fillText(txt, bx + 6, by + h / 2);
+  ctx.restore();
+}
+
 // ── Tegneflaten ──────────────────────────────────────────────────────────────────────────────
 function _takDrawEdges(fid, t) {
   const menuOpen = _takEdgeSel && _takEdgeSel.fid === fid && document.getElementById('ctx-menu').style.display !== 'none';
   const pdf = !!(S.ui && S.ui._pdfMode);
+  const brushOn = !pdf && _takBrushFid() === fid;   // 218: kanten under markøren lyser i fargen penselen maler
   ctx.save(); ctx.lineCap = 'round';
   // Omrisskanter først, linjer (mønet) oppå.
   const list = [..._takEdgesOf(t)].sort((a, b) => (a.kind === 'line') - (b.kind === 'line'));
@@ -82536,12 +82675,13 @@ function _takDrawEdges(fid, t) {
     const hi = !pdf && ((_takEdgeHover && _takEdgeHover.fid === fid && _takEdgeHover.id === e.id) || (menuOpen && _takEdgeSel.id === e.id));
     if (hi) {
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
-      ctx.setLineDash([]); ctx.globalAlpha = 0.3; ctx.strokeStyle = st.color; ctx.lineWidth = st.w + 10; ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.setLineDash([]); ctx.globalAlpha = brushOn ? 0.55 : 0.3; ctx.strokeStyle = brushOn ? TAK_EDGE_TYPES[_takBrush.type].color : st.color; ctx.lineWidth = st.w + 10; ctx.stroke(); ctx.globalAlpha = 1;
     }
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
     ctx.setLineDash(st.dash); ctx.strokeStyle = st.color; ctx.lineWidth = st.w + (hi ? 1 : 0); ctx.stroke();
   }
   ctx.restore();
+  if (brushOn) _takBrushDrawTag(fid);
 }
 
 // ── Sidepanelet ──────────────────────────────────────────────────────────────────────────────
@@ -82575,7 +82715,8 @@ function _takEdgesCardHtml(fid, t, s) {
   return head +
     `<div class="tak-edge-count">${_takEdgeCounter(t, s)}</div>${msg}
      <div style="font-size:11px;margin-top:3px;line-height:1.7">${legend}</div>
-     <div style="font-size:11px">${dim('Klikk en kant i tegningen for å endre typen.')}</div>
+     <div style="margin-top:4px">${_takBrushChipsHtml(fid, true)}</div>
+     <div style="font-size:11px">${dim(_takBrush && _takBrush.fid === fid ? 'Klikk en kant eller dra over flere. Esc eller samme knapp slår av.' : 'Klikk en kant i tegningen for å endre typen, eller velg en type over og merk flere etter hverandre.')}</div>
      <div style="margin-top:3px">${_takBtn(`_takSetAllEdges(${fid},'eave')`, 'Merk alle som takfot')}${_takBtn(`_takSetAllEdges(${fid},'parapet')`, 'Merk alle som parapet')}${_takBtn(`_takResetEdges(${fid})`, 'Nullstill')}${_takBtn(`_takResuggest(${fid})`, 'Foreslå på nytt')}</div></div>`;
 }
 
@@ -83098,7 +83239,7 @@ function _takFeatStart(fid, kind) {
   if (_geoPick) _geoPickStop();
   if (_takDraw) _takDrawStop();
   if (S.ui.drawMode) { _showToast && _showToast('Avslutt tegningen først (Esc).', 'warn'); return; }
-  hideCtx(); _takEdgeSel = null; _takLikeMsg = null;
+  hideCtx(); _takEdgeSel = null; _takLikeMsg = null; _takBrushClear();
   _takFeat = { fid, kind, whole: _takFeat && _takFeat.kind === kind ? _takFeat.whole : true, pts: [], edgeId: null, hover: null };
   canvas.style.cursor = 'crosshair';
   const msg = { gutter: 'Klikk en takfot (grønn) · «Fra–til» i panelet for del av kanten · Esc avslutter',
@@ -83833,7 +83974,7 @@ function _takFindLike(fid, srcId) {
   if (!src || (src.type !== 'SKYLIGHT' && src.type !== 'OBSTACLE')) return null;
   if (_geoPick) _geoPickStop();
   if (_takDraw) _takDrawStop();
-  hideCtx(); _takEdgeSel = null;
+  hideCtx(); _takEdgeSel = null; _takBrushClear();
   const cands = _takLikeCandidates(t, src);
   if (!cands.length) {
     _takFeat = null; canvas.style.cursor = 'default';
@@ -87958,6 +88099,167 @@ async function _takRegressionTest215() {
   return { ok: allOk, results };
 }
 
+// 218: penselen. Hendelsene er lerretets egne (mousedown/mousemove/mouseup); ekte CDP-klikk i docs/218/probe.
+async function _takRegressionTest218() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '218: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, ro: S.ui.readOnly, part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId, tool: S.ui.toolMode };
+  const app = document.getElementById('app'), appD = app.style.display;
+  const L = [[0,0],[1200,0],[1200,500],[800,500],[800,900],[400,900],[400,500],[0,500]].map(([x, y]) => ({ x, y }));
+  const menu = document.getElementById('ctx-menu');
+  try {
+    const tekster = [];
+    window._showToast = m => tekster.push(m); window._scheduleAutoSave = () => {};
+    app.style.display = 'flex'; resizeCanvas();
+    _resetProjectState(); addPart('roof');
+    const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+    S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null; S.ui.toolMode = 'arrow';
+    const nytt = (pts, rt) => { _takBrushClear(); S.tak = { [fid]: _takManual(pts) }; _takSetRoofType(fid, rt || 'pitched'); _takStepOpen[fid] = 3; fitAll(); render(); return S.tak[fid]; };
+    const mus = (type, w, o) => { const s = w2s(w.x, w.y), r = canvas.getBoundingClientRect(), k = r.width / canvas.width;
+      canvas.dispatchEvent(new MouseEvent(type, { clientX: r.left + s.x * k, clientY: r.top + s.y * k, bubbles: true, cancelable: true, button: 0, buttons: type === 'mousemove' || type === 'mousedown' ? 1 : 0, ...(o || {}) })); };
+    const klikk = (w, o) => { mus('mousedown', w, o); mus('mouseup', w, o); mus('click', w, o); };
+    const dra = pts => { mus('mousedown', pts[0]); for (const p of pts.slice(1)) mus('mousemove', p); mus('mouseup', pts[pts.length - 1]); mus('click', pts[pts.length - 1]); };
+    const kant = (t, id) => t.edges.find(e => e.id === id);
+    const merket = t => t.edges.filter(e => e.prov && e.prov.source === 'USER_CONFIRMED').map(e => e.id).join();
+
+    // ── Av: dagens oppførsel ──
+    let t = nytt(L);
+    klikk({ x: 600, y: 0 });
+    check('Av: klikk på en kant åpner menyen', 'meny', menu.style.display !== 'none' && menu.innerHTML.includes('data-tak-edge-type') && _takEdgeSel && _takEdgeSel.id === 'k1', menu.style.display);
+    check('Av: menyen endrer ingenting før du velger', 'null', kant(t, 'k1').type === null, kant(t, 'k1').type);
+    hideCtx(); _takEdgeSel = null;
+
+    // ── Typevelgeren ──
+    const bar = () => _takToolbarHtml(fid), panel = () => _takEdgesCardHtml(fid, S.tak[fid], _takSurface(fid));
+    check('Velger: alle fem typene i verktøylinja og panelet', '5/5', TAK_EDGE_ORDER.every(k => bar().includes('data-tak-brush="' + k + '"') && panel().includes('data-tak-brush="' + k + '"')), '');
+    check('Velger: knappene ved siden av «Merk alle», «Nullstill» og «Foreslå på nytt»', 'alle står', ['Merk alle som takfot', 'Merk alle som parapet', 'Nullstill', 'Foreslå på nytt'].every(x => panel().includes(x)), '');
+    check('Velger: trykk slår på', 'eave', _takBrushToggle(fid, 'eave') === true && _takBrush.type === 'eave', _takBrush && _takBrush.type);
+    check('Velger: valgt knapp vises trykket', 'aria-pressed', bar().includes('data-tak-brush="eave" aria-pressed="true"'), '');
+
+    // ── Ett klikk ──
+    klikk({ x: 600, y: 0 });
+    let e1 = kant(t, 'k1');
+    check('Klikk: ett klikk merker kanten', 'eave', e1.type === 'eave', e1.type);
+    check('Klikk: ingen meny', 'skjult', menu.style.display === 'none', menu.style.display);
+    check('Klikk: USER_CONFIRMED/1 og notatet sier hva den var', 'rettet fra ikke valgt', e1.prov.source === 'USER_CONFIRMED' && e1.prov.confidence === 1 && e1.prov.note === 'rettet fra ikke valgt', JSON.stringify(e1.prov));
+    check('Klikk: penselen står på etterpå', 'eave', _takBrush && _takBrush.type === 'eave', '');
+
+    // ── Hover ──
+    mus('mousemove', { x: 1000, y: 500 }, { buttons: 0 });
+    check('Hover: kanten under markøren er merket for lys, uten å bli endret', 'k3 / null', _takEdgeHover && _takEdgeHover.id === 'k3' && kant(t, 'k3').type === null, JSON.stringify(_takEdgeHover));
+    check('Hover: markøren er et trådkors', 'crosshair', getComputedStyle(canvas).cursor === 'crosshair', getComputedStyle(canvas).cursor);
+
+    // ── Dra over flere, ett angre ──
+    t = nytt(L); _takBrushToggle(fid, 'rake');
+    const u0 = S.undoStack ? S.undoStack.length : null;
+    dra([{ x: 1200, y: 250 }, { x: 600, y: 250 }, { x: 0, y: 250 }]);
+    check('Dra: to kanter i ett dra', 'k2,k8', merket(t) === 'k2,k8' && kant(t, 'k2').type === 'rake' && kant(t, 'k8').type === 'rake', merket(t));
+    if (u0 != null) check('Dra: ett angre-steg', '1', S.undoStack.length - u0 === 1, S.undoStack.length - u0);
+    t = nytt(L); _takBrushToggle(fid, 'eave');
+    mus('mousedown', { x: 1000, y: 0 }); mus('mousemove', { x: 1000, y: 900 }); mus('mouseup', { x: 1000, y: 900 }); mus('click', { x: 1000, y: 900 });
+    check('Dra: et langt hopp mellom to musepunkt mister ikke kanten imellom', 'k1,k3', merket(t) === 'k1,k3', merket(t));
+    t = nytt(L); _takBrushToggle(fid, 'eave');
+    dra([{ x: 600, y: 0 }, { x: 1190, y: 0 }, { x: 1204, y: 0 }]);
+    check('Dra: langs en kant og litt forbi hjørnet merker ikke nabokanten', 'k1', merket(t) === 'k1', merket(t));
+
+    // ── Dra som starter utenfor ──
+    t = nytt(L); _takBrushToggle(fid, 'eave');
+    const v0 = S.view.panX + '/' + S.view.panY;
+    dra([{ x: 600, y: 250 }, { x: 600, y: 0 }, { x: 600, y: -200 }]);
+    check('Utenfor: et dra som starter ved siden av en kant merker ingenting', 'ingen', merket(t) === '', merket(t));
+    check('Utenfor: tegningen flytter seg ikke', v0, S.view.panX + '/' + S.view.panY === v0 && !_panning, S.view.panX + '/' + S.view.panY);
+    check('Utenfor: ingen meny', 'skjult', menu.style.display === 'none', '');
+
+    // ── Linje inne i taket ──
+    t = nytt([{ x: 0, y: 0 }, { x: 1200, y: 0 }, { x: 1200, y: 600 }, { x: 0, y: 600 }]);
+    const m0 = JSON.stringify(kant(t, 'm1'));
+    _takBrushToggle(fid, 'eave'); tekster.length = 0;
+    klikk({ x: 600, y: 300 });
+    check('Linje: takfot kan ikke males på mønet, og det sies', 'uendret + melding', JSON.stringify(kant(t, 'm1')) === m0 && tekster.some(x => /møne eller gradrenne/.test(x)), tekster.join());
+    _takBrushToggle(fid, 'valley'); klikk({ x: 600, y: 300 });
+    check('Linje: gradrenne kan', 'valley', kant(t, 'm1').type === 'valley', kant(t, 'm1').type);
+
+    // ── Renne på kanten ──
+    t = nytt(L);
+    _takSetEdgeType(fid, 'k1', 'eave'); _takAddGutter(fid, 'k1'); render();
+    const pr = w2s(600, 0), ved = s2w(pr.x, pr.y - 5);   // renna tegnes litt utenfor takfoten, 5 px treffer begge
+    klikk(ved);
+    check('Renne: uten pensel velger klikket renna (testen måler noe)', 'valgt', !!_takFeatSel, JSON.stringify(_takFeatSel));
+    _takFeatSel = null; _takBrushToggle(fid, 'rake');
+    klikk(ved);
+    check('Renne: penselen når kanten under renna, renna velges ikke', 'rake / null', kant(t, 'k1').type === 'rake' && !_takFeatSel, JSON.stringify(_takFeatSel));
+    t.features = [];
+
+    // ── Av igjen ──
+    t = nytt(L); _takBrushToggle(fid, 'eave');
+    check('Av: samme knapp slår av', 'null', _takBrushToggle(fid, 'eave') === false && _takBrush === null, '');
+    _takBrushToggle(fid, 'eave');
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    check('Av: Esc slår av', 'null', _takBrush === null, '');
+    klikk({ x: 600, y: 0 });
+    check('Av: etter Esc er klikk menyen igjen', 'meny, null', menu.style.display !== 'none' && kant(t, 'k1').type === null, menu.style.display);
+    _takSetEdgeType(fid, 'k1', 'eave');
+    check('Av: menyen merker som før', 'eave/USER_CONFIRMED', kant(t, 'k1').type === 'eave' && kant(t, 'k1').prov.source === 'USER_CONFIRMED', '');
+
+    // ── Andre veier ut ──
+    _takBrushToggle(fid, 'rake'); _takStepGo(fid, 4);
+    check('Steg: nytt steg slår av', 'null', _takBrush === null, '');
+    _takStepGo(fid, 3); _takBrushToggle(fid, 'rake'); _takFeatStart(fid, 'gutter');
+    check('Verktøy: et tak-verktøy slår av', 'null', _takBrush === null, ''); _takFeatStop();
+    _takBrushToggle(fid, 'rake'); S.ui.toolMode = 'hand';
+    check('Hånd: penselen hviler, hånden panorerer', 'null', _takBrushFid() === null, ''); S.ui.toolMode = 'arrow';
+    canvas.classList.toggle('tak-brush-on', _takBrushFid() != null);
+    S.ui.readOnly = true;
+    check('Skrivebeskyttet: penselen hviler', 'null', _takBrushFid() === null, '');
+    const før = JSON.stringify(S.tak[fid].edges);
+    mus('mousedown', { x: 1000, y: 500 }); mus('mouseup', { x: 1000, y: 500 });
+    check('Skrivebeskyttet: ingen merking', 'uendret', JSON.stringify(S.tak[fid].edges) === før, '');
+    check('Skrivebeskyttet: kan ikke slås på', 'false', _takBrushToggle(fid, 'eave') === false, '');
+    S.ui.readOnly = false; _takBrushClear();
+
+    // ── Lagring ──
+    t = nytt(L); _takBrushToggle(fid, 'eave'); klikk({ x: 600, y: 0 });
+    const data = JSON.stringify(_buildSaveData());
+    check('Lagring: penselen lagres ikke', 'ingen', !data.includes('_takBrush') && !/"brush"/.test(data), '');
+    _restoreProject(JSON.parse(data));
+    check('Lagring: åpning slår av', 'null', _takBrush === null, '');
+    S.ui.activePartId = part.id; S.ui.activeFloorId = fid;
+    check('Lagring: merket kant overlever', 'eave/USER_CONFIRMED', _takOf(fid).edges[0].type === 'eave' && _takOf(fid).edges[0].prov.source === 'USER_CONFIRMED', '');
+
+    // ── Utenfor tak-modulen ──
+    _resetProjectState(); addPart('indoor');
+    const fIn = S.floors[0].id; S.ui.activePartId = S.project.parts[0].id; S.ui.activeFloorId = fIn; S.ui.drawMode = null;
+    const room = createRoom([{ x: 0, y: 0 }, { x: 1200, y: 0 }, { x: 1200, y: 800 }, { x: 0, y: 800 }], 'rect', 'Stue', fIn, true);
+    fitAll(); render();
+    const snap = () => JSON.stringify(Object.keys(S.ui).filter(x => /sel|hover|drag|mode/i.test(x)).sort().map(x => [x, S.ui[x] instanceof Set ? [...S.ui[x]] : S.ui[x]])) + '|' + menu.style.display;
+    const runde = pensel => {
+      hideCtx(); S.ui.selectedRoomId = null; S.ui.selectedWall = null;
+      S.tak = { [fIn]: _takManual([{ x: 0, y: 0 }, { x: 1200, y: 0 }, { x: 1200, y: 800 }, { x: 0, y: 800 }]) };
+      S.tak[fIn].surfaces[0].roof_type = { value: 'pitched', prov: null }; _takApplySuggestion(S.tak[fIn], S.tak[fIn].surfaces[0]);
+      _takBrush = pensel ? { fid: fIn, type: 'rake', at: null } : null;
+      const ut = []; for (const w of [{ x: 600, y: 400 }, { x: 600, y: 0 }, { x: 1200, y: 400 }]) { klikk(w); ut.push(snap()); }
+      _takBrush = null;
+      return ut;
+    };
+    const u = runde(false), m = runde(true);
+    check('Innendørs: rommet blir faktisk valgt (testen måler noe)', room && room.id, room && S.ui.selectedRoomId === room.id, S.ui.selectedRoomId);
+    check('Innendørs: tre klikk gir samme tilstand med og uten en påslått pensel', 'likt', u.join() === m.join(), m.find((x, i) => x !== u[i]) || '');
+    S.tak = {};
+  } catch (e) {
+    check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 300));
+  } finally {
+    _takBrushClear();
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; S.ui.readOnly = keep.ro; S.ui.toolMode = keep.tool;
+    hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takEdgePending = null; _takFeatSel = null;
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    app.style.display = appD; render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest218: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+
 // ── Helning fra terrenget ─────────────────────────────────────────────────────────────────────
 // Debounced: et rom endres mange ganger i sekundet mens det dras, og hvert kall treffer Kartverket.
 const _slopeTimers = {};
@@ -90626,7 +90928,7 @@ function _geomVisAapningsbanner(merket, sett) {
 
 function _restoreProject(data) {
   if (!data._version||!data.project||!data.rooms) { alert('Ugyldig prosjektfil.'); return; }
-  _takStepOpen = {}; _takCheckDims = {};   // 214: åpnes på det steget prosjektet står på; kontrollmål lagres ikke
+  _takStepOpen = {}; _takBrushClear(); _takCheckDims = {};   // 214: åpnes på det steget prosjektet står på; kontrollmål lagres ikke
   // ⚠ 037: kundelenke-cachen tilhører prosjektet som var åpent, og MÅ nullstilles her.
   // Målt før fiksen: åpnet man prosjekt A via e-postlenken og deretter prosjekt B fra lista,
   // viste B fortsatt «✉ Svar fra kunde (8. okt., Ola)» — As lenke. «Gå gjennom» ville da gitt
@@ -114691,7 +114993,7 @@ function _resetToNpScreen() {
 }
 function _resetProjectState() {
   _projectDirty = false;
-  _takStepOpen = {}; _takCheckDims = {};   // 214: visning, ikke prosjektdata
+  _takStepOpen = {}; _takBrushClear(); _takCheckDims = {};   // 214: visning, ikke prosjektdata
   _takAddrReset();   // 216: etasje-id-er går igjen mellom prosjekter, skrevet tekst skal ikke det
   // 052: bekreft-linja og rom-kortet er løse DOM-elementer utenfor #app. Uten dette blir de
   // stående igjen over NESTE prosjekt (samme felle som #_plan-bar hadde, STEG 0.2).

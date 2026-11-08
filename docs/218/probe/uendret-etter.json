@@ -1,0 +1,181 @@
+{
+ "indoor": {
+  "start": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "TEGN ROM ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning"
+  },
+  "tast-r": {
+   "mode": "rect2",
+   "hint": "Steg 1/2: Klikk for å plassere første hjørne · ESC avbryt",
+   "bar": "TEGN ROM ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning Klikk to hjørner på canvas ✕ Avbryt"
+  },
+  "tast-m": {
+   "mode": "rect-dim",
+   "hint": "Skriv bredde og høyde i panelet, trykk Enter for å opprette rom · ESC avbryt",
+   "bar": "TEGN ROM ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning Skriv bredde og høyde i panelet ✕ Avbryt"
+  },
+  "tast-p": {
+   "mode": "polygon",
+   "hint": "Steg 1: Klikk for å plassere første hjørnepunkt · ESC avbryt",
+   "bar": "TEGN ROM ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning Klikk hjørner — Enter for å lukke ✕ Avbryt"
+  },
+  "tast-l": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "TEGN ROM ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning"
+  },
+  "tast-w": {
+   "mode": "wbw",
+   "hint": "Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt",
+   "bar": ""
+  },
+  "tast-d": {
+   "mode": "dim",
+   "hint": "Steg 1/2: Klikk for å plassere startpunkt for mållinje · ESC avbryt",
+   "bar": "TEGN ROM ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning"
+  },
+  "etterRektangel": {
+   "mode": null,
+   "hint": "Bruk verktøylinjen for skillevegg, hindring, produkt eller mål · Del slett rom · Klikk utenfor rommet for å tegne flere rom",
+   "bar": "ROM + Produkt + Hindring + Sone Auto-soner Del i soner Del i N soner Mål ⋯ Mer"
+  },
+  "rom": [
+   {
+    "n": 4,
+    "area": 162577
+   }
+  ],
+  "etterMaal": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "TEGN ROM ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning"
+  },
+  "flytende": [],
+  "romMaal": [
+   0
+  ],
+  "etterEsc": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "TEGN ROM ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning"
+  },
+  "lagringLengde": 2673,
+  "lagringHash": "884e6fcb2c3f6c7e4984f1dee1eb997f81ea1446"
+ },
+ "snow": {
+  "start": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "TEGN OMRÅDE ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning"
+  },
+  "tast-r": {
+   "mode": "rect2",
+   "hint": "Steg 1/2: Klikk for å plassere første hjørne · ESC avbryt",
+   "bar": "TEGN OMRÅDE ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning Klikk to hjørner på canvas ✕ Avbryt"
+  },
+  "tast-m": {
+   "mode": "rect-dim",
+   "hint": "Skriv bredde og høyde i panelet, trykk Enter for å opprette rom · ESC avbryt",
+   "bar": "TEGN OMRÅDE ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning Skriv bredde og høyde i panelet ✕ Avbryt"
+  },
+  "tast-p": {
+   "mode": "polygon",
+   "hint": "Steg 1: Klikk for å plassere første hjørnepunkt · ESC avbryt",
+   "bar": "TEGN OMRÅDE ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning Klikk hjørner — Enter for å lukke ✕ Avbryt"
+  },
+  "tast-l": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "TEGN OMRÅDE ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning"
+  },
+  "tast-w": {
+   "mode": "wbw",
+   "hint": "Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt",
+   "bar": ""
+  },
+  "tast-d": {
+   "mode": "dim",
+   "hint": "Steg 1/2: Klikk for å plassere startpunkt for mållinje · ESC avbryt",
+   "bar": "TEGN OMRÅDE ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning"
+  },
+  "etterRektangel": {
+   "mode": null,
+   "hint": "Bruk verktøylinjen for skillevegg, hindring, produkt eller mål · Del slett rom · Klikk utenfor rommet for å tegne flere rom",
+   "bar": "ROM + Produkt + Hindring + Sone Auto-soner Del i soner Del i N soner Del så matta går opp Mål ⋯ Mer"
+  },
+  "rom": [
+   {
+    "n": 4,
+    "area": 162577
+   }
+  ],
+  "etterMaal": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "TEGN OMRÅDE ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning"
+  },
+  "flytende": [],
+  "romMaal": [
+   0
+  ],
+  "etterEsc": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "TEGN OMRÅDE ▬ Rektangel ⊞ Mål ⬡ Polygon ⌐ L-form ⊡ WBW Importer plantegning"
+  },
+  "lagringLengde": 2672,
+  "lagringHash": "12870b9dbfa1889e4f7eeb023e345ce50cc2be74"
+ },
+ "stair": {
+  "start": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "🪜 TRAPP-MODUL ＋ Legg til trapp Mållinje"
+  },
+  "tast-r": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "🪜 TRAPP-MODUL ＋ Legg til trapp Mållinje"
+  },
+  "tast-m": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "🪜 TRAPP-MODUL ＋ Legg til trapp Mållinje"
+  },
+  "tast-p": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "🪜 TRAPP-MODUL ＋ Legg til trapp Mållinje"
+  },
+  "tast-l": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "🪜 TRAPP-MODUL ＋ Legg til trapp Mållinje"
+  },
+  "tast-w": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "🪜 TRAPP-MODUL ＋ Legg til trapp Mållinje"
+  },
+  "tast-d": {
+   "mode": "dim",
+   "hint": "Steg 1/2: Klikk for å plassere startpunkt for mållinje · ESC avbryt",
+   "bar": "🪜 TRAPP-MODUL ＋ Legg til trapp Mållinje"
+  },
+  "etterMaal": {
+   "mode": "dim",
+   "hint": "Steg 2/2: Klikk for å plassere endepunkt for mållinje · ESC avbryt",
+   "bar": "🪜 TRAPP-MODUL ＋ Legg til trapp Mållinje"
+  },
+  "flytende": [],
+  "romMaal": [],
+  "etterEsc": {
+   "mode": null,
+   "hint": "Space=Pil/Hånd · Scroll=Zoom · R=Rektangel · M=Mål · P=Polygon · L=L-form · W=WBW",
+   "bar": "🪜 TRAPP-MODUL ＋ Legg til trapp Mållinje"
+  },
+  "lagringLengde": 1295,
+  "lagringHash": "0f57acca3f105c3dfe809fc42b7d2295d3c12ede"
+ }
+}

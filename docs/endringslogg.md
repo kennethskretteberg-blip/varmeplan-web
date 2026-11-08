@@ -4,6 +4,12 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 218 — Tak: penselmodus for kantmerking (08.11.2026, `main`, ikke pushet)
+
+«Merk som:» med fem typeknapper i steg 3, i verktøylinja og panelet. Ett klikk merker en kant, ett dra merker flere, og Esc eller samme knapp slår av. Menyen står som før. 8-kants L-tak: 16 klikk før, 12 med klikk, 8 med dra. Ny `_takRegressionTest218`. Se `docs/218/RAPPORT.md`.
+
+---
+
 ## 217 — Rydding: STATUS.md à jour, og `S.geo` tømmes ved nytt prosjekt (08.11.2026, `main`, ikke pushet)
 
 `_resetProjectState` setter nå `S.geo = {}`. Før arvet et nytt prosjekt forrige prosjekts adresse, kandidater og valgte bygg, og «Opprett prosjekt» lagret dem i det nye prosjektets JSON. Ny `_takRegressionTest217`. Se `docs/217/RAPPORT.md`.

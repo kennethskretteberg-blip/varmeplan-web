@@ -15,6 +15,7 @@ Alt under er bygd med det midlertidige valget som står der. Ingenting er vanske
 6. **«Gjør om til tegning» med plantegning.** Prompten handler om kart. For et bygg tegnet over plantegning skjuler knappen plantegningen på samme måte, og avkrysningen heter «Vis plantegning». For et frihåndsbygg er det ingenting å skjule, og steg 2 står som ferdig. Skal plantegningen heller bli liggende?
 
 7. **Merking av 8 kanter tar 16 klikk** (ett på kanten, ett i menyen). Det er målt med ekte klikk og ikke endret her. Siden dette er hovedveien: vil du ha en rask modus, for eksempel velg type én gang og klikk kantene etter hverandre? Det ville gitt 9 klikk for 8 like kanter.
+   **Svar (218):** Ja, penselen er bygget: velg type i verktøylinja eller panelet, og klikk eller dra over kantene. Samme 8-kants L-tak med ekte klikk: 16 før, 12 med klikk (fire typer), 8 med dra. Menyen står som før når penselen er av. Se `docs/218/RAPPORT.md`.
 
 8. **Blokker som kunne stått begge steder.** «Kabel må forbi» står i steg 3 sammen med hindringen. Summen ser du i Kabelmeter i steg 4. Snitt gjennom takfoten står i steg 4. Si fra hvis noe burde flyttes.
 
