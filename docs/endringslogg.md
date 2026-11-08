@@ -4,6 +4,12 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 217 — Rydding: STATUS.md à jour, og `S.geo` tømmes ved nytt prosjekt (08.11.2026, `main`, ikke pushet)
+
+`_resetProjectState` setter nå `S.geo = {}`. Før arvet et nytt prosjekt forrige prosjekts adresse, kandidater og valgte bygg, og «Opprett prosjekt» lagret dem i det nye prosjektets JSON. Ny `_takRegressionTest217`. Se `docs/217/RAPPORT.md`.
+
+---
+
 ## 215 — Tak: snøfanger som grense, og varmet felt mellom takkant og snøfanger med c/c regnet av flateeffekten (08.11.2026, `main`, ikke pushet)
 
 - Nytt objekt `SNOW_GUARD` (`sf<n>`) i `S.tak[fid].features`, lagt på en takfot som rennestrekket. `offset_m` har standard 0,50 m, merket «Kenneths regel 08.11.2026, ikke fra datablad». Snøfangeren har ingen løp og ingen kabel.

@@ -87645,6 +87645,125 @@ async function _takRegressionTest216() {
   return { ok: allOk, results };
 }
 
+// 217: S.geo følger prosjektet — tom i et nytt prosjekt, som før fra lagret prosjekt, egne kandidater per prosjekt, snø uendret.
+async function _takRegressionTest217() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '217: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, fetch: window.fetch, dlg: _roofDlg, url: window.VARMEPLAN_ROOF_URL, resolved: _roofResolved,
+                 part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId, prefs: localStorage.getItem('varmeplan_roof_prefs'),
+                 saveSb: window._saveToSupabase, open: window._openCloudProject, list: window._renderProjectList, inval: window._invalidateProjectCache };
+  const NS = d => { d = JSON.parse(JSON.stringify(d)); if (d.project) delete d.project.savedAt; return JSON.stringify(d); };
+  const N = 6670300;
+  const aktiver = (fid, part) => { S.ui.activePartId = part.id; S.ui.activeFloorId = fid; };
+  // Et prosjekt med kart, to kandidater og valgt bygg. Etasje-id-ene går igjen mellom prosjekter (begge blir 1), med vilje.
+  const lagKart = (modul, adr, nr, E) => {
+    _resetProjectState(); S.project.name = adr; addPart(modul);
+    const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id; aktiver(fid, part);
+    const bg = _installTileBackground(fid, { east: E, north: N }, adr); S.bgs = { [fid]: bg };
+    const fp = [[E, N], [E + 12, N], [E + 12, N + 8], [E, N + 8]].map(([e, n]) => _geoToWorld(bg, e, n));
+    S.geo = { [fid]: { address: adr, addrPoint: { lat: 59.7, lon: 10.8 }, center: { east: E, north: N }, chosen: { bygningsnr: nr, type: 'Enebolig', footprintWorld: fp },
+                       candidates: [{ bygningsnr: nr, type: 'Enebolig', distance_m: 3, footprintWorld: fp }, { bygningsnr: nr + '9', type: 'Garasje', distance_m: 15, footprintWorld: fp.map(q => ({ x: q.x + 2000, y: q.y })) }] } };
+    return fid;
+  };
+  const aapne = (j, fid) => { _resetProjectState(); _restoreProject(JSON.parse(j)); const part = S.project.parts[0]; aktiver(fid, part); };
+  const px1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  try {
+    window._showToast = () => {}; window._scheduleAutoSave = () => {};
+
+    // ── A. Nytt prosjekt etter et tak-prosjekt ──
+    let fid = lagKart('roof', 'Forrigeveien 1', '300100', 574200);
+    check('A: før: forrige prosjekt har kandidater og valgt bygg', '2 / 300100', S.geo[fid].candidates.length === 2 && S.geo[fid].chosen.bygningsnr === '300100', JSON.stringify(Object.keys(S.geo)));
+    const gammel = S.geo;
+    _resetProjectState();
+    check('A: S.geo er tom rett etter nullstilling', '{}', JSON.stringify(S.geo) === '{}', JSON.stringify(S.geo).slice(0, 80));
+    check('A: S.geo er et nytt objekt, ikke tømt i det gamle', 'nytt', S.geo !== gammel && Object.keys(gammel).length === 1, '');
+    check('A: S.bgs og S.tak er tomme som før', '{} {}', JSON.stringify(S.bgs) === '{}' && JSON.stringify(S.tak) === '{}', '');
+
+    // Samme vei som «Opprett prosjekt»; bare skyen er stubbet.
+    fid = lagKart('roof', 'Forrigeveien 1', '300100', 574200);
+    let iSkyen = null;
+    window._saveToSupabase = async () => { iSkyen = JSON.parse(JSON.stringify(_buildSaveData())); _supabaseProjectId = 'stub-217'; };
+    window._openCloudProject = async () => {}; window._renderProjectList = () => {}; window._invalidateProjectCache = () => {};
+    const navnFelt = document.getElementById('dash-proj-name'), navn0 = navnFelt.value; navnFelt.value = 'Nytt prosjekt 217';
+    await _createProjectInline(); navnFelt.value = navn0;
+    check('A: det nye prosjektet er det som ble lagret', 'Nytt prosjekt 217', iSkyen && iSkyen.project.name === 'Nytt prosjekt 217', iSkyen && iSkyen.project.name);
+    check('A: «Opprett prosjekt» lagrer ingen arvet geo', '{}', iSkyen && JSON.stringify(iSkyen.geo) === '{}', iSkyen && JSON.stringify(iSkyen.geo).slice(0, 80));
+    addPart('roof');
+    { const part = S.project.parts[0], f2 = S.floors.find(f => f.partId === part.id).id; aktiver(f2, part);
+      check('A: ny tak-etasje får samme id som den gamle (derfor betyr det noe)', fid, f2 === fid, f2);
+      check('A: ingen kandidater, ingen valgt bygning', 'ingen', !S.geo[f2] && _activeGeo() === null, JSON.stringify(S.geo[f2] || null).slice(0, 80));
+      check('A: panelet nevner ikke forrige prosjekts bygg', 'ingen', !_takCardHtml(f2).includes('300100') && !_takCardHtml(f2).includes('Forrigeveien'), '');
+      check('A: forrige prosjekts bygg kan ikke velges', 'none', (await _takChooseBuilding(f2, '300100')).kind === 'none', '');
+    }
+
+    // ── B. Åpne et lagret kartprosjekt: rundtur ──
+    fid = lagKart('roof', 'Lagretveien 2', '400100', 574200);
+    const a0 = NS(_buildSaveData());
+    aapne(a0, fid); const a1 = NS(_buildSaveData());
+    aapne(a1, fid); const a2 = NS(_buildSaveData());
+    check('B: S.geo fylles fra det lagrede prosjektet', 'Lagretveien 2', S.geo[fid] && S.geo[fid].address === 'Lagretveien 2' && S.geo[fid].candidates.length === 2 && S.geo[fid].chosen.bygningsnr === '400100', JSON.stringify(S.geo[fid] || null).slice(0, 80));
+    check('B: geo er byte-identisk etter åpning', 'lik', JSON.stringify(JSON.parse(a0).geo) === JSON.stringify(JSON.parse(a2).geo), '');
+    check('B: hele prosjektet er byte-identisk rundtur', 'lik', a1 === a2, a1.length + ' / ' + a2.length);
+    check('B: kartet følger med, _activeGeo finner det', 'Lagretveien 2', _activeGeo() === S.geo[fid], _activeGeo() && _activeGeo().address);
+
+    // ── C. Bytte mellom to lagrede kartprosjekter ──
+    const fA = lagKart('roof', 'Aveien 1', '500100', 574200); const jA = NS(_buildSaveData());
+    const fB = lagKart('roof', 'Bveien 2', '600200', 575300); const jB = NS(_buildSaveData());
+    check('C: de to prosjektene bruker samme etasje-id', fA, fA === fB, fB);
+    const egne = (adr, nr) => S.geo[fA].address === adr && S.geo[fA].candidates.every(c => c.bygningsnr.startsWith(nr)) && S.geo[fA].chosen.bygningsnr === nr && Object.keys(S.geo).length === 1;
+    aapne(jA, fA); check('C: A viser sine egne kandidater', '500100', egne('Aveien 1', '500100'), JSON.stringify(S.geo[fA].candidates.map(c => c.bygningsnr)));
+    aapne(jB, fA); check('C: B viser sine egne kandidater', '600200', egne('Bveien 2', '600200'), JSON.stringify(S.geo[fA].candidates.map(c => c.bygningsnr)));
+    S.geo[fA].candidates.push({ bygningsnr: '6002000', type: 'Bod', distance_m: 20, footprintWorld: null });   // en endring i B skal ikke smitte
+    aapne(jA, fA); check('C: tilbake til A: uendret, endringen i B fulgte ikke med', 'lik', egne('Aveien 1', '500100') && JSON.stringify(JSON.parse(jA).geo) === JSON.stringify(S.geo), S.geo[fA].candidates.length);
+    _restoreProject(JSON.parse(jB)); check('C: åpning uten nullstilling først gir også B sine', '600200', egne('Bveien 2', '600200'), '');
+
+    // ── D. Snø-modulen: hele kartflyten etter en nullstilling ──
+    const AE = 262000, AN = 6650000;
+    const ring = (e, n, h) => [[e - h, n - h], [e + h, n - h], [e + h, n + h], [e - h, n + h], [e - h, n - h]];
+    const kand = [{ bygningsnr: 'S1', type: 'Enebolig', distance_m: 12, point: { east: AE + 12, north: AN }, footprint: { polygon: ring(AE + 12, AN, 5), area_m2: 100, source: 'INSPIRE', prov: { confidence: .9 } } },
+                  { bygningsnr: 'S2', type: 'Garasje', distance_m: 30, point: { east: AE - 30, north: AN + 8 }, footprint: { polygon: ring(AE - 30, AN + 8, 3), area_m2: 36, source: 'INSPIRE', prov: { confidence: .9 } } }];
+    window.VARMEPLAN_ROOF_URL = 'http://roof.test'; _roofResolved = null; localStorage.removeItem('varmeplan_roof_prefs');
+    window.fetch = async url => {
+      const u = String(url);
+      if (u.endsWith('/health')) return new Response('{"ok":true}', { status: 200 });
+      if (u.includes('/roof/locate')) return new Response(JSON.stringify({ query: { point: { east: AE, north: AN } }, candidates: kand }), { status: 200 });
+      if (u.includes('/roof/background.json')) { const q = new URL(u).searchParams, e = +q.get('east'), n = +q.get('north'), sz = +q.get('size_m');
+        return new Response(JSON.stringify({ geo: { epsg: 25833, east0: e - sz / 2, north0: n - sz / 2, width_m: sz, height_m: sz, px: 1600, m_per_px: sz / 1600, layers: String(q.get('layers')).split(','), attribution: '©', fetched_at: '2026-11-08T00:00:00Z' }, png_base64: px1 }), { status: 200 }); }
+      throw new TypeError('uventet kall i test: ' + u);
+    };
+    const nySno = () => { _resetProjectState(); addPart('snow'); const part = S.project.parts[0], f = S.floors.find(x => x.partId === part.id).id; aktiver(f, part); return f; };
+    lagKart('snow', 'Gammelsno 9', '700700', 574200);
+    const fS = nySno();
+    check('D: nytt snøprosjekt starter uten kartdata', '{}', JSON.stringify(S.geo) === '{}' && _activeGeo() === null, JSON.stringify(S.geo).slice(0, 80));
+    const d = _roofNewDlg(fS, 'Snøveien 2'); _roofDlg = d; _roofRender();
+    d.addrPoint = { lat: 60.19, lon: 10.19 }; d.addrPointFor = d.address;
+    await _roofGo();
+    const bgS = S.bgs[fS], gS = S.geo[fS];
+    check('D: «Hent kart» fyller S.geo', 'Snøveien 2 · 2 · null', gS && gS.address === 'Snøveien 2' && gS.candidates.length === 2 && gS.chosen === null, JSON.stringify(gS || null).slice(0, 90));
+    check('D: kartet er georeferert, ikke kalibrert for hånd', '20000 cm', _bgIsGeo(bgS) && bgS.widthCm === 20000 && bgS._needsCalibration === false, bgS && bgS.widthCm);
+    check('D: _activeGeo finner kartets data', 'samme', _activeGeo() === gS, '');
+    check('D: omrisset ligger i verden via georeferansen', '2 omriss', gS.candidates.every(c => c.footprintWorld && c.footprintWorld.length >= 4), '');
+    const jS = NS(_buildSaveData());
+    aapne(jS, fS);
+    check('D: snøprosjektet åpnes med sine data', 'lik', JSON.stringify(JSON.parse(jS).geo) === JSON.stringify(S.geo), '');
+    const fS2 = nySno();
+    check('D: neste snøprosjekt arver ingenting', '{}', fS2 === fS && JSON.stringify(S.geo) === '{}', JSON.stringify(S.geo).slice(0, 80));
+  } catch (e) {
+    check('testen kastet ikke', 'ingen feil', false, e.stack || String(e));
+  } finally {
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.fetch = keep.fetch; window.VARMEPLAN_ROOF_URL = keep.url; _roofResolved = keep.resolved;
+    window._saveToSupabase = keep.saveSb; window._openCloudProject = keep.open; window._renderProjectList = keep.list; window._invalidateProjectCache = keep.inval;
+    _roofClose(); _roofDlg = keep.dlg;
+    if (keep.prefs === null) localStorage.removeItem('varmeplan_roof_prefs'); else localStorage.setItem('varmeplan_roof_prefs', keep.prefs);
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    renderSidebar(); updateCtxBar(); render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest217: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+
 // 215: snøfanger — regnestykket begge veier, avstanden, felt av/på, tom W/m², renne på samme kant (tallene fra 213),
 // etikettene, verktøyet med klikk, lagring, og at et prosjekt uten snøfanger er uendret.
 async function _takRegressionTest215() {
@@ -114606,6 +114725,7 @@ function _resetProjectState() {
   _lockApplyReadOnly(false);
   S.bgs = {};
   S.bgRefs = {};
+  S.geo = {};   // 217: ellers arver (og lagrer) et nytt prosjekt forrige prosjekts adresse, kandidater og valgte bygg
   S.tak = {}; _takFetchState = {}; _takDraw = null; _takRoomDraw = null; _takSection = null; _takSectionBox = null;   // 204 · 210: et nytt prosjekt arver aldri forrige prosjekts tak
   _takFeat = null; _takFeatSel = null; _takFeatHover = null;   // 206: verktøy og valg følger aldri med
   S.ui.activeFloorId = null;

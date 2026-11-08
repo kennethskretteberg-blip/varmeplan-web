@@ -47,6 +47,9 @@ Hvert spørsmål har mitt midlertidige valg. Det er bygget slik til du sier noe 
    og `_activeGeo` krever det. Jeg har ikke rørt det, fordi det ikke hører til 204. `S.tak` nullstilles
    der. Skal jeg rette `S.geo` i en egen liten prompt?
 
+   **Svar (217):** rettet. `_resetProjectState` setter nå `S.geo = {}`. Det var ikke harmløst: målt i 217 ble
+   forrige prosjekts `S.geo` lagret i det nye prosjektets JSON ved «Opprett prosjekt». Se `docs/217/RAPPORT.md`.
+
 10. **Gesimsen er én verdi for hele bygget.** Kortet sier det rett under tallet: «Én verdi for hele
     bygget (median) — rett den hvis takfoten ligger ulikt.» Høyde per kant hører til 205/206. Til da
     gjelder den ene verdien som standard for alle kanter.

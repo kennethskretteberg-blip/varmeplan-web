@@ -1,0 +1,12 @@
+HEAD: 83 tester, 76 grønne, 3867 deltester
+NÅ:   84 tester, 77 grønne, 3893 deltester
+like med HEAD: 83 · ulike: 0 · nye: 1
+  NY _takRegressionTest217: 26/26
+røde nå:
+   _prosjektlaasRegressionTest 66/67 [E: egen lås sier «Deg (annet vindu)»]
+   _kundeforslagRegressionTest 270/271 [L/138: piltast i et felt bytter IKKE rom]
+   _geoTileRegressionTest194 KASTER
+   _geoScaleRegressionTest KASTER
+   _geoCenterRegressionTest KASTER
+   _geoOneStepRegressionTest KASTER
+   _geoAddrRegressionTest KASTER

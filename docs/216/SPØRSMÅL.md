@@ -6,3 +6,4 @@
 4. **Punkt 1 i panelet heter fortsatt «Finn bygget fra adressen»,** mens toppmenyen sier «Skriv inn adresse». Prompten ba om å beholde forklaringene. Skal overskriften også byttes?
 5. **Knappen inne i kartdialogen heter fortsatt «Hent kart».** Dialogen er felles med snø, og den åpnes også fra kartikonet på etasjeraden i tak-panelet (verktøytips «Hent kart fra Kartverket»). Skal ikonet bli stående i tak?
 6. **`S.geo` tømmes ikke når et nytt prosjekt startes** (`S.bgs` gjør det). Feltet er sikret mot dette, men andre steder kan lese gammel adresse. Skal jeg rette det i en egen prompt?
+   **Svar (217):** rettet. `_resetProjectState` setter nå `S.geo = {}`, og et nytt prosjekt lagrer ikke lenger forrige prosjekts kartdata. Se `docs/217/RAPPORT.md`.
