@@ -2991,6 +2991,7 @@ const _SHORTCUTS = [
   { group: 'Presentasjonsmodus',    keys: ['dra'],                 what: 'Panorer' },                                           // :38293
   { group: 'Presentasjonsmodus',    keys: ['←', '→'],              what: 'Forrige / neste rom (når ett rom er åpnet i venstrepanelet)' }, // 138
   { group: 'Presentasjonsmodus',    keys: ['Esc'],                 what: 'Avslutt presentasjon' },                              // :41064
+  { group: 'Tak',                   keys: ['M'],                   what: 'Kontrollmål: mål en vegg og se at tallet stemmer (lagres ikke). D gjør det samme' },   // 214
   { group: 'Trapp: kabelforslag',   keys: ['↑', '↓'],              what: 'Bla i kabler (forrige / neste kabel i produktgruppa, med passform live)' }, // 188
 ];
 
@@ -5065,6 +5066,7 @@ function getWorldPos(e) {
     // som innendørs snapper mot romhjørner/vegger. Hjørne vinner over kant.
     const stSnap = _activeModuleType() === 'stair' ? _stairDimSnap(p) : null;
     if (stSnap) return stSnap;
+    if (_activeModuleType() === 'roof') return _takDimSnap(p) || p;   // 214: omrisset, aldri rasteret — kontrollen skal ikke avrunde
     if (S.snap.grid && !S.shiftHeld) p = gridSnap(p.x, p.y);
     const ref = S.drawing.rectStart;
     if (ref) p = angleSnapAlways(p.x, p.y, ref);
@@ -61997,6 +61999,7 @@ function _findUserDim(id) {
   for (const r of S.rooms) { const d = (r.dims || []).find(x => x.id === id); if (d) return { dim: d, room: r, stair: null }; }
   const f = (S.floatingDims || []).find(x => x.id === id); if (f) return { dim: f, room: null, stair: null };
   for (const st of (S.stairs || [])) { const d = (st.dims || []).find(x => x.id === id); if (d) return { dim: d, room: null, stair: st }; }
+  const k214 = _takCheckFind(id); if (k214) return { dim: k214, room: null, stair: null };   // 214: kontrollmål
   return null;
 }
 // Mål i VERDENS-cm (trappemål flyttes med trappens posisjon). Returnerer et lesbart proxy-objekt
@@ -62014,6 +62017,7 @@ function _collectVisibleDims() {
     if (pid && st.partId && st.partId !== pid) continue;   // samme filter som drawStairs
     for (const d of (st.dims || [])) out.push(_dimWorld(d, st));
   }
+  if (!(S.ui && S.ui._pdfMode)) out.push(...(_takCheckDims[S.ui.activeFloorId] || []));   // 214: kontrollmål — aldri på papir
   return out;
 }
 
@@ -71204,9 +71208,12 @@ function updHint() {
   else if(u.selectedWallId) h='Dra pilene for \u00e5 flytte vegg \u00b7 T juster veggtykkelse';
   else if(u.selectedRoomId) h='Bruk verkt\u00f8ylinjen for skillevegg, hindring, produkt eller m\u00e5l \u00b7 Del slett rom \u00b7 Klikk utenfor rommet for \u00e5 tegne flere rom';
 
+  else if(_activeModuleType()==='roof') h=_takHintText();   // 214
+
   // ── Standard (ingenting valgt) ──
   else h='Space=Pil/H\u00e5nd \u00b7 Scroll=Zoom \u00b7 R=Rektangel \u00b7 M=M\u00e5l \u00b7 P=Polygon \u00b7 L=L-form \u00b7 W=WBW';
 
+  if(m==='dim'&&_activeModuleType()==='roof') h='Kontrollm\u00e5l \u00b7 '+h+' \u00b7 M=Av';   // 214
   el.textContent=h;
 }
 
@@ -73850,6 +73857,8 @@ canvas.addEventListener('mousedown', e=>{
           if (!S.floatingDims) S.floatingDims = [];
           S.floatingDims.push({ ...dimObj, partId: S.ui.activePartId });
         }
+      } else if (_takCheckAdd(dimObj)) {
+        // 214: kontrollmål i tak-delen — ligger utenfor S og lagres ikke
       } else if (_cr) {
         _cr.dims.push({...dimObj, roomId: S.ui.selectedRoomId});
       } else {
@@ -73867,7 +73876,7 @@ canvas.addEventListener('mousedown', e=>{
     } else {
       const p1={...S.drawing.rectStart},p2={x:wp.x,y:wp.y};
       const wdx=p2.x-p1.x,wdy=p2.y-p1.y,wLen=Math.hypot(wdx,wdy);
-      if(wLen>1){const wnx=-wdy/wLen,wny=wdx/wLen;S.drawing.dimPending={id:S.counters.nextDimId++,p1,p2,wnx,wny,offset:0};}
+      if(wLen>1){const wnx=-wdy/wLen,wny=wdx/wLen;S.drawing.dimPending={id:_activeModuleType()==='roof'?_takCheckNextId--:S.counters.nextDimId++,p1,p2,wnx,wny,offset:0};}
       S.drawing.rectStart=null;
     }
   } else if (mode==='wbw') {
@@ -77328,6 +77337,8 @@ document.addEventListener('keydown', e=>{
     // fra siste folie til vegg under manuell utlegging. startDimMode() er allerede en veksler
     // (av/på), ingen ny logikk her. Ctrl/Cmd+Shift+D (debug-panelet) er en helt annen snarvei —
     // denne blokken kjører kun når ingen modifikatortast er nede.
+    // 214: tak-delen har ingen rom. M og D = kontrollmålet; R/P/L/W startet rom-tegning under «TEGN ROM».
+    if (_activeModuleType()==='roof' && 'mMdDrRpPlLwW'.includes(e.key)) { if ('mMdD'.includes(e.key)) _takCheckToggle(); return; }
     if (e.key==='d'||e.key==='D') { startDimMode(); return; }
     // T: interactive wall thickness mode
     if ((e.key==='t'||e.key==='T') && !S.ui.drawMode && S.ui.selectedWallId) {
@@ -77405,7 +77416,8 @@ function fitAll() {
   }
   if (!hasContent) { S.view.zoom=1;S.view.panX=0;S.view.panY=0;updZoomBadge();return; }
   const pad=150, ww=mxx-mnx+pad*2, wh=mxy-mny+pad*2;
-  S.view.zoom=Math.max(0.2,Math.min(8,Math.min(canvas.width/(ww*BASE_SCALE),canvas.height/(wh*BASE_SCALE))));
+  // 214: tak: et stort bygg skal også fylle skjermen — samme gulv som kartet tillater (rom/trapp: 0,2 som før).
+  S.view.zoom=Math.max(mod==='roof'?Math.min(0.2,_minZoom()):0.2,Math.min(8,Math.min(canvas.width/(ww*BASE_SCALE),canvas.height/(wh*BASE_SCALE))));
   S.view.panX=(mnx+mxx)/2; S.view.panY=(mny+mxy)/2;
   updZoomBadge();
 }
@@ -77593,6 +77605,7 @@ function dimCtxMenu(e, dimId) {
 // Delete a dim line by id — handles both room-attached and floating dims.
 function deleteDim(dimId) {
   if (dimId == null) return;
+  if (_takCheckRemove(dimId)) { if (S.ui.selectedDimId === dimId) S.ui.selectedDimId = null; renderSidebar(); render(); return; }   // 214: lagres ikke, og angres ikke
   let found = false;
   pushUndo();
   for (const r of S.rooms) {
@@ -77660,7 +77673,8 @@ function updateCtxBar() {
   let html = _ctxBarItems();
   // Persistent background quick-control: prepend so visibility/dimming is always
   // reachable from the top regardless of selection (suppressed in transient modes).
-  if (!_ctxBarTransient()) {
+  // 214: i tak-delen hører bakgrunnsgruppa (med «Hent bygg») til steg 1; senere steg har «Vis kart».
+  if (!_ctxBarTransient() && !(_activeModuleType() === 'roof' && S.ui.activeFloorId != null && _takWizardStep(S.ui.activeFloorId) !== 1)) {
     const bgGroup = _bgCtxGroupHtml();
     if (bgGroup) html = bgGroup + html;
   }
@@ -78419,13 +78433,16 @@ function _ctxBarItems() {
     const D = _takRoomDraw;
     return `<span class="ctxbar-lbl">${IC('mountain',14)} Tak</span><span style="font-size:11px;color:var(--accent);padding:0 6px">${D.via === 'plan' ? 'Tegner omrisset over plantegningen — klikk hjørnene, første punkt eller Enter lukker' : 'Tegner omrisset for frihånd — skriv lengden på hver kant, Enter lukker'}</span><button class="snap-chip" onclick="_takRoomDrawCancel()" title="Avbryt (Esc)">✕ Avbryt</button>`;
   }
+  if (moduleType === 'roof' && ui.drawMode === 'dim') {
+    // 214: kontrollmålet — si hva det er, og gi en utvei.
+    return `<span class="ctxbar-lbl">${IC('ruler',14)} Kontrollmål</span><span style="font-size:11px;color:var(--dim);padding:0 6px">Klikk to hjørner på en vegg du kjenner lengden på</span><button class="snap-chip" onclick="_takCheckToggle()" title="Avslutt (M eller Esc)">✓ Ferdig</button>`;
+  }
   if (moduleType === 'roof' && !ui.drawMode) {
     const fid = S.ui.activeFloorId;
-    return `<span class="ctxbar-lbl">${IC('mountain',14)} Tak</span>` + (fid == null ? '' : (_takDraw
-      ? `<span style="font-size:11px;color:var(--accent);padding:0 6px">Klikk hjørnene — Enter eller første punkt lukker</span><button class="snap-chip" onclick="_takDrawFinish()">Ferdig</button><button class="snap-chip" onclick="_takDrawStop()" title="Avbryt (Esc)">✕ Avbryt</button>`
-      // 211: plantegning og frihånd bruker rom-modulens verktøy (polygon / vegg-for-vegg). «Tegn omrisset
-      // selv» (204) står bare når etasjen har kart — da sporer man bygget i kartet.
-      : `<button class="snap-chip" onclick="_takPlanStart(${fid})" title="Klikk hjørnene på en plantegning med målestokk">${IC('pencil',14)} Tegn over plantegning</button><button class="snap-chip" onclick="_takFreeStart(${fid})" title="Skriv lengden på hver kant (vegg-for-vegg)">${IC('pencil',14)} Tegn for frihånd</button>` + (_bgIsGeo(S.bgs && S.bgs[fid]) ? `<button class="snap-chip" onclick="_takDrawStart(${fid})" title="Tegn takflatens omriss med klikk i hjørnene i kartet">${IC('pencil',14)} Tegn omrisset selv</button>` : '')));
+    if (fid == null) return `<span class="ctxbar-lbl">${IC('mountain',14)} Tak</span>`;
+    if (_takDraw) return `<span class="ctxbar-lbl">${IC('mountain',14)} Tak</span>` + `<span style="font-size:11px;color:var(--accent);padding:0 6px">Klikk hjørnene — Enter eller første punkt lukker</span><button class="snap-chip" onclick="_takDrawFinish()">Ferdig</button><button class="snap-chip" onclick="_takDrawStop()" title="Avbryt (Esc)">✕ Avbryt</button>`;
+    // 214: bare det som hører til steget. Tegnemåtene (211) står i steg 1.
+    return _takToolbarHtml(fid);
   }
   if (S.floors && S.floors.length > 0 && (!ui.drawMode || _drawingRoom)) {
     const bg = activeBg();
@@ -81020,7 +81037,7 @@ function drawGeoFeatures() {
     requestAnimationFrame(() => { if (_geoPick && _geoPick.busyPt) render(); });
   }
   const g = _activeGeo();
-  if (!g || S.ui.geoHideFootprint) return;
+  if (!g || S.ui.geoHideFootprint || _takMapHidden()) return;   // 214: nabobyggene hører til kartet
   const chosen = _chosenFootprintWorld();
   ctx.save();
   // Andre kandidater: tynn grå, så brukeren ser at de KAN velges uten at de stjeler blikket.
@@ -81103,6 +81120,7 @@ function _geoPickStart() {
   if (S.ui.readOnly) { _lockToast(); return; }
   if (!_geoPickAvailable()) { _showToast && _showToast('Hent et kart først.', 'warn'); return; }
   if (S.ui.drawMode) { _showToast && _showToast('Avslutt tegningen først (Esc).', 'warn'); return; }
+  if (_takMapHidden()) _takSetMapVisible(S.ui.activeFloorId, true);   // 214: man kan ikke klikke på et bygg man ikke ser
   _geoPick = { fid: S.ui.activeFloorId, busy: false, press: null, busyPt: null };
   canvas.style.cursor = 'crosshair';
   _showToast && _showToast('Klikk på et bygg i kartet for å hente omrisset · Esc avslutter', 'info');
@@ -81460,7 +81478,7 @@ function _takSetRoofType(fid, value) {
   // 205: ny taktype → nytt kantforslag (det gamle var laget for den andre typen). Samme type
   // bekreftet → kantene står, også de brukeren har rettet.
   if (cur.value !== value || !_takEdgesOf(tt, s).length) _takApplySuggestion(tt, s);
-  renderSidebar(); render(); _scheduleAutoSave && _scheduleAutoSave();
+  renderSidebar(); updateCtxBar(); render(); _scheduleAutoSave && _scheduleAutoSave();
   return true;
 }
 
@@ -81474,9 +81492,9 @@ function _takDrawStart(fid) {
   _takDraw = { fid, pts: [], hover: null };
   canvas.style.cursor = 'crosshair';
   _showToast && _showToast('Klikk hjørnene · klikk første punkt, dobbeltklikk eller Enter for å lukke · Esc avbryter', 'info');
-  renderSidebar(); render();
+  renderSidebar(); updateCtxBar(); render();
 }
-function _takDrawStop() { _takDraw = null; canvas.style.cursor = 'default'; renderSidebar(); render(); }
+function _takDrawStop() { _takDraw = null; canvas.style.cursor = 'default'; renderSidebar(); updateCtxBar(); render(); }
 function _takDrawPoint(e) {
   const { x: sx, y: sy } = _evToCanvas(e);
   const p = s2w(sx, sy);
@@ -81683,7 +81701,7 @@ function _takRenderPartContent(part) {
         <button class="floor-bg-btn" onclick="event.stopPropagation();renameFloorClick(${fl.id},this.closest('.floor-hdr').querySelector('.floor-name-txt'))" title="Gi nytt navn" style="background:transparent">${IC('pencil', 14)}</button>
         <button class="floor-bg-btn" onclick="_roofOpenDialog(${fl.id});event.stopPropagation()" title="Hent kart fra Kartverket for ${esc(fl.name)}">${IC('map', 14)}<span style="font-size:9px;font-weight:700;margin-left:1px">+</span></button>
       </div>`;
-    if (!fl.collapsed) h += `<div class="floor-rooms">${_floorBgItemsHtml(fl.id)}${act ? _takCardHtml(fl.id) : ''}</div>`;
+    if (!fl.collapsed) h += `<div class="floor-rooms">${act ? _takWizardHtml(fl.id) : _floorBgItemsHtml(fl.id)}</div>`;   // 214: veiviseren eier den aktive etasjen
     h += '</div>';
   }
   return h;
@@ -81701,7 +81719,8 @@ function _takProvTxt(key, m) {
   if (key === 'ground_z') return 'høydedata';
   return m.prov.source.toLowerCase();
 }
-function _takCardHtml(fid) {
+/** 214: `only` (1–4) = bare det steget i veiviseren. Uten `only`: hele kortet, slik 204–213 bygde det. */
+function _takCardHtml(fid, only) {
   const box = inner => `<div class="tak-card" style="margin:6px 10px 8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;line-height:1.45">${inner}</div>`;
   const dim = t => `<span style="color:var(--dim)">${t}</span>`;
   const st = _takFetchState[fid];
@@ -81726,6 +81745,7 @@ function _takCardHtml(fid) {
       <div style="margin-top:4px">${_takBtn('_takRoomDrawCancel()', 'Avbryt')}</div>`);
   }
   if (!s) {
+    if (only != null && only !== 1) return '';   // 214: veiviseren sier hva som mangler
     const bg = S.bgs && S.bgs[fid], g = S.geo && S.geo[fid];
     // 211: tre veier til bygget, ett valg. 1 = adressen (standard), 2 = plantegning, 3 = frihånd.
     const way = (nr, title, body) => `<div class="tak-way" data-way="${nr}" style="padding:5px 0 4px;${nr > 1 ? 'border-top:1px solid var(--border);margin-top:4px' : ''}">
@@ -81767,7 +81787,8 @@ function _takCardHtml(fid) {
   }
   // ── Statuskortet ──
   const t = _takOf(fid), H = s.heights || {};
-  if (_takIsDrawn(t)) return box(_takDrawnCardInner(fid, t, s));   // 211: høydene er oppgitt, ikke målt
+  if (only === 1) return box(_takStep1Inner(fid, t, s));   // 214
+  if (_takIsDrawn(t)) return box(_takDrawnCardInner(fid, t, s, only));   // 211: høydene er oppgitt, ikke målt
   const fpp = s.footprint && s.footprint.prov;
   const kilde = fpp && fpp.source === 'USER_DRAWN' ? 'Omriss tegnet for hånd' : 'Omriss fra Kartverket' + (fpp && fpp.source === 'DOM_RASTER' ? ' (avledet av høydedata)' : '');
   const inp = (key, m) => `<input type="text" inputmode="decimal" value="${_takNum(m && m.value)}" placeholder="—" onchange="_takSetHeight(${fid},'${key}',this.value)" onkeydown="if(event.key==='Enter')this.blur()" style="width:52px;padding:1px 4px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">`;
@@ -81783,6 +81804,11 @@ function _takCardHtml(fid) {
   const rtPt = rt.value ? (rt.prov && rt.prov.source === 'USER_CONFIRMED' ? 'valgt' : 'antatt') : '';
   const typeBtns = Object.entries(TAK_ROOF_TYPES).map(([k, lbl]) => _takBtn(`_takSetRoofType(${fid},'${k}')`, lbl, rt.value === k)).join('');
   const eaveSvak = H.eave_m && H.eave_m.value != null && H.eave_m.prov && H.eave_m.prov.source !== 'USER_CONFIRMED';
+  // 214: steg 3 og 4 viser bare sine egne blokker (høyder og taktype hører til kontrollen i steg 2).
+  if (only === 3 || only === 4) {
+    const inner = (only === 3 ? _takEdgesCardHtml(fid, t, s) : '') + _takFlatCardHtml(fid, t, s, only) + _takFeaturesCardHtml(fid, t, s, only);
+    return inner.trim() ? box(inner) : '';
+  }
   return box(`<div style="font-weight:700;margin-bottom:2px">${kilde}</div>
     ${row('Gesims', 'eave_m', ' ±0,5')}
     ${eaveSvak ? `<div style="font-size:11px">${dim('Én verdi for hele bygget (median) — rett den hvis takfoten ligger ulikt.')}</div>` : ''}
@@ -81790,17 +81816,17 @@ function _takCardHtml(fid) {
     <div style="padding:3px 0 1px"><div>Taktype ${rtPt ? dim('(' + rtPt + ')') : ''}</div><div>${typeBtns}</div></div>
     ${!rt.value ? `<div style="color:var(--warn,#d97706);font-size:11px">⚠ Velg taktype — den styrer hvilke kanter som får renne.</div>` : ''}
     ${row('Terreng', 'ground_z')}
-    ${_takEdgesCardHtml(fid, t, s)}
-    ${_takFlatCardHtml(fid, t, s)}
-    ${_takFeaturesCardHtml(fid, t, s)}
+    ${only === 2 ? '' : _takEdgesCardHtml(fid, t, s)}
+    ${only === 2 ? '' : _takFlatCardHtml(fid, t, s)}
+    ${only === 2 ? '' : _takFeaturesCardHtml(fid, t, s)}
     ${t && t.model ? `<div style="font-size:10px;margin-top:3px">${dim(esc(t.model.attribution || '© Kartverket'))}</div>` : ''}
-    <div style="margin-top:4px">${t && t.building ? '' : _takBtn(`_takDrawStart(${fid})`, 'Tegn på nytt')}</div>`);
+    ${only === 2 ? '' : `<div style="margin-top:4px">${t && t.building ? '' : _takBtn(`_takDrawStart(${fid})`, 'Tegn på nytt')}</div>`}`);
 }
 
 /** 211: statuskortet for et bygg brukeren har tegnet selv. Ingen høydedata finnes, så alt står som
  *  OPPGITT (USER_DRAWN) — samme ærlighet som 204-kortet har for tjenestens anslag. Rekkefølgen er
  *  taktype → gesims (påkrevd) → møne (bare skråtak) → terreng (valgfritt, 0). */
-function _takDrawnCardInner(fid, t, s) {
+function _takDrawnCardInner(fid, t, s, only) {
   const dim = x => `<span style="color:var(--dim)">${x}</span>`;
   const warn = x => `<div style="color:var(--warn,#d97706);font-size:11px">⚠ ${x}</div>`;
   const H = s.heights || {}, fpp = s.footprint.prov || {}, m = fpp.method;
@@ -81822,6 +81848,11 @@ function _takDrawnCardInner(fid, t, s) {
   const typeBtns = Object.entries(TAK_ROOF_TYPES).map(([k, lbl]) => _takBtn(`_takSetRoofType(${fid},'${k}')`, lbl, rt.value === k)).join('');
   const eaveMissing = !(H.eave_m && H.eave_m.value != null);
   const again = m === 'plan' ? `_takPlanStart(${fid})` : m === 'free' ? `_takFreeStart(${fid})` : `_takDrawStart(${fid})`;
+  // 214: steg 3 og 4 — bare kanter/deler/kabel. Målestokk-sperren gjelder fortsatt.
+  if (only === 3 || only === 4) {
+    if (blocked) return warn('Målestokken på plantegningen er ikke satt lenger. Sett den før du går videre — lengdene kan ikke stoles på.') + `<div>${_takBtn(`S.ui.activeFloorId=${fid};startBgCalibrate()`, 'Sett målestokk', true)}</div>`;
+    return (only === 3 ? _takEdgesCardHtml(fid, t, s) : '') + _takFlatCardHtml(fid, t, s, only) + _takFeaturesCardHtml(fid, t, s, only);
+  }
   return `<div style="font-weight:700;margin-bottom:1px">${title}</div>
     <div style="font-size:11px">${dim(W.length + ' hjørner · omkrets ' + _takNum(perim, 2) + ' m')}</div>
     ${m === 'plan' && fpp.scale ? `<div style="font-size:11px">${dim('Målestokk: ' + esc(fpp.scale.txt))}</div>` : ''}
@@ -81833,8 +81864,8 @@ function _takDrawnCardInner(fid, t, s) {
     ${eaveMissing ? warn('Gesimshøyden mangler — uten den får nedløpene ingen lengde.') : ''}
     ${rt.value === 'pitched' ? row('Møne', 'ridge_m', 'over terreng · bare for skråtak') : ''}
     ${row('Terreng', 'ground_z', 'nullpunkt for høydene · valgfritt')}
-    ${blocked ? '' : _takEdgesCardHtml(fid, t, s) + _takFlatCardHtml(fid, t, s) + _takFeaturesCardHtml(fid, t, s)}
-    <div style="margin-top:4px">${_takBtn(again, 'Tegn på nytt')}${_takBtn(`_takStartOver(${fid})`, 'Velg en annen vei')}</div>`;
+    ${blocked || only === 2 ? '' : _takEdgesCardHtml(fid, t, s) + _takFlatCardHtml(fid, t, s) + _takFeaturesCardHtml(fid, t, s)}
+    ${only === 2 ? '' : `<div style="margin-top:4px">${_takBtn(again, 'Tegn på nytt')}${_takBtn(`_takStartOver(${fid})`, 'Velg en annen vei')}</div>`}`;
 }
 /** 211: tilbake til de tre valgene (taket fjernes — kan angres). */
 function _takStartOver(fid) {
@@ -81846,6 +81877,282 @@ function _takStartOver(fid) {
   _takFeatSel = null; _takSection = null;
   renderSidebar(); updateCtxBar(); render(); _scheduleAutoSave && _scheduleAutoSave();
   return true;
+}
+
+// ═══ 214 · STEGVEISER — fire steg, kontrollmål, «gjør om til tegning» ═════════════════════════════
+// Kenneth 08.11.2026 prøvde modulen, fikk det røde omrisset «og visste ikke hva han skulle gjøre
+// videre». Panelet viste alt på én gang, uten å si hvor man er. Nå: ett åpent steg om gangen, og en
+// linje som sier hva som gjelder. Appen HOPPER IKKE videre av seg selv og SPERRER ingenting — den
+// sier hva som mangler (samme prinsipp som de usikre kantene i 205).
+//
+// Hvilket steg som står åpent er visning, ikke prosjektdata: `_takStepOpen` lagres aldri. Første gang
+// en etasje vises, avledes steget av hvor langt prosjektet faktisk er kommet (`_takStepDerive`), og så
+// står det der til brukeren selv bytter. Det eneste som lagres er `t.asDrawing` (trykket «Gjør om til
+// tegning») og `bg.visible` (som fantes fra før).
+const TAK_STEP_NAMES = [null, 'Finn bygget', 'Kontroller og gjør om til tegning', 'Marker kanter og plasser deler', 'Plasser varmekabel'];
+var _takStepOpen = {};     // fid → 1–4. Transient.
+var _takCheckDims = {};    // fid → [mållinje]. Kontrollmålene: tegnes som i rom, lagres ALDRI.
+var _takCheckNextId = -1;  // negative id-er: S.counters.nextDimId skal ikke røres av en kontroll
+
+/** Alt veiviseren trenger å vite om taket. Ren lesing. */
+function _takStepFacts(fid) {
+  const t = _takOf(fid), s = _takSurface(fid), bg = (S.bgs && S.bgs[fid]) || null;
+  const edges = t ? _takEdgesOf(t) : [], unset = edges.filter(e => !e.type).length;
+  const flat = _takIsFlat(s);
+  const parts = t ? _takFeats(t, 'GUTTER').length + _takFeats(t, 'DOWNSPOUT').length + _takFeats(t, 'VALLEY_GUTTER').length + _takFlatFeats(t).length : 0;
+  // Løp settes på delstrekk, nedløp og gradrenner — samme objekter som `_takCableRows` viser.
+  const items = [];
+  if (t) { for (const g of _takFeats(t, 'GUTTER')) items.push(...(g.segments || [])); items.push(..._takFeats(t, 'DOWNSPOUT'), ..._takFeats(t, 'VALLEY_GUTTER')); }
+  const standard = items.filter(o => o.runs_src !== 'user').length;
+  const cable = t ? _takCableSummary(t) : null;
+  const flatSum = t && flat ? _takFlatSummary(t) : null;
+  const flatDone = !!(flatSum && flatSum.total && flatSum.total.complete && _takFlatFeats(t).length);
+  const itemsDone = items.length > 0 && standard === 0 && cable.missing.length === 0;
+  const roofReady = _takRoofTypeReady(s);
+  const done = [null,
+    !!s,
+    !!s && (!!(t && t.asDrawing) || !bg),
+    roofReady && edges.length > 0 && unset === 0 && parts > 0,
+    flat ? flatDone && (!items.length || itemsDone) : itemsDone];
+  return { t, s, bg, edges, unset, flat, parts, items, standard, cable, flatSum, roofReady, done, mapVisible: !!bg && bg.visible !== false,
+           checks: (_takCheckDims[fid] || []).length };
+}
+/** Steget et prosjekt faktisk står på når det åpnes. */
+function _takStepDerive(fid) {
+  const f = _takStepFacts(fid);
+  if (!f.s) return 1;
+  if (f.done[3]) return 4;
+  const work = (f.t.features || []).length > 0 || f.parts > 0 || f.edges.some(e => e.prov && e.prov.source === 'USER_CONFIRMED');
+  return f.t.asDrawing || work ? 3 : 2;
+}
+function _takWizardStep(fid) {
+  if (_takStepOpen[fid] == null) _takStepOpen[fid] = _takStepDerive(fid);
+  return _takStepOpen[fid];
+}
+function _takStepGo(fid, n) {
+  if (!(n >= 1 && n <= 4)) return false;
+  if (_takFeat) _takFeatStop();
+  hideCtx(); _takEdgeSel = null;
+  _takStepOpen[fid] = n;
+  renderSidebar(); updateCtxBar(); render();
+  _takWizardToTop();
+  return true;
+}
+/** Nytt steg: linja som sier hvor du er, skal være det første du ser — ikke bunnen av forrige steg. */
+function _takWizardToTop() { const w = document.querySelector('.tak-wizard'); if (w && w.scrollIntoView) w.scrollIntoView({ block: 'start' }); }
+/** Linja øverst: hvor du er, og hva som er neste handling. Sier hva som mangler — sperrer ingenting. */
+function _takStepMsg(fid, n, f) {
+  const pre = `Steg ${n} av 4 — `, nEdge = x => `${x} ${x === 1 ? 'kant står' : 'kanter står'} som «ikke valgt».`;
+  if (n === 1) return f.s ? pre + 'bygget er funnet. Neste: kontroller målene.' : pre + 'finn bygget. Hent det fra kartet, eller tegn det selv.';
+  if (!f.s) return pre + 'bygget mangler. Finn det i steg 1 først.';
+  if (n === 2) {
+    if (!f.roofReady) return pre + 'velg taktype, og ta gjerne et kontrollmål.';
+    if (f.done[2]) return pre + 'gjort om til tegning. Neste: merk kantene.';
+    return pre + 'ta et kontrollmål, og gjør om til tegning.';
+  }
+  if (n === 3) {
+    if (!f.roofReady) return pre + 'taktypen mangler (steg 2). Kantene merkes ut fra den.';
+    if (!f.edges.length) return pre + 'ingen kanter ennå. Trykk «Foreslå kanttyper».';
+    if (f.unset) return pre + 'merk kantene. ' + nEdge(f.unset);
+    if (!f.parts) return pre + (f.flat ? 'kantene er merket. Plasser sluk, gradrenner eller varmefelt.' : 'kantene er merket. Plasser renner og nedløp.');
+    return pre + 'kantene er merket og delene plassert. Neste: varmekabel.';
+  }
+  if (!f.parts) return pre + 'ingen deler å legge kabel på ennå (steg 3).';
+  if (f.flat && !_takFlatCable(f.t)) return pre + 'velg kabel.';
+  if (f.done[4]) return pre + 'løp er satt på alle strekk.';
+  if (f.flat && !f.items.length) return pre + 'velg oppsett og fyll inn det som mangler.';
+  return pre + `${f.standard} av ${f.items.length} strekk står på standard antall løp. Velg 1 eller 2, eller et ferdig oppsett.`;
+}
+/** Oppsummeringen på et sammenslått steg: «Steinliveien 1 · gesims 4,1 m». */
+function _takStepSummary(fid, n, f) {
+  if (!f.s) return n === 1 ? 'Omriss mangler' : '';
+  if (n === 1) {
+    const g = S.geo && S.geo[fid], H = f.s.heights || {}, m = f.s.footprint && f.s.footprint.prov && f.s.footprint.prov.method;
+    const hvor = (f.t.building && g && g.address) || (m === 'plan' ? 'Tegnet over plantegning' : m === 'free' ? 'Tegnet for frihånd' : _takIsDrawn(f.t) ? 'Tegnet for hånd' : 'Omriss fra Kartverket');
+    return esc(hvor) + (H.eave_m && H.eave_m.value != null ? ' · gesims ' + _takNum(H.eave_m.value) + ' m' : '');
+  }
+  if (n === 2) return (f.done[2] ? (f.bg ? 'Gjort om til tegning' : 'Ingen kart å legge bort') : 'Kartet ligger fortsatt under') + (f.checks ? ` · ${f.checks} kontrollmål` : '');
+  if (n === 3) return f.edges.length || f.parts ? `${f.edges.length - f.unset} av ${f.edges.length} kanter · ${f.parts} ${f.parts === 1 ? 'del' : 'deler'}` : '';
+  if (f.flat && !f.items.length) return f.flatSum && f.flatSum.total ? _takFlatMeters(f.flatSum.total) : 'Oppsett ikke valgt';
+  if (!f.items.length) return '';
+  return `${f.items.length - f.standard} av ${f.items.length} strekk · ${_takNum(f.cable.total_m)} m`;
+}
+function _takMapChipHtml(fid) {
+  const bg = S.bgs && S.bgs[fid]; if (!bg) return '';
+  return `<label class="snap-chip tak-vis-kart" style="gap:4px;cursor:pointer" title="Kartet legges over eller under tegningen — omriss og deler står"><input type="checkbox" ${bg.visible !== false ? 'checked' : ''} onchange="_takSetMapVisible(${fid},this.checked)" onclick="event.stopPropagation()"> ${_takMapWord(bg, true)}</label>`;
+}
+function _takMapWord(bg, vis) { const w = _bgIsGeo(bg) ? 'kart' : 'plantegning'; return vis ? 'Vis ' + w : w; }
+/** Steg 1 når bygget alt er funnet: hva som ligger der, og veiene til å bytte det. */
+function _takStep1Inner(fid, t, s) {
+  const dim = x => `<span style="color:var(--dim)">${x}</span>`;
+  const W = s.footprint.world || [], fpp = s.footprint.prov || {}, m = fpp.method;
+  const perim = W.reduce((a, p, i) => { const q = W[(i + 1) % W.length]; return a + Math.hypot(q.x - p.x, q.y - p.y); }, 0) / 100;
+  const drawn = _takIsDrawn(t);
+  const title = m === 'plan' ? 'Omriss tegnet over plantegning' : m === 'free' ? 'Omriss tegnet for frihånd' : drawn || fpp.source === 'USER_DRAWN' ? 'Omriss tegnet for hånd' : 'Omriss fra Kartverket';
+  const again = m === 'plan' ? `_takPlanStart(${fid})` : m === 'free' ? `_takFreeStart(${fid})` : `_takDrawStart(${fid})`;
+  return `<div style="font-weight:700">${title}</div>
+    <div style="font-size:11px">${dim(W.length + ' hjørner · omkrets ' + _takNum(perim, 2) + ' m')}</div>
+    <div style="margin-top:4px">${_geoPickAvailable() ? _takBtn('_geoPickStart()', IC('home', 14) + ' Hent et annet bygg') : ''}${t.building ? '' : _takBtn(again, 'Tegn på nytt')}${_takBtn(`_takStartOver(${fid})`, 'Velg en annen vei')}</div>`;
+}
+/** Kartet legges bort eller hentes tilbake — bare synligheten. `bg`, flisene og georeferansen røres ikke. */
+function _takSetMapVisible(fid, on) {
+  const bg = S.bgs && S.bgs[fid]; if (!bg) return false;
+  bg.visible = !!on;
+  _markProjectDirty && _markProjectDirty();
+  renderSidebar(); updateCtxBar(); render();
+  _scheduleAutoSave && _scheduleAutoSave();
+  return true;
+}
+/** Kartet er lagt bort i en tak-del. Snø og rom bryr seg ikke: der er omriss-laget uendret. */
+function _takMapHidden() {
+  const fid = S.ui.activeFloorId, bg = S.bgs && S.bgs[fid];
+  return !!(bg && bg.visible === false && _takPartOfFloor(fid));
+}
+/** «Gjør om til tegning»: kartet bort, bygget fyller skjermen, verktøylinja blir steg 3. Reversibelt («Vis kart»). */
+function _takToDrawing(fid) {
+  if (S.ui.readOnly) { _lockToast(); return false; }
+  const t = _takOf(fid);
+  if (!t || !_takSurface(fid)) { _showToast && _showToast('Finn bygget først (steg 1).', 'warn'); return false; }
+  if (S.ui.drawMode === 'dim') cancelDrawing();
+  if (S.ui.drawMode) { _showToast && _showToast('Avslutt tegningen først (Esc).', 'warn'); return false; }
+  if (_geoPick) _geoPickStop();
+  pushUndo();
+  t.asDrawing = true;
+  const bg = S.bgs && S.bgs[fid];
+  if (bg) bg.visible = false;
+  S.ui.selectedBg = null;
+  if (S.ui.activeFloorId !== fid) S.ui.activeFloorId = fid;
+  fitAll();
+  _takStepOpen[fid] = 3;
+  _markProjectDirty && _markProjectDirty();
+  renderSidebar(); updateCtxBar(); render();
+  _takWizardToTop();
+  _scheduleAutoSave && _scheduleAutoSave();
+  return true;
+}
+
+// ── Kontrollmålet ────────────────────────────────────────────────────────────────────────────
+// Rom-modulens måleverktøy (drawMode 'dim', startDimMode) — samme klikk, samme tegning, samme gizmo.
+// To forskjeller: målet lagres ikke (`_takCheckDims`), og det snapper til omrisset i stedet for til
+// rasteret. Et raster på 50 cm ville rundet av nettopp det kontrollen skal avsløre.
+const TAK_CHECK_TXT = 'Mål en vegg du kjenner lengden på, og se at tallet stemmer. Gjør det ikke det, er ikke omrisset til å stole på.';
+function _takCheckToggle() {
+  const fid = S.ui.activeFloorId;
+  if (fid == null || !_takPartOfFloor(fid)) return false;
+  if (S.ui.drawMode === 'dim') { cancelDrawing(); updateCtxBar(); return false; }
+  if (S.ui.drawMode || _takDraw) { _showToast && _showToast('Avslutt tegningen først (Esc).', 'warn'); return false; }
+  if (_takFeat) _takFeatStop();
+  if (_geoPick) _geoPickStop();
+  hideCtx(); _takEdgeSel = null;
+  S.ui.selectedBg = null;
+  startDimMode();
+  renderSidebar(); updateCtxBar();
+  return true;
+}
+/** Klikket i lerretet som avslutter en mållinje. true = tak-delen tok den. */
+function _takCheckAdd(dim) {
+  if (_activeModuleType() !== 'roof') return false;
+  const fid = S.ui.activeFloorId;
+  (_takCheckDims[fid] = _takCheckDims[fid] || []).push(dim);
+  renderSidebar();
+  return true;
+}
+function _takCheckFind(id) {
+  for (const k in _takCheckDims) { const d = _takCheckDims[k].find(x => x.id === id); if (d) return d; }
+  return null;
+}
+function _takCheckRemove(id) {
+  for (const k in _takCheckDims) {
+    const n = _takCheckDims[k].length;
+    _takCheckDims[k] = _takCheckDims[k].filter(x => x.id !== id);
+    if (_takCheckDims[k].length !== n) return true;
+  }
+  return false;
+}
+function _takCheckClear(fid) { delete _takCheckDims[fid]; S.ui.selectedDimId = null; renderSidebar(); updateCtxBar(); render(); }
+/** Snapp til omrissets hjørner (vinner) og kanter — som `_stairDimSnap` gjør for trappen. */
+function _takDimSnap(p) {
+  const W = (((_takSurface(S.ui.activeFloorId) || {}).footprint || {}).world) || [];
+  const r = 14 / Math.max(0.0001, S.view.zoom * BASE_SCALE);
+  let best = null, bestD = Infinity, bestC = false;
+  const see = (x, y, c) => { const d = Math.hypot(p.x - x, p.y - y); if (d <= r && ((c && !bestC) || (c === bestC && d < bestD))) { best = { x, y }; bestD = d; bestC = c; } };
+  W.forEach((a, i) => {
+    const b = W[(i + 1) % W.length], dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy;
+    see(a.x, a.y, true);
+    if (L2 >= 1e-6) { const u = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2)); see(a.x + u * dx, a.y + u * dy, false); }
+  });
+  return best;
+}
+
+// ── Sidepanelet og verktøylinja ──────────────────────────────────────────────────────────────
+function _takStepBoxes(fid, n, f) {
+  const box = inner => `<div class="tak-card tak-step-tool" style="margin:6px 10px 8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;line-height:1.45">${inner}</div>`;
+  if (n === 1) return _floorBgItemsHtml(fid) + _takCardHtml(fid, 1);
+  if (!f.s) return _takCardHtml(fid, n);   // bare de forbigående tilstandene (henter, tegner); ellers tomt
+  if (n === 2) {
+    const on = S.ui.drawMode === 'dim', L = _takCheckDims[fid] || [], last = L[L.length - 1];
+    const lastTxt = last ? Math.round(Math.hypot(last.p2.x - last.p1.x, last.p2.y - last.p1.y)) + ' cm' : '';
+    const check = box(`<div style="font-weight:700">Kontrollmål</div>
+      <div class="tak-check-txt" style="font-size:11px;color:var(--dim)">${TAK_CHECK_TXT}</div>
+      <div style="margin-top:4px">${_takBtn('_takCheckToggle()', on ? 'Avslutt kontrollmål' : 'Kontrollmål', !on)}${L.length ? _takBtn(`_takCheckClear(${fid})`, 'Fjern målene') : ''}</div>
+      ${L.length ? `<div class="tak-check-last" style="font-size:11px">${L.length} ${L.length === 1 ? 'mål' : 'mål'} · siste <b>${lastTxt}</b> <span style="color:var(--dim)">· lagres ikke</span></div>` : ''}`);
+    const bg = f.bg, word = bg ? _takMapWord(bg) : '';
+    const conv = box(`<div style="font-weight:700">Gjør om til tegning</div>
+      <div style="font-size:11px;color:var(--dim)">${bg ? `Legger bort ${word}et, lar omrisset stå og fyller skjermen med bygget. «${_takMapWord(bg, true)}» henter det tilbake.` : 'Fyller skjermen med bygget. Det er ikke noe kart å legge bort.'}</div>
+      <div style="margin-top:4px">${_takBtn(`_takToDrawing(${fid})`, 'Gjør om til tegning', !f.done[2])}</div>`);
+    return check + _takCardHtml(fid, 2) + conv;
+  }
+  return _takCardHtml(fid, n);
+}
+function _takWizardHtml(fid) {
+  const n = _takWizardStep(fid), f = _takStepFacts(fid);
+  let h = `<div class="tak-wizard" data-step="${n}">
+    <div class="tak-step-msg" style="margin:6px 10px 2px;font-weight:700;font-size:12px;line-height:1.35">${_takStepMsg(fid, n, f)}</div>`;
+  if (f.bg && (f.t && f.t.asDrawing || !f.mapVisible)) h += `<div class="tak-map-toggle" style="margin:2px 10px 0">${_takMapChipHtml(fid)}</div>`;
+  for (let i = 1; i <= 4; i++) {
+    const open = i === n, ok = f.done[i];
+    h += `<div class="tak-step-row${open ? ' open' : ''}" data-step="${i}" data-done="${ok ? 1 : 0}" ${open ? '' : `onclick="_takStepGo(${fid},${i})" title="Åpne steg ${i}"`} style="margin:3px 10px 0;padding:4px 7px;border:1px solid ${open ? 'var(--accent,#0891b2)' : 'var(--border)'};border-radius:6px;font-size:11px;line-height:1.3;${open ? '' : 'cursor:pointer;'}">
+      <b>Steg ${i}</b>${ok ? ' <span style="color:#16a34a">✓</span>' : ''} ${open ? `<b>${TAK_STEP_NAMES[i]}</b>` : `<span class="tak-step-sum" style="color:var(--dim)">${_takStepSummary(fid, i, f) || TAK_STEP_NAMES[i]}</span>`}</div>`;
+    if (open) h += _takStepBoxes(fid, i, f);
+  }
+  if (n < 4) h += `<div class="tak-step-next" style="margin:6px 10px 8px">${_takBtn(`_takStepGo(${fid},${n + 1})`, `Videre til steg ${n + 1} →`, f.done[n] && n !== 2)}</div>`;
+  return h + '</div>';
+}
+/** Verktøylinja øverst: bare det som hører til steget som står åpent. */
+function _takToolbarHtml(fid) {
+  const n = _takWizardStep(fid), f = _takStepFacts(fid);
+  const lbl = `<span class="ctxbar-lbl">${IC('mountain', 14)} Tak · Steg ${n} av 4</span>`;
+  const chip = (on, label, title) => `<button class="snap-chip" onclick="${on}"${title ? ` title="${title}"` : ''}>${label}</button>`;
+  const start = (kind, label) => chip(`_takFeatStart(${fid},'${kind}')`, label);
+  const sep = '<span class="tc-sep"></span>';
+  const stop = _takFeat ? chip('_takFeatStop()', '✓ Ferdig', 'Avslutt verktøyet (Esc)') : '';
+  if (n === 1) return lbl + chip(`_takPlanStart(${fid})`, IC('pencil', 14) + ' Tegn over plantegning', 'Klikk hjørnene på en plantegning med målestokk') + chip(`_takFreeStart(${fid})`, IC('pencil', 14) + ' Tegn for frihånd', 'Skriv lengden på hver kant (vegg-for-vegg)') + (_bgIsGeo(f.bg) ? chip(`_takDrawStart(${fid})`, IC('pencil', 14) + ' Tegn omrisset selv', 'Tegn takflatens omriss med klikk i hjørnene i kartet') : '');
+  const map = f.bg ? sep + _takMapChipHtml(fid) : '';
+  if (!f.s) return lbl + `<span style="font-size:11px;color:var(--dim);padding:0 6px">Finn bygget i steg 1 først</span>`;
+  if (n === 2) return lbl + chip('_takCheckToggle()', IC('ruler', 14) + ' Kontrollmål', 'Mål en vegg du kjenner lengden på (M)') + chip(`_takToDrawing(${fid})`, 'Gjør om til tegning', 'Kartet legges bort, bygget fyller skjermen') + map;
+  if (n === 3) {
+    if (!f.roofReady) return lbl + `<span style="font-size:11px;color:var(--dim);padding:0 6px">Velg taktype i steg 2 først</span>` + map;
+    const G = _takFeats(f.t, 'GUTTER').length;
+    const deler = f.flat
+      ? start('drain', '+ Sluk') + start('fvalley', '+ Gradrenne') + start('field', '+ Varmefelt')
+      : start('gutter', '+ Rennestrekk') + (G ? start('downspout', '+ Nedløp') : '') + start('valley', '+ Gradrenne');
+    return lbl + deler + start('skylight', '+ Takvindu') + start('obstacle', '+ Hindring') + stop + map;
+  }
+  const sum = f.flat && !f.items.length ? (f.flatSum && f.flatSum.total ? _takFlatMeters(f.flatSum.total) : '') : (f.items.length ? 'Kabel ' + _takNum(f.cable.total_m, 2) + ' m' : '');
+  return lbl + (_takFeats(f.t, 'GUTTER').length ? start('start', 'Startpunkt for kabel') : '') + stop + (sum ? `<span class="tak-bar-sum" style="font-size:11px;padding:0 6px">${sum}</span>` : '') + map;
+}
+/** Bare for testene 206–213: de klikker og leser i hele kortet slik det sto i DOM-en før veiviseren. Hvert
+ *  stegs innhold er testet i _takRegressionTest214. Returnerer funksjonen som setter veiviseren tilbake. */
+function _takWizardWhole() { const w = window._takWizardHtml; window._takWizardHtml = fid => _floorBgItemsHtml(fid) + _takCardHtml(fid); return () => { window._takWizardHtml = w; }; }
+/** Statuslinja nederst i tak-delen. Rom-tastene (R/M/P/L/W) finnes ikke her. */
+function _takHintText() {
+  const base = 'Space=Pil/Hånd · Scroll=Zoom';
+  if (_takDraw) return 'Klikk hjørnene · Enter eller første punkt lukker · Backspace angrer · Esc avbryt';
+  if (_takFeat) return 'Klikk i tegningen · Esc avslutter verktøyet';
+  if (_geoPick) return 'Klikk på et bygg i kartet · Esc avslutter';
+  const fid = S.ui.activeFloorId;
+  if (fid != null && _takWizardStep(fid) === 3) return base + ' · Klikk en kant for å endre typen';
+  return base;
 }
 
 // ═══ 205 · KANTENE — kanttype med fargekode, forslag for flatt tak og enkelt saltak, brukeren retter ══
@@ -82518,7 +82825,7 @@ function _takFeatFollowHeights(t, s) {
 
 // ── Mutasjoner (alle: readOnly-gate, pushUndo, ny utregning) ──
 function _takFeatMut(fid) { if (S.ui.readOnly) { _lockToast(); return null; } const t = _takOf(fid); if (t && !t.features) t.features = []; return t; }
-function _takFeatDone(t) { _takLikeMsg = null; _takRecalc(t); renderSidebar(); render(); _scheduleAutoSave && _scheduleAutoSave(); }
+function _takFeatDone(t) { _takLikeMsg = null; _takRecalc(t); renderSidebar(); updateCtxBar(); render(); _scheduleAutoSave && _scheduleAutoSave(); }
 function _takGutterEdgeMsg(t, e) {
   const s = (t.surfaces || []).find(x => x.id === e.surface);
   if (e.type === 'eave' && s && s.roof_type && s.roof_type.value === 'flat') return 'Flatt tak: bekreft at kanten har utvendig renne (klikk kanten utenfor verktøyet og velg Takfot).';
@@ -82712,9 +83019,9 @@ function _takFeatStart(fid, kind) {
                 fvalley: 'Klikk den ene enden (sluk eller parapet), så den andre · Esc avslutter',
                 field: 'Klikk hjørnene i varmefeltet · Enter eller første hjørne lukker · Esc avslutter' }[kind];
   _showToast && _showToast(msg, 'info');
-  renderSidebar(); render();
+  renderSidebar(); updateCtxBar(); render();
 }
-function _takFeatStop() { _takFeat = null; canvas.style.cursor = 'default'; renderSidebar(); render(); }
+function _takFeatStop() { _takFeat = null; canvas.style.cursor = 'default'; renderSidebar(); updateCtxBar(); render(); }
 function _takFeatWhole(on) { if (_takFeat) { _takFeat.whole = !!on; _takFeat.pts = []; _takFeat.edgeId = null; renderSidebar(); render(); } }
 const TAK_SNAP_PX = 12;
 /** Treff på en takfot (verktøyet «rennestrekk»): kant + meter fra a, snappet til endene. */
@@ -83002,8 +83309,9 @@ function _takDrawAccessories(t) {
   }
 }
 // ── Panelet ──
-function _takFeaturesCardHtml(fid, t, s) {
+function _takFeaturesCardHtml(fid, t, s, only) {
   if (!_takRoofTypeReady(s) || !t) return '';
+  const v3 = only == null || only === 3, v4 = only == null || only === 4;   // 214: delene i steg 3, kabelen i steg 4
   const dim = x => `<span style="color:var(--dim)">${x}</span>`;
   const warn = x => `<div style="color:var(--warn,#d97706);font-size:11px;margin-top:2px">⚠ ${x}</div>`;
   const inp = (val, on, w) => `<input type="text" inputmode="decimal" value="${_takNum(val)}" placeholder="—" onchange="${on}" onkeydown="if(event.key==='Enter')this.blur()" style="width:${w || 44}px;padding:1px 4px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">`;
@@ -83017,9 +83325,10 @@ function _takFeaturesCardHtml(fid, t, s) {
   const G = _takFeats(t, 'GUTTER'), D = _takFeats(t, 'DOWNSPOUT'), V = _takFeats(t, 'VALLEY_GUTTER');
   const anyEave = _takEdgesOf(t).some(e => e.kind === 'outline' && _takEdgeTakesGutter(t, e));
   const F = _takFeat && _takFeat.fid === fid ? _takFeat : null;
-  let h = `<div class="tak-feat-card" style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px"><div style="font-weight:700">Renner og nedløp</div>`;
+  let h = `<div class="tak-feat-card" style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px"><div style="font-weight:700">${only === 4 ? 'Kabel per strekk' : 'Renner og nedløp'}</div>`;
   const flat212 = _takIsFlat(s);   // 212: på flatt tak hører gradrenna til flatt-tak-kortet (bredde × W/m², ikke løp × lengde)
-  if (F && (TAK_OBJ_TOOLS.includes(F.kind) || TAK_FLAT_TOOLS.includes(F.kind))) {
+  if (!v3) { /* 214: verktøyene hører til steg 3 */ }
+  else if (F && (TAK_OBJ_TOOLS.includes(F.kind) || TAK_FLAT_TOOLS.includes(F.kind))) {
     h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk')}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp') : ''}${flat212 ? '' : _takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne')}</div>`;   // 209: verktøyboksen står under «Takvindu og hindringer»
   } else if (F) {
     const txt = { gutter: F.whole ? 'Klikk en takfot — hele kanten blir ett strekk.' : (F.edgeId ? 'Klikk sluttpunktet på samme kant.' : 'Klikk startpunktet på en takfot.'),
@@ -83038,7 +83347,7 @@ function _takFeaturesCardHtml(fid, t, s) {
     h += `<div class="tak-gutter" data-id="${g.id}" style="margin-top:4px;padding:2px 4px;border-radius:5px;${sel(g) ? 'background:rgba(8,145,178,0.12)' : ''}">
       <div style="display:flex;justify-content:space-between;align-items:center"><span><b style="color:${TAK_FEAT_COLOR.GUTTER}">Rennestrekk ${g.id}</b> ${dim('· ' + g.on_edge)}</span><span><b>${_takNum(g.length_m)} m</b>${x(g.id)}</span></div>`;
     if (e && !_takEdgeTakesGutter(t, e)) h += warn(`Kanten ${e.id} er ikke lenger takfot (${_takEdgeStyle(e).short}).`);
-    if (segs.length) {
+    if (segs.length && v4) {
       // 207: løp per delstrekk. Fra–til står i tittelen (smalt panel).
       h += `<div class="tak-gutter-runs" style="font-size:10px;color:var(--dim);margin-top:1px">Alle delstrekk: ${[1, 2].map(n => `<button title="Alle delstrekk ${n} løp" onclick="_takSetGutterRuns(${fid},'${g.id}',${n})" style="border:1px solid var(--border);background:transparent;color:var(--text);font-size:10px;line-height:13px;padding:0 4px;margin-left:3px;border-radius:3px;cursor:pointer">${n} løp</button>`).join('')}</div>` +
         `<table class="tak-seg" style="width:100%;font-size:10px;border-collapse:collapse;margin-top:1px"><tr style="font-size:10px">${['', 'lengde', 'løp', 'kabel'].map((c, i) => `<td style="text-align:${i ? (i === 2 ? 'center' : 'right') : 'left'}">${dim(c)}</td>`).join('')}</tr>` +
@@ -83054,17 +83363,17 @@ function _takFeaturesCardHtml(fid, t, s) {
       const fr = (lbl, field, extra) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:3px;white-space:nowrap"><span style="color:var(--dim)">${lbl}</span><span>${field} m${extra || ''}</span></div>`;
       h += `<div class="tak-downspout" data-id="${d.id}" style="margin:3px 0 0 4px;padding:2px 4px;border-left:2px solid ${TAK_FEAT_COLOR.DOWNSPOUT};font-size:11px;${sel(d) ? 'background:rgba(14,116,144,0.12)' : ''}">
         <div style="display:flex;justify-content:space-between;font-size:12px"><b style="color:${TAK_FEAT_COLOR.DOWNSPOUT}" title="Nedløp ${d.id}">↓ ${d.id}</b><span style="white-space:nowrap"><b>${_takDownpipeLabel(d)}</b>${x(d.id)}</span></div>
-        ${fr('Fra start', `<span class="tak-at">${inp(d.at_m, `_takSetDownspout(${fid},'${d.id}','at',this.value)`, 40)}</span>`)}
+        ${!v3 ? '' : `${fr('Fra start', `<span class="tak-at">${inp(d.at_m, `_takSetDownspout(${fid},'${d.id}','at',this.value)`, 40)}</span>`)}
         ${fr('Over bakken', `<span class="tak-above">${inp(ag.value, `_takSetDownspout(${fid},'${d.id}','above',this.value)`, 40)}</span>`)}
         <div style="font-size:10px;color:var(--dim)">fra takfot og ned${ag.prov && ag.prov.source === 'USER_CONFIRMED' ? ' (rettet)' : ''}</div>
         ${ag.value == null ? warn('Sett høyden — gesimsen er ikke kjent.') : est ? `<div style="font-size:10px;color:var(--warn,#d97706)">= gesimsen, én verdi for hele bygget (±0,5 m). Rett per nedløp.</div>` : ''}
         <label style="display:flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="tak-under" ${under ? 'checked' : ''} onchange="_takSetDownspout(${fid},'${d.id}','under',this.checked)" style="margin:0"><span title="Ført under bakken til frostfritt nivå">Under bakken</span></label>
-        ${under ? `<div class="tak-under-row">${fr('Under bakken', inp(bg.value, `_takSetDownspout(${fid},'${d.id}','below',this.value)`, 40))}<div style="font-size:10px;color:var(--dim)">${bg.prov && bg.prov.source === 'USER_CONFIRMED' ? 'rettet' : 'standard 1,0 m'}</div></div>` : ''}
-        <div style="display:flex;align-items:center;justify-content:space-between;white-space:nowrap">${dim('Løp')}${runsSel(d)}</div>
+        ${under ? `<div class="tak-under-row">${fr('Under bakken', inp(bg.value, `_takSetDownspout(${fid},'${d.id}','below',this.value)`, 40))}<div style="font-size:10px;color:var(--dim)">${bg.prov && bg.prov.source === 'USER_CONFIRMED' ? 'rettet' : 'standard 1,0 m'}</div></div>` : ''}`}
+        ${!v4 ? '' : `<div style="display:flex;align-items:center;justify-content:space-between;white-space:nowrap">${dim('Løp')}${runsSel(d)}</div>
         ${_takDownspoutBoxHtml(fid, t, d)}
         <div class="tak-section-btn">${_takBtn(`_takSectionShow(${fid},'DOWNSPOUT','${d.id}')`, _takSection && _takSection.fid === fid && _takSection.on.id === d.id ? 'Skjul snitt' : 'Vis snitt', !!(_takSection && _takSection.fid === fid && _takSection.on.id === d.id))}</div>
         <div style="white-space:nowrap">${dim('Per løp:')} <b class="tak-cable">${dc == null ? '—' : _takNum(dc.len_m, 2) + ' m'}</b></div><div style="font-size:10px;color:var(--dim)">${under ? 'over + under bakken, ingen 0,05' : 'høyde · + 0,05 ut av nedløpet, én gang'}</div>
-        <div style="white-space:nowrap;text-align:right">${dim('× ' + d.runs + ' løp' + (dc && dc.tail_m ? ' + 0,05' : '') + ' =')} <b class="tak-cable-total">${km(d.cable_total_m)} m</b></div></div>`;
+        <div style="white-space:nowrap;text-align:right">${dim('× ' + d.runs + ' løp' + (dc && dc.tail_m ? ' + 0,05' : '') + ' =')} <b class="tak-cable-total">${km(d.cable_total_m)} m</b></div>`}</div>`;
     }
     h += '</div>';
   }
@@ -83073,15 +83382,15 @@ function _takFeaturesCardHtml(fid, t, s) {
     const noZ = v.geometry.pts.some(p => p.z == null);
     h += `<div class="tak-valley" data-id="${v.id}" style="margin-top:4px;padding:2px 4px;border-radius:5px;${sel(v) ? 'background:rgba(29,78,216,0.12)' : ''}">
       <div style="display:flex;justify-content:space-between"><span><b style="color:${TAK_FEAT_COLOR.VALLEY_GUTTER}">Gradrenne ${v.id}</b></span><span><b>${_takNum(v.length_m)} m</b>${x(v.id)}</span></div>
-      <div style="display:flex;align-items:center;gap:4px;font-size:11px">${dim('Topp')} ${inp(v.geometry.pts[0].z, `_takSetValleyZ(${fid},'${v.id}',0,this.value)`, 38)} ${dim('Bunn')} ${inp(v.geometry.pts[1].z, `_takSetValleyZ(${fid},'${v.id}',1,this.value)`, 38)} m</div>
-      <div style="font-size:10px">${dim('over terreng · ' + (zp[0] && !zp[0].from ? 'topp rettet' : 'topp = mønet (anslag)') + ' · ' + (zp[1] && !zp[1].from ? 'bunn rettet' : 'bunn = gesimsen'))}</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;white-space:nowrap">${dim('Løp')}${runsSel(v)}</div><div style="font-size:11px;white-space:nowrap;text-align:right">${dim('kabel')} <b class="tak-cable-total">${km(v.cable_total_m)} m</b></div>
+      ${!v3 ? '' : `<div style="display:flex;align-items:center;gap:4px;font-size:11px">${dim('Topp')} ${inp(v.geometry.pts[0].z, `_takSetValleyZ(${fid},'${v.id}',0,this.value)`, 38)} ${dim('Bunn')} ${inp(v.geometry.pts[1].z, `_takSetValleyZ(${fid},'${v.id}',1,this.value)`, 38)} m</div>
+      <div style="font-size:10px">${dim('over terreng · ' + (zp[0] && !zp[0].from ? 'topp rettet' : 'topp = mønet (anslag)') + ' · ' + (zp[1] && !zp[1].from ? 'bunn rettet' : 'bunn = gesimsen'))}</div>`}
+      ${!v4 ? '' : `<div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;white-space:nowrap">${dim('Løp')}${runsSel(v)}</div><div style="font-size:11px;white-space:nowrap;text-align:right">${dim('kabel')} <b class="tak-cable-total">${km(v.cable_total_m)} m</b></div>`}
       ${noZ ? warn('Høyde mangler — lengden er målt i plan og blir for kort på et skrått tak.') : ''}</div>`;
   }
-  h += _takSectionCardHtml(fid, t, s);   // 210: snitt gjennom takfoten
-  h += _takObjectsCardHtml(fid, t);   // 209: takvinduer, hindringer, startpunkt
-  h += _takCableSumHtml(t);
-  h += _takAccessoryHtml(t);
+  if (v4) h += _takSectionCardHtml(fid, t, s);   // 210: snitt gjennom takfoten
+  h += _takObjectsCardHtml(fid, t, only);   // 209: takvinduer, hindringer, startpunkt
+  if (v4) h += _takCableSumHtml(t);
+  if (v4) h += _takAccessoryHtml(t);
   return h + '</div>';
 }
 /** 208: de to ferdige oppsettene, med kabelmeter og bokser FØR du trykker. */
@@ -83584,7 +83893,8 @@ function _takDrawObjects(fid, t, isSel, isHov) {
 }
 
 // ── Panelet ──
-function _takObjectsCardHtml(fid, t) {
+function _takObjectsCardHtml(fid, t, only) {
+  const v3 = only == null || only === 3, v4 = only == null || only === 4;   // 214: vindu/hindring i steg 3, startpunktet i steg 4
   const dim = x => `<span style="color:var(--dim)">${x}</span>`;
   const warn = x => `<div style="color:var(--warn,#d97706);font-size:11px;margin-top:2px">⚠ ${x}</div>`;
   const inp = (val, on, w, d) => `<input type="text" inputmode="decimal" value="${_takNum(val, d == null ? 2 : d)}" placeholder="—" onchange="${on}" onkeydown="if(event.key==='Enter')this.blur()" style="width:${w || 44}px;padding:1px 4px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">`;
@@ -83593,8 +83903,8 @@ function _takObjectsCardHtml(fid, t) {
   const fr = (lbl, field, cls) => `<div class="${cls || ''}" style="display:flex;align-items:center;justify-content:space-between;gap:3px;white-space:nowrap"><span style="color:var(--dim)">${lbl}</span><span>${field} m</span></div>`;
   const O = _takObjs(t), st = _takStartOf(t), G = _takFeats(t, 'GUTTER');
   const F = _takFeat && _takFeat.fid === fid && TAK_OBJ_TOOLS.includes(_takFeat.kind) ? _takFeat : null;
-  let h = `<div class="tak-obj-card" style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px"><div style="font-weight:700">Takvindu og hindringer</div>`;
-  if (F) {
+  let h = `<div class="tak-obj-card" style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px"><div style="font-weight:700">${only === 4 ? 'Startpunkt' : 'Takvindu og hindringer'}</div>`;
+  if (F && (F.kind === 'start' ? v4 : v3)) {
     const src = F.kind === 'like' && _takFeat_(t, F.src);
     const txt = { skylight: 'Klikk på taket. Takvinduet legges parallelt med nærmeste takkant.',
                   obstacle: 'Klikk på taket — eller på et rennestrekk (hindringen deler ikke delstrekket).',
@@ -83604,10 +83914,10 @@ function _takObjectsCardHtml(fid, t) {
       <div style="font-weight:600">${{ skylight: 'Plasserer takvindu', obstacle: 'Plasserer hindring', start: 'Setter startpunkt', like: 'Finn like' }[F.kind]}</div><div>${txt}</div>
       <div>${_takBtn('_takFeatStop()', 'Ferdig', true)}</div></div>`;
   } else {
-    h += `<div>${_takBtn(`_takFeatStart(${fid},'skylight')`, '+ Takvindu')}${_takBtn(`_takFeatStart(${fid},'obstacle')`, '+ Hindring')}${G.length ? _takBtn(`_takFeatStart(${fid},'start')`, st ? 'Flytt startpunkt' : 'Startpunkt for kabel', !st) : ''}</div>`;
+    h += `<div>${v3 ? _takBtn(`_takFeatStart(${fid},'skylight')`, '+ Takvindu') + _takBtn(`_takFeatStart(${fid},'obstacle')`, '+ Hindring') : ''}${v4 && G.length ? _takBtn(`_takFeatStart(${fid},'start')`, st ? 'Flytt startpunkt' : 'Startpunkt for kabel', !st) : ''}</div>`;
   }
   if (_takLikeMsg && _takLikeMsg.fid === fid) h += `<div class="tak-like-msg" style="font-size:11px;margin:2px 0"><b>${TAK_MSG_NO_LIKE}</b> ${dim('for ' + _takLikeMsg.src + '. Taket har ingen takflater, så appen leter bare etter speilinger av omrisset og rader av like vinduer. Plasser resten selv.')}</div>`;
-  for (const o of O) {
+  for (const o of (v3 ? O : [])) {
     const D = TAK_OBJ_DEFAULT[o.type], col = (o.gutter && _takKursColor(t, o.gutter)) || TAK_OBJ_COLOR;
     const est = [o.width_m, o.height_m].some(m => m && m.prov && m.prov.source === 'ESTIMATE');
     h += `<div class="tak-obj" data-id="${o.id}" data-type="${o.type}" style="margin-top:4px;padding:2px 4px;border-left:2px solid ${col};font-size:11px;${sel(o) ? 'background:rgba(71,85,105,0.12)' : ''}">
@@ -83627,12 +83937,12 @@ function _takObjectsCardHtml(fid, t) {
     }
     h += '</div>';
   }
-  if (st) {
+  if (st && v4) {
     const tg = _takStartTarget(t, st), col = _takKursColor(t, st.on.type === 'GUTTER' ? tg.id : tg.gutter) || TAK_OBJ_COLOR;
     h += `<div class="tak-start" data-id="${st.id}" style="margin-top:4px;padding:2px 4px;border-left:2px solid ${col};font-size:11px;${sel(st) ? 'background:rgba(71,85,105,0.12)' : ''}">
       <div style="display:flex;justify-content:space-between;font-size:12px"><span><b style="color:${col}">▶ Start</b> <span class="tak-start-lbl">${_takStartLabel(t, st)}</span></span>${x(st.id)}</div>
       <div style="font-size:10px;color:var(--dim)">Første punkt i kabelrekkefølgen. Endrer ikke kabelmeterne.</div></div>`;
-  } else if (G.length && !F) h += `<div style="font-size:10px;color:var(--dim)">Ingen startpunkt — Kabelmeter listes i tegnerekkefølge.</div>`;
+  } else if (G.length && !F && v4) h += `<div style="font-size:10px;color:var(--dim)">Ingen startpunkt — Kabelmeter listes i tegnerekkefølge.</div>`;
   return h + '</div>';
 }
 
@@ -84606,8 +84916,9 @@ function _takFlatDraw(fid, t) {
 }
 
 // ── Sidepanelet ──
-function _takFlatCardHtml(fid, t, s) {
+function _takFlatCardHtml(fid, t, s, only) {
   if (!t || !_takIsFlat(s)) return '';
+  const v3 = only == null || only === 3, v4 = only == null || only === 4;   // 214: delene i steg 3, kabel og sum i steg 4
   const dim = x => `<span style="color:var(--dim)">${x}</span>`;
   const warn = (x, hard) => `<div class="tak-flat-warn" style="color:${hard ? '#dc2626' : 'var(--warn,#d97706)'};font-size:11px;margin-top:1px">⚠ ${x}</div>`;
   const inp = (val, on, w, d, cls) => `<input type="text" inputmode="decimal" class="${cls || ''}" value="${val == null ? '' : _takNum(val, d == null ? 2 : d)}" placeholder="—" onchange="${on}" onkeydown="if(event.key==='Enter')this.blur()" style="width:${w || 44}px;padding:1px 4px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">`;
@@ -84615,7 +84926,7 @@ function _takFlatCardHtml(fid, t, s) {
   const x = id => `<button class="tak-flat-del" title="Slett" onclick="_takFlatDelete(${fid},'${id}')" style="border:0;background:transparent;color:var(--dim);cursor:pointer;padding:0 2px;font-size:12px">✕</button>`;
   const sel = f => _takFeatSel && _takFeatSel.fid === fid && _takFeatSel.id === f.id;
   const fr = (lbl, field, cls) => `<div class="${cls || ''}" style="display:flex;align-items:center;justify-content:space-between;gap:3px;white-space:nowrap"><span style="color:var(--dim)">${lbl}</span><span>${field}</span></div>`;
-  const calcHtml = c => !c.ok ? `<div class="tak-flat-calc" data-ok="0" style="font-size:11px;color:var(--warn,#d97706)">${c.msg} — ingen kabelmeter</div>`
+  const calcHtml = c => !v4 ? '' : !c.ok ? `<div class="tak-flat-calc" data-ok="0" style="font-size:11px;color:var(--warn,#d97706)">${c.msg} — ingen kabelmeter</div>`
     : `<div class="tak-flat-calc" data-ok="1" data-cc="${c.cc_cm.toFixed(3)}" data-m="${c.cable_m.toFixed(3)}" style="font-size:11px">${esc(c.formula)}</div>` +
       (!c.runsWhole ? warn(`${_takNum(c.runs, 2)} løp er ikke et helt tall — kabelmeter er regnet av arealet. Juster bredden eller flateeffekten.`) : '') +
       c.warns.map(w => warn(w.txt, w.hard)).join('');
@@ -84628,11 +84939,13 @@ function _takFlatCardHtml(fid, t, s) {
   const ch = _takFlatCableChoices();
   const opts = [`<option value="">— velg kabel —</option>`].concat(ch.map(c => `<option value="${esc(c.family)}" ${cab && cab.family === c.family ? 'selected' : ''}>${esc(c.family)} · ${_takNum(c.watt_per_m, 0)} W/m</option>`));
   if (cab && !ch.some(c => c.family === cab.family)) opts.push(`<option value="${esc(cab.family)}" selected>${esc(cab.family)} · ${_takNum(cab.watt_per_m, 0)} W/m (lagret)</option>`);
-  h += `<div style="display:flex;align-items:center;gap:4px;margin-top:2px"><span style="color:var(--dim)">Kabel</span><select class="tak-flat-cable" onchange="_takFlatSetCable(${fid},this.value)" style="flex:1;min-width:0;font-size:11px;padding:1px 2px;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">${opts.join('')}</select></div>`;
-  if (!ch.length && !cab) h += `<div style="font-size:10px;color:var(--dim)">Produktkatalogen er ikke lastet — kabel kan ikke velges ennå.</div>`;
+  if (v4) h += `<div style="display:flex;align-items:center;gap:4px;margin-top:2px"><span style="color:var(--dim)">Kabel</span><select class="tak-flat-cable" onchange="_takFlatSetCable(${fid},this.value)" style="flex:1;min-width:0;font-size:11px;padding:1px 2px;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">${opts.join('')}</select></div>`;
+  if (!v4) { /* 214 */ }
+  else if (!ch.length && !cab) h += `<div style="font-size:10px;color:var(--dim)">Produktkatalogen er ikke lastet — kabel kan ikke velges ennå.</div>`;
   else if (cab) h += `<div style="font-size:10px;color:var(--dim)">W/m fra produktkatalogen${cab.live ? '' : ' (lagret ved valget — katalogen er ikke lastet)'}</div>`;
   // Verktøy.
-  if (F) {
+  if (!v3) { /* 214: verktøyene hører til steg 3 */ }
+  else if (F) {
     const txt = { drain: 'Klikk på taket der sluket står.', fvalley: F.pts.length ? 'Klikk den andre enden (sluk, hjørne eller kant snapper).' : 'Klikk den ene enden — et sluk eller parapeten.',
                   field: F.pts.length >= 3 ? 'Klikk første hjørne eller Enter for å lukke.' : 'Klikk hjørnene i varmefeltet.' }[F.kind];
     h += `<div class="tak-flat-mode" data-kind="${F.kind}" style="background:var(--bg2,rgba(124,58,237,0.08));border-radius:6px;padding:4px 6px;margin:3px 0">
@@ -84683,6 +84996,7 @@ function _takFlatCardHtml(fid, t, s) {
       ${calcHtml(c)}</div>`;
   }
   // Sammenligning og sum.
+  if (!v4) return h + '</div>';   // 214
   h += `<div class="tak-flat-sum" style="margin-top:6px;border-top:1px solid var(--border);padding-top:4px"><div style="font-weight:700">Kabelmeter, flatt tak</div>
     <table class="tak-flat-per" style="width:100%;font-size:11px;border-collapse:collapse">
       ${[['ROOF_DRAIN', '1 · sluk'], ['VALLEY_GUTTER', '2 · gradrenner'], ['HEAT_FIELD', '3 · varme på taket']].map(([k, l]) => { const m = Sm.per[k]; return `<tr class="tak-flat-per-row" data-type="${k}"><td>${l}</td><td style="text-align:right;white-space:nowrap">${m.count ? (m.missing.length ? '≥ ' : '') + _takNum(m.known_m, 2) + ' m' : dim('—')}</td></tr>`; }).join('')}
@@ -84703,6 +85017,7 @@ function _takFlatCardHtml(fid, t, s) {
 // oppsettene, lagring, og at skråtak, prosjekt uten tak og rommenes 159-advarsel er uendret.
 async function _takRegressionTest212() {
   const results = [];
+  const _helKort = _takWizardWhole();   // 214: denne testen leser hele kortet i DOM-en
   const check = (name, expected, cond, got) => results.push({ name: '212: ' + name, expected, got, ok: !!cond });
   const lagret = _buildSaveData();
   const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
@@ -84898,6 +85213,7 @@ async function _takRegressionTest212() {
   } catch (e) {
     check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 400));
   } finally {
+    _helKort();
     window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
     HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...keep.hp);
     hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takFeat = null; _takFeatSel = null; _takFeatHover = null;
@@ -85340,6 +85656,7 @@ async function _takRegressionTest205() {
 // angre, readOnly, rundtur byte-identisk, prosjekt uten tak uendret, og innendørs klikk uberørt.
 async function _takRegressionTest206() {
   const results = [];
+  const _helKort = _takWizardWhole();   // 214: denne testen leser hele kortet i DOM-en
   const check = (name, expected, cond, got) => results.push({ name: '206: ' + name, expected, got, ok: !!cond });
   const lagret = _buildSaveData();
   const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
@@ -85524,6 +85841,7 @@ async function _takRegressionTest206() {
   } catch (e) {
     check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 300));
   } finally {
+    _helKort();
     window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
     hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takEdgePending = null; _takFeat = null; _takFeatSel = null; _takFeatHover = null;
     _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
@@ -85538,6 +85856,7 @@ async function _takRegressionTest206() {
 // endres i samme øyeblikk som en løp-knapp klikkes; forhåndsvisningen viser kabelmeter mens du tegner; ingen kursgrense.
 async function _takRegressionTest207() {
   const results = [];
+  const _helKort = _takWizardWhole();   // 214: denne testen leser hele kortet i DOM-en
   const check = (name, expected, cond, got) => results.push({ name: '207: ' + name, expected, got, ok: !!cond });
   const lagret = _buildSaveData();
   const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
@@ -85682,6 +86001,7 @@ async function _takRegressionTest207() {
   } catch (e) {
     check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 300));
   } finally {
+    _helKort();
     window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
     hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takFeat = null; _takFeatSel = null; _takFeatHover = null;
     _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
@@ -85697,6 +86017,7 @@ async function _takRegressionTest207() {
 // rute (69,15), at tabellen, nedløpsboksen og forhåndsvisningen viser samme tall, og minimums-linja.
 async function _takRegressionTest213() {
   const results = [];
+  const _helKort = _takWizardWhole();   // 214: denne testen leser hele kortet i DOM-en
   const check = (name, expected, cond, got) => results.push({ name: '213: ' + name, expected, got, ok: !!cond });
   const lagret = _buildSaveData();
   const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
@@ -85786,6 +86107,7 @@ async function _takRegressionTest213() {
   } catch (e) {
     check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 300));
   } finally {
+    _helKort();
     _takLabel = orig;
     window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
     hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takFeat = null; _takFeatSel = null; _takFeatHover = null;
@@ -85800,6 +86122,7 @@ async function _takRegressionTest213() {
 // oppsett med forhåndsvisning = resultat etter klikk; sammenhengssjekken melder uten å rette; klips «ikke satt».
 async function _takRegressionTest208() {
   const results = [];
+  const _helKort = _takWizardWhole();   // 214: denne testen leser hele kortet i DOM-en
   const check = (name, expected, cond, got) => results.push({ name: '208: ' + name, expected, got, ok: !!cond });
   const lagret = _buildSaveData();
   const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
@@ -85938,6 +86261,7 @@ async function _takRegressionTest208() {
   } catch (e) {
     check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 300));
   } finally {
+    _helKort();
     _takLabel = orig;
     window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
     hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takFeat = null; _takFeatSel = null; _takFeatHover = null;
@@ -85954,6 +86278,7 @@ async function _takRegressionTest208() {
 // etiketter i kursens farge, lagre/åpne, readOnly, sletting/angre, og klikk utenfor tak-modulen uberørt.
 async function _takRegressionTest209() {
   const results = [];
+  const _helKort = _takWizardWhole();   // 214: denne testen leser hele kortet i DOM-en
   const check = (name, expected, cond, got) => results.push({ name: '209: ' + name, expected, got, ok: !!cond });
   const lagret = _buildSaveData();
   const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
@@ -86164,6 +86489,7 @@ async function _takRegressionTest209() {
   } catch (e) {
     check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 300));
   } finally {
+    _helKort();
     _takLabel = orig;
     window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
     hideCtx(); _takEdgeSel = null; _takEdgeHover = null; _takFeat = null; _takFeatSel = null; _takFeatHover = null; _takLikeMsg = null;
@@ -86180,6 +86506,7 @@ async function _takRegressionTest209() {
 // PDF med snittet har et ekte JPEG-bilde med innhold; å se på et snitt endrer ikke prosjektet.
 async function _takRegressionTest210() {
   const results = [];
+  const _helKort = _takWizardWhole();   // 214: denne testen leser hele kortet i DOM-en
   const check = (name, expected, cond, got) => results.push({ name: '210: ' + name, expected, got, ok: !!cond });
   const lagret = _buildSaveData();
   const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
@@ -86344,6 +86671,7 @@ async function _takRegressionTest210() {
   } catch (e) {
     check('unntak', 'ingen', false, String(e && e.stack || e).slice(0, 300));
   } finally {
+    _helKort();
     window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
     _takSection = null; _takSectionBox = null; _takFeat = null; _takFeatSel = null; _takFeatHover = null;
     _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
@@ -86619,6 +86947,196 @@ async function _takRegressionTest211() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_takRegressionTest211: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+
+// 214: stegveiviseren, kontrollmålet, «Gjør om til tegning» og menyene. Ekte lerrets- og tastehendelser.
+async function _takRegressionTest214() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '214: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
+                 part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId };
+  const tast = key => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+  const klikkV = (x, y) => { const q = w2s(x, y), r = canvas.getBoundingClientRect(), k = r.width / canvas.width;
+    const c = { clientX: r.left + q.x * k, clientY: r.top + q.y * k, button: 0, bubbles: true, cancelable: true };
+    canvas.dispatchEvent(new MouseEvent('mousemove', c)); canvas.dispatchEvent(new MouseEvent('mousedown', c)); canvas.dispatchEvent(new MouseEvent('mouseup', c)); canvas.dispatchEvent(new MouseEvent('click', c)); };
+  const panel = () => document.getElementById('sidebar') ? _takWizardHtml(S.ui.activeFloorId) : '';
+  const bar = () => { updateCtxBar(); return document.getElementById('ctxbar').innerHTML; };
+  const hint = () => { updHint(); return document.getElementById('sb-hint').textContent; };
+  const L8 = [[0,0],[1200,0],[1200,500],[800,500],[800,900],[400,900],[400,500],[0,500]].map(([x, y]) => ({ x, y }));
+  const R = [[0,0],[2500,0],[2500,1000],[0,1000]].map(([x, y]) => ({ x, y }));
+  const nyTak = () => { _resetProjectState(); addPart('roof'); const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+    S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null; return fid; };
+  const ROMTAST = /R=Rektangel|P=Polygon|L=L-form|W=WBW/;
+  try {
+    window._showToast = () => {}; window._scheduleAutoSave = () => {}; window.confirm = () => true;
+    document.getElementById('app').style.display = 'flex'; resizeCanvas();
+
+    // ── A. Hvilket steg et prosjekt åpner på ──
+    let fid = nyTak();
+    check('A: nytt tak-prosjekt åpner på steg 1', '1', _takWizardStep(fid) === 1, _takWizardStep(fid));
+    S.tak = { [fid]: _takManual(R) }; delete _takStepOpen[fid];
+    check('A: omriss og ingenting annet → steg 2', '2', _takWizardStep(fid) === 2, _takWizardStep(fid));
+    _takSetRoofType(fid, 'pitched'); _takSetHeight(fid, 'eave_m', '10');
+    const eaveId = S.tak[fid].edges.find(e => e.type === 'eave').id;
+    const g1 = _takAddGutter(fid, eaveId); _takAddDownspout(fid, g1.id, 12.5);
+    delete _takStepOpen[fid];
+    check('A: kanter og nedløp → steg 4 (alle kanter har type, minst én del)', '4', _takWizardStep(fid) === 4, _takWizardStep(fid));
+    S.tak[fid].edges[0].type = null; delete _takStepOpen[fid];
+    check('A: kanter og nedløp, men én kant uten type → steg 3', '3', _takWizardStep(fid) === 3, _takWizardStep(fid));
+
+    // ── B. Appen sperrer ikke, og hopper ikke ──
+    fid = nyTak(); renderSidebar();
+    check('B: steg 3 kan åpnes uten bygg', '3', _takStepGo(fid, 3) && _takWizardStep(fid) === 3, _takWizardStep(fid));
+    check('B: … og linja sier hva som mangler', 'Finn det i steg 1', panel().includes('Steg 3 av 4 — bygget mangler. Finn det i steg 1 først.'), '');
+    _takStepGo(fid, 1);
+    S.tak = { [fid]: _takManual(L8) }; renderSidebar();
+    check('B: bygget kom på plass — appen står fortsatt på steg 1', '1', _takWizardStep(fid) === 1, _takWizardStep(fid));
+    check('B: … og sier hva som er neste handling', 'Neste: kontroller', panel().includes('bygget er funnet. Neste: kontroller målene.'), '');
+    check('B: knappen «Videre til steg 2» finnes', 'ja', panel().includes('Videre til steg 2'), '');
+    _takStepGo(fid, 3);
+    check('B: uten taktype sier steg 3 det i klartekst', 'taktypen mangler', panel().includes('taktypen mangler (steg 2)'), '');
+    _takSetRoofType(fid, 'pitched');
+    check('Kenneths melding, ordrett', 'Steg 3 av 4 — merk kantene. 8 kanter står som «ikke valgt».', panel().includes('Steg 3 av 4 — merk kantene. 8 kanter står som «ikke valgt».'), _takStepMsg(fid, 3, _takStepFacts(fid)));
+    _takSetEdgeType(fid, 'k1', 'eave');
+    check('Merking i steg 3 flytter ikke steget', '3', _takWizardStep(fid) === 3, _takWizardStep(fid));
+    check('… og telleren går ned', '7 kanter', panel().includes('7 kanter står'), '');
+
+    // ── C. Bare det åpne steget vises ──
+    fid = nyTak(); S.tak = { [fid]: _takManual(R) }; _takSetRoofType(fid, 'pitched'); _takSetHeight(fid, 'eave_m', '10');
+    const gC = _takAddGutter(fid, S.tak[fid].edges.find(e => e.type === 'eave').id); _takAddDownspout(fid, gC.id, 12.5); _takFeatSel = null;
+    const del = { høyder: 'tak-h-eave_m', kanter: 'tak-edge-count', verktøy: "_takFeatStart(" + fid + ",'gutter')", løp: 'tak-runs-2', kabelsum: 'tak-cable-table', tilbehør: 'tak-acc-table', vindu: "_takFeatStart(" + fid + ",'skylight')", kontroll: 'tak-check-txt' };
+    const vises = () => { const p = panel(); return Object.keys(del).filter(k => p.includes(del[k])).join(','); };
+    _takStepGo(fid, 1); check('C: steg 1 åpent — ingen av de andre blokkene', '', vises() === '', vises());
+    _takStepGo(fid, 2); check('C: steg 2 — høyder og kontrollmål', 'høyder,kontroll', vises() === 'høyder,kontroll', vises());
+    _takStepGo(fid, 3); check('C: steg 3 — kanter, verktøy, vindu', 'kanter,verktøy,vindu', vises() === 'kanter,verktøy,vindu', vises());
+    _takStepGo(fid, 4); check('C: steg 4 — løp, kabelsum, tilbehør', 'løp,kabelsum,tilbehør', vises() === 'løp,kabelsum,tilbehør', vises());
+    check('C: hele kortet uten `only` har fortsatt alle blokkene (204–213)', 'alle', ['tak-edge-count', 'tak-runs-2', 'tak-cable-table'].every(x => _takCardHtml(fid).includes(x)), '');
+    // Summen av stegene: ingenting skal være falt ut av panelet.
+    const full = _takCardHtml(fid), steg = [1, 2, 3, 4].map(n => _takCardHtml(fid, n)).join('');
+    const klasser = h => new Set([...h.matchAll(/class="(tak-[a-z0-9-]+)/g)].map(m => m[1]));
+    const borte = [...klasser(full)].filter(c => !klasser(steg).has(c));
+    check('C: alle tak-blokkene i hele kortet finnes i et av stegene', 'ingen borte', borte.length === 0, borte.join(','));
+    S.geo = { [fid]: { address: 'Steinliveien 1', chosen: null, candidates: [] } }; S.tak[fid].building = { bygningsnr: '1' };
+    check('Oppsummering, sammenslått steg', 'Steinliveien 1 · gesims 10,0 m', _takStepSummary(fid, 1, _takStepFacts(fid)) === 'Steinliveien 1 · gesims 10,0 m', _takStepSummary(fid, 1, _takStepFacts(fid)));
+    check('Steg 1 er merket ✓ når det er ferdig', 'data-done=1', panel().includes('data-step="1" data-done="1"'), '');
+    S.tak[fid].building = null; S.geo = {};
+
+    // ── D. Steg 4: «Løp satt på alle strekk» ──
+    let f4 = _takStepFacts(fid);
+    check('D: standardverdiene teller ikke som satt', 'ikke ferdig', !f4.done[4] && f4.standard === f4.items.length && f4.items.length === 3, f4.standard + '/' + f4.items.length);
+    _takSetGutterRuns(fid, gC.id, 2); _takSetRuns(fid, 'n1', 1);
+    f4 = _takStepFacts(fid);
+    check('D: alle strekk valgt → steg 4 ferdig', 'ferdig', f4.done[4] && f4.standard === 0, f4.standard);
+    check('D: oppsummeringen teller strekk og kabel', '3 av 3 strekk', _takStepSummary(fid, 4, f4).startsWith('3 av 3 strekk'), _takStepSummary(fid, 4, f4));
+
+    // ── E. Kontrollmålet ──
+    fid = nyTak(); S.tak = { [fid]: _takManual(R) }; _takSetRoofType(fid, 'pitched'); _takStepGo(fid, 2); fitAll(); render();
+    const NS = d => { d = JSON.parse(JSON.stringify(d)); if (d.project) delete d.project.savedAt; return JSON.stringify(d); };
+    const før = NS(_buildSaveData()), nextDim = S.counters.nextDimId, undo0 = _undoStack.length;
+    tast('m');
+    check('E: M slår på måleverktøyet', 'dim', S.ui.drawMode === 'dim', S.ui.drawMode);
+    check('E: verktøylinja sier hva kontrollmålet er', 'Kontrollmål', bar().includes('Kontrollmål') && bar().includes('en vegg du kjenner lengden på') && panel().includes('Gjør det ikke det, er ikke omrisset til å stole på.'), '');
+    check('E: statuslinja viser M mens det er på', 'M=Av', hint().includes('Kontrollmål') && hint().includes('M=Av'), hint());
+    klikkV(2, 3); klikkV(2497, 2); const pv = S.drawing.dimPending;
+    check('E: to klikk nær hjørnene snapper til hjørnene', '0,0 → 2500,0', pv && pv.p1.x === 0 && pv.p1.y === 0 && pv.p2.x === 2500 && pv.p2.y === 0, JSON.stringify(pv));
+    klikkV(1250, -100);
+    const L = _takCheckDims[fid] || [];
+    check('E: tredje klikk plasserer målet, og tallet stemmer', '2500 cm', L.length === 1 && Math.hypot(L[0].p2.x - L[0].p1.x, L[0].p2.y - L[0].p1.y) === 2500, JSON.stringify(L));
+    check('E: målet tegnes med de samme mållinjene som i rom', 'ja', _collectVisibleDims().some(d => d.id === L[0].id), '');
+    check('E: skjev kant uten hjørne: ikke rastersnappet', '1234,5', (() => { const p = _takDimSnap({ x: 1234.5, y: 500 }); return !p; })(), '');
+    check('E: målet lagres ikke', 'byte-likt', NS(_buildSaveData()) === før, '');
+    check('E: S.counters og angre-stabelen er urørt', 'urørt', S.counters.nextDimId === nextDim && _undoStack.length === undo0, S.counters.nextDimId + '/' + _undoStack.length);
+    check('E: panelet viser siste mål', '2500 cm', panel().includes('siste <b>2500 cm</b>'), '');
+    const pdfVar = S.ui._pdfMode; S.ui._pdfMode = true;
+    check('E: kontrollmålet kommer ikke på papir', 'ikke med', !_collectVisibleDims().some(d => d.id === L[0].id), ''); S.ui._pdfMode = pdfVar;
+    tast('m');
+    check('E: M slår det av igjen', 'null', S.ui.drawMode === null, S.ui.drawMode);
+    tast('d');
+    check('E: D gir samme verktøy (ikke et lagret mål)', 'dim', S.ui.drawMode === 'dim', S.ui.drawMode);
+    tast('Escape'); if (S.ui.drawMode) cancelDrawing();
+    S.ui.selectedDimId = L[0].id; deleteDim(L[0].id);
+    check('E: målet kan slettes, uten å røre angre-stabelen', 'tomt', (_takCheckDims[fid] || []).length === 0 && _undoStack.length === undo0, (_takCheckDims[fid] || []).length);
+    _takCheckDims[fid] = [{ id: -99, p1: { x: 0, y: 0 }, p2: { x: 100, y: 0 }, offset: 0 }];
+    _restoreProject(JSON.parse(JSON.stringify(_buildSaveData()))); S.ui.activePartId = S.project.parts[0].id; S.ui.activeFloorId = fid;
+    check('E: åpnet på nytt: kontrollmålene er borte', '0', Object.keys(_takCheckDims).length === 0, Object.keys(_takCheckDims).length);
+
+    // ── F. Gjør om til tegning ──
+    fid = nyTak();
+    const bg = _installTileBackground(fid, { east: 574200, north: 6670300 }, 'Testveien 4');
+    const bgFør = JSON.stringify(_serializeBgFields(bg));
+    S.tak = { [fid]: _takManual(R) }; _takSetRoofType(fid, 'pitched'); _takSetHeight(fid, 'eave_m', '10');
+    const gF = _takAddGutter(fid, S.tak[fid].edges.find(e => e.type === 'eave').id); _takAddDownspout(fid, gF.id, 12.5);
+    const tak0 = JSON.stringify(S.tak[fid]);
+    _takStepGo(fid, 2);
+    S.view.zoom = 0.05; S.view.panX = 9000; S.view.panY = 9000;
+    const r = _takToDrawing(fid);
+    const fp = _takSurface(fid).footprint.world;
+    check('F: kartet er skjult', 'visible=false', r && S.bgs[fid].visible === false, S.bgs[fid].visible);
+    check('F: omriss, kanter og objekter står — bare flagget er nytt', 'likt', (() => { const c = JSON.parse(JSON.stringify(S.tak[fid])); delete c.asDrawing; return JSON.stringify(c) === tak0; })(), '');
+    check('F: `bg` er urørt bortsett fra synligheten', 'likt', (() => { const a = JSON.parse(JSON.stringify(_serializeBgFields(S.bgs[fid]))), b = JSON.parse(bgFør); a.visible = b.visible; return JSON.stringify(a) === JSON.stringify(b); })(), '');
+    check('F: georeferansen står', 'geo', _bgIsGeo(S.bgs[fid]), '');
+    const a0 = w2s(0, 0), b0 = w2s(2500, 1000);
+    check('F: bygget fyller skjermen', 'over 60 % av bredden, innenfor', b0.x - a0.x > canvas.width * 0.6 && a0.x >= 0 && b0.x <= canvas.width, `${Math.round(a0.x)}–${Math.round(b0.x)} av ${canvas.width}`);
+    check('F: steget er 3, og verktøylinja med det', 'Steg 3', _takWizardStep(fid) === 3 && bar().includes('Steg 3 av 4') && bar().includes('+ Rennestrekk'), '');
+    check('F: steg 2 er ferdig', '✓', _takStepFacts(fid).done[2], '');
+    check('F: «Vis kart» står i panelet', 'Vis kart', panel().includes('Vis kart') && panel().includes('tak-vis-kart'), '');
+    const j1 = _buildSaveData();
+    check('F: skjult kart er lagret, og georeferansen med det', 'visible=false', j1.bgs[fid] && j1.bgs[fid].visible === false && !!j1.bgs[fid].geo, JSON.stringify(j1.bgs[fid] && j1.bgs[fid].visible));
+    _restoreProject(JSON.parse(JSON.stringify(j1))); S.ui.activePartId = S.project.parts[0].id; S.ui.activeFloorId = fid;
+    check('F: åpnet igjen: kartet finnes, tegningen husker seg', 'bg + asDrawing', !!S.bgs[fid] && _bgIsGeo(S.bgs[fid]) && S.tak[fid].asDrawing === true, '');
+    check('F: åpnet igjen på steget det står på (alle kanter har type, én del = 4), ikke steg 1', '4', _takWizardStep(fid) === 4, _takWizardStep(fid));
+    _takSetMapVisible(fid, true);
+    check('F: «Vis kart» henter det tilbake, og steget står', 'visible=true · 4', S.bgs[fid].visible === true && _takWizardStep(fid) === 4, S.bgs[fid].visible);
+    const j2 = _buildSaveData();
+    check('F: lagret med kartet synlig', 'visible=true', j2.bgs[fid].visible === true, j2.bgs[fid].visible);
+    _restoreProject(JSON.parse(JSON.stringify(j2))); S.ui.activePartId = S.project.parts[0].id; S.ui.activeFloorId = fid;
+    check('F: åpnet igjen med kartet på', 'visible=true', S.bgs[fid].visible !== false && _bgIsGeo(S.bgs[fid]), S.bgs[fid].visible);
+    check('F: skrivebeskyttet vindu kan ikke gjøre om', 'nei', (() => { S.ui.readOnly = true; const x = _takToDrawing(fid); S.ui.readOnly = keep.ro; return x === false; })(), '');
+    check('F: uten omriss sier den fra og gjør ingenting', 'false', (() => { const f2 = nyTak(); return _takToDrawing(f2) === false; })(), '');
+    const fFri = nyTak(); S.tak = { [fFri]: _takManual(R, { method: 'free' }) };
+    check('F: bygg uten kart er ferdig med steg 2 uten å gjøre noe', 'ferdig', _takStepFacts(fFri).done[2], '');
+
+    // ── G. Statuslinja og verktøylinja ──
+    fid = nyTak(); renderSidebar();
+    check('G: statuslinja i tak: ingen R/P/L/W', 'ingen', !ROMTAST.test(hint()), hint());
+    check('G: statuslinja i tak: heller ikke M når kontrollmålet er av', 'ingen M=', !/M=/.test(hint()), hint());
+    check('G: steg 1: tegnemåtene', 'ja', bar().includes('Tegn for frihånd') && !bar().includes('Kontrollmål') && !bar().includes('+ Rennestrekk'), '');
+    S.tak = { [fid]: _takManual(R) }; _takSetRoofType(fid, 'pitched');
+    const gG = _takAddGutter(fid, S.tak[fid].edges.find(e => e.type === 'eave').id); _takFeatSel = null;
+    _takStepGo(fid, 2); check('G: steg 2: kontrollmål og gjør om, ingen tegnemåter', 'ja', bar().includes('Kontrollmål') && bar().includes('Gjør om til tegning') && !bar().includes('Tegn for frihånd') && !bar().includes('+ Rennestrekk'), '');
+    _takStepGo(fid, 3); check('G: steg 3: kantene og delene', 'ja', bar().includes('+ Rennestrekk') && bar().includes('+ Takvindu') && !bar().includes('Kontrollmål') && !bar().includes('Startpunkt'), '');
+    check('G: statuslinja i steg 3', 'Klikk en kant', hint().includes('Klikk en kant'), hint());
+    _takStepGo(fid, 4); check('G: steg 4: kabelen', 'ja', bar().includes('Startpunkt for kabel') && bar().includes('Kabel ') && !bar().includes('+ Rennestrekk'), '');
+    tast('r'); check('G: R gjør ingenting i tak-delen', 'null', S.ui.drawMode === null, S.ui.drawMode);
+    tast('p'); check('G: P gjør ingenting i tak-delen', 'null', S.ui.drawMode === null, S.ui.drawMode);
+    tast('w'); check('G: W gjør ingenting i tak-delen', 'null', S.ui.drawMode === null, S.ui.drawMode);
+    tast('l'); check('G: L gjør ingenting i tak-delen', 'null', S.ui.drawMode === null, S.ui.drawMode);
+    check('G: hurtigtast-panelet har raden for M i tak', 'rad', _SHORTCUTS.some(r => r.group === 'Tak' && r.keys.join() === 'M'), '');
+    // Flatt tak: egne deler.
+    fid = nyTak(); S.tak = { [fid]: _takManual(R) }; _takSetRoofType(fid, 'flat'); _takStepGo(fid, 3);
+    check('G: flatt tak, steg 3: sluk, gradrenne, varmefelt', 'ja', bar().includes('+ Sluk') && bar().includes('+ Varmefelt') && !bar().includes('+ Rennestrekk'), '');
+    check('G: flatt tak, steg 3: kabelvalget ligger i steg 4', 'tak-flat-cable bare i 4', !_takCardHtml(fid, 3).includes('tak-flat-cable') && _takCardHtml(fid, 4).includes('tak-flat-cable'), '');
+
+    // ── H. Innendørs er uendret ──
+    _resetProjectState(); addPart('indoor');
+    const pI = S.project.parts[0]; S.ui.activePartId = pI.id; S.ui.activeFloorId = (S.floors.find(f => f.partId === pI.id) || {}).id ?? null;
+    renderSidebar();
+    check('H: statuslinja i rom viser fortsatt R/M/P/L/W', 'ja', /R=Rektangel/.test(hint()) && /M=M/.test(hint()) && /W=WBW/.test(hint()), hint());
+    tast('r'); check('H: R i rom = rektangel', 'rect2', S.ui.drawMode === 'rect2', S.ui.drawMode); cancelDrawing();
+    tast('m'); check('H: M i rom = rektangel med mål', 'rect-dim', S.ui.drawMode === 'rect-dim', S.ui.drawMode); cancelDrawing();
+    tast('d'); check('H: D i rom = mållinje', 'dim', S.ui.drawMode === 'dim', S.ui.drawMode); cancelDrawing();
+  } catch (e) {
+    check('testen kastet ikke', 'ingen feil', false, e.stack || String(e));
+  } finally {
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro;
+    if (S.ui.drawMode) cancelDrawing();
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    renderSidebar(); updateCtxBar(); render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest214: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
   return { ok: allOk, results };
 }
 
@@ -89285,6 +89803,7 @@ function _geomVisAapningsbanner(merket, sett) {
 
 function _restoreProject(data) {
   if (!data._version||!data.project||!data.rooms) { alert('Ugyldig prosjektfil.'); return; }
+  _takStepOpen = {}; _takCheckDims = {};   // 214: åpnes på det steget prosjektet står på; kontrollmål lagres ikke
   // ⚠ 037: kundelenke-cachen tilhører prosjektet som var åpent, og MÅ nullstilles her.
   // Målt før fiksen: åpnet man prosjekt A via e-postlenken og deretter prosjekt B fra lista,
   // viste B fortsatt «✉ Svar fra kunde (8. okt., Ola)» — As lenke. «Gå gjennom» ville da gitt
@@ -113349,6 +113868,7 @@ function _resetToNpScreen() {
 }
 function _resetProjectState() {
   _projectDirty = false;
+  _takStepOpen = {}; _takCheckDims = {};   // 214: visning, ikke prosjektdata
   // 052: bekreft-linja og rom-kortet er løse DOM-elementer utenfor #app. Uten dette blir de
   // stående igjen over NESTE prosjekt (samme felle som #_plan-bar hadde, STEG 0.2).
   document.getElementById('_plan-bekreft')?.remove();

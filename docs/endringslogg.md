@@ -4,6 +4,15 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 214 — Tak: stegveiviser i fire steg, kontrollmål, «gjør om til tegning» uten kart, og menyer som bare viser det som gjelder (08.11.2026, `main`, ikke pushet)
+
+- Tak-panelet viser ett åpent steg om gangen (`_takWizardHtml`), med en linje som sier hvor du er og hva som mangler. Appen hopper ikke og sperrer ikke. Åpent steg er visning (`_takStepOpen`), aldri lagret; ved åpning avledes det av prosjektet (`_takStepDerive`).
+- `_takCardHtml(fid, only)`: uten `only` som før, med `only` bare det steget.
+- Kontrollmål: `M`/`D` i tak-delen, rom-modulens verktøy, snapper til omrisset, ligger i `_takCheckDims` utenfor `S` og lagres ikke.
+- «Gjør om til tegning»: `t.asDrawing`, `bg.visible = false`, `fitAll`, steg 3. «Vis kart» henter kartet tilbake. Nabobyggenes omriss skjules med kartet (bare tak).
+- Verktøylinja følger steget. Statuslinja viser ikke R/M/P/L/W i tak-delen, og tastene R/P/L/W er av der.
+- Ny `_takRegressionTest214` 74/74; de 80 andre som HEAD; rom/snø/trapp 43/43 like med HEAD. 206–210, 212, 213 kjører med hele kortet (`_takWizardWhole`). Rapport i `docs/214/RAPPORT.md`, ti spørsmål i `docs/214/SPØRSMÅL.md`.
+
 ## 212 — Tak: flatt tak med sluk, gradrenner og varmefelt; c/c og kabelmeter regnes av flateeffekten og kabelens W/m (07.11.2026, `main`, ikke pushet)
 
 - Flatt tak (`roof_type = 'flat'`) får et eget kort i Tak-modulen: kabel fra produktkatalogen (W/m leses derfra), «+ Sluk», «+ Gradrenne», «+ Varmefelt» og «Hele takflaten». Samme modul. Alt ligger i `S.tak[fid].flat`, ikke i `t.features`, så ingen skråtakslogikk (206–210) ser det. Uten flate objekter finnes ikke `flat`.
