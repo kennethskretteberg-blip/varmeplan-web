@@ -81899,7 +81899,7 @@ function _takStepFacts(fid) {
   const t = _takOf(fid), s = _takSurface(fid), bg = (S.bgs && S.bgs[fid]) || null;
   const edges = t ? _takEdgesOf(t) : [], unset = edges.filter(e => !e.type).length;
   const flat = _takIsFlat(s);
-  const parts = t ? _takFeats(t, 'GUTTER').length + _takFeats(t, 'DOWNSPOUT').length + _takFeats(t, 'VALLEY_GUTTER').length + _takFlatFeats(t).length : 0;
+  const parts = t ? _takFeats(t, 'GUTTER').length + _takFeats(t, 'DOWNSPOUT').length + _takFeats(t, 'VALLEY_GUTTER').length + _takFeats(t, 'SNOW_GUARD').length + _takFlatFeats(t).length : 0;
   // Løp settes på delstrekk, nedløp og gradrenner — samme objekter som `_takCableRows` viser.
   const items = [];
   if (t) { for (const g of _takFeats(t, 'GUTTER')) items.push(...(g.segments || [])); items.push(..._takFeats(t, 'DOWNSPOUT'), ..._takFeats(t, 'VALLEY_GUTTER')); }
@@ -81907,14 +81907,16 @@ function _takStepFacts(fid) {
   const cable = t ? _takCableSummary(t) : null;
   const flatSum = t && flat ? _takFlatSummary(t) : null;
   const flatDone = !!(flatSum && flatSum.total && flatSum.total.complete && _takFlatFeats(t).length);
-  const itemsDone = items.length > 0 && standard === 0 && cable.missing.length === 0;
+  // 215: et varmet felt som mangler W/m² eller kabel holder steg 4 åpent; felt alene (uten renne) kan fullføre det.
+  const guard = t ? _takGuardSummary(t) : null;
+  const itemsDone = (items.length > 0 ? standard === 0 && cable.missing.length === 0 : !!(guard && guard.heated)) && !(guard && !guard.complete);
   const roofReady = _takRoofTypeReady(s);
   const done = [null,
     !!s,
     !!s && (!!(t && t.asDrawing) || !bg),
     roofReady && edges.length > 0 && unset === 0 && parts > 0,
     flat ? flatDone && (!items.length || itemsDone) : itemsDone];
-  return { t, s, bg, edges, unset, flat, parts, items, standard, cable, flatSum, roofReady, done, mapVisible: !!bg && bg.visible !== false,
+  return { t, s, bg, edges, unset, flat, parts, items, standard, cable, flatSum, guard, roofReady, done, mapVisible: !!bg && bg.visible !== false,
            checks: (_takCheckDims[fid] || []).length };
 }
 /** Steget et prosjekt faktisk står på når det åpnes. */
@@ -81959,6 +81961,8 @@ function _takStepMsg(fid, n, f) {
   }
   if (!f.parts) return pre + 'ingen deler å legge kabel på ennå (steg 3).';
   if (f.flat && !_takFlatCable(f.t)) return pre + 'velg kabel.';
+  if (f.guard && !f.guard.complete) return pre + 'feltet mot takkanten mangler flateeffekt eller kabel.';   // 215
+  if (!f.flat && !f.items.length) return pre + (f.done[4] ? 'feltet mot takkanten er regnet.' : 'snøfangeren er tegnet. Varm feltet mot takkanten, eller legg et rennestrekk.');
   if (f.done[4]) return pre + 'løp er satt på alle strekk.';
   if (f.flat && !f.items.length) return pre + 'velg oppsett og fyll inn det som mangler.';
   return pre + `${f.standard} av ${f.items.length} strekk står på standard antall løp. Velg 1 eller 2, eller et ferdig oppsett.`;
@@ -81974,7 +81978,7 @@ function _takStepSummary(fid, n, f) {
   if (n === 2) return (f.done[2] ? (f.bg ? 'Gjort om til tegning' : 'Ingen kart å legge bort') : 'Kartet ligger fortsatt under') + (f.checks ? ` · ${f.checks} kontrollmål` : '');
   if (n === 3) return f.edges.length || f.parts ? `${f.edges.length - f.unset} av ${f.edges.length} kanter · ${f.parts} ${f.parts === 1 ? 'del' : 'deler'}` : '';
   if (f.flat && !f.items.length) return f.flatSum && f.flatSum.total ? _takFlatMeters(f.flatSum.total) : 'Oppsett ikke valgt';
-  if (!f.items.length) return '';
+  if (!f.items.length) return f.guard && f.guard.heated ? 'Felt ' + _takFlatMeters(f.guard) : '';   // 215
   return `${f.items.length - f.standard} av ${f.items.length} strekk · ${_takNum(f.cable.total_m)} m`;
 }
 function _takMapChipHtml(fid) {
@@ -82135,10 +82139,11 @@ function _takToolbarHtml(fid) {
     const G = _takFeats(f.t, 'GUTTER').length;
     const deler = f.flat
       ? start('drain', '+ Sluk') + start('fvalley', '+ Gradrenne') + start('field', '+ Varmefelt')
-      : start('gutter', '+ Rennestrekk') + (G ? start('downspout', '+ Nedløp') : '') + start('valley', '+ Gradrenne');
+      : start('gutter', '+ Rennestrekk') + (G ? start('downspout', '+ Nedløp') : '') + start('valley', '+ Gradrenne') + start('guard', '+ Snøfanger');
     return lbl + deler + start('skylight', '+ Takvindu') + start('obstacle', '+ Hindring') + stop + map;
   }
-  const sum = f.flat && !f.items.length ? (f.flatSum && f.flatSum.total ? _takFlatMeters(f.flatSum.total) : '') : (f.items.length ? 'Kabel ' + _takNum(f.cable.total_m, 2) + ' m' : '');
+  let sum = f.flat && !f.items.length ? (f.flatSum && f.flatSum.total ? _takFlatMeters(f.flatSum.total) : '') : (f.items.length ? 'Kabel ' + _takNum(f.cable.total_m, 2) + ' m' : '');
+  if (f.guard && f.guard.heated) sum += (sum ? ' + felt ' : 'Felt ') + _takFlatMeters(f.guard);   // 215: feltet regnes for seg
   return lbl + (_takFeats(f.t, 'GUTTER').length ? start('start', 'Startpunkt for kabel') : '') + stop + (sum ? `<span class="tak-bar-sum" style="font-size:11px;padding:0 6px">${sum}</span>` : '') + map;
 }
 /** Bare for testene 206–213: de klikker og leser i hele kortet slik det sto i DOM-en før veiviseren. Hvert
@@ -82538,8 +82543,8 @@ var TAK_CIRCUIT_LIMIT_M = null;   // kurslengdegrense (m) — står TOM til et p
 const TAK_CABLE_NO_PRODUCT = 'Produkt ikke valgt. Kabelmeter er geometri.';
 // 213 (Kenneth, svar på 207 spm. 7): svinger og overganger er null til produktet (T1) er valgt — panelet må si det.
 const TAK_CABLE_MINIMUM_NOTE = 'Kabelmeter er rette lengder. Svinger i renneenden og overgangen renne–nedløp er ikke med, så tallet er et minimum.';
-const TAK_FEAT_COLOR = { GUTTER: '#0891b2', DOWNSPOUT: '#0e7490', VALLEY_GUTTER: '#1d4ed8' };
-var _takFeat = null;     // verktøy: { fid, kind: 'gutter'|'downspout'|'valley', whole, pts: [], edgeId, hover } — lagres aldri
+const TAK_FEAT_COLOR = { GUTTER: '#0891b2', DOWNSPOUT: '#0e7490', VALLEY_GUTTER: '#1d4ed8', SNOW_GUARD: '#475569' };
+var _takFeat = null;     // verktøy: { fid, kind: 'gutter'|'guard'|'downspout'|'valley', whole, pts: [], edgeId, hover } — lagres aldri
 var _takFeatSel = null;  // { fid, id } valgt objekt (transient)
 var _takFeatHover = null;
 
@@ -82649,6 +82654,7 @@ function _takRecalc(t) {
   for (const d of _takFeats(t, 'DOWNSPOUT')) { _takRunsFill(d, TAK_RUNS_DEFAULT.DOWNSPOUT); const c = _takDownpipeCable(d, d.runs); d.cable_total_m = c ? c.cable_m : null; }
   for (const v of _takFeats(t, 'VALLEY_GUTTER')) { _takRunsFill(v, TAK_RUNS_DEFAULT.VALLEY_GUTTER); v.cable_total_m = v.length_m * v.runs; }
   _takRecalcObjects(t);   // 209: hindringer på et rennestrekk følger strekket, startpunktet følger objektet sitt
+  _takGuardRecalc(t);     // 215: snøfanger og feltet mot takkanten
 }
 /** 207: mangler `runs` (nytt objekt, eller lagret før 207) → standardverdien, merket «standard». */
 function _takRunsFill(o, def) {
@@ -82831,6 +82837,13 @@ function _takGutterEdgeMsg(t, e) {
   if (e.type === 'eave' && s && s.roof_type && s.roof_type.value === 'flat') return 'Flatt tak: bekreft at kanten har utvendig renne (klikk kanten utenfor verktøyet og velg Takfot).';
   return 'Rennestrekk legges på takfot. Kanten er ' + _takEdgeStyle(e).short + ' — klikk den utenfor verktøyet for å endre typen.';
 }
+/** Første objekt av typen `type` på kanten som overlapper strekningen s0–s1 (meter fra kantens a-ende). */
+function _takEdgeOverlap(t, type, e, s0, s1) {
+  return _takFeats(t, type).find(g => g.on_edge === e.id && (() => {
+    const pr = g.geometry.pts.map(p => _takPolyProject([e.a, e.b].map(q => ({ ...q, z: null })), p).s);
+    return Math.min(s1, Math.max(...pr)) - Math.max(s0, Math.min(...pr)) > 0.005;
+  })()) || null;
+}
 /** Rennestrekk på kanten fra a_m til b_m (meter fra kantens a-ende). Uten a/b: hele kanten. */
 function _takAddGutter(fid, edgeId, a_m, b_m) {
   const t = _takFeatMut(fid); if (!t) return null;
@@ -82844,10 +82857,7 @@ function _takAddGutter(fid, edgeId, a_m, b_m) {
   if (s1 - s0 < 0.1) { _showToast && _showToast('Rennestrekket må være minst 10 cm.', 'warn'); return null; }
   const at = s => { const u = s / L; return { x: e.a.x + u * (e.b.x - e.a.x), y: e.a.y + u * (e.b.y - e.a.y) }; };
   // Overlapp ville telt samme renne to ganger — flere strekk på én kant må ligge ved siden av hverandre.
-  const hit = _takFeats(t, 'GUTTER').find(g => g.on_edge === edgeId && (() => {
-    const pr = g.geometry.pts.map(p => _takPolyProject([e.a, e.b].map(q => ({ ...q, z: null })), p).s);
-    return Math.min(s1, Math.max(...pr)) - Math.max(s0, Math.min(...pr)) > 0.005;
-  })());
+  const hit = _takEdgeOverlap(t, 'GUTTER', e, s0, s1);
   if (hit) { _showToast && _showToast(`Overlapper rennestrekk ${hit.id} på samme kant.`, 'warn'); return null; }
   const s = (t.surfaces || []).find(x => x.id === e.surface) || _takSurface(fid);
   const ev = s && s.heights && s.heights.eave_m;
@@ -83010,6 +83020,7 @@ function _takFeatStart(fid, kind) {
   _takFeat = { fid, kind, whole: _takFeat && _takFeat.kind === kind ? _takFeat.whole : true, pts: [], edgeId: null, hover: null };
   canvas.style.cursor = 'crosshair';
   const msg = { gutter: 'Klikk en takfot (grønn) · «Fra–til» i panelet for del av kanten · Esc avslutter',
+                guard: 'Klikk en takfot (grønn) · «Fra–til» i panelet for del av kanten · Esc avslutter',   // 215
                 downspout: 'Klikk på et rennestrekk for å sette et nedløp · Esc avslutter',
                 valley: 'Klikk toppen av gradrenna, så bunnen · Esc avslutter',
                 skylight: 'Klikk på taket for å plassere et takvindu · Esc avslutter',
@@ -83039,7 +83050,7 @@ function _takHitGutterEdge(fid, w, sx, sy, onlyId) {
   else if (Math.hypot(sx - sb.x, sy - sb.y) < TAK_SNAP_PX) best.s = L;
   else {
     // Snapp til endene av andre strekk på kanten, ellers hel cm.
-    for (const g of _takFeats(t, 'GUTTER').filter(g => g.on_edge === best.e.id)) for (const p of g.geometry.pts) {
+    for (const g of _takFeats(t, 'GUTTER').concat(_takFeats(t, 'SNOW_GUARD')).filter(g => g.on_edge === best.e.id)) for (const p of g.geometry.pts) {
       const q = w2s(p.x, p.y);
       if (Math.hypot(sx - q.x, sy - q.y) < TAK_SNAP_PX) best.s = _takPolyProject([{ ...best.e.a, z: null }, { ...best.e.b, z: null }], p).s;
     }
@@ -83071,14 +83082,15 @@ function _takFeatMouseDown(e) {
   if (S.ui.activeFloorId !== F.fid || !_takOf(F.fid)) { _takFeatStop(); return false; }
   const { x: sx, y: sy } = _evToCanvas(e), w = s2w(sx, sy);
   e.preventDefault && e.preventDefault();
-  if (F.kind === 'gutter') {
+  if (F.kind === 'gutter' || F.kind === 'guard') {   // 215: snøfangeren følger samme kant på samme måte
+    const add = F.kind === 'guard' ? _takAddGuard : _takAddGutter;
     const h = _takHitGutterEdge(F.fid, w, sx, sy, F.edgeId);
     if (!h) { _showToast && _showToast(F.edgeId ? 'Klikk sluttpunktet på samme kant.' : 'Klikk på en takfot.', 'info'); return true; }
     if (!_takEdgeTakesGutter(_takOf(F.fid), h.e)) { _showToast && _showToast(_takGutterEdgeMsg(_takOf(F.fid), h.e), 'warn'); return true; }
-    if (F.whole) { _takAddGutter(F.fid, h.e.id); return true; }
+    if (F.whole) { add(F.fid, h.e.id); return true; }
     if (!F.edgeId) { F.edgeId = h.e.id; F.pts = [h.s]; render(); return true; }
     const s0 = F.pts[0]; F.edgeId = null; F.pts = [];
-    _takAddGutter(F.fid, h.e.id, s0, h.s);
+    add(F.fid, h.e.id, s0, h.s);
     return true;
   }
   if (F.kind === 'downspout') {
@@ -83101,7 +83113,7 @@ function _takFeatMouseDown(e) {
 function _takFeatMouseMove(e) {
   const F = _takFeat; if (!F) return;
   const { x: sx, y: sy } = _evToCanvas(e), w = s2w(sx, sy);
-  if (F.kind === 'gutter') { const h = _takHitGutterEdge(F.fid, w, sx, sy, F.edgeId); F.hover = h ? { edgeId: h.e.id, s: h.s, ok: _takEdgeTakesGutter(_takOf(F.fid), h.e) } : null; }
+  if (F.kind === 'gutter' || F.kind === 'guard') { const h = _takHitGutterEdge(F.fid, w, sx, sy, F.edgeId); F.hover = h ? { edgeId: h.e.id, s: h.s, ok: _takEdgeTakesGutter(_takOf(F.fid), h.e) } : null; }
   else if (F.kind === 'downspout') { const h = _takHitGutter(F.fid, w, sx, sy); F.hover = h ? { gutter: h.g.id, s: h.s } : null; }
   else if (F.kind === 'skylight' || F.kind === 'obstacle' || F.kind === 'start' || F.kind === 'like') F.hover = _takObjHover(F, w, sx, sy);   // 209
   else if (TAK_FLAT_TOOLS.includes(F.kind)) F.hover = _takFlatToolHover(F, w, sx, sy);   // 212
@@ -83123,7 +83135,7 @@ function _takHitFeature(fid, sx, sy) {
   const o209 = _takHitObject(t, sx, sy); if (o209) return o209;   // 209: startpunkt, hindring, takvindu — de ligger oppå
   for (const d of _takFeats(t, 'DOWNSPOUT')) { const o = _takFeatScreenPt(t, d); if (o && Math.hypot(sx - o.x, sy - o.y) < 10) return d; }
   let best = null, bd = 7;
-  for (const g of _takFeats(t, 'GUTTER').concat(_takFeats(t, 'VALLEY_GUTTER'))) {
+  for (const g of _takFeats(t, 'GUTTER').concat(_takFeats(t, 'VALLEY_GUTTER'), _takFeats(t, 'SNOW_GUARD'))) {
     const P = _takFeatScreenLine(t, g);
     for (let i = 1; i < P.length; i++) {
       const a = P[i - 1], b = P[i], dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy;
@@ -83174,6 +83186,7 @@ function _takOutward(t, a, b) {
   return { x: nx, y: ny };
 }
 function _takFeatScreenLine(t, g) {
+  if (g.type === 'SNOW_GUARD') return _takGuardLine(t, g).map(p => w2s(p.x, p.y));   // 215: selve linja ligger inne på taket
   const P = g.geometry.pts.map(p => w2s(p.x, p.y));
   if (g.type !== 'GUTTER' || P.length < 2) return P;
   const n = _takOutward(t, P[0], P[P.length - 1]);
@@ -83196,6 +83209,7 @@ function _takDrawFeatures(fid, t) {
   const isHov = f => !pdf && _takFeatHover && _takFeatHover.fid === fid && _takFeatHover.id === f.id;
   ctx.save(); ctx.lineCap = 'round'; ctx.setLineDash([]);
   const line = (P, color, w) => { ctx.beginPath(); P.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.strokeStyle = color; ctx.lineWidth = w; ctx.stroke(); };
+  _takDrawGuards(t, isSel, isHov, line);   // 215: nederst, så renna og symbolene ligger oppå feltet
   for (const v of _takFeats(t, 'VALLEY_GUTTER')) {
     const P = _takFeatScreenLine(t, v), c = TAK_FEAT_COLOR.VALLEY_GUTTER;
     if (isSel(v) || isHov(v)) { ctx.globalAlpha = 0.3; line(P, c, 16); ctx.globalAlpha = 1; }
@@ -83230,22 +83244,25 @@ function _takDrawFeatures(fid, t) {
   }
   _takDrawAccessories(t);
   _takDrawObjects(fid, t, isSel, isHov);   // 209: takvinduer, hindringer, startpunkt, «finn like»-felt
+  _takDrawGuardLabels(t);                  // 215: etter alt annet, så ingenting tegnes over teksten
   // Verktøyet: forhåndsvisning.
   const F = _takFeat;
   if (F && F.fid === fid && !pdf) {
-    if (F.kind === 'gutter') {
+    if (F.kind === 'gutter' || F.kind === 'guard') {
       for (const e of _takEdgesOf(t)) if (e.kind === 'outline' && _takEdgeTakesGutter(t, e)) { const a = w2s(e.a.x, e.a.y), b = w2s(e.b.x, e.b.y); ctx.globalAlpha = 0.25; line([a, b], TAK_EDGE_TYPES.eave.color, 12); ctx.globalAlpha = 1; }
       const h = F.hover, e = h && (t.edges || []).find(x => x.id === h.edgeId);
       if (e) {
-        const L = _takEdgeLenM(e), at = s => { const u = s / L; return w2s(e.a.x + u * (e.b.x - e.a.x), e.a.y + u * (e.b.y - e.a.y)); };
+        // 215: snøfangeren forhåndsvises der den havner — standardavstanden inn på taket.
+        const guard = F.kind === 'guard', shift = guard ? _takGuardShift(t, e) : { x: 0, y: 0 };
+        const L = _takEdgeLenM(e), at = s => { const u = s / L; return w2s(e.a.x + u * (e.b.x - e.a.x) + shift.x, e.a.y + u * (e.b.y - e.a.y) + shift.y); };
         const s0 = F.whole ? 0 : (F.edgeId ? F.pts[0] : h.s), s1 = F.whole ? L : h.s;
-        const col = h.ok ? TAK_FEAT_COLOR.GUTTER : '#dc2626';
+        const col = h.ok ? (guard ? TAK_FEAT_COLOR.SNOW_GUARD : TAK_FEAT_COLOR.GUTTER) : '#dc2626';
         ctx.setLineDash([6, 4]); line([at(s0), at(s1)], col, 4); ctx.setLineDash([]);
         const q = at(s1); ctx.beginPath(); ctx.arc(q.x, q.y, 5, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
         if (Math.abs(s1 - s0) > 0.001) {
           _takLabel(_takNum(Math.abs(s1 - s0)) + ' m', q.x + 16, q.y - 14, col, true);
           // 207: hva strekket gir i kabel med standard løp, og hva totalen blir.
-          if (h.ok) { const add = Math.abs(s1 - s0) * TAK_RUNS_DEFAULT.segment; _takLabel(`+${_takNum(add, 2)} m kabel (×${TAK_RUNS_DEFAULT.segment}) → ${_takNum(_takCableSummary(t).total_m + add, 2)} m`, q.x + 16, q.y + 2, col, false); }
+          if (h.ok && !guard) { const add = Math.abs(s1 - s0) * TAK_RUNS_DEFAULT.segment; _takLabel(`+${_takNum(add, 2)} m kabel (×${TAK_RUNS_DEFAULT.segment}) → ${_takNum(_takCableSummary(t).total_m + add, 2)} m`, q.x + 16, q.y + 2, col, false); }
         }
       }
       if (F.edgeId && F.pts.length) { const e0 = (t.edges || []).find(x => x.id === F.edgeId); if (e0) { const L = _takEdgeLenM(e0), u = F.pts[0] / L, q = w2s(e0.a.x + u * (e0.b.x - e0.a.x), e0.a.y + u * (e0.b.y - e0.a.y)); ctx.beginPath(); ctx.arc(q.x, q.y, 5, 0, Math.PI * 2); ctx.fillStyle = TAK_FEAT_COLOR.GUTTER; ctx.fill(); } }
@@ -83329,16 +83346,17 @@ function _takFeaturesCardHtml(fid, t, s, only) {
   const flat212 = _takIsFlat(s);   // 212: på flatt tak hører gradrenna til flatt-tak-kortet (bredde × W/m², ikke løp × lengde)
   if (!v3) { /* 214: verktøyene hører til steg 3 */ }
   else if (F && (TAK_OBJ_TOOLS.includes(F.kind) || TAK_FLAT_TOOLS.includes(F.kind))) {
-    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk')}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp') : ''}${flat212 ? '' : _takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne')}</div>`;   // 209: verktøyboksen står under «Takvindu og hindringer»
+    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk')}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp') : ''}${flat212 ? '' : _takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne') + _takBtn(`_takFeatStart(${fid},'guard')`, '+ Snøfanger')}</div>`;   // 209: verktøyboksen står under «Takvindu og hindringer»
   } else if (F) {
     const txt = { gutter: F.whole ? 'Klikk en takfot — hele kanten blir ett strekk.' : (F.edgeId ? 'Klikk sluttpunktet på samme kant.' : 'Klikk startpunktet på en takfot.'),
+                  guard: F.whole ? 'Klikk en takfot — snøfangeren legges langs hele kanten.' : (F.edgeId ? 'Klikk sluttpunktet på samme kant.' : 'Klikk startpunktet på en takfot.'),   // 215
                   downspout: 'Klikk på et rennestrekk.', valley: F.pts.length ? 'Klikk bunnen av gradrenna.' : 'Klikk toppen av gradrenna.' }[F.kind];
     h += `<div class="tak-feat-mode" style="background:var(--bg2,rgba(8,145,178,0.08));border-radius:6px;padding:4px 6px;margin:3px 0">
-      <div style="font-weight:600">${{ gutter: 'Legger rennestrekk', downspout: 'Plasserer nedløp', valley: 'Tegner gradrenne' }[F.kind]}</div><div>${txt}</div>
-      ${F.kind === 'gutter' ? `<div>${_takBtn('_takFeatWhole(true)', 'Hele kanten', F.whole)}${_takBtn('_takFeatWhole(false)', 'Fra–til', !F.whole)}</div>` : ''}
+      <div style="font-weight:600">${{ gutter: 'Legger rennestrekk', guard: 'Legger snøfanger', downspout: 'Plasserer nedløp', valley: 'Tegner gradrenne' }[F.kind]}</div><div>${txt}</div>
+      ${F.kind === 'gutter' || F.kind === 'guard' ? `<div>${_takBtn('_takFeatWhole(true)', 'Hele kanten', F.whole)}${_takBtn('_takFeatWhole(false)', 'Fra–til', !F.whole)}</div>` : ''}
       <div>${_takBtn('_takFeatStop()', 'Ferdig', true)}</div></div>`;
   } else {
-    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk', anyEave && !G.length)}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp', !D.length) : ''}${flat212 ? '' : _takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne')}</div>`;
+    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk', anyEave && !G.length)}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp', !D.length) : ''}${flat212 ? '' : _takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne') + _takBtn(`_takFeatStart(${fid},'guard')`, '+ Snøfanger')}</div>`;
     if (!anyEave) h += warn(s.roof_type.value === 'flat' ? 'Ingen kant har utvendig renne. Merk en kant som takfot for å legge et rennestrekk.' : 'Ingen kant er merket takfot ennå.');
   }
   for (const g of G) {
@@ -83387,9 +83405,11 @@ function _takFeaturesCardHtml(fid, t, s, only) {
       ${!v4 ? '' : `<div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;white-space:nowrap">${dim('Løp')}${runsSel(v)}</div><div style="font-size:11px;white-space:nowrap;text-align:right">${dim('kabel')} <b class="tak-cable-total">${km(v.cable_total_m)} m</b></div>`}
       ${noZ ? warn('Høyde mangler — lengden er målt i plan og blir for kort på et skrått tak.') : ''}</div>`;
   }
+  h += _takGuardsHtml(fid, t, only);   // 215: snøfanger og feltet mot takkanten
   if (v4) h += _takSectionCardHtml(fid, t, s);   // 210: snitt gjennom takfoten
   h += _takObjectsCardHtml(fid, t, only);   // 209: takvinduer, hindringer, startpunkt
   if (v4) h += _takCableSumHtml(t);
+  if (v4) h += _takGuardSumHtml(t);   // 215: regnes for seg, ved siden av rennas tabell
   if (v4) h += _takAccessoryHtml(t);
   return h + '</div>';
 }
@@ -83475,7 +83495,7 @@ function _takCableSumHtml(t) {
 // CABLE_START = { id: 's1', type: 'CABLE_START', on: { type: 'DOWNSPOUT', id } | { type: 'GUTTER', id, at_m },
 //   geometry: { kind: 'point', pt }, prov }             // ett per tak. Nede i et nedløp er lovlig (Kenneth 07.11).
 //
-// SNOW_GUARD står i planen (§6.3), men finnes ikke i koden. ROOF_DRAIN kom med 212 — i S.tak[fid].flat, ikke her.
+// SNOW_GUARD kom med 215 (blokken «215 · SNØFANGER»). ROOF_DRAIN kom med 212 — i S.tak[fid].flat, ikke her.
 // Startpunktet endrer ALDRI kabelmeter: det sorterer bare radene i _takCableRows (_takCableOrder).
 // «Kabel må forbi» er brukerens eget tillegg — en egen rad (⤳) i Kabelmeter, aldri et tall appen finner på.
 // «Finn like»: taket har ingen takflater (planes = []), så «like steder» kan bare komme fra OMRISSET:
@@ -84511,8 +84531,9 @@ function _takIsFlat(s) { return !!(s && s.roof_type && s.roof_type.value === 'fl
 /** c/c i cm for en kabel med `wpm` W/m som skal gi `wm2` W/m². Rommenes formel W/m² = W/m × 100 / CC_cm, snudd. */
 function _ccCmFromWm2(wpm, wm2) { return wpm > 0 && wm2 > 0 ? wpm * 100 / wm2 : null; }
 /** Kabelen: katalogens rad når den er lastet (W/m leses derfra), ellers øyeblikksbildet som ble lagret ved valget. */
-function _takFlatCable(t) {
-  const F = _takFlatOf(t), c = F && F.cable;
+function _takFlatCable(t) { const F = _takFlatOf(t); return _takCableResolve(F && F.cable); }
+/** Lagret kabelvalg → katalogens rad hvis den er lastet, ellers øyeblikksbildet. 215: deles av snøfangerens felt. */
+function _takCableResolve(c) {
   if (!c) return null;
   const p = (typeof HEATING_PRODUCTS !== 'undefined' ? HEATING_PRODUCTS : []).find(x => x.id === c.product_id);
   return p && p.watt_per_m > 0 ? { ...c, watt_per_m: p.watt_per_m, min_spacing_mm: p.min_spacing_mm ?? c.min_spacing_mm, max_spacing_mm: p.max_spacing_mm ?? c.max_spacing_mm, product: p, live: true }
@@ -84659,12 +84680,33 @@ function _takFlatSetCable(fid, family) {
   if (!ch) { _showToast && _showToast('Fant ikke kabelen i produktkatalogen.', 'warn'); renderSidebar(); return false; }
   if (cur && cur.family === family) return false;
   pushUndo();
-  const p = ch.product;
-  _takFlatEnsure(t).cable = { product_id: p.id, family: ch.family, name: p.name, watt_per_m: p.watt_per_m,
-    min_spacing_mm: p.min_spacing_mm ?? null, max_spacing_mm: p.max_spacing_mm ?? null,
-    prov: { source: 'CATALOG', confidence: 1, note: 'heating_products — W/m leses fra katalogen' } };
+  _takFlatEnsure(t).cable = _takCableSnapshot(ch);
   _takFlatDone(t);
   return true;
+}
+function _takCableSnapshot(ch) {
+  const p = ch.product;
+  return { product_id: p.id, family: ch.family, name: p.name, watt_per_m: p.watt_per_m,
+    min_spacing_mm: p.min_spacing_mm ?? null, max_spacing_mm: p.max_spacing_mm ?? null,
+    prov: { source: 'CATALOG', confidence: 1, note: 'heating_products — W/m leses fra katalogen' } };
+}
+/** Kabelvelgeren (212), delt med snøfangerens felt (215). `on` = onchange-koden, `cls` = CSS-klassen. */
+function _takCableSelectHtml(cab, on, cls) {
+  const ch = _takFlatCableChoices();
+  const opts = [`<option value="">— velg kabel —</option>`].concat(ch.map(c => `<option value="${esc(c.family)}" ${cab && cab.family === c.family ? 'selected' : ''}>${esc(c.family)} · ${_takNum(c.watt_per_m, 0)} W/m</option>`));
+  if (cab && !ch.some(c => c.family === cab.family)) opts.push(`<option value="${esc(cab.family)}" selected>${esc(cab.family)} · ${_takNum(cab.watt_per_m, 0)} W/m (lagret)</option>`);
+  let h = `<div style="display:flex;align-items:center;gap:4px;margin-top:2px"><span style="color:var(--dim)">Kabel</span><select class="${cls}" onchange="${on}" style="flex:1;min-width:0;font-size:11px;padding:1px 2px;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">${opts.join('')}</select></div>`;
+  if (!ch.length && !cab) h += `<div style="font-size:10px;color:var(--dim)">Produktkatalogen er ikke lastet — kabel kan ikke velges ennå.</div>`;
+  else if (cab) h += `<div style="font-size:10px;color:var(--dim)">W/m fra produktkatalogen${cab.live ? '' : ' (lagret ved valget — katalogen er ikke lastet)'}</div>`;
+  return h;
+}
+/** Regnestykket i klartekst (212), delt med snøfangerens felt (215). */
+function _takFlatCalcHtml(c) {
+  const warn = (x, hard) => `<div class="tak-flat-warn" style="color:${hard ? '#dc2626' : 'var(--warn,#d97706)'};font-size:11px;margin-top:1px">⚠ ${x}</div>`;
+  if (!c.ok) return `<div class="tak-flat-calc" data-ok="0" style="font-size:11px;color:var(--warn,#d97706)">${c.msg} — ingen kabelmeter</div>`;
+  return `<div class="tak-flat-calc" data-ok="1" data-cc="${c.cc_cm.toFixed(3)}" data-m="${c.cable_m.toFixed(3)}" style="font-size:11px">${esc(c.formula)}</div>` +
+    (!c.runsWhole ? warn(`${_takNum(c.runs, 2)} løp er ikke et helt tall — kabelmeter er regnet av arealet. Juster bredden eller flateeffekten.`) : '') +
+    c.warns.map(w => warn(w.txt, w.hard)).join('');
 }
 function _takFlatSetSetup(fid, key) {
   const t = _takFlatMut(fid); if (!t) return false;
@@ -84926,23 +84968,14 @@ function _takFlatCardHtml(fid, t, s, only) {
   const x = id => `<button class="tak-flat-del" title="Slett" onclick="_takFlatDelete(${fid},'${id}')" style="border:0;background:transparent;color:var(--dim);cursor:pointer;padding:0 2px;font-size:12px">✕</button>`;
   const sel = f => _takFeatSel && _takFeatSel.fid === fid && _takFeatSel.id === f.id;
   const fr = (lbl, field, cls) => `<div class="${cls || ''}" style="display:flex;align-items:center;justify-content:space-between;gap:3px;white-space:nowrap"><span style="color:var(--dim)">${lbl}</span><span>${field}</span></div>`;
-  const calcHtml = c => !v4 ? '' : !c.ok ? `<div class="tak-flat-calc" data-ok="0" style="font-size:11px;color:var(--warn,#d97706)">${c.msg} — ingen kabelmeter</div>`
-    : `<div class="tak-flat-calc" data-ok="1" data-cc="${c.cc_cm.toFixed(3)}" data-m="${c.cable_m.toFixed(3)}" style="font-size:11px">${esc(c.formula)}</div>` +
-      (!c.runsWhole ? warn(`${_takNum(c.runs, 2)} løp er ikke et helt tall — kabelmeter er regnet av arealet. Juster bredden eller flateeffekten.`) : '') +
-      c.warns.map(w => warn(w.txt, w.hard)).join('');
+  const calcHtml = c => !v4 ? '' : _takFlatCalcHtml(c);
   const cab = _takFlatCable(t), Sm = _takFlatSummary(t), F = _takFeat && _takFeat.fid === fid && TAK_FLAT_TOOLS.includes(_takFeat.kind) ? _takFeat : null;
   const D = _takFlatFeats(t, 'ROOF_DRAIN'), V = _takFlatFeats(t, 'VALLEY_GUTTER'), FL = _takFlatFeats(t, 'HEAT_FIELD');
   // Mange sluk/gradrenner (filmen: 9 og 12) → kompakte rader. Valgt objekt (eller ≤ 2 av typen) viser alle feltene.
   const full = o => sel(o) || _takFlatFeats(t, o.type).length <= 2;
   let h = `<div class="tak-flat-card" style="margin-top:6px;border-top:1px solid var(--border);padding-top:5px"><div style="font-weight:700">Flatt tak — sluk, gradrenner, varmefelt</div>`;
   // Kabel fra katalogen.
-  const ch = _takFlatCableChoices();
-  const opts = [`<option value="">— velg kabel —</option>`].concat(ch.map(c => `<option value="${esc(c.family)}" ${cab && cab.family === c.family ? 'selected' : ''}>${esc(c.family)} · ${_takNum(c.watt_per_m, 0)} W/m</option>`));
-  if (cab && !ch.some(c => c.family === cab.family)) opts.push(`<option value="${esc(cab.family)}" selected>${esc(cab.family)} · ${_takNum(cab.watt_per_m, 0)} W/m (lagret)</option>`);
-  if (v4) h += `<div style="display:flex;align-items:center;gap:4px;margin-top:2px"><span style="color:var(--dim)">Kabel</span><select class="tak-flat-cable" onchange="_takFlatSetCable(${fid},this.value)" style="flex:1;min-width:0;font-size:11px;padding:1px 2px;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">${opts.join('')}</select></div>`;
-  if (!v4) { /* 214 */ }
-  else if (!ch.length && !cab) h += `<div style="font-size:10px;color:var(--dim)">Produktkatalogen er ikke lastet — kabel kan ikke velges ennå.</div>`;
-  else if (cab) h += `<div style="font-size:10px;color:var(--dim)">W/m fra produktkatalogen${cab.live ? '' : ' (lagret ved valget — katalogen er ikke lastet)'}</div>`;
+  if (v4) h += _takCableSelectHtml(cab, `_takFlatSetCable(${fid},this.value)`, 'tak-flat-cable');
   // Verktøy.
   if (!v3) { /* 214: verktøyene hører til steg 3 */ }
   else if (F) {
@@ -85011,6 +85044,218 @@ function _takFlatCardHtml(fid, t, s, only) {
                    (Sm.total.missing.length ? `<div class="tak-flat-missing" style="font-size:11px;color:var(--warn,#d97706)">⚠ Mangler: ${Sm.total.missing.join(' · ')}. Summen er et minimum.</div>` : '');
   h += `<div style="font-size:10px;color:var(--dim);margin-top:2px">${TAK_FLAT_NO_ADVICE} Gradrennas lengde er målt i plan.</div></div>`;
   return h + '</div>';
+}
+
+// ═══ 215 · SNØFANGER — grensen for det varmede feltet mellom takkant og snøfanger ═════════════════════
+// Kenneth 08.11.2026: «Markere snøfangere, som regel parallelt med takrenne ca. 50 cm opp på taket fra takkant»
+// og «Kabel mellom renne og snøfanger». Snøfangeren varmes altså IKKE selv — den er en grense.
+//
+// SNOW_GUARD (S.tak[fid].features, §6.3) = {
+//   id: 'sf<n>', type, on_edge: 'k<i>',
+//   geometry: { kind: 'polyline', pts: [{x,y,z:null} ×2] },   // PÅ takfoten, som rennestrekket. Linja på taket er avledet (_takGuardLine).
+//   offset_m: { value, prov },    // avstand fra takkanten, målt OPP LANGS TAKET (bredden kabelen ligger over)
+//   length_m,                     // avledet
+//   field?: { wm2: { value, prov }, area_m2, cable_total_m },   // finnes bare når feltet varmes. INGEN standard W/m² (T1).
+//   prov }
+// Feltets kabel er felles for taket, i S.tak[fid].guard_cable — IKKE i t.flat: et skråtak skal aldri få `flat`.
+// Regnestykket er 212s `_takFlatCalc` (areal = lengde × offset, bredde = offset). Ingen egen formel.
+// Tegningen er i plan: linja ligger offset × cos(takvinkel) inn fra kanten når vinkelen er kjent, ellers offset.
+// `_takCableRows`/`_takCableSummary` ser aldri en snøfanger: renna og feltet regnes for seg.
+const TAK_GUARD_OFFSET_DEFAULT_M = 0.5;
+const TAK_GUARD_OFFSET_NOTE = 'Kenneths regel 08.11.2026, ikke fra datablad';
+const TAK_GUARD_LABEL_HALF_PX = 60;   // halve etikettbredden, for å holde den unna bokser og nedløp på samme kant
+
+function _takGuardCable(t) { return _takCableResolve(t && t.guard_cable); }
+/** Enhetsvektoren inn på taket (verden). Omrisset avgjør siden — midtpunktet bommer på L-formede bygg. */
+function _takGuardInward(t, a, b) {
+  let nx = -(b.y - a.y), ny = b.x - a.x; const L = Math.hypot(nx, ny) || 1; nx /= L; ny /= L;
+  const P = _takOutline(t), p = { x: (a.x + b.x) / 2 + nx * 2, y: (a.y + b.y) / 2 + ny * 2 };
+  return P.length < 3 || _takInPoly(P, p) ? { x: nx, y: ny } : { x: -nx, y: -ny };
+}
+/** Hvor langt inn fra kanten linja ligger i plan (cm): avstanden langs taket × cos(takvinkel). Ukjent vinkel → avstanden. */
+function _takGuardPlanCm(t, mid, off_m) {
+  const p = _takPitch(t, t.surfaces && t.surfaces[0], mid);
+  return off_m * 100 * (p.deg != null ? Math.cos(p.deg * Math.PI / 180) : 1);
+}
+/** Forskyvningen (verdens-cm) fra takfoten til linja, for en kant med standardavstanden — verktøyets forhåndsvisning. */
+function _takGuardShift(t, e) {
+  const n = _takGuardInward(t, e.a, e.b), d = _takGuardPlanCm(t, { x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 }, TAK_GUARD_OFFSET_DEFAULT_M);
+  return { x: n.x * d, y: n.y * d };
+}
+/** Selve snøfangeren, inne på taket (verdens-cm). `off_m` overstyrer avstanden (for å prøve en ny verdi). */
+function _takGuardLine(t, g, off_m) {
+  const P = g.geometry.pts, a = P[0], b = P[P.length - 1];
+  const n = _takGuardInward(t, a, b), d = _takGuardPlanCm(t, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, off_m == null ? g.offset_m.value : off_m);
+  return [a, b].map(p => ({ x: p.x + n.x * d, y: p.y + n.y * d }));
+}
+/** Regnestykket for feltet — 212s motor: areal = lengde × avstand, bredde = avstand. */
+function _takGuardCalc(t, g) {
+  const w = g.offset_m.value;
+  return _takFlatCalc(_takGuardCable(t), g.field && g.field.wm2.value, g.length_m * w, w);
+}
+/** Avledede felt. Idempotent. Uten snøfanger gjør den ingenting. */
+function _takGuardRecalc(t) {
+  for (const g of _takFeats(t, 'SNOW_GUARD')) {
+    g.length_m = _takPolyLenM(g.geometry.pts);
+    if (!g.field) continue;
+    const c = _takGuardCalc(t, g);
+    g.field.area_m2 = g.length_m * g.offset_m.value;
+    g.field.cable_total_m = c.ok ? c.cable_m : null;
+  }
+}
+/** Sum over de varmede feltene. complete=false: et felt mangler W/m² eller kabel, og summen er et minimum. */
+function _takGuardSummary(t) {
+  const G = _takFeats(t, 'SNOW_GUARD'), H = G.filter(g => g.field);
+  const missing = H.filter(g => g.field.cable_total_m == null).map(g => g.id);
+  return { count: G.length, heated: H.length, total_m: H.reduce((a, g) => a + (g.field.cable_total_m || 0), 0), complete: !missing.length, missing };
+}
+/** Snøfanger på kanten fra a_m til b_m (meter fra kantens a-ende). Uten a/b: hele kanten. */
+function _takAddGuard(fid, edgeId, a_m, b_m) {
+  const t = _takFeatMut(fid); if (!t) return null;
+  const e = (t.edges || []).find(x => x.id === edgeId);
+  if (!e || e.kind !== 'outline') return null;
+  if (!_takEdgeTakesGutter(t, e)) { _showToast && _showToast(_takGutterEdgeMsg(t, e).replace('Rennestrekk legges', 'Snøfanger legges'), 'warn'); return null; }
+  if (_takIsFlat(_takSurface(fid))) { _showToast && _showToast('Snøfanger hører til et skråtak.', 'warn'); return null; }
+  const L = _takEdgeLenM(e);
+  let s0 = a_m == null ? 0 : a_m, s1 = b_m == null ? L : b_m;
+  if (s0 > s1) [s0, s1] = [s1, s0];
+  s0 = Math.max(0, Math.min(L, s0)); s1 = Math.max(0, Math.min(L, s1));
+  if (s1 - s0 < 0.1) { _showToast && _showToast('Snøfangeren må være minst 10 cm.', 'warn'); return null; }
+  const hit = _takEdgeOverlap(t, 'SNOW_GUARD', e, s0, s1);   // to felt oppå hverandre ville telt samme kabel to ganger
+  if (hit) { _showToast && _showToast(`Overlapper snøfanger ${hit.id} på samme kant.`, 'warn'); return null; }
+  const at = s => { const u = s / L; return { x: e.a.x + u * (e.b.x - e.a.x), y: e.a.y + u * (e.b.y - e.a.y), z: null }; };
+  pushUndo();
+  const g = { id: _takNextId(t, 'sf'), type: 'SNOW_GUARD', on_edge: edgeId,
+    geometry: { kind: 'polyline', pts: [at(s0), at(s1)] },
+    offset_m: { value: TAK_GUARD_OFFSET_DEFAULT_M, prov: { source: 'ESTIMATE', confidence: 0.5, note: TAK_GUARD_OFFSET_NOTE } },
+    length_m: 0,
+    prov: { source: 'USER_DRAWN', confidence: 1, note: a_m == null && b_m == null ? 'hele kanten' : 'tegnet fra–til på kanten' } };
+  t.features.push(g);
+  _takFeatSel = { fid, id: g.id };
+  _takFeatDone(t);
+  return g;
+}
+/** Felt på snøfangeren: 'offset' (m) · 'heat' (av/på) · 'wm2' (W/m², tomt = ikke satt). */
+function _takSetGuard(fid, id, key, val) {
+  const t = _takFeatMut(fid); if (!t) { renderSidebar(); return false; }
+  const g = _takFeat_(t, id); if (!g || g.type !== 'SNOW_GUARD') return false;
+  if (key === 'heat') {
+    const on = !!val; if (!!g.field === on) return false;
+    pushUndo();
+    if (on) g.field = { wm2: { value: null, prov: null }, area_m2: 0, cable_total_m: null }; else delete g.field;
+  } else if (key === 'offset') {
+    const v = _takParse(val);
+    if (v == null || v < 0.05 || v > 20) { _showToast && _showToast('Skriv en avstand fra takkanten i meter, 0,05–20, f.eks. 0,50', 'warn'); renderSidebar(); return false; }
+    const Q = _takGuardLine(t, g, v), P = _takOutline(t);
+    if (P.length >= 3 && !_takInPoly(P, { x: (Q[0].x + Q[1].x) / 2, y: (Q[0].y + Q[1].y) / 2 })) { _showToast && _showToast('Så langt inn havner snøfangeren utenfor taket.', 'warn'); renderSidebar(); return false; }
+    const old = g.offset_m;
+    if (Math.abs(old.value - v) < 1e-9 && old.prov && old.prov.source === 'USER_CONFIRMED') return false;
+    pushUndo();
+    g.offset_m = { value: v, prov: _takUC(`rettet fra ${_takNum(old.value, 2)} (${old.prov ? old.prov.source : '?'})`) };
+  } else if (key === 'wm2') {
+    if (!g.field) return false;
+    const R = TAK_FLAT_FIELDS.wm2, blank = String(val == null ? '' : val).trim() === '', v = blank ? null : _takParse(val);
+    if (!blank && (v == null || v < R.min || v > R.max)) { _showToast && _showToast(R.msg, 'warn'); renderSidebar(); return false; }
+    const old = g.field.wm2;
+    if (old.value === v) return false;
+    pushUndo();
+    g.field.wm2 = v == null ? { value: null, prov: null } : { value: v, prov: _takUC(old.value != null ? `rettet fra ${_takNum(old.value, 2)}` : 'satt av bruker') };
+  } else return false;
+  _takFeatDone(t);
+  return true;
+}
+function _takGuardSetCable(fid, family) {
+  const t = _takFeatMut(fid); if (!t) { renderSidebar(); return false; }
+  const cur = t.guard_cable;
+  if (!family) { if (!cur) return false; pushUndo(); delete t.guard_cable; _takFeatDone(t); return true; }
+  const ch = _takFlatCableChoices().find(c => c.family === family);
+  if (!ch) { _showToast && _showToast('Fant ikke kabelen i produktkatalogen.', 'warn'); renderSidebar(); return false; }
+  if (cur && cur.family === family) return false;
+  pushUndo();
+  t.guard_cable = _takCableSnapshot(ch);
+  _takFeatDone(t);
+  return true;
+}
+/** Feltet (under alt annet) og selve linja. */
+function _takDrawGuards(t, isSel, isHov, line) {
+  for (const g of _takFeats(t, 'SNOW_GUARD')) {
+    const Q = _takFeatScreenLine(t, g), P = g.geometry.pts, E = [P[0], P[P.length - 1]].map(p => w2s(p.x, p.y)), c = TAK_FEAT_COLOR.SNOW_GUARD;
+    if (g.field) {
+      const path = () => { ctx.beginPath(); ctx.moveTo(E[0].x, E[0].y); ctx.lineTo(E[1].x, E[1].y); ctx.lineTo(Q[1].x, Q[1].y); ctx.lineTo(Q[0].x, Q[0].y); ctx.closePath(); };
+      path(); ctx.fillStyle = 'rgba(220,38,38,0.10)'; ctx.fill();
+      const calc = _takGuardCalc(t, g), k = calc.ok ? Math.round(calc.runs) : 0, band = Math.hypot(Q[0].x - E[0].x, Q[0].y - E[0].y);
+      ctx.strokeStyle = TAK_FLAT_COLOR.HEAT_FIELD; ctx.lineWidth = 1;
+      if (k >= 1 && k <= 80 && band / k >= 2) {   // løpene med c/c, som gradrenna i 212
+        for (let i = 0; i < k; i++) { const u = (i + 0.5) / k; ctx.beginPath(); ctx.moveTo(E[0].x + (Q[0].x - E[0].x) * u, E[0].y + (Q[0].y - E[0].y) * u); ctx.lineTo(E[1].x + (Q[1].x - E[1].x) * u, E[1].y + (Q[1].y - E[1].y) * u); ctx.stroke(); }
+      } else {   // ikke regnet ennå, eller for tett til å skille: skravur, som varmefeltet i 212
+        ctx.save(); path(); ctx.clip();
+        const xs = [...E, ...Q].map(p => p.x), ys = [...E, ...Q].map(p => p.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+        ctx.strokeStyle = 'rgba(220,38,38,0.25)';
+        for (let x = x0 - (y1 - y0); x < x1; x += 10) { ctx.beginPath(); ctx.moveTo(x, y1); ctx.lineTo(x + (y1 - y0), y0); ctx.stroke(); }
+        ctx.restore();
+      }
+    }
+    if (isSel(g) || isHov(g)) { ctx.globalAlpha = 0.3; line(Q, c, 14); ctx.globalAlpha = 1; }
+    line(Q, c, 4); ctx.setLineDash([7, 7]); line(Q, '#fff', 1.5); ctx.setLineDash([]);
+  }
+}
+/** Stedet langs snøfangeren (0–1) der etiketten ikke treffer boksene og nedløpene på samme kant. */
+function _takGuardLabelU(t, g, Q) {
+  const near = _takFeats(t, 'DOWNSPOUT').filter(d => { const r = _takFeat_(t, d.gutter); return r && r.on_edge === g.on_edge && d.geometry && d.geometry.pt; }).map(d => w2s(d.geometry.pt.x, d.geometry.pt.y));
+  const L = Math.hypot(Q[1].x - Q[0].x, Q[1].y - Q[0].y) || 1, ux = (Q[1].x - Q[0].x) / L, uy = (Q[1].y - Q[0].y) / L;
+  const room = u => near.reduce((m, q) => Math.min(m, Math.abs((q.x - Q[0].x) * ux + (q.y - Q[0].y) * uy - u * L)), Infinity);
+  const C = [0.5, 0.35, 0.65, 0.2, 0.8];
+  return C.find(u => room(u) > TAK_GUARD_LABEL_HALF_PX + 30) ?? C.reduce((a, b) => room(b) > room(a) ? b : a);
+}
+/** Etiketten står INNENFOR linja, altså på motsatt side av kanten fra rennas etiketter (de står utenfor). */
+function _takDrawGuardLabels(t) {
+  for (const g of _takFeats(t, 'SNOW_GUARD')) {
+    const Q = _takFeatScreenLine(t, g), P = g.geometry.pts, n = _takGuardInward(t, P[0], P[P.length - 1]), c = TAK_FEAT_COLOR.SNOW_GUARD;
+    const u = _takGuardLabelU(t, g, Q), x = Q[0].x + (Q[1].x - Q[0].x) * u, y = Q[0].y + (Q[1].y - Q[0].y) * u;
+    _takLabel(`snøfanger ${_takNum(g.offset_m.value, 2)} m`, x + n.x * 14, y + n.y * 14, c, true);
+    if (!g.field) continue;
+    const calc = _takGuardCalc(t, g);
+    _takLabel(calc.ok ? `${_takNum(calc.runs, calc.runsWhole ? 0 : 1)} løp · ${_takNum(calc.cable_m, 2)} m` : calc.msg, x + n.x * 29, y + n.y * 29, calc.ok ? TAK_FLAT_COLOR.HEAT_FIELD : '#b45309', false);
+  }
+}
+/** Listen i panelet. Steg 3: avstanden og valget. Steg 4: flateeffekten, kabelen og regnestykket. */
+function _takGuardsHtml(fid, t, only) {
+  const G = _takFeats(t, 'SNOW_GUARD'); if (!G.length) return '';
+  const v4 = only == null || only === 4, v3 = only == null || only === 3;
+  const dim = x => `<span style="color:var(--dim)">${x}</span>`;
+  const inp = (val, on, w, d, cls) => `<input type="text" inputmode="decimal" class="${cls}" value="${val == null ? '' : _takNum(val, d)}" placeholder="—" onchange="${on}" onkeydown="if(event.key==='Enter')this.blur()" style="width:${w}px;padding:1px 4px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">`;
+  const fr = (lbl, field) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:3px;white-space:nowrap"><span style="color:var(--dim)">${lbl}</span><span>${field}</span></div>`;
+  const cab = _takGuardCable(t);
+  let h = '';
+  for (const g of G) {
+    const e = (t.edges || []).find(k => k.id === g.on_edge), rett = g.offset_m.prov && g.offset_m.prov.source === 'USER_CONFIRMED';
+    const sel = _takFeatSel && _takFeatSel.fid === fid && _takFeatSel.id === g.id;
+    h += `<div class="tak-guard" data-id="${g.id}" style="margin-top:4px;padding:2px 4px;border-radius:5px;font-size:11px;${sel ? 'background:rgba(71,85,105,0.14)' : ''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px"><span><b style="color:${TAK_FEAT_COLOR.SNOW_GUARD}">Snøfanger ${g.id}</b> ${dim('· ' + g.on_edge)}</span><span style="white-space:nowrap"><b class="tak-guard-len">${_takNum(g.length_m)} m</b><button class="tak-feat-del" title="Slett" onclick="_takDeleteFeature(${fid},'${g.id}')" style="border:0;background:transparent;color:var(--dim);cursor:pointer;padding:0 2px;font-size:12px">✕</button></span></div>`;
+    if (e && !_takEdgeTakesGutter(t, e)) h += `<div style="color:var(--warn,#d97706);font-size:11px">⚠ Kanten ${e.id} er ikke lenger takfot (${_takEdgeStyle(e).short}).</div>`;
+    if (v3) h += fr('Fra takkant', inp(g.offset_m.value, `_takSetGuard(${fid},'${g.id}','offset',this.value)`, 44, 2, 'tak-guard-off') + ' m') +
+      `<div class="tak-guard-src" style="font-size:10px;color:var(--dim)">${rett ? 'rettet · målt opp langs taket' : 'standard 0,50 m — ' + TAK_GUARD_OFFSET_NOTE}</div>`;
+    h += `<button class="snap-chip${g.field ? '' : ' on'}" onclick="_takSetGuard(${fid},'${g.id}','heat',${!g.field})" style="margin:2px 0;padding:3px 7px;font-size:11px;min-height:0;height:auto;white-space:normal;text-align:left">${g.field ? 'Ikke varm feltet' : 'Varm feltet mot takkanten'}</button>`;   // smalt panel: teksten må kunne brekke
+    if (g.field) {
+      h += `<div class="tak-guard-area" style="white-space:nowrap">${dim('Felt')} ${_takNum(g.length_m, 2)} × ${_takNum(g.offset_m.value, 2)} = <b>${_takNum(g.field.area_m2, 1)} m²</b></div>`;
+      if (v4) h += fr('Flateeffekt', inp(g.field.wm2.value, `_takSetGuard(${fid},'${g.id}','wm2',this.value)`, 44, 0, 'tak-guard-wm2') + ' W/m²') + `<div class="tak-guard-calc">${_takFlatCalcHtml(_takGuardCalc(t, g))}</div>`;
+      else h += `<div style="font-size:10px;color:var(--dim)">Flateeffekt og kabel settes i steg 4.</div>`;
+    } else h += `<div style="font-size:10px;color:var(--dim)">Ikke varmet — snøfangeren er bare tegnet inn. 0 m kabel.</div>`;
+    h += '</div>';
+  }
+  if (v4 && G.some(g => g.field)) h = `<div style="margin-top:4px;font-size:11px;font-weight:600">Kabel i feltet mot takkanten</div>` + _takCableSelectHtml(cab, `_takGuardSetCable(${fid},this.value)`, 'tak-guard-cable') + h;
+  return h;
+}
+/** Summen av feltene, ved siden av rennas tabell. */
+function _takGuardSumHtml(t) {
+  const Sm = _takGuardSummary(t); if (!Sm.heated) return '';
+  const rest = _takCableSummary(t).total_m;
+  const rows = _takFeats(t, 'SNOW_GUARD').filter(g => g.field).map(g => `<tr class="tak-guard-sum-row" data-id="${g.id}"><td>${g.id}</td><td style="text-align:right">${_takNum(g.field.area_m2, 1)} m²</td><td style="text-align:right;white-space:nowrap">${g.field.cable_total_m == null ? '—' : _takNum(g.field.cable_total_m, 2) + ' m'}</td></tr>`).join('');
+  return `<div class="tak-guard-sum" style="margin-top:6px;border-top:1px solid var(--border);padding-top:4px"><div style="font-weight:700">Felt mot takkanten</div>
+    <table style="width:100%;font-size:11px;border-collapse:collapse">${rows}<tr style="border-top:1px solid var(--border)"><td colspan="2"><b>Sum felt</b></td><td style="text-align:right;white-space:nowrap"><b class="tak-guard-sum-total">${_takFlatMeters(Sm)}</b></td></tr></table>
+    ${Sm.complete ? '' : `<div style="font-size:11px;color:var(--warn,#d97706)">⚠ ${Sm.missing.join(', ')} mangler flateeffekt eller kabel. Summen er et minimum.</div>`}
+    ${rest > 0 ? `<div class="tak-guard-all" style="font-size:11px;display:flex;justify-content:space-between;white-space:nowrap"><span style="color:var(--dim)">Renner + felt</span><span>${(Sm.complete ? '' : '≥ ') + _takNum(rest + Sm.total_m, 2)} m</span></div>` : ''}
+    <div style="font-size:10px;color:var(--dim)">Regnes for seg: rennas tabell over er uendret av feltet.</div></div>`;
 }
 
 // 212: flatt tak — formelen begge veier, ni sluk, manglende rørlengde, tom flateeffekt, advarslene (rommenes),
@@ -87137,6 +87382,200 @@ async function _takRegressionTest214() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_takRegressionTest214: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+
+// 215: snøfanger — regnestykket begge veier, avstanden, felt av/på, tom W/m², renne på samme kant (tallene fra 213),
+// etikettene, verktøyet med klikk, lagring, og at et prosjekt uten snøfanger er uendret.
+async function _takRegressionTest215() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '215: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly, choices: window._takFlatCableChoices,
+                 part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId };
+  const eq = (a, b, tol) => a != null && b != null && Math.abs(a - b) < (tol || 1e-9);
+  const orig = _takLabel;
+  const klikkV = (x, y) => { const q = w2s(x, y), r = canvas.getBoundingClientRect(), k = r.width / canvas.width;
+    const c = { clientX: r.left + q.x * k, clientY: r.top + q.y * k, button: 0, bubbles: true, cancelable: true };
+    canvas.dispatchEvent(new MouseEvent('mousemove', c)); canvas.dispatchEvent(new MouseEvent('mousedown', c)); canvas.dispatchEvent(new MouseEvent('mouseup', c)); };
+  const nyTak = (P, type) => { _resetProjectState(); addPart('roof'); const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+    S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null;
+    S.tak = { [fid]: _takManual(P.map(([x, y]) => ({ x, y }))) }; _takSetRoofType(fid, type || 'pitched'); return fid; };
+  const R12 = [[0, 0], [1200, 0], [1200, 800], [0, 800]], R25 = [[0, 0], [2500, 0], [2500, 1000], [0, 1000]];
+  const K30 = { product_id: -1, family: 'Test 30', name: 'Test 30', watt_per_m: 30, min_spacing_mm: 60, max_spacing_mm: 300 };
+  // Etikettene: alt `_takLabel` tegner i én omgang, med målt bredde.
+  const etiketter = (fid) => { const L = [];
+    window._takLabel = (txt, x, y, c, b) => { orig(txt, x, y, c, b); const w = ctx.measureText(txt).width; L.push({ txt, x0: x - w / 2, x1: x + w / 2, y0: y - 7, y1: y + 7, x, y }); };
+    try { _takDrawFeatures(fid, _takOf(fid)); } finally { window._takLabel = orig; } return L; };
+  const kollisjon = (A, B) => A.filter(a => B.some(b => a !== b && a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1));
+  const helKort = _takWizardWhole();
+  try {
+    window._showToast = () => {}; window._scheduleAutoSave = () => {}; window.confirm = () => true;
+    document.getElementById('app').style.display = 'flex'; resizeCanvas();
+
+    // ── A. Snøfanger uten varmet felt ──
+    let fid = nyTak(R12);
+    const T = () => _takOf(fid), kant = l => T().edges.find(e => e.type === 'eave' && eq(_takEdgeLenM(e), l));
+    const k12 = kant(12);
+    check('STEG 0: takfot på 12 m', '12', !!k12, T().edges.map(e => e.id + ':' + e.type).join());
+    const g = _takAddGuard(fid, k12.id);
+    const panel = () => { renderSidebar(); return document.getElementById('sidebar').innerHTML; };
+    check('A: id er sf1, type SNOW_GUARD, lengde 12,00 m', 'sf1 · 12', g && g.id === 'sf1' && g.type === 'SNOW_GUARD' && eq(g.length_m, 12), g && g.length_m);
+    check('A: standard 0,50 m, merket som Kenneths regel', '0,5 · merket', g.offset_m.value === 0.5 && g.offset_m.prov.note === 'Kenneths regel 08.11.2026, ikke fra datablad' && g.offset_m.prov.source === 'ESTIMATE', JSON.stringify(g.offset_m));
+    check('A: panelet sier hvor 0,50 kommer fra', 'ja', panel().includes('ikke fra datablad'), '');
+    check('A: uten varmet felt: 0 kabelmeter, og objektet er i lista', '0 · i lista', _takGuardSummary(T()).total_m === 0 && _takGuardSummary(T()).count === 1 && !g.field && !!document.querySelector('.tak-guard[data-id="sf1"]'), _takGuardSummary(T()).total_m);
+    check('A: snøfangeren har ingen løp og ingen kabel', 'ingen', !('runs' in g) && !('cable_total_m' in g) && !_takCableRows(T()).some(r => r.id === 'sf1'), JSON.stringify(_takCableRows(T())));
+    check('A: tilbyr «Varm feltet mot takkanten»', 'ja', panel().includes('Varm feltet mot takkanten'), '');
+
+    // ── B. Feltet på, tomt ──
+    check('B: feltet slås på', 'true', _takSetGuard(fid, 'sf1', 'heat', true) === true && !!_takFeat_(T(), 'sf1').field, '');
+    const G = () => _takFeat_(T(), 'sf1');
+    check('B: appen foreslår ingen W/m²', 'null', G().field.wm2.value === null, G().field.wm2.value);
+    check('B: W/m² tomt: «flateeffekt ikke satt», ingen kabelmeter', 'melding · null', _takGuardCalc(T(), G()).msg === TAK_FLAT_MSG_NO_WM2 && _takGuardCalc(T(), G()).cable_m === undefined && G().field.cable_total_m === null, JSON.stringify(_takGuardCalc(T(), G())));
+    const calcEl = () => document.querySelector('.tak-guard[data-id="sf1"] .tak-flat-calc');
+    panel();
+    check('B: panelet viser meldingen, ikke et tall', TAK_FLAT_MSG_NO_WM2, calcEl() && calcEl().dataset.ok === '0' && calcEl().textContent.includes(TAK_FLAT_MSG_NO_WM2) && !/\d+,\d\d m/.test(calcEl().textContent), calcEl() && calcEl().textContent);
+    check('B: summen sier minimum, og steg 4 er ikke ferdig', '≥ 0,00 m', _takFlatMeters(_takGuardSummary(T())) === '≥ 0,00 m' && _takStepFacts(fid).done[4] === false, _takFlatMeters(_takGuardSummary(T())));
+    _takSetGuard(fid, 'sf1', 'wm2', '300');
+    check('B: W/m² uten kabel: «kabel ikke valgt», ingen kabelmeter', TAK_FLAT_MSG_NO_CABLE, _takGuardCalc(T(), G()).msg === TAK_FLAT_MSG_NO_CABLE && G().field.cable_total_m === null, _takGuardCalc(T(), G()).msg);
+
+    // ── C. Regnestykket ──
+    window._takFlatCableChoices = () => [{ family: 'Test 30', product: { id: -1, name: 'Test 30', watt_per_m: 30, min_spacing_mm: 60, max_spacing_mm: 300 }, watt_per_m: 30, n: 1, ute: true }];
+    check('C: kabelen velges for taket, ikke i t.flat', 'guard_cable · ingen flat', _takGuardSetCable(fid, 'Test 30') === true && T().guard_cable.watt_per_m === 30 && !('flat' in T()), JSON.stringify(T().guard_cable));
+    let c = _takGuardCalc(T(), G());
+    check('C: 12 × 0,5 = 6,0 m²', '6,0', eq(G().field.area_m2, 6), G().field.area_m2);
+    check('C: 30 W/m ÷ 300 W/m² = c/c 10 cm', '10', eq(c.cc_cm, 10) && eq(c.cc_m, 0.1), c.cc_cm);
+    check('C: 0,5 ÷ 0,10 = 5 løp', '5', eq(c.runs, 5) && c.runsWhole, c.runs);
+    check('C: bredde × lengde × W/m² ÷ W/m = 60,00 m', '60,00', eq(c.cable_m, 12 * 0.5 * 300 / 30, 1e-9) && eq(G().field.cable_total_m, 60), c.cable_m);
+    check('C: andre veien: 5 løp × 12 m = areal ÷ c/c = 60,00 m', '60,00', eq(c.runs * 12, 60, 1e-9) && eq(c.cable_m_cc, 60, 1e-9), c.runs * 12);
+    check('C: klartekst som i 212', '30 W/m ÷ 300 W/m² = c/c 10 cm · 5 løp over 50 cm · 60,00 m', c.formula === '30 W/m ÷ 300 W/m² = c/c 10 cm · 5 løp over 50 cm · 60,00 m', c.formula);
+    panel();
+    check('C: panelet viser samme tekst', c.formula, calcEl() && calcEl().textContent === c.formula, calcEl() && calcEl().textContent);
+    check('C: feltet i summen', '60,00 m', (document.querySelector('.tak-guard-sum-total') || {}).textContent === '60,00 m', (document.querySelector('.tak-guard-sum-total') || {}).textContent);
+    check('C: bare felt, ingen renne: steg 4 er ferdig', 'true', _takStepFacts(fid).done[4] === true, '');
+    const nyAvst = _takSetGuard(fid, 'sf1', 'offset', '0,80'); c = _takGuardCalc(T(), G());
+    check('D: 0,80 m → 8 løp, 96,00 m, 9,6 m²', '8 · 96 · 9,6', nyAvst && eq(c.runs, 8, 1e-9) && eq(c.cable_m, 96, 1e-9) && eq(G().field.area_m2, 9.6, 1e-9) && eq(G().field.cable_total_m, 96, 1e-9), c.cable_m);
+    check('D: andre veien: 8 × 12 = 96,00 m', '96', eq(c.runs * 12, 96, 1e-9) && eq(c.cable_m_cc, 96, 1e-9), c.cable_m_cc);
+    check('D: rettet verdi er merket USER_CONFIRMED', 'USER_CONFIRMED', G().offset_m.prov.source === 'USER_CONFIRMED', JSON.stringify(G().offset_m.prov));
+    const J0 = JSON.stringify(G());
+    check('D: avstand utenfor taket avvises', 'uendret', _takSetGuard(fid, 'sf1', 'offset', '9') === false && _takSetGuard(fid, 'sf1', 'offset', '0') === false && JSON.stringify(G()) === J0, G().offset_m.value);
+    _takSetGuard(fid, 'sf1', 'offset', '0,5'); _takSetGuard(fid, 'sf1', 'wm2', '250'); c = _takGuardCalc(T(), G());
+    check('D: 250 W/m²: 4,17 løp sies fra om, kabelmeter av arealet', '50,00 · varsel', eq(c.cable_m, 50, 1e-9) && !c.runsWhole && panel().includes('ikke et helt tall'), c.runs);
+    _takSetGuard(fid, 'sf1', 'wm2', '500'); c = _takGuardCalc(T(), G());
+    check('D: over taket på 450 W/m² gir 212-advarselen', 'wm2', c.warns.some(w => w.kind === 'wm2'), JSON.stringify(c.warns));
+    _takSetGuard(fid, 'sf1', 'wm2', ''); check('D: W/m² tømmes igjen', 'null', G().field.wm2.value === null && G().field.cable_total_m === null, G().field.wm2.value);
+    _takSetGuard(fid, 'sf1', 'wm2', '300');
+    check('D: feltet slås av: 0 m, snøfangeren står', 'ingen field', _takSetGuard(fid, 'sf1', 'heat', false) === true && !G().field && _takGuardSummary(T()).total_m === 0 && _takGuardSummary(T()).count === 1, '');
+
+    // ── E. Geometrien: linja inne på taket ──
+    const L0 = _takGuardLine(T(), G());
+    const distKant = p => _takPolyProject([{ ...k12.a, z: null }, { ...k12.b, z: null }], p).d;
+    const P12 = _takOutline(T()), midt = Q => ({ x: (Q[0].x + Q[1].x) / 2, y: (Q[0].y + Q[1].y) / 2 });
+    check('E: ukjent vinkel: 50 cm inn i plan, parallelt, på taket', '50', eq(distKant(L0[0]), 50, 1e-6) && eq(distKant(L0[1]), 50, 1e-6) && _takInPoly(P12, midt(L0)), distKant(L0[0]));
+    _takSetPitch(fid, '30');
+    const L30 = _takGuardLine(T(), G());
+    check('E: 30°: 0,50 m langs taket = 43,3 cm i plan', '43,3', eq(distKant(L30[0]), 50 * Math.cos(Math.PI / 6), 1e-6), distKant(L30[0]));
+    _takSetGuard(fid, 'sf1', 'heat', true); _takSetGuard(fid, 'sf1', 'wm2', '300');
+    check('E: vinkelen endrer ikke kabelmeter (bredden er langs taket)', '60,00', eq(G().field.cable_total_m, 60), G().field.cable_total_m);
+    _takSetPitch(fid, '');
+    const fLf = nyTak([[0, 0], [1200, 0], [1200, 500], [800, 500], [800, 900], [400, 900], [400, 500], [0, 500]]);
+    for (const e of _takOf(fLf).edges.filter(e => e.kind === 'outline')) _takSetEdgeType(fLf, e.id, 'eave');
+    const lT = _takOf(fLf), feil = [];
+    for (const e of lT.edges.filter(e => e.kind === 'outline')) { const s = _takAddGuard(fLf, e.id); if (!s || !_takInPoly(_takOutline(lT), midt(_takGuardLine(lT, s)))) feil.push(e.id); }
+    check('E: L/T-form: alle åtte kanter får linja inne på taket (også de innoverbøyde)', '8 · ingen feil', !feil.length && _takFeats(lT, 'SNOW_GUARD').length === 8, feil.join());
+
+    // ── F. Renne og snøfanger på samme kant: tallene fra 213 ──
+    fid = nyTak(R25); _takSetHeight(fid, 'eave_m', '10');
+    const r1 = _takAddGutter(fid, 'k1'); _takAddDownspout(fid, r1.id, 2); _takAddDownspout(fid, r1.id, 12.5); _takAddDownspout(fid, r1.id, 23);
+    const rader = () => JSON.stringify(_takCableRows(T())), tilbeh = () => JSON.stringify(_takAccessories(T())), renne = () => JSON.stringify(_takFeats(T(), 'GUTTER').concat(_takFeats(T(), 'DOWNSPOUT')));
+    const førR = rader(), førA = tilbeh(), førG = renne(), sum = () => _takCableSummary(T()).total_m;
+    check('F: utgangspunktet er 213s 110,15 m', '110,15', eq(sum(), 110.15, 1e-9), sum());
+    T().guard_cable = { ...K30 };
+    const sf = _takAddGuard(fid, 'k1');
+    check('F: snøfanger på samme kant som renna er lov, begge 25 m', '25 · 25', sf && eq(sf.length_m, 25) && eq(_takFeat_(T(), r1.id).length_m, 25), sf && sf.length_m);
+    check('F: uten felt: rader, tilbehør og renne bit for bit som før', 'uendret', rader() === førR && tilbeh() === førA && renne() === førG, '');
+    _takSetGuard(fid, sf.id, 'heat', true); _takSetGuard(fid, sf.id, 'wm2', '300');
+    const dSum = () => { renderSidebar(); return (document.querySelector('.tak-cable-sum-total') || {}).textContent; };
+    check('F: med felt: 110,15 m står, rader og tilbehør uendret', '110,15 m', eq(sum(), 110.15, 1e-9) && dSum() === '110,15 m' && rader() === førR && tilbeh() === førA && renne() === førG, dSum());
+    check('F: feltet regnes for seg: 25 × 0,5 × 300 ÷ 30 = 125,00 m', '125,00', eq(_takGuardSummary(T()).total_m, 125, 1e-9), _takGuardSummary(T()).total_m);
+    check('F: panelet viser renner + felt = 235,15 m', '235,15 m', (document.querySelector('.tak-guard-all') || {}).textContent.includes('235,15 m'), (document.querySelector('.tak-guard-all') || {}).textContent);
+    _takSetBox(fid, 'n2', true); renderSidebar(); fitAll(); render();
+    for (const zoom of [S.view.zoom, S.view.zoom * 0.6, S.view.zoom * 2]) {
+      S.view.zoom = zoom; render();
+      const L = etiketter(fid), sn = L.filter(l => /^snøfanger|løp · /.test(l.txt)), andre = L.filter(l => !sn.includes(l));
+      const m = _takOf(fid).features.find(f => f.id === sf.id);
+      const iS = l => { const q = w2s(m.geometry.pts[0].x, m.geometry.pts[0].y), r = w2s(m.geometry.pts[1].x, m.geometry.pts[1].y), n = _takGuardInward(T(), m.geometry.pts[0], m.geometry.pts[1]); return (l.x - q.x) * n.x + (l.y - q.y) * n.y; };
+      check(`G: zoom ${zoom.toFixed(2)}: snøfangerens etiketter dekker ingen andre`, 'ingen', sn.length === 2 && !kollisjon(sn, andre).length, kollisjon(sn, andre).map(l => l.txt).join(' | ') + ' // ' + andre.map(l => l.txt).join(' , '));
+      check(`G: zoom ${zoom.toFixed(2)}: motsatt side av kanten fra rennas`, 'snø > 0 > renne', sn.every(l => iS(l) > 0) && andre.filter(l => /×2/.test(l.txt)).every(l => iS(l) < 0), sn.map(iS).join() + ' / ' + andre.map(iS).join());
+    }
+    const r2 = _takFeats(T(), 'SNOW_GUARD').length;
+    check('G: overlapp på samme kant avvises (samme felt to ganger)', 'null', _takAddGuard(fid, 'k1', 1, 3) === null && _takFeats(T(), 'SNOW_GUARD').length === r2, '');
+    const ikkeFot = T().edges.find(e => e.kind === 'outline' && e.type !== 'eave');
+    check('G: annen kanttype enn takfot avvises', 'null', !ikkeFot || _takAddGuard(fid, ikkeFot.id) === null, ikkeFot && ikkeFot.type);
+
+    // ── H. Verktøyet med klikk ──
+    fid = nyTak(R12); fitAll(); render();
+    _takFeatStart(fid, 'guard');
+    const kk = T().edges.find(e => e.type === 'eave');
+    klikkV((kk.a.x + kk.b.x) / 2, (kk.a.y + kk.b.y) / 2);
+    check('H: «Hele kanten»: ett klikk på takfoten', '12', _takFeats(T(), 'SNOW_GUARD').length === 1 && eq(_takFeats(T(), 'SNOW_GUARD')[0].length_m, 12), _takFeats(T(), 'SNOW_GUARD').length);
+    const k2 = T().edges.find(e => e.type === 'eave' && e !== kk);
+    _takFeatWhole(false);
+    const pos = u => [k2.a.x + (k2.b.x - k2.a.x) * u, k2.a.y + (k2.b.y - k2.a.y) * u];
+    klikkV(...pos(0.25)); klikkV(...pos(0.75));
+    const sf2 = _takFeats(T(), 'SNOW_GUARD')[1];
+    check('H: «Fra–til»: to klikk på kanten = 6,0 m', '6,0', sf2 && eq(sf2.length_m, 6, 0.11), sf2 && sf2.length_m);
+    _takFeatStop();
+    const sc = _takFeatScreenLine(T(), sf2), mx = (sc[0].x + sc[1].x) / 2, my = (sc[0].y + sc[1].y) / 2;
+    check('H: klikk på linja velger snøfangeren', 'sf2', (_takHitFeature(fid, mx, my) || {}).id === sf2.id, (_takHitFeature(fid, mx, my) || {}).id);
+
+    // ── I. Lagring, angre, lås, id ──
+    const nFør = T().features.length;
+    _takSetGuard(fid, sf2.id, 'heat', true); _takSetGuard(fid, sf2.id, 'wm2', '300'); T().guard_cable = { ...K30 }; _takRecalc(T());
+    const save = JSON.parse(JSON.stringify(_buildSaveData())); _resetProjectState(); _restoreProject(save);
+    const tR = _takOf(fid), gR = tR && _takFeat_(tR, sf2.id);
+    check('I: lagres og hentes: avstand, W/m², kabel, 30,00 m', '30,00', gR && gR.offset_m.value === 0.5 && gR.field.wm2.value === 300 && tR.guard_cable.watt_per_m === 30 && eq(gR.field.cable_total_m, 30, 1e-9), gR && gR.field && gR.field.cable_total_m);
+    S.ui.activeFloorId = fid;
+    _takDeleteFeature(fid, sf2.id);
+    check('I: sletting fjerner den', nFør - 1, _takOf(fid).features.length === nFør - 1, _takOf(fid).features.length);
+    undo();
+    check('I: angre henter den tilbake, med feltet', '300', (_takFeat_(_takOf(fid), sf2.id) || { field: {} }).field.wm2 && _takFeat_(_takOf(fid), sf2.id).field.wm2.value === 300, '');
+    S.ui.readOnly = true;
+    const jRO = JSON.stringify(_takOf(fid).features);
+    check('I: readOnly: ingen ny, ingen retting, ingen kabel', 'uendret', _takAddGuard(fid, k12.id, 0, 1) === null && _takSetGuard(fid, sf2.id, 'offset', '0,6') === false && _takGuardSetCable(fid, '') === false && JSON.stringify(_takOf(fid).features) === jRO, '');
+    S.ui.readOnly = false;
+
+    // ── J. Stegene og taktypen ──
+    fid = nyTak(R12); _takAddGuard(fid, T().edges.find(e => e.type === 'eave').id);
+    const msg4 = () => _takStepMsg(fid, 4, _takStepFacts(fid));
+    check('J: bare snøfanger, ikke varmet: steg 4 sier hva som gjenstår (ikke «0 av 0 strekk»)', 'snøfangeren er tegnet', msg4().includes('snøfangeren er tegnet') && !msg4().includes('0 av 0'), msg4());
+    _takSetGuard(fid, 'sf1', 'heat', true);
+    check('J: varmet uten W/m²: steg 4 sier det', 'mangler flateeffekt', msg4().includes('mangler flateeffekt eller kabel'), msg4());
+    const k3 = _takCardHtml(fid, 3), k4 = _takCardHtml(fid, 4);
+    check('J: steg 3 har avstanden og valget, ikke W/m²', 'ja', k3.includes('tak-guard-off') && k3.includes('Ikke varm feltet') && !k3.includes('tak-guard-wm2') && !k3.includes('tak-guard-cable'), '');
+    check('J: steg 4 har W/m² og kabelen', 'ja', k4.includes('tak-guard-wm2') && k4.includes('tak-guard-cable') && !k4.includes('tak-guard-off'), '');
+    check('J: knappen står i panelet og i verktøylinja', 'ja', k3.includes('+ Snøfanger') && _takToolbarHtml(fid).length > 0, '');
+    _takStepGo(fid, 3); updateCtxBar();
+    check('J: verktøylinja i steg 3', '+ Snøfanger', document.getElementById('ctxbar').innerHTML.includes('+ Snøfanger'), '');
+    fid = nyTak(R12, 'flat');
+    check('J: flatt tak: ingen «+ Snøfanger», og ingen kan legges', 'nei', !_takCardHtml(fid, 3).includes('+ Snøfanger') && _takAddGuard(fid, 'k1') === null, '');
+
+    // ── K. Et prosjekt uten snøfanger ──
+    fid = nyTak(R25); _takSetHeight(fid, 'eave_m', '10'); const r9 = _takAddGutter(fid, 'k1'); _takAddDownspout(fid, r9.id, 12.5);
+    const u0 = JSON.stringify(T()); _takRecalc(T());
+    check('K: uten snøfanger: _takRecalc endrer ingenting, ingen nye felt', 'uendret', JSON.stringify(T()) === u0 && !('guard_cable' in T()) && !_takFeats(T(), 'SNOW_GUARD').length, '');
+    check('K: uten snøfanger: ingen panelblokk', 'tom', _takGuardsHtml(fid, T(), null) === '' && _takGuardSumHtml(T()) === '', '');
+  } catch (e) {
+    check('testen kastet ikke', 'ingen feil', false, e.stack || String(e));
+  } finally {
+    helKort(); window._takLabel = orig;
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro; window._takFlatCableChoices = keep.choices;
+    if (_takFeat) _takFeatStop();
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    renderSidebar(); updateCtxBar(); render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest215: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
   return { ok: allOk, results };
 }
 

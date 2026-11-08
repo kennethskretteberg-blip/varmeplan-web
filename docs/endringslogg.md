@@ -4,6 +4,17 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 215 — Tak: snøfanger som grense, og varmet felt mellom takkant og snøfanger med c/c regnet av flateeffekten (08.11.2026, `main`, ikke pushet)
+
+- Nytt objekt `SNOW_GUARD` (`sf<n>`) i `S.tak[fid].features`, lagt på en takfot som rennestrekket. `offset_m` har standard 0,50 m, merket «Kenneths regel 08.11.2026, ikke fra datablad». Snøfangeren har ingen løp og ingen kabel.
+- Valgfritt felt (`g.field`): areal = lengde × avstand, regnet med `_takFlatCalc` fra 212. Ingen standard W/m². Kabelen ligger i `t.guard_cable`, ikke i `t.flat`.
+- Linja ligger inne på taket: avstand × cos(takvinkel) i plan. Omrisset avgjør hvilken side som er innover.
+- `_takCableRows`/`_takCableSummary` ser aldri snøfangeren. Egen sum, «Felt mot takkanten».
+- Trukket ut uten endret oppførsel: `_takEdgeOverlap`, `_takCableResolve`, `_takCableSnapshot`, `_takCableSelectHtml`, `_takFlatCalcHtml`.
+- Svar på 209 spm. 9 er skrevet i `docs/209/SPØRSMÅL.md`. Ny test: `_takRegressionTest215`.
+
+---
+
 ## 214 — Tak: stegveiviser i fire steg, kontrollmål, «gjør om til tegning» uten kart, og menyer som bare viser det som gjelder (08.11.2026, `main`, ikke pushet)
 
 - Tak-panelet viser ett åpent steg om gangen (`_takWizardHtml`), med en linje som sier hvor du er og hva som mangler. Appen hopper ikke og sperrer ikke. Åpent steg er visning (`_takStepOpen`), aldri lagret; ved åpning avledes det av prosjektet (`_takStepDerive`).

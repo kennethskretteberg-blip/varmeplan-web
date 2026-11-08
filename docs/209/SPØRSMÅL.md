@@ -45,6 +45,10 @@ Hvert spørsmål har mitt midlertidige valg. Det er bygget slik til du sier noe 
 9. **SNOW_GUARD og ROOF_DRAIN.** Prompten sier at de «finnes i §6.3». De står i planen, men ikke i koden. Jeg har
    ikke laget dem. Skal snøfanger og sluk komme i 210 eller senere?
 
+   **Svar (215, 08.11.2026):** Begge er bygd. `ROOF_DRAIN` kom med 212 (sluk på flatt tak, i `t.flat`). `SNOW_GUARD` kom med 215:
+   «+ Snøfanger» på en takfot, standard 0,50 m inn på taket (Kenneths regel 08.11.2026, ikke fra datablad). Snøfangeren får ingen
+   kabel selv. Den er grensen for et valgfritt varmet felt mellom takkant og snøfanger, regnet med 212s motor.
+
 10. **Etiketten til en hindring på renna** kan dekke delstrekkets lengde-etikett når hindringen står midt på
     delstrekket (se `tegning-start-n3.png`, h2 over «10,5 ×2»). Jeg har ikke flyttet etikettene. Si fra hvis det
     plager.
