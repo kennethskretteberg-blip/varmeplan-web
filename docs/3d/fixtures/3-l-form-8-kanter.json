@@ -110,6 +110,14 @@
     "source": "USER_CONFIRMED",
     "confidence": 1,
     "note": "rettet fra ikke valgt"
+   },
+   "ridge_link": {
+    "id": "m1",
+    "prov": {
+     "source": "AI_SUGGESTION",
+     "confidence": 0.5,
+     "note": "nærmeste møne, målt fra kantens midtpunkt"
+    }
    }
   },
   {
@@ -152,6 +160,14 @@
     "source": "USER_CONFIRMED",
     "confidence": 1,
     "note": "rettet fra ikke valgt"
+   },
+   "ridge_link": {
+    "id": "m1",
+    "prov": {
+     "source": "AI_SUGGESTION",
+     "confidence": 0.5,
+     "note": "nærmeste møne, målt fra kantens midtpunkt"
+    }
    }
   },
   {
@@ -173,6 +189,14 @@
     "source": "USER_CONFIRMED",
     "confidence": 1,
     "note": "rettet fra ikke valgt"
+   },
+   "ridge_link": {
+    "id": "m2",
+    "prov": {
+     "source": "AI_SUGGESTION",
+     "confidence": 0.5,
+     "note": "nærmeste møne, målt fra kantens midtpunkt"
+    }
    }
   },
   {
@@ -215,6 +239,14 @@
     "source": "USER_CONFIRMED",
     "confidence": 1,
     "note": "rettet fra ikke valgt"
+   },
+   "ridge_link": {
+    "id": "m2",
+    "prov": {
+     "source": "AI_SUGGESTION",
+     "confidence": 0.5,
+     "note": "nærmeste møne, målt fra kantens midtpunkt"
+    }
    }
   },
   {
@@ -236,6 +268,14 @@
     "source": "USER_CONFIRMED",
     "confidence": 1,
     "note": "rettet fra ikke valgt"
+   },
+   "ridge_link": {
+    "id": "m2",
+    "prov": {
+     "source": "AI_SUGGESTION",
+     "confidence": 0.5,
+     "note": "nærmeste møne, målt fra kantens midtpunkt"
+    }
    }
   },
   {
@@ -257,6 +297,74 @@
     "source": "USER_CONFIRMED",
     "confidence": 1,
     "note": "rettet fra ikke valgt"
+   },
+   "ridge_link": {
+    "id": "m2",
+    "prov": {
+     "source": "AI_SUGGESTION",
+     "confidence": 0.5,
+     "note": "nærmeste møne, målt fra kantens midtpunkt"
+    }
+   }
+  },
+  {
+   "id": "m1",
+   "kind": "line",
+   "a": {
+    "x": 1400,
+    "y": 350
+   },
+   "b": {
+    "x": 550,
+    "y": 350
+   },
+   "type": "ridge",
+   "surface": "f1",
+   "planes": [],
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "tegnet for hånd"
+   },
+   "height_m": {
+    "value": 8.2,
+    "height_ref": "terreng",
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "oppgitt av bruker — ikke målt",
+     "from": "ridge_m"
+    }
+   }
+  },
+  {
+   "id": "m2",
+   "kind": "line",
+   "a": {
+    "x": 550,
+    "y": 1200
+   },
+   "b": {
+    "x": 550,
+    "y": 350
+   },
+   "type": "ridge",
+   "surface": "f1",
+   "planes": [],
+   "prov": {
+    "source": "USER_DRAWN",
+    "confidence": 1,
+    "note": "tegnet for hånd"
+   },
+   "height_m": {
+    "value": 8.2,
+    "height_ref": "terreng",
+    "prov": {
+     "source": "USER_DRAWN",
+     "confidence": 1,
+     "note": "oppgitt av bruker — ikke målt",
+     "from": "ridge_m"
+    }
    }
   }
  ],

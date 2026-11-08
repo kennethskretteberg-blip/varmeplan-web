@@ -38,12 +38,14 @@ const skriv = (navn, t) => {
   M._takSetObj(F, h.id, 'bypass', true); M._takSetObj(F, h.id, 'extra', '0,6');
   skriv('2-saltak', t);
 }
-// 3 · L-form med 8 kanter, merket for hånd. Appen kan ikke tegne en mønelinje her (205 spm. 3), så det finnes ingen.
+// 3 · L-form med 8 kanter, merket for hånd, med to møner tegnet for hånd (220). De møtes midt i bygget.
 {
   const t = M.nyttTak([{ x: 0, y: 0 }, { x: 1400, y: 0 }, { x: 1400, y: 700 }, { x: 900, y: 700 }, { x: 900, y: 1200 }, { x: 200, y: 1200 }, { x: 200, y: 900 }, { x: 0, y: 900 }]);
   M._takSetRoofType(F, 'pitched'); hoyder(5.4, 8.2, 142.3);
   const typer = { k1: 'eave', k2: 'rake', k3: 'eave', k4: 'eave', k5: 'rake', k6: 'eave', k7: 'eave', k8: 'eave' };
   for (const [id, type] of Object.entries(typer)) M._takSetEdgeType(F, id, type);
+  M._takAddRidge(F, { x: 1400, y: 350 }, { x: 550, y: 350 });   // fra midten av gavlen k2, inn til møtepunktet
+  M._takAddRidge(F, { x: 550, y: 1200 }, { x: 550, y: 350 });   // fra midten av gavlen k5, inn til samme punkt
   const a = M._takAddGutter(F, 'k1'), b = M._takAddGutter(F, 'k3'), c = M._takAddGutter(F, 'k6');
   M._takAddDownspout(F, a.id, 1); M._takAddDownspout(F, a.id, 13);
   M._takAddDownspout(F, b.id, 4.5);

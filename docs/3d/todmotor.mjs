@@ -10,7 +10,8 @@ const FRA = '// ═══ 204 · TAK-MODULEN';
 const TIL = 'async function _takRegressionTest212';
 const UT = ['_takManual', '_takSetRoofType', '_takSetHeight', '_takAddGutter', '_takAddDownspout', '_takAddValley', '_takSetDownspout', '_takSetRuns',
   '_takSetEdgeType', '_takAddGuard', '_takAddObject', '_takSetObj', '_takFlatAddDrain', '_takFlatSet', '_takFlatAddValley', '_takFlatAddField', '_takFlatSetCable', '_takFlatSetSetup',
-  '_takRecalc', '_takFlatRecalc', '_takCableSummary', '_takCableRows', '_takFlatSummary', '_takFlatDrainCable', '_takGuardLine', '_takGuardSummary', '_takSectionModel', '_takFeat_', '_takOf'];
+  '_takRecalc', '_takFlatRecalc', '_takCableSummary', '_takCableRows', '_takFlatSummary', '_takFlatDrainCable', '_takGuardLine', '_takGuardSummary', '_takSectionModel', '_takFeat_', '_takOf',
+  '_takAddRidge', '_takSetRidgeHeight', '_takLinkEave', '_takRemoveEdgeLine', '_takRidgeMissing', '_takRidgeCardHtml', '_takRidgeFill', '_takPitch', '_takSurface'];
 
 export function lastTodMotor() {
   const kilde = fs.readFileSync(path.join(ROT, 'index.html'), 'utf8');

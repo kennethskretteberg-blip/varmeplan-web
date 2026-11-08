@@ -95,12 +95,19 @@ function innover(P, a, b) {
   const p = { x: (a.x + b.x) / 2 + nx * 2, y: (a.y + b.y) / 2 + ny * 2 };
   return P.length < 3 || iPolygon(P, p) ? { x: nx, y: ny } : { x: -nx, y: -ny };
 }
-/** Takvinkelen i et punkt, samme regel som `_takPitch` i 2D: brukerens tall, ellers (møne − gesims) / avstand til mønelinja. */
+/** Avstanden fra et punkt til et linjestykke (cm). */
+function tilLinje(p, m) {
+  const dx = m.b.x - m.a.x, dy = m.b.y - m.a.y, L2 = dx * dx + dy * dy;
+  const u = L2 ? Math.max(0, Math.min(1, ((p.x - m.a.x) * dx + (p.y - m.a.y) * dy) / L2)) : 0;
+  return Math.hypot(p.x - m.a.x - u * dx, p.y - m.a.y - u * dy);
+}
+/** Takvinkelen i et punkt, samme regel som `_takPitch` i 2D: brukerens tall, ellers (møne − gesims) / avstand til det nærmeste mønet. */
 function takvinkel(s, kanter, pt) {
   const pv = verdi(s.pitch_deg);
   if (pv != null) return pv;
-  const ev = verdi(s.heights && s.heights.eave_m), rv = verdi(s.heights && s.heights.ridge_m);
-  const m = kanter.find(e => e.type === 'ridge');
+  const R = kanter.filter(e => e.type === 'ridge');
+  const m = R.length > 1 ? R.reduce((a, b) => (tilLinje(pt, b) < tilLinje(pt, a) ? b : a)) : R[0];
+  const ev = verdi(s.heights && s.heights.eave_m), rv = (m && verdi(m.height_m)) ?? verdi(s.heights && s.heights.ridge_m);
   if (ev == null || rv == null || rv <= ev || !m) return null;
   const dx = m.b.x - m.a.x, dy = m.b.y - m.a.y, L = Math.hypot(dx, dy);
   const run = L ? Math.abs((pt.x - m.a.x) * dy - (pt.y - m.a.y) * dx) / L / 100 : 0;
@@ -150,6 +157,128 @@ function trianguler(P) {
 }
 
 // ── Takflatene ───────────────────────────────────────────────────────────────────────────────
+/** Noder mellom ankrene (gavlkant med flere punkter): rett linje mellom ankrene, så gavlen ikke får knekk. */
+function fyllMellom(noder, eave) {
+  const n = noder.length;
+  const lengdeTil = (fra, steg) => { let L = 0, i = fra; for (let k = 0; k < n; k++) { const j = (i + steg + n) % n; L += Math.hypot(noder[j].x - noder[i].x, noder[j].y - noder[i].y); i = j; if (noder[i].h != null) return { L, h: noder[i].h }; } return null; };
+  const hoyder = noder.map((nd, i) => {
+    if (nd.h != null) return nd.h;
+    const f = lengdeTil(i, 1), b = lengdeTil(i, -1);
+    return f && b ? b.h + (f.h - b.h) * (b.L / (f.L + b.L)) : eave;
+  });
+  noder.forEach((nd, i) => { nd.h = hoyder[i]; });
+}
+const krysser = (p, q, r, s) => {
+  const kr = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  return kr(p, q, r) * kr(p, q, s) < -1e-9 && kr(r, s, p) * kr(r, s, q) < -1e-9;
+};
+/** Ligger punktene i ett plan? Toleranse 2 cm. */
+function erPlan(pts) {
+  const a = pts[0];
+  for (let i = 1; i < pts.length - 1; i++) for (let j = i + 1; j < pts.length; j++) {
+    const u = [pts[i].x - a.x, pts[i].y - a.y, (pts[i].h - a.h) * 100], v = [pts[j].x - a.x, pts[j].y - a.y, (pts[j].h - a.h) * 100];
+    const n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], L = Math.hypot(...n);
+    if (L < 1) continue;
+    return pts.every(p => Math.abs((p.x - a.x) * n[0] + (p.y - a.y) * n[1] + (p.h - a.h) * 100 * n[2]) / L < 2);
+  }
+  return true;
+}
+/** 220: Reiser taket fra de LAGREDE mønene og koblingene (`ridge_link` på hver takfot).
+ *  Hver sammenhengende rekke takfot mot samme møne, på samme side, blir én flate: takfotene, eventuelle gavlkanter ut til
+ *  møneenden, og mønet tilbake. Møner, høyder og koblinger leses. Her settes bare hjørner sammen til flater. */
+function reisKoblet(kanter, P, gz, eave, ridge0, navn) {
+  const moner = kanter.filter(e => e.type === 'ridge');
+  const hoydeAv = m => verdi(m.height_m) ?? ridge0;
+  for (const m of moner) {
+    if (hoydeAv(m) == null) return { feil: `møne ${m.id} mangler høyde` };
+    if (!(hoydeAv(m) > eave)) return { feil: `møne ${m.id} ikke er over gesimsen` };
+  }
+  const moneAv = e => (e.ridge_link ? moner.find(m => m.id === e.ridge_link.id) || null : null);
+  const uten = kanter.filter(e => e.kind === 'outline' && e.type === 'eave' && !moneAv(e));
+  if (uten.length) return { feil: `${uten.map(navn).join(', ')} har ingen møne` };
+
+  const noder = P.map((p, i) => ({ x: p.x, y: p.y, h: null, kant: kanter.find(e => e.kind === 'outline' && e.i === i) || null }));
+  const finn = q => {
+    for (let k = 0; k < noder.length; k++) if (Math.hypot(noder[k].x - q.x, noder[k].y - q.y) < 1) return k;
+    for (let k = 0; k < noder.length; k++) {
+      const a = noder[k], b = noder[(k + 1) % noder.length], dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy;
+      const u = L2 ? ((q.x - a.x) * dx + (q.y - a.y) * dy) / L2 : -1;
+      if (u <= 0 || u >= 1 || Math.hypot(a.x + u * dx - q.x, a.y + u * dy - q.y) >= 1) continue;
+      noder.splice(k + 1, 0, { x: q.x, y: q.y, h: null, kant: a.kant }); return k + 1;
+    }
+    return -1;   // en ende inne på taket er helt i orden her
+  };
+  for (const m of moner) for (const q of [m.a, m.b]) { const k = finn(q); if (k >= 0) noder[k].h = hoydeAv(m); }
+  const n = noder.length;
+  noder.forEach((nd, i) => { if (nd.kant && nd.kant.type === 'eave') for (const q of [nd, noder[(i + 1) % n]]) if (q.h == null) q.h = eave; });
+  fyllMellom(noder, eave);
+
+  // Hvilken side av mønet et punkt ligger på. 0 = på forlengelsen av mønet (endekanten på et valmtak).
+  const side = (m, p) => { const dx = m.b.x - m.a.x, dy = m.b.y - m.a.y, d = ((p.x - m.a.x) * dy - (p.y - m.a.y) * dx) / (Math.hypot(dx, dy) || 1); return Math.abs(d) < 1 ? 0 : Math.sign(d); };
+  const midt = e => ({ x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 });
+  const nokkel = i => { const e = noder[i].kant; if (!e || e.type !== 'eave') return null; const m = moneAv(e), sd = side(m, midt(e)); return m.id + '|' + sd + (sd === 0 ? '|' + e.id : ''); };
+  let s0 = noder.findIndex((_, i) => nokkel(i) !== nokkel((i - 1 + n) % n)); if (s0 < 0) s0 = 0;
+  const kjeder = [];
+  for (let k = 0; k < n; k++) {
+    const i = (s0 + k) % n, key = nokkel(i), j = (i + 1) % n;
+    if (key == null) continue;
+    if (k > 0 && nokkel((i - 1 + n) % n) === key) kjeder[kjeder.length - 1].push(j); else kjeder.push([i, j]);
+  }
+
+  const lagFlate = kjede => {
+    const e0 = noder[kjede[0]].kant, m = moneAv(e0), h = hoydeAv(m), sd = side(m, midt(e0)), lag = p => ({ x: p.x, y: p.y, h });
+    const dx = m.b.x - m.a.x, dy = m.b.y - m.a.y, L2 = dx * dx + dy * dy, u = q => ((q.x - m.a.x) * dx + (q.y - m.a.y) * dy) / L2;
+    const paa = v => (v <= 0 ? m.a : v >= 1 ? m.b : { x: m.a.x + v * dx, y: m.a.y + v * dy });
+    const hjorner = kjede.map(i => noder[i]);
+    // Endekanten på et valmtak trenger ingen egen regel: begge hjørnene projiseres forbi møneenden, A og B blir samme punkt, og flaten en trekant.
+    // Et annet møne som ender PÅ dette (T-form) deler flatene på sin side: hver flate får bare sin del av mønelinja.
+    const knekk = [0, 1];
+    for (const o of moner) for (const [q, r] of [[o.a, o.b], [o.b, o.a]]) {
+      if (o === m) continue;
+      const v = u(q), f = paa(v);
+      if (v > 1e-6 && v < 1 - 1e-6 && Math.hypot(f.x - q.x, f.y - q.y) < 1 && side(m, r) === sd) knekk.push(v);
+    }
+    knekk.sort((a, b) => a - b);
+    const vs = hjorner.map(p => Math.max(0, Math.min(1, u(p)))), v0 = Math.min(...vs), v1 = Math.max(...vs);
+    const lo = Math.max(...knekk.filter(v => v <= v0 + 1e-6)), hi = Math.min(...knekk.filter(v => v >= v1 - 1e-6));
+    const A = paa(lo), B = paa(hi), naer = (nd, q) => Math.hypot(nd.x - q.x, nd.y - q.y) < 1;
+    // Fra enden av takfot-rekka langs gavlkantene ut til møneenden, så gavlens knutepunkter kommer med.
+    const gaa = (fra, steg) => {
+      const ut = []; let j = fra;
+      for (let k = 0; k < n; k++) {
+        const ka = noder[steg > 0 ? j : (j - 1 + n) % n].kant;
+        if (ka && ka.type === 'eave') return null;
+        j = (j + steg + n) % n;
+        if (naer(noder[j], A)) return { treff: A, ut };
+        if (naer(noder[j], B)) return { treff: B, ut };
+        ut.push(j);
+      }
+      return null;
+    };
+    const siste = noder[kjede[kjede.length - 1]], forste = noder[kjede[0]];
+    let fram = gaa(kjede[kjede.length - 1], 1), bak = gaa(kjede[0], -1);
+    if (fram && bak && fram.treff === bak.treff) bak = null;
+    const annen = q => (q === A ? B : A);
+    let X, Y;
+    if (fram) { X = fram.treff; Y = bak ? bak.treff : annen(X); }
+    else if (bak) { Y = bak.treff; X = annen(Y); }
+    else {
+      [X, Y] = krysser(siste, A, B, forste) ? [B, A] : [A, B];   // den rekkefølgen der flatens to sider ikke krysser hverandre
+    }
+    const hj = [...hjorner, ...(fram ? fram.ut.map(i => noder[i]) : []), lag(X), lag(Y), ...(bak ? bak.ut.slice().reverse().map(i => noder[i]) : [])];
+    return { hj, kanter: [...new Set(kjede.slice(0, -1).map(i => noder[i].kant.id))], mone: m.id };
+  };
+
+  const ikkePlan = [], deler = [];
+  for (const kjede of kjeder) {
+    const f = lagFlate(kjede), hj = f.hj.filter((p, i, a) => { const q = a[(i + 1) % a.length]; return Math.hypot(p.x - q.x, p.y - q.y) >= 1; });
+    if (hj.length < 3) continue;
+    if (!erPlan(hj)) ikkePlan.push(f);
+    deler.push({ punkter: hj.map(p => [p.x / 100, gz + p.h, p.y / 100]), trekanter: trianguler(hj.map(p => [p.x, p.y])) });
+  }
+  return { deler, noder, ikkePlan };
+}
+
 /** Reiser skråtaket fra de LAGREDE kantene. Ingen møneberegning: finnes ikke mønelinja, er svaret null. */
 function reisTak(s, kanter, P, gz, eave, ridge) {
   const moner = kanter.filter(e => e.type === 'ridge');
@@ -180,15 +309,7 @@ function reisTak(s, kanter, P, gz, eave, ridge) {
   const nodeAv = q => noder.findIndex(n => Math.hypot(n.x - q.x, n.y - q.y) < 1);
   for (const [a, b] of par) { noder[nodeAv(a)].h = ridge; noder[nodeAv(b)].h = ridge; }
 
-  // Noder mellom ankrene (gavlkant med flere punkter): rett linje mellom ankrene, så gavlen ikke får knekk.
-  const n = noder.length;
-  const lengdeTil = (fra, steg) => { let L = 0, i = fra; for (let k = 0; k < n; k++) { const j = (i + steg + n) % n; L += Math.hypot(noder[j].x - noder[i].x, noder[j].y - noder[i].y); i = j; if (noder[i].h != null) return { L, h: noder[i].h }; } return null; };
-  const hoyder = noder.map((nd, i) => {
-    if (nd.h != null) return nd.h;
-    const f = lengdeTil(i, 1), b = lengdeTil(i, -1);
-    return f && b ? b.h + (f.h - b.h) * (b.L / (f.L + b.L)) : eave;
-  });
-  noder.forEach((nd, i) => { nd.h = hoyder[i]; });
+  fyllMellom(noder, eave);
 
   // Deler omrisset langs mønelinjene; hver del er én takflate.
   let flater = [noder.map((_, i) => i)];
@@ -261,10 +382,16 @@ export function byggTak(tak, valg = {}) {
       });
       continue;
     }
-    const reist = form === 'pitched' ? reisTak(s, kanter, P, gz, eave, ridge) : null;
+    // 220: et tak med koblinger reises fra dem. Et rent 205-forslag (ingen koblinger) går samme vei som før.
+    const navn = e => (features.find(f => f.type === 'GUTTER' && f.on_edge === e.id) || e).id;
+    const svar = form !== 'pitched' ? null
+      : kanter.some(e => e.ridge_link) && kanter.some(e => e.type === 'ridge') ? reisKoblet(kanter, P, gz, eave, ridge, navn)
+      : reisTak(s, kanter, P, gz, eave, ridge);
+    const reist = svar && !svar.feil ? svar : null;
     if (reist) {
       reist.deler.forEach((f, i) => { deler.push({ type: 'takflate', form: 'reist', ref: `${s.id}.${i + 1}`, ...f }); taktak.push(f); });
-      kanter.filter(e => e.type === 'ridge').forEach(e => deler.push({ type: 'mone', ref: e.id, bane: [tilPunkt(e.a, gz + ridge), tilPunkt(e.b, gz + ridge)] }));
+      kanter.filter(e => e.type === 'ridge').forEach(e => { const h = gz + (verdi(e.height_m) ?? ridge); deler.push({ type: 'mone', ref: e.id, bane: [tilPunkt(e.a, h), tilPunkt(e.b, h)] }); });
+      for (const f of reist.ikkePlan || []) advarsler.push(`Takflaten fra ${f.kanter.join(', ')} mot ${f.mone} ligger ikke i ett plan: takfotene står ulikt langt fra mønet. Den er tegnet med knekk.`);
       // Gavlene: fra gesimsen opp til takflaten, der omrisset ligger over gesims.
       reist.noder.forEach((a, i) => {
         const b = reist.noder[(i + 1) % reist.noder.length];
@@ -278,6 +405,7 @@ export function byggTak(tak, valg = {}) {
       const f = lokk();
       deler.push({ type: 'takflate', form: 'ikke-reist', ref: s.id, ...f }); taktak.push(f);
       const grunn = form !== 'pitched' ? 'taktypen er ikke valgt'
+        : svar && svar.feil ? svar.feil
         : !kanter.some(e => e.type === 'ridge') ? 'det er ingen lagret mønelinje'
         : ridge == null ? 'mønehøyden mangler'
         : !(ridge > eave) ? 'mønehøyden er ikke over gesimsen' : 'mønelinja henger ikke sammen med omrisset';

@@ -1,7 +1,6 @@
 // 219: node docs/3d/test-3d.mjs [--md]   Sammenligner 3D-motoren med den EKTE 2D-motoren (skåret ut av index.html).
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
 import { lastTodMotor, ROT } from './todmotor.mjs';
 import { byggTak, maal, PALETT, STILER } from '../../varmeplan-3d.js';
 
@@ -156,7 +155,9 @@ for (const { navn, tak } of FIX) {
   sjekk('forskjøvet møne: takflatene når den', byggTak(tak).deler.filter(x => x.type === 'takflate').flatMap(f => f.punkter).some(p => Math.abs(p[2] - fasitZ) < MM && p[1] > 90));
 }
 { // Uten lagret mønelinje finner motoren ikke på en.
-  const s = byggTak(FIX.find(f => f.navn === '3-l-form-8-kanter').tak);
+  const uten = M.ren(FIX.find(f => f.navn === '3-l-form-8-kanter').tak);
+  uten.edges = uten.edges.filter(e => e.type !== 'ridge'); uten.edges.forEach(e => delete e.ridge_link);
+  const s = byggTak(uten);
   sjekk('L-form uten mønelinje: ingen møne', !s.deler.some(d => d.type === 'mone'));
   sjekk('L-form uten mønelinje: taket er ikke reist, og scenen sier det', s.deler.some(d => d.type === 'takflate' && d.form === 'ikke-reist') && s.advarsler.some(a => a.includes('ingen lagret mønelinje')), s.advarsler);
 }
@@ -170,12 +171,138 @@ for (const { navn, tak } of FIX) {
   for (const stil of STILER) for (const d of a.deler) sjekk(`${navn}: ${stil} har farge for ${d.type}`, !!PALETT[stil][d.type === 'nedlop' && d.del === 'under' ? 'nedlop_u' : d.type], d.type);
 }
 
-// ── 6. index.html er uendret ──
-console.log('6 · index.html');
+// ── 6. Møner og koblinger (220) ──
+console.log('6 · møner og koblinger');
 {
-  const fil = fs.readFileSync(path.join(ROT, 'index.html'));
-  const head = execSync('git show HEAD:index.html', { cwd: ROT, maxBuffer: 64 * 1024 * 1024 });
-  sjekk('index.html er byte-identisk med HEAD', fil.equals(head), `${fil.length} vs ${head.length}`);
+  const akse = d => d.trekanter.reduce((A, [i, j, k]) => { const a = d.punkter[i], b = d.punkter[j], c = d.punkter[k]; return A + Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (c[0] - a[0]) * (b[2] - a[2])) / 2; }, 0);
+  const omrissAreal = t => { const P = t.surfaces[0].footprint.world; let A = 0; for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length]; A += p.x * q.y - q.x * p.y; } return Math.abs(A) / 2 / 1e4; };
+  const flater = s => s.deler.filter(d => d.type === 'takflate');
+  // Arealet alene avslører ikke en flate som krysser seg selv (en sløyfe har samme planareal): sidene må også la hverandre være.
+  const kr = (a, b, c) => (b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0]);
+  const enkel = d => d.punkter.every((a, i) => d.punkter.every((c, j) => {
+    const n = d.punkter.length, b = d.punkter[(i + 1) % n], e = d.punkter[(j + 1) % n];
+    return j <= i + 1 || (i === 0 && j === n - 1) || !(kr(a, b, c) * kr(a, b, e) < -1e-9 && kr(c, e, a) * kr(c, e, b) < -1e-9);
+  }));
+  const dekker = (navn, s, t) => {
+    likt(`${navn}: takflatene dekker hele omrisset (m²)`, flater(s).reduce((a, d) => a + akse(d), 0), omrissAreal(t));
+    sjekk(`${navn}: ingen flate krysser seg selv`, flater(s).every(enkel), flater(s).map(d => d.punkter.map(p => [p[0], p[2]])));
+  };
+  const tom = (w, h) => { const t = M.nyttTak([{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }]); M._takSetRoofType(M.FID, 'pitched'); M._takSetHeight(M.FID, 'eave_m', '5'); M._takSetHeight(M.FID, 'ridge_m', '8'); M._takRemoveEdgeLine(M.FID, 'm1'); return t; };   // uten forslaget fra 205
+
+  // L-formen: reist, ingen lokk-advarsel, hele taket dekket.
+  const L = FIX.find(f => f.navn === '3-l-form-8-kanter').tak, sL = byggTak(L);
+  sjekk('L-form: alle takflater er reist', flater(sL).length > 1 && flater(sL).every(d => d.form === 'reist'), flater(sL).map(d => d.form));
+  sjekk('L-form: advarselen «vises som et lokk» er borte', !sL.advarsler.some(a => a.includes('lokk')), sL.advarsler);
+  dekker('L-form', sL, L);
+  sjekk('L-form: to møner', sL.deler.filter(d => d.type === 'mone').length === 2);
+  const [m1, m2] = L.edges.filter(e => e.type === 'ridge');
+  sjekk('L-form: to møner møtes i samme punkt', m1.b.x === m2.b.x && m1.b.y === m2.b.y, [m1.b, m2.b]);
+  sjekk('L-form: forslaget kobler hver takfot til riktig møne', ['k1', 'k3'].every(k => L.edges.find(e => e.id === k).ridge_link.id === m1.id) && ['k4', 'k6', 'k7', 'k8'].every(k => L.edges.find(e => e.id === k).ridge_link.id === m2.id), L.edges.filter(e => e.ridge_link).map(e => e.id + '→' + e.ridge_link.id));
+  sjekk('L-form: gavlene har ingen kobling', ['k2', 'k5'].every(k => !L.edges.find(e => e.id === k).ridge_link));
+  sjekk('L-form: k6/k7/k8 kan ikke ligge i ett plan, og scenen sier det', sL.advarsler.some(a => a.includes('k6, k7, k8') && a.includes('ett plan')), sL.advarsler);
+  // Flatene er plane der dataene tillater det: fire takfot mot sine møner.
+  const hAv = d => d.punkter.map(p => p[1] - hoyde(L, 'ground_z'));
+  sjekk('L-form: hver flate går fra gesims til møne', flater(sL).every(d => Math.abs(Math.min(...hAv(d)) - 5.4) < MM && Math.abs(Math.max(...hAv(d)) - 8.2) < MM), flater(sL).map(hAv));
+
+  // Rektangel: med koblinger og uten skal gi samme tak.
+  const sal = FIX.find(f => f.navn === '2-saltak').tak, med = M.ren(sal);
+  M.regnUt(med); const t2 = M._takOf(M.FID); M._takRidgeFill(t2, t2.surfaces[0]);
+  const sa = byggTak(sal), sb = byggTak(M.ren(t2));
+  sjekk('saltak: koblingene finnes i varianten', t2.edges.filter(e => e.ridge_link).length === 2, t2.edges.filter(e => e.ridge_link).length);
+  dekker('saltak med koblinger', sb, sal);
+  likt('saltak: samme takareal med og uten koblinger', flater(sb).reduce((a, d) => a + akse(d), 0), flater(sa).reduce((a, d) => a + akse(d), 0));
+  sjekk('saltak: like mange gavlflater', sa.deler.filter(d => d.type === 'gavl').length === sb.deler.filter(d => d.type === 'gavl').length);
+  likt('saltak: målene er like med og uten koblinger', maal(sb).kabel.sum_m, maal(sa).kabel.sum_m);
+
+  // Høyde per møne, og den følger takflaten til den er rettet.
+  const t3 = tom(1200, 800);
+  const r = M._takAddRidge(M.FID, { x: 0, y: 400 }, { x: 1200, y: 400 });
+  sjekk('høyde: standard er takflatens', r.height_m.value === 8 && r.height_m.height_ref === t3.surfaces[0].heights.ridge_m.height_ref && r.height_m.prov.from === 'ridge_m', r.height_m);
+  sjekk('tegnet møne: USER_DRAWN', r.prov.source === 'USER_DRAWN' && r.kind === 'line', r.prov);
+  M._takSetHeight(M.FID, 'ridge_m', '9');
+  sjekk('høyde: følger takflaten når den ikke er rettet', M._takOf(M.FID).edges.find(e => e.id === r.id).height_m.value === 9);
+  M._takSetRidgeHeight(M.FID, r.id, '7,5');
+  M._takSetHeight(M.FID, 'ridge_m', '10');
+  const r2 = M._takOf(M.FID).edges.find(e => e.id === r.id);
+  sjekk('høyde: rettet står, selv om takflaten endres', r2.height_m.value === 7.5 && !r2.height_m.prov.from, r2.height_m);
+  const s3 = byggTak(M.ren(M._takOf(M.FID)));
+  likt('høyde: 3D leser mønets egen høyde', s3.deler.find(d => d.type === 'mone').bane[0][1], 7.5);
+  sjekk('høyde: takflaten når mønets egen høyde', flater(s3).every(d => Math.abs(Math.max(...d.punkter.map(p => p[1])) - 7.5) < MM));
+  M._takSetRidgeHeight(M.FID, r.id, '');
+  sjekk('høyde: tomt felt = tilbake til takflatens', M._takOf(M.FID).edges.find(e => e.id === r.id).height_m.value === 10);
+  M._takSetRidgeHeight(M.FID, r.id, '4');
+  const s4 = byggTak(M.ren(M._takOf(M.FID)));
+  sjekk('høyde: møne under gesims gir lokk og melding', flater(s4)[0].form === 'ikke-reist' && s4.advarsler.some(a => a.includes('ikke er over gesimsen')), s4.advarsler);
+
+  // Takfot uten møne gir melding, ikke stille feil.
+  const hull = M.ren(L); delete hull.edges.find(e => e.id === 'k6').ridge_link;
+  const sh = byggTak(hull);
+  sjekk('uten møne: 3D sier hvilken takfot (renna på kanten)', sh.advarsler.some(a => a.includes('r3 har ingen møne')), sh.advarsler);
+  M.regnUt(hull);
+  const tH = M._takOf(M.FID), html = M._takRidgeCardHtml(M.FID, tH, tH.surfaces[0]);
+  sjekk('uten møne: panelet sier «r3 har ingen møne — takflaten kan ikke reises.»', html.includes('r3 har ingen møne — takflaten kan ikke reises.'), html);
+  sjekk('L-form: panelet viser ingen mangel når alle er koblet', (M.regnUt(L), !M._takRidgeCardHtml(M.FID, M._takOf(M.FID), M._takOf(M.FID).surfaces[0]).includes('har ingen møne')));
+
+  // Rett kobling: USER_CONFIRMED, og forslag røres ikke av et nytt møne etterpå.
+  M.regnUt(L); M._takLinkEave(M.FID, 'k7', 'm1');
+  const k7 = M._takOf(M.FID).edges.find(e => e.id === 'k7');
+  sjekk('rett kobling: bytter møne og blir USER_CONFIRMED', k7.ridge_link.id === 'm1' && k7.ridge_link.prov.source === 'USER_CONFIRMED' && k7.ridge_link.prov.note === 'rettet fra m2', k7.ridge_link);
+  sjekk('rett kobling: kanttypens opphav er urørt', k7.prov.note === 'rettet fra ikke valgt', k7.prov);
+  M._takAddRidge(M.FID, { x: 900, y: 100 }, { x: 1300, y: 100 });
+  sjekk('rett kobling: brukerens valg står etter et nytt møne', M._takOf(M.FID).edges.find(e => e.id === 'k7').ridge_link.id === 'm1');
+  sjekk('forslag: flyttes til et nytt, nærmere møne', M._takOf(M.FID).edges.find(e => e.id === 'k1').ridge_link.id === 'm3', M._takOf(M.FID).edges.find(e => e.id === 'k1').ridge_link);
+
+  // Fjerne mønet: koblingene flyttes eller slippes.
+  M.regnUt(L); M._takRemoveEdgeLine(M.FID, 'm2');
+  const etter = M._takOf(M.FID);
+  sjekk('fjernet møne: takfotene går til det som er igjen', etter.edges.filter(e => e.ridge_link).every(e => e.ridge_link.id === 'm1') && etter.edges.filter(e => e.ridge_link).length === 6);
+  M._takRemoveEdgeLine(M.FID, 'm1');
+  sjekk('fjernet siste møne: ingen koblinger igjen', !M._takOf(M.FID).edges.some(e => e.ridge_link));
+
+  // Ugyldig tegning.
+  M.regnUt(L);
+  const n0 = M._takOf(M.FID).edges.length;
+  sjekk('utenfor omrisset: nektes', M._takAddRidge(M.FID, { x: 1200, y: 900 }, { x: 1300, y: 1100 }) === null && M._takOf(M.FID).edges.length === n0);
+  sjekk('over det innvendige hjørnet: nektes', M._takAddRidge(M.FID, { x: 1200, y: 600 }, { x: 600, y: 1100 }) === null && M._takOf(M.FID).edges.length === n0);
+  const flatt = M.regnUt(FIX.find(f => f.navn === '4-flatt-tak').tak);
+  sjekk('flatt tak: ingen møne', M._takAddRidge(M.FID, { x: 100, y: 100 }, { x: 900, y: 100 }) === null && !M._takOf(M.FID).edges.some(e => e.type === 'ridge'), flatt && 0);
+
+  // Valmtak: alle fire kantene er takfot, og mønet slutter inne på taket.
+  tom(1200, 800);
+  for (const k of ['k1', 'k2', 'k3', 'k4']) M._takSetEdgeType(M.FID, k, 'eave');
+  const v = M._takAddRidge(M.FID, { x: 400, y: 400 }, { x: 800, y: 400 });
+  const tv = M.ren(M._takOf(M.FID)), sv = byggTak(tv);
+  sjekk('valm: fire flater, alle reist', flater(sv).length === 4 && flater(sv).every(d => d.form === 'reist'), flater(sv).length);
+  dekker('valm', sv, tv);
+  sjekk('valm: ingen gavl', !sv.deler.some(d => d.type === 'gavl'));
+  sjekk('valm: endeflatene er trekanter, langsidene firkanter', flater(sv).map(d => d.punkter.length).sort().join() === '3,3,4,4', flater(sv).map(d => d.punkter.length));
+  sjekk('valm: alle fire er plane', !sv.advarsler.some(a => a.includes('ett plan')), sv.advarsler);
+  sjekk('valm: «merk alle som takfot» beholder det tegnede mønet', v.prov.source === 'USER_DRAWN');
+
+  // T-form: et møne ender midt på et annet. Flatene skal ikke overlappe.
+  M.nyttTak([{ x: 0, y: 0 }, { x: 1200, y: 0 }, { x: 1200, y: 600 }, { x: 800, y: 600 }, { x: 800, y: 1200 }, { x: 400, y: 1200 }, { x: 400, y: 600 }, { x: 0, y: 600 }]);
+  M._takSetRoofType(M.FID, 'pitched'); M._takSetHeight(M.FID, 'eave_m', '5'); M._takSetHeight(M.FID, 'ridge_m', '8');
+  const ty = { k1: 'eave', k2: 'rake', k3: 'eave', k4: 'eave', k5: 'rake', k6: 'eave', k7: 'eave', k8: 'rake' };
+  for (const [id, type] of Object.entries(ty)) M._takSetEdgeType(M.FID, id, type);
+  M._takAddRidge(M.FID, { x: 0, y: 300 }, { x: 1200, y: 300 });
+  M._takAddRidge(M.FID, { x: 600, y: 1200 }, { x: 600, y: 300 });
+  const tt = M.ren(M._takOf(M.FID)), st = byggTak(tt);
+  sjekk('T-form: reist', flater(st).length && flater(st).every(d => d.form === 'reist'), st.advarsler);
+  dekker('T-form', st, tt);
+  sjekk('T-form: alle flatene er plane', !st.advarsler.some(a => a.includes('ett plan')), st.advarsler);
+
+  // Motoren regner ikke ut møner selv: et skjevt tegnet møne følges.
+  const skj = M.ren(L); skj.edges.find(e => e.id === 'm2').a.x = 500;
+  const fasit = skj.edges.find(e => e.id === 'm2').a.x / 100;   // leses FØR motoren kjører
+  sjekk('motoren følger det lagrede mønet', Math.abs(byggTak(skj).deler.find(d => d.type === 'mone' && d.ref === 'm2').bane[0][0] - fasit) < MM);
+
+  // Flere møner: takvinkelen følger det nærmeste, i 2D og 3D.
+  M.regnUt(L);
+  const tp = M._takOf(M.FID), pm = M._takPitch(tp, tp.surfaces[0], { x: 900, y: 950 });
+  likt('takvinkel ved k4 regnes mot sitt eget møne (3,5 m, ikke 6 m)', pm.run_m, 3.5);
+  M.regnUt(L);
+  const gk4 = M._takAddGuard(M.FID, 'k4'), tg = M._takOf(M.FID), Lk4 = M._takGuardLine(tg, gk4);
+  byggTak(M.ren(tg)).deler.find(d => d.type === 'snofanger' && d.ref === gk4.id).bane.forEach((p, i) => likt(`snøfanger på k4, punkt ${i}, står der 2D tegner den`, Math.hypot(p[0] - Lk4[i].x / 100, p[2] - Lk4[i].y / 100), 0));
 }
 
 if (process.argv.includes('--md')) console.log('\n| Fixture | Hva | 3D (m) | 2D (m) | Avvik (mm) |\n|---|---|---:|---:|---:|\n' + tabell.join('\n'));

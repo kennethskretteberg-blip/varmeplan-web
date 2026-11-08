@@ -9,6 +9,8 @@ Hvert spørsmål har mitt midlertidige valg. Det er bygget slik til du sier noe 
 
    Mitt valg nå: lokk og en tydelig advarsel. Jeg anbefaler verktøyet. Det er det eneste som holder 2D som fasit for hus som ditt.
 
+   **Svar (220):** Verktøyet er valgt og bygget. Du tegner mønene selv, hver takfot kobles til sitt møne, og `byggTak` reiser taket fra det som er lagret. Møner som slutter inne på taket går også, fordi flaten lukkes mot møneenden. Se `docs/220/RAPPORT.md`.
+
 2. **Parapethøyde og sluk.** Prompten ber om parapet som reises, men høyden finnes ikke i `S.tak`, og prompten sier også at tall som mangler ikke skal regnes ut. Jeg har brukt en ren visningskonstant, 0,30 m, som ikke går inn i noe mål. Det samme gjelder slukets størrelse (Ø0,20 × 0,12 m). Skal parapet ha et eget felt? Mitt valg: konstant til du sier noe annet.
 
 3. **Er omrisset veggen eller takkanten?** Prompten sier at FKB registrerer takkanten. `docs/210/SPØRSMÅL.md` spm. 2 sier at et FKB-omriss som regel er veggen, og at det er DOM1-omriss som er takkanten. Begge kan ikke stemme. Jeg har gjort som prompten: veggene står rett under omrisset, uten utstikk. Hvilket er riktig?

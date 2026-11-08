@@ -22,6 +22,8 @@ Hvert spørsmål har mitt midlertidige valg. Det er bygget slik til du sier noe 
    sammen med gradrenner og grater, og jeg har ikke bygget det. Skal 205b eller 209 få «tegn
    linje» (møne, grat, gradrenne)?
 
+   **Svar (220):** Ja, møne er bygget. «+ Møne» i steg 3 tegner mønet selv. «Merk alle som takfot» beholder nå et møne du har tegnet, og fjerner bare forslaget. Gradrenne hadde egen knapp fra 206. Grat har ikke noe eget objekt, men i 3D blir den skjæringen mellom to flater. Se `docs/220/RAPPORT.md`.
+
 4. **Nesten kvadratisk gjettes ikke.** Er lang side mindre enn 5 % lengre enn kort side (f.eks.
    10 × 9,8 m), vet appen ikke hvilken vei mønet går. Den sier da «Bygget er nesten kvadratisk —
    appen vet ikke hvilken vei mønet går. Merk kantene selv.» Toleransene er 5° for rette hjørner og

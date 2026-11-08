@@ -560,6 +560,7 @@ body.app-embed #embed-bar{display:flex;flex-direction:column;gap:6px;padding:8px
 /* 218: de fem penselknappene skal ikke brekke linja — to rader dekker øverste takkant, og kanten kan ikke klikkes */
 #ctxbar:has(.tak-brush){width:max-content;max-width:calc(100% - 24px);flex-wrap:wrap}
 #ctxbar:has(.tak-brush) .snap-chip{padding:0 6px}
+@media (max-width:1340px){#ctxbar .tak-brush>span:first-child{display:none}}  /* 220: «+ Møne» fikk ikke plass på én rad ved 1280 px, og to rader dekker øverste takkant */
 canvas.tak-brush-on{cursor:crosshair !important}   /* 218: resten av mousemove setter markøren etter hover — penselen skal synes uansett */
 #ctxbar.show{opacity:1;pointer-events:auto;transform:translateX(-50%) scale(1)}
 /* spec-auto-folie-boks-flyttbar.md (Kenneth 10.09.2026): position:fixed, ingen transform — boksen
@@ -73333,6 +73334,7 @@ canvas.addEventListener('mousedown', e=>{
   if (_takDraw && _takDrawMouseDown(e)) return;   // 204: «Tegn omrisset selv» eier venstreklikket
   if (_takFeat && _takFeatMouseDown(e)) return;   // 206: rennestrekk/nedløp/gradrenne-verktøyet eier venstreklikket
   if (_takBrush && _takBrushMouseDown(e)) return;   // 218: penselen eier venstreklikket — også der en renne ligger på kanten
+  if (_takRidgeLinkMouseDown(e)) return;   // 220: et møne er valgt og en takfot klikkes — også der en renne ligger på kanten
   if (_takFeatPickMouseDown(e)) return;   // 206: klikk på et rennestrekk/nedløp velger det — før kantene (renna ligger på takfoten)
   if (_takFlatPickMouseDown(e)) return;   // 212: klikk på et sluk, en gradrenne eller et varmefelt velger det
   if (_takEdgeMouseDown(e)) return;   // 205: klikk på en takkant → typemenyen. Bare i tak-modulen; bom går videre
@@ -76949,6 +76951,7 @@ document.addEventListener('keydown', e=>{
   if (_takDraw && _takDrawKey(e)) return;   // 204: Esc avbryter, Enter lukker, Backspace angrer siste punkt
   if (_takSection && e.key === 'Escape') { e.preventDefault(); _takSectionClose(); return; }   // 210: Esc lukker snittet
   if (_takBrush && _takBrushKey(e)) return;   // 218: Esc slår av penselen
+  if (_takRidgeSel && !_takFeat && _takRidgeKey(e)) return;   // 220: Esc slipper det valgte mønet
   // 034: Esc = ferdig med merkemodus. Må stå før alt annet, ellers tar en av grenene under den.
   if (_merkemodus) { if (e.key === 'Escape') { e.preventDefault(); _kundeAvsluttMerkemodus(true); } return; }
   // 046: vegg-sjekken eier tastaturet mens den står på — Esc avbryter påbegynt vegg, så modusen.
@@ -82231,7 +82234,7 @@ function _takToolbarHtml(fid) {
     const G = _takFeats(f.t, 'GUTTER').length;
     const deler = f.flat
       ? start('drain', '+ Sluk') + start('fvalley', '+ Gradrenne') + start('field', '+ Varmefelt')
-      : start('gutter', '+ Rennestrekk') + (G ? start('downspout', '+ Nedløp') : '') + start('valley', '+ Gradrenne') + start('guard', '+ Snøfanger');
+      : start('gutter', '+ Rennestrekk') + (G ? start('downspout', '+ Nedløp') : '') + start('ridge', '+ Møne') + start('valley', '+ Gradrenne') + start('guard', '+ Snøfanger');
     return lbl + _takBrushChipsHtml(fid) + sep + deler + start('skylight', '+ Takvindu') + start('obstacle', '+ Hindring') + stop + map;
   }
   let sum = f.flat && !f.items.length ? (f.flatSum && f.flatSum.total ? _takFlatMeters(f.flatSum.total) : '') : (f.items.length ? 'Kabel ' + _takNum(f.cable.total_m, 2) + ' m' : '');
@@ -82390,7 +82393,8 @@ function _takEdgeTakesGutter(t, e) {
 
 // ── Retting ──────────────────────────────────────────────────────────────────────────────────
 function _takEdgeMut(fid) { if (S.ui.readOnly) { _lockToast(); return null; } return _takOf(fid); }
-function _takEdgeDone() {
+function _takEdgeDone(t) {
+  _takRidgeFillAll(t || (S.tak && S.tak[S.ui.activeFloorId]));   // 220: en ny takfot får et møne, et fjernet møne slipper sine
   hideCtx(); _takEdgeSel = null;
   renderSidebar(); render(); _scheduleAutoSave && _scheduleAutoSave();
 }
@@ -82402,7 +82406,7 @@ function _takSetEdgeType(fid, id, type) {
   if (e.type === type && e.prov && e.prov.source === 'USER_CONFIRMED') { hideCtx(); _takEdgeSel = null; render(); return false; }
   pushUndo();
   _takStampEdge(e, type);
-  _takEdgeDone();
+  _takEdgeDone(t);
   return true;
 }
 /** Menyen og penselen (218) merker likt. Samme type som forslaget = bekreftet; opphavet til det gamle står i notatet. */
@@ -82420,24 +82424,25 @@ function _takRemoveEdgeLine(fid, id) {
   if (!e || e.kind !== 'line') return false;
   pushUndo();
   t.edges = t.edges.filter(x => x !== e);
-  _takEdgeDone();
+  _takEdgeDone(t);
   return true;
 }
 /** «Merk alle som …»: alle omrisskanter får typen. Mønelinjen fra forslaget fjernes — den forutsetter
- *  to gavler, og fall-sidene er ikke lenger kjent. */
+ *  to gavler, og fall-sidene er ikke lenger kjent. Et møne brukeren har tegnet selv (220), står. */
 function _takSetAllEdges(fid, type) {
   const t = _takEdgeMut(fid), s = _takSurface(fid);
   if (t && s && _takEdgesBlocked(fid)) return false;   // 211: ingen taktype → si hvorfor
   if (!t || !s || !TAK_EDGE_TYPES[type] || !_takRoofTypeReady(s)) return false;
   if (!_takEdgesOf(t, s).length) _takApplySuggestion(t, s);   // gamle 204-tak uten kanter
   pushUndo();
-  t.edges = t.edges.filter(e => !(e.surface === s.id && e.kind === 'line'));
+  t.edges = t.edges.filter(e => !(e.surface === s.id && e.kind === 'line' && !(e.prov && e.prov.source === 'USER_DRAWN')));
   for (const e of _takEdgesOf(t, s)) {
+    if (e.kind === 'line') continue;   // 220: det tegnede mønet er ikke en omrisskant
     e.type = type; e.planes = [];
     e.prov = { source: 'USER_CONFIRMED', confidence: 1, note: 'merket alle som ' + TAK_EDGE_TYPES[type].short };
   }
   s.planes = []; s.edge_suggestion = { kind: 'user' };
-  _takEdgeDone();
+  _takEdgeDone(t);
   return true;
 }
 /** «Nullstill»: alle kanter «ikke valgt», ingen møne — begynn på nytt. */
@@ -82450,7 +82455,7 @@ function _takResetEdges(fid) {
   t.edges = t.edges.filter(e => !(e.surface === s.id && e.kind === 'line'));
   for (const e of _takEdgesOf(t, s)) { e.type = null; e.planes = []; e.prov = null; }
   s.planes = []; s.edge_suggestion = { kind: 'reset' };
-  _takEdgeDone();
+  _takEdgeDone(t);
   return true;
 }
 /** «Foreslå på nytt»: appens forslag ut fra omriss + taktype. Spør om brukerens egne kanter går tapt. */
@@ -82458,11 +82463,11 @@ function _takResuggest(fid) {
   const t = _takEdgeMut(fid), s = _takSurface(fid);
   if (t && s && _takEdgesBlocked(fid)) return false;   // 211: ingen taktype → si hvorfor
   if (!t || !s || !_takRoofTypeReady(s)) return false;
-  if (_takEdgesOf(t, s).some(e => e.prov && e.prov.source === 'USER_CONFIRMED') &&
+  if (_takEdgesOf(t, s).some(e => e.prov && (e.prov.source === 'USER_CONFIRMED' || e.prov.source === 'USER_DRAWN')) &&
       !confirm('Lage nytt forslag? Kantene du har merket selv, blir erstattet.')) return false;
   pushUndo();
   _takApplySuggestion(t, s);
-  _takEdgeDone();
+  _takEdgeDone(t);
   return true;
 }
 
@@ -82493,7 +82498,10 @@ function _takEdgeMouseDown(e) {
   if (e.button !== 0) return false;
   const fid = _takEdgeActiveFid(); if (fid == null) return false;
   const { x, y } = _evToCanvas(e);
-  const hit = _takHitEdge(fid, x, y); if (!hit) return false;
+  const hit = _takHitEdge(fid, x, y);
+  if (!hit) { if (_takRidgeSel) _takRidgeSelect(fid, null); return false; }
+  const nyttMone = hit.kind === 'line' && hit.type === 'ridge' ? hit.id : null;   // 220: klikk på et møne velger det
+  if ((_takRidgeSel && _takRidgeSel.id) !== nyttMone) _takRidgeSelect(fid, nyttMone);
   _takEdgePending = { fid, id: hit.id };
   e.preventDefault && e.preventDefault();
   return true;
@@ -82667,12 +82675,20 @@ function _takDrawEdges(fid, t) {
   const menuOpen = _takEdgeSel && _takEdgeSel.fid === fid && document.getElementById('ctx-menu').style.display !== 'none';
   const pdf = !!(S.ui && S.ui._pdfMode);
   const brushOn = !pdf && _takBrushFid() === fid;   // 218: kanten under markøren lyser i fargen penselen maler
+  // 220: det valgte mønet og takfotene som heller opp mot det. Da ser brukeren en feil kobling uten å åpne 3D.
+  const moneValgt = pdf ? null : _takRidgeSelected(fid), moneFarge = TAK_EDGE_TYPES.ridge.color;
+  const moneLyser = e => { if (!moneValgt) return false; if (e === moneValgt) return true; if (e.kind !== 'outline' || e.type !== 'eave') return false;
+    return _takRidgeLinkOf(t, (t.surfaces || []).find(x => x.id === e.surface), e) === moneValgt; };
   ctx.save(); ctx.lineCap = 'round';
   // Omrisskanter først, linjer (mønet) oppå.
   const list = [..._takEdgesOf(t)].sort((a, b) => (a.kind === 'line') - (b.kind === 'line'));
   for (const e of list) {
     const st = _takEdgeStyle(e), a = w2s(e.a.x, e.a.y), b = w2s(e.b.x, e.b.y);
     const hi = !pdf && ((_takEdgeHover && _takEdgeHover.fid === fid && _takEdgeHover.id === e.id) || (menuOpen && _takEdgeSel.id === e.id));
+    if (moneLyser(e)) {
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      ctx.setLineDash([]); ctx.globalAlpha = 0.7; ctx.strokeStyle = moneFarge; ctx.lineWidth = st.w + 12; ctx.stroke(); ctx.globalAlpha = 1;
+    }
     if (hi) {
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
       ctx.setLineDash([]); ctx.globalAlpha = brushOn ? 0.55 : 0.3; ctx.strokeStyle = brushOn ? TAK_EDGE_TYPES[_takBrush.type].color : st.color; ctx.lineWidth = st.w + 10; ctx.stroke(); ctx.globalAlpha = 1;
@@ -82717,7 +82733,187 @@ function _takEdgesCardHtml(fid, t, s) {
      <div style="font-size:11px;margin-top:3px;line-height:1.7">${legend}</div>
      <div style="margin-top:4px">${_takBrushChipsHtml(fid, true)}</div>
      <div style="font-size:11px">${dim(_takBrush && _takBrush.fid === fid ? 'Klikk en kant eller dra over flere. Esc eller samme knapp slår av.' : 'Klikk en kant i tegningen for å endre typen, eller velg en type over og merk flere etter hverandre.')}</div>
-     <div style="margin-top:3px">${_takBtn(`_takSetAllEdges(${fid},'eave')`, 'Merk alle som takfot')}${_takBtn(`_takSetAllEdges(${fid},'parapet')`, 'Merk alle som parapet')}${_takBtn(`_takResetEdges(${fid})`, 'Nullstill')}${_takBtn(`_takResuggest(${fid})`, 'Foreslå på nytt')}</div></div>`;
+     <div style="margin-top:3px">${_takBtn(`_takSetAllEdges(${fid},'eave')`, 'Merk alle som takfot')}${_takBtn(`_takSetAllEdges(${fid},'parapet')`, 'Merk alle som parapet')}${_takBtn(`_takResetEdges(${fid})`, 'Nullstill')}${_takBtn(`_takResuggest(${fid})`, 'Foreslå på nytt')}</div>${_takRidgeCardHtml(fid, t, s)}</div>`;
+}
+
+// ═══ 220 · TEGN MØNET SELV — høyde per møne, og hver takfot koblet til sitt møne ═════════════════
+// Møne fantes bare når rektangel-forslaget (205) hadde laget det, så nesten alle ekte hus var et lokk i 3D.
+// Et møne er en TakKant med type:'ridge' (samme form som forslaget), og et tegnet møne har i tillegg:
+//   prov: { source:'USER_DRAWN', … }
+//   height_m: { value, height_ref, prov }   // standard = flatens ridge_m (prov.from:'ridge_m') og følger den til den er rettet
+// Takfot-kanten får  ridge_link: { id:'m2', prov }  — egen prov, så kanttypens opphav (e.prov) står urørt.
+// Forslag (AI_SUGGESTION) = nærmeste møne fra kantens midtpunkt. Brukerens valg (USER_CONFIRMED) røres aldri.
+// Et tak uten tegnede møner og koblinger får ingen ridge_link: forslaget fra 205 lagres akkurat som før.
+var _takRidgeSel = null;   // { fid, id } — valgt eller nettopp tegnet møne. Transient, lagres aldri
+
+function _takRidgesOf(t, s) { return _takEdgesOf(t, s).filter(e => e.type === 'ridge'); }
+function _takRidgeNextId(t) { let n = 1; while ((t.edges || []).some(e => e.id === 'm' + n)) n++; return 'm' + n; }
+/** Avstanden fra kantens midtpunkt til mønet (cm). Vinkelrett når foten treffer linja, ellers til nærmeste ende. */
+function _takRidgeDist(e, r) {
+  const mx = (e.a.x + e.b.x) / 2, my = (e.a.y + e.b.y) / 2, dx = r.b.x - r.a.x, dy = r.b.y - r.a.y, L2 = dx * dx + dy * dy;
+  const u = L2 ? Math.max(0, Math.min(1, ((mx - r.a.x) * dx + (my - r.a.y) * dy) / L2)) : 0;
+  return Math.hypot(mx - r.a.x - u * dx, my - r.a.y - u * dy);
+}
+function _takRidgeNearest(R, e) { let best = null, bd = Infinity; for (const r of R) { const d = _takRidgeDist(e, r); if (d < bd) { bd = d; best = r; } } return best; }
+/** Alle takfot får et møne: brukerens valg beholdes, resten får forslaget. Kobling på noe som ikke er takfot, fjernes. */
+function _takRidgeFill(t, s) {
+  const R = _takRidgesOf(t, s);
+  for (const e of _takEdgesOf(t, s)) {
+    if (e.kind !== 'outline') continue;
+    const cur = e.ridge_link && R.find(r => r.id === e.ridge_link.id);
+    if (e.type !== 'eave' || !R.length) { delete e.ridge_link; continue; }
+    if (cur && e.ridge_link.prov && e.ridge_link.prov.source === 'USER_CONFIRMED') continue;
+    const n = _takRidgeNearest(R, e);
+    e.ridge_link = { id: n.id, prov: { source: 'AI_SUGGESTION', confidence: 0.5, note: 'nærmeste møne, målt fra kantens midtpunkt' } };
+  }
+}
+/** Etter hver endring av kanter og møner. Porten holder rene 205-forslag uten koblinger, slik de alltid har vært lagret. */
+function _takRidgeFillAll(t) {
+  for (const s of (t && t.surfaces) || []) {
+    const E = _takEdgesOf(t, s);
+    if (E.some(e => e.ridge_link) || E.some(e => e.type === 'ridge' && e.prov && e.prov.source === 'USER_DRAWN')) _takRidgeFill(t, s);
+  }
+}
+/** Mønet takfoten heller opp mot, til VISNING: det lagrede, og på et 205-forslag uten koblinger det nærmeste. */
+function _takRidgeLinkOf(t, s, e) {
+  const R = _takRidgesOf(t, s);
+  if (e.ridge_link) return R.find(r => r.id === e.ridge_link.id) || null;
+  return _takEdgesOf(t, s).some(x => x.ridge_link) ? null : _takRidgeNearest(R, e);
+}
+function _takRidgeMissing(t, s) { return _takEdgesOf(t, s).filter(e => e.kind === 'outline' && e.type === 'eave' && !_takRidgeLinkOf(t, s, e)); }
+/** Navnet brukeren ser i tegningen: rennestrekket på kanten, ellers kantens eget. */
+function _takEdgeName(t, e) { const g = _takFeats(t, 'GUTTER').find(x => x.on_edge === e.id); return g ? g.id : e.id; }
+function _takRidgeStdHeight(s) {
+  const h = s.heights && s.heights.ridge_m;
+  return { value: h ? h.value : null, height_ref: (h && h.height_ref) || 'terreng', prov: h && h.prov ? { ...h.prov, from: 'ridge_m' } : null };
+}
+function _takRidgeHeightOf(s, r) { return r.height_m || _takRidgeStdHeight(s); }
+/** Hele linja ligger inne i omrisset (på omrisslinja teller som inne). */
+function _takRidgeInside(P, a, b) {
+  const paaKant = p => P.some((q, i) => {
+    const r = P[(i + 1) % P.length], dx = r.x - q.x, dy = r.y - q.y, L2 = dx * dx + dy * dy;
+    const u = L2 ? Math.max(0, Math.min(1, ((p.x - q.x) * dx + (p.y - q.y) * dy) / L2)) : 0;
+    return Math.hypot(p.x - q.x - u * dx, p.y - q.y - u * dy) < 1;
+  });
+  const n = Math.max(8, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 5));
+  for (let i = 0; i <= n; i++) { const p = { x: a.x + (b.x - a.x) * i / n, y: a.y + (b.y - a.y) * i / n }; if (!paaKant(p) && !_takInPoly(P, p)) return false; }
+  return true;
+}
+function _takAddRidge(fid, a, b) {
+  const t = _takEdgeMut(fid), s = _takSurface(fid);
+  if (!t || !s) return null;
+  if (!s.roof_type || s.roof_type.value !== 'pitched') { _showToast && _showToast('Møne finnes bare på skråtak. Velg taktype først.', 'warn'); return null; }
+  if (Math.hypot(b.x - a.x, b.y - a.y) < 10) { _showToast && _showToast('Mønet er for kort. Klikk den andre enden.', 'info'); return null; }
+  if (!_takRidgeInside(_takRing(s.footprint && s.footprint.world), a, b)) { _showToast && _showToast('Mønet må ligge inne i omrisset.', 'warn'); return null; }
+  pushUndo();
+  if (!_takEdgesOf(t, s).length) _takApplySuggestion(t, s);   // gamle 204-tak uten kanter
+  const r = { id: _takRidgeNextId(t), kind: 'line', a: { x: a.x, y: a.y }, b: { x: b.x, y: b.y }, type: 'ridge', surface: s.id, planes: [],
+              prov: { source: 'USER_DRAWN', confidence: 1, note: 'tegnet for hånd' }, height_m: _takRidgeStdHeight(s) };
+  t.edges.push(r);
+  _takRidgeSel = { fid, id: r.id };   // nettopp tegnet = valgt: koblingen vises med en gang
+  _takEdgeDone(t);
+  return r;
+}
+/** Tomt felt = tilbake til takflatens mønehøyde. */
+function _takSetRidgeHeight(fid, id, str) {
+  const t = _takEdgeMut(fid), s = _takSurface(fid);
+  if (!t || !s) { renderSidebar(); return false; }
+  const r = _takRidgesOf(t, s).find(e => e.id === id); if (!r) return false;
+  if (String(str == null ? '' : str).trim() === '') { pushUndo(); _takRidgeFill(t, s); r.height_m = _takRidgeStdHeight(s); _takEdgeDone(t); return true; }
+  const v = _takParse(str);
+  if (v == null || v < 0 || v > 200) { _showToast && _showToast('Skriv en høyde i meter, f.eks. 8,2', 'warn'); renderSidebar(); return false; }
+  const old = _takRidgeHeightOf(s, r), drawn = _takIsDrawn(t), src = drawn ? 'USER_DRAWN' : 'USER_CONFIRMED';
+  if (old.value != null && Math.abs(old.value - v) < 1e-9 && old.prov && old.prov.source === src && !old.prov.from) return false;
+  pushUndo();
+  _takRidgeFill(t, s);   // en høyde per møne kan bare leses gjennom koblingene
+  r.height_m = { value: v, height_ref: old.height_ref,
+    prov: drawn ? { source: 'USER_DRAWN', confidence: 1, note: 'oppgitt av bruker — ikke målt' }
+                : { source: 'USER_CONFIRMED', confidence: 1, note: old.value != null ? `rettet fra ${_takNum(old.value)}` : 'satt av bruker' } };
+  _takEdgeDone(t);
+  return true;
+}
+function _takLinkEave(fid, edgeId, ridgeId) {
+  const t = _takEdgeMut(fid), s = _takSurface(fid);
+  if (!t || !s) return false;
+  const e = _takEdgesOf(t, s).find(x => x.id === edgeId), r = _takRidgesOf(t, s).find(x => x.id === ridgeId);
+  if (!e || e.kind !== 'outline' || e.type !== 'eave' || !r) return false;
+  if (e.ridge_link && e.ridge_link.id === ridgeId && e.ridge_link.prov && e.ridge_link.prov.source === 'USER_CONFIRMED') return false;
+  pushUndo();
+  _takRidgeFill(t, s);   // de andre takfotene får forslaget, ellers står de plutselig uten møne
+  const old = e.ridge_link && e.ridge_link.id;
+  e.ridge_link = { id: ridgeId, prov: { source: 'USER_CONFIRMED', confidence: 1, note: old === ridgeId ? 'bekreftet forslag' : 'rettet fra ' + (old || 'ingen') } };
+  _takEdgeDone(t);
+  return true;
+}
+/** Har formen et innvendig hjørne? Hjørner på rett linje teller ikke. */
+function _takHasInnerCorner(P) {
+  let A = 0; const n = P.length;
+  for (let i = 0; i < n; i++) { const p = P[i], q = P[(i + 1) % n]; A += p.x * q.y - q.x * p.y; }
+  return P.some((q, i) => {
+    const p = P[(i - 1 + n) % n], r = P[(i + 1) % n], kr = (q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x);
+    return Math.abs(kr) > 1 && Math.sign(kr) !== Math.sign(A);
+  });
+}
+function _takRidgeSelected(fid) {
+  if (!_takRidgeSel || _takRidgeSel.fid !== fid) return null;
+  const t = _takOf(fid);
+  return (t && (t.edges || []).find(e => e.id === _takRidgeSel.id && e.type === 'ridge')) || null;
+}
+function _takRidgeSelect(fid, id) { _takRidgeSel = id ? { fid, id } : null; renderSidebar(); render(); }
+/** Endene snappes til det som allerede er tegnet: møneender først (to møner skal møtes eksakt), så hjørner, kantmidter og mønelinjer. */
+function _takRidgeSnap(fid, w) {
+  const E = _takEdgesOf(_takOf(fid)), q0 = w2s(w.x, w.y);
+  const narmest = L => { let b = null, bd = TAK_SNAP_PX; for (const p of L) { const q = w2s(p.x, p.y), d = Math.hypot(q.x - q0.x, q.y - q0.y); if (d < bd) { bd = d; b = { x: p.x, y: p.y }; } } return b; };
+  const linjer = E.filter(e => e.kind === 'line' && e.type === 'ridge'), kanter = E.filter(e => e.kind === 'outline');
+  const paaLinje = linjer.map(r => { const dx = r.b.x - r.a.x, dy = r.b.y - r.a.y, L2 = dx * dx + dy * dy, u = L2 ? Math.max(0, Math.min(1, ((w.x - r.a.x) * dx + (w.y - r.a.y) * dy) / L2)) : 0; return { x: r.a.x + u * dx, y: r.a.y + u * dy }; });
+  return narmest(linjer.flatMap(e => [e.a, e.b])) || narmest(kanter.flatMap(e => [e.a, e.b]))
+    || narmest(kanter.map(e => ({ x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 }))) || narmest(paaLinje)
+    || (_geoSnap && _geoSnap(w)) || w;
+}
+/** Klikk på en takfot mens et møne er valgt: kanten bytter til det mønet. Står foran renne-valget, for renna ligger på takfoten. */
+function _takRidgeLinkMouseDown(e) {
+  if (!_takRidgeSel || e.button !== 0) return false;
+  const fid = _takEdgeActiveFid();
+  if (fid == null || fid !== _takRidgeSel.fid || S.ui.readOnly || S.ui.present || S.ui.kundeMode || !_takRidgeSelected(fid)) return false;
+  const { x, y } = _evToCanvas(e), hit = _takHitEdge(fid, x, y);
+  if (!hit || hit.kind !== 'outline' || hit.type !== 'eave') return false;
+  _takEdgePending = null;
+  _takLinkEave(fid, hit.id, _takRidgeSel.id);
+  e.preventDefault && e.preventDefault();
+  return true;
+}
+function _takRidgeKey(e) {
+  if (e.key !== 'Escape' || document.getElementById('shortcuts-overlay')) return false;
+  e.preventDefault();
+  _takRidgeSelect(_takRidgeSel.fid, null);
+  return true;
+}
+/** «Møner»-blokken i kant-kortet: høyde per møne, hvilke takfot som heller mot det, og hva som mangler. */
+function _takRidgeCardHtml(fid, t, s) {
+  if (s.roof_type.value !== 'pitched') return '';
+  const R = _takRidgesOf(t, s), sel = _takRidgeSelected(fid), E = _takEdgesOf(t, s);
+  const dim = x => `<span style="color:var(--dim)">${x}</span>`;
+  const warn = x => `<div style="color:var(--warn,#d97706);font-size:11px;margin-top:2px">⚠ ${x}</div>`;
+  const ev = s.heights && s.heights.eave_m && s.heights.eave_m.value;
+  let h = `<div class="tak-ridge-card" style="margin-top:6px;border-top:1px dashed var(--border);padding-top:4px"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700">Møner</span>${_takBtn(`_takFeatStart(${fid},'ridge')`, '+ Møne')}</div>`;
+  if (!R.length) h += `<div style="font-size:11px">${dim('Ingen møne er tegnet. Uten møne kan ikke taket reises.')}</div>`;
+  for (const r of R) {
+    const m = _takRidgeHeightOf(s, r), on = sel && sel.id === r.id;
+    const koblet = E.filter(e => e.kind === 'outline' && e.type === 'eave' && _takRidgeLinkOf(t, s, e) === r).map(e => _takEdgeName(t, e));
+    const std = !m.prov || m.prov.from;
+    h += `<div class="tak-ridge-row" data-tak-ridge="${r.id}" style="margin-top:3px;padding:2px 4px;border-radius:5px;${on ? 'background:rgba(234,179,8,0.18)' : ''}">
+      <div style="display:flex;align-items:center;gap:5px"><span style="cursor:pointer;flex:1" onclick="_takRidgeSelect(${fid},${on ? 'null' : `'${r.id}'`})" title="Velg mønet og se hvilke takfot som heller mot det"><b style="color:#a16207">${r.id}</b> ${dim('· ' + _takNum(_takEdgeLenM(r), 2) + ' m')}</span>
+      <input type="text" inputmode="decimal" id="tak-ridge-h-${r.id}" value="${_takNum(m.value)}" placeholder="—" onchange="_takSetRidgeHeight(${fid},'${r.id}',this.value)" onkeydown="if(event.key==='Enter')this.blur()" style="width:52px;padding:1px 4px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)"><span>m</span>
+      ${r.kind === 'line' ? `<span style="cursor:pointer;color:var(--dim)" title="Fjern mønet" onclick="_takRemoveEdgeLine(${fid},'${r.id}')">✕</span>` : ''}</div>
+      <div style="font-size:11px">${dim((TAK_HEIGHT_REF_TXT[m.height_ref] || '') + (std ? ' · som takflaten' : ''))}${koblet.length ? ' · ' + dim('takfot: ' + koblet.join(', ')) : ''}</div>
+      ${m.value != null && ev != null && !(m.value > ev) ? warn('Mønet ligger ikke over gesimsen.') : ''}</div>`;
+  }
+  if (sel) h += `<div style="font-size:11px;margin-top:2px">${dim(`Takfot som lyser, heller opp mot ${sel.id}. Klikk en takfot for å bytte den til dette mønet.`)}</div>`;
+  const miss = _takRidgeMissing(t, s);
+  if (miss.length) h += `<div class="tak-ridge-miss">${warn(`${miss.map(e => _takEdgeName(t, e)).join(', ')} har ingen møne — takflaten kan ikke reises.`)}</div>`;
+  // 220 D: et hint, ikke et forslag. Ingenting tegnes, og appen gjetter ikke hvor gradrenna går.
+  if (R.length >= 2 && _takHasInnerCorner(_takRing(s.footprint && s.footprint.world))) h += `<div class="tak-ridge-hint" style="font-size:11px;margin-top:2px">${dim('Et innvendig hjørne har som regel en gradrenne. Tegn den med + Gradrenne.')}</div>`;
+  return h + '</div>';
 }
 
 // ═══ 206 · RENNER OG NEDLØP — rennestrekk med delstrekk, nedløp over/under bakken, gradrenne ═════
@@ -83043,6 +83239,7 @@ function _takFeatFollowHeights(t, s) {
   // z følger høyden den kom fra (`from`) — et rennestrekk har ingen egen høyde å rette, så det følger alltid gesimsen.
   for (const g of _takFeats(t, 'GUTTER')) if (!g.z_prov || g.z_prov.from) { g.geometry.pts.forEach(p => { p.z = eave; }); g.z_prov = ev && ev.prov ? { ...ev.prov, from: 'eave_m' } : null; }
   for (const d of _takFeats(t, 'DOWNSPOUT')) if (d.above_ground_m && d.above_ground_m.prov && d.above_ground_m.prov.source === 'ESTIMATE' && d.above_ground_m.prov.from === 'eave_m') d.above_ground_m.value = eave;
+  for (const e of t.edges || []) if (e.surface === s.id && e.height_m && (!e.height_m.prov || e.height_m.prov.from)) e.height_m = _takRidgeStdHeight(s);   // 220: mønet følger til det er rettet
   for (const v of _takFeats(t, 'VALLEY_GUTTER')) {
     const zp = v.z_prov || [];
     if (!zp[0] || zp[0].from) { v.geometry.pts[0].z = rv ? rv.value : null; zp[0] = rv && rv.prov ? { ...rv.prov, from: 'ridge_m' } : null; }
@@ -83246,6 +83443,7 @@ function _takFeatStart(fid, kind) {
                 guard: 'Klikk en takfot (grønn) · «Fra–til» i panelet for del av kanten · Esc avslutter',   // 215
                 downspout: 'Klikk på et rennestrekk for å sette et nedløp · Esc avslutter',
                 valley: 'Klikk toppen av gradrenna, så bunnen · Esc avslutter',
+                ridge: 'Klikk den ene enden av mønet, så den andre · Esc avslutter',                        // 220
                 skylight: 'Klikk på taket for å plassere et takvindu · Esc avslutter',
                 obstacle: 'Klikk på taket eller på et rennestrekk for å plassere en hindring · Esc avslutter',
                 start: 'Klikk på et nedløp (start nede i nedløpet) eller på et rennestrekk · Esc avslutter',
@@ -83329,6 +83527,12 @@ function _takFeatMouseDown(e) {
     _takAddValley(F.fid, top, p);
     return true;
   }
+  if (F.kind === 'ridge') {   // 220: går galt det andre klikket, står starten, så brukeren kan klikke på nytt
+    const p = _takRidgeSnap(F.fid, w);
+    if (!F.pts.length) { F.pts = [{ x: p.x, y: p.y }]; renderSidebar(); render(); return true; }
+    if (_takAddRidge(F.fid, F.pts[0], p) && _takFeat === F) { F.pts = []; renderSidebar(); render(); }
+    return true;
+  }
   if (F.kind === 'skylight' || F.kind === 'obstacle' || F.kind === 'start' || F.kind === 'like') return _takObjMouseDown(F, w, sx, sy);   // 209
   if (TAK_FLAT_TOOLS.includes(F.kind)) return _takFlatToolMouseDown(F, w, sx, sy);   // 212: sluk, gradrenne, varmefelt
   return false;
@@ -83340,7 +83544,7 @@ function _takFeatMouseMove(e) {
   else if (F.kind === 'downspout') { const h = _takHitGutter(F.fid, w, sx, sy); F.hover = h ? { gutter: h.g.id, s: h.s } : null; }
   else if (F.kind === 'skylight' || F.kind === 'obstacle' || F.kind === 'start' || F.kind === 'like') F.hover = _takObjHover(F, w, sx, sy);   // 209
   else if (TAK_FLAT_TOOLS.includes(F.kind)) F.hover = _takFlatToolHover(F, w, sx, sy);   // 212
-  else F.hover = { pt: _takValleySnap(F.fid, w) };
+  else F.hover = { pt: F.kind === 'ridge' ? _takRidgeSnap(F.fid, w) : _takValleySnap(F.fid, w) };
   markDirty();
 }
 function _takFeatKey(e) {
@@ -83504,6 +83708,12 @@ function _takDrawFeatures(fid, t) {
         const pl = Math.hypot(F.hover.pt.x - F.pts[0].x, F.hover.pt.y - F.pts[0].y) / 100;   // i plan — 3D-lengden kommer når den er lagt
         if (pl > 0.05) _takLabel(`${_takNum(pl)} m i plan · ×${TAK_RUNS_DEFAULT.VALLEY_GUTTER}`, q.x + 16, q.y - 14, TAK_FEAT_COLOR.VALLEY_GUTTER, false); }
       ctx.beginPath(); ctx.arc(q.x, q.y, 5, 0, Math.PI * 2); ctx.fillStyle = TAK_FEAT_COLOR.VALLEY_GUTTER; ctx.fill();
+    } else if (F.kind === 'ridge' && F.hover) {   // 220
+      const q = w2s(F.hover.pt.x, F.hover.pt.y), c = TAK_EDGE_TYPES.ridge.color;
+      if (F.pts.length) { const a = w2s(F.pts[0].x, F.pts[0].y); ctx.setLineDash([6, 4]); line([a, q], c, 4); ctx.setLineDash([]);
+        const pl = Math.hypot(F.hover.pt.x - F.pts[0].x, F.hover.pt.y - F.pts[0].y) / 100;
+        if (pl > 0.05) _takLabel(_takNum(pl, 2) + ' m', q.x + 16, q.y - 14, '#a16207', true); }
+      ctx.beginPath(); ctx.arc(q.x, q.y, 5, 0, Math.PI * 2); ctx.fillStyle = c; ctx.fill();
     }
   }
   ctx.restore();
@@ -83569,17 +83779,18 @@ function _takFeaturesCardHtml(fid, t, s, only) {
   const flat212 = _takIsFlat(s);   // 212: på flatt tak hører gradrenna til flatt-tak-kortet (bredde × W/m², ikke løp × lengde)
   if (!v3) { /* 214: verktøyene hører til steg 3 */ }
   else if (F && (TAK_OBJ_TOOLS.includes(F.kind) || TAK_FLAT_TOOLS.includes(F.kind))) {
-    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk')}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp') : ''}${flat212 ? '' : _takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne') + _takBtn(`_takFeatStart(${fid},'guard')`, '+ Snøfanger')}</div>`;   // 209: verktøyboksen står under «Takvindu og hindringer»
+    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk')}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp') : ''}${flat212 ? '' : _takBtn(`_takFeatStart(${fid},'ridge')`, '+ Møne') + _takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne') + _takBtn(`_takFeatStart(${fid},'guard')`, '+ Snøfanger')}</div>`;   // 209: verktøyboksen står under «Takvindu og hindringer»
   } else if (F) {
     const txt = { gutter: F.whole ? 'Klikk en takfot — hele kanten blir ett strekk.' : (F.edgeId ? 'Klikk sluttpunktet på samme kant.' : 'Klikk startpunktet på en takfot.'),
                   guard: F.whole ? 'Klikk en takfot — snøfangeren legges langs hele kanten.' : (F.edgeId ? 'Klikk sluttpunktet på samme kant.' : 'Klikk startpunktet på en takfot.'),   // 215
-                  downspout: 'Klikk på et rennestrekk.', valley: F.pts.length ? 'Klikk bunnen av gradrenna.' : 'Klikk toppen av gradrenna.' }[F.kind];
+                  downspout: 'Klikk på et rennestrekk.', valley: F.pts.length ? 'Klikk bunnen av gradrenna.' : 'Klikk toppen av gradrenna.',
+                  ridge: F.pts.length ? 'Klikk den andre enden av mønet.' : 'Klikk den ene enden av mønet. Den snapper til hjørner, kantmidter og andre møner.' }[F.kind];
     h += `<div class="tak-feat-mode" style="background:var(--bg2,rgba(8,145,178,0.08));border-radius:6px;padding:4px 6px;margin:3px 0">
-      <div style="font-weight:600">${{ gutter: 'Legger rennestrekk', guard: 'Legger snøfanger', downspout: 'Plasserer nedløp', valley: 'Tegner gradrenne' }[F.kind]}</div><div>${txt}</div>
+      <div style="font-weight:600">${{ gutter: 'Legger rennestrekk', guard: 'Legger snøfanger', downspout: 'Plasserer nedløp', valley: 'Tegner gradrenne', ridge: 'Tegner møne' }[F.kind]}</div><div>${txt}</div>
       ${F.kind === 'gutter' || F.kind === 'guard' ? `<div>${_takBtn('_takFeatWhole(true)', 'Hele kanten', F.whole)}${_takBtn('_takFeatWhole(false)', 'Fra–til', !F.whole)}</div>` : ''}
       <div>${_takBtn('_takFeatStop()', 'Ferdig', true)}</div></div>`;
   } else {
-    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk', anyEave && !G.length)}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp', !D.length) : ''}${flat212 ? '' : _takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne') + _takBtn(`_takFeatStart(${fid},'guard')`, '+ Snøfanger')}</div>`;
+    h += `<div>${_takBtn(`_takFeatStart(${fid},'gutter')`, '+ Rennestrekk', anyEave && !G.length)}${G.length ? _takBtn(`_takFeatStart(${fid},'downspout')`, '+ Nedløp', !D.length) : ''}${flat212 ? '' : _takBtn(`_takFeatStart(${fid},'ridge')`, '+ Møne') + _takBtn(`_takFeatStart(${fid},'valley')`, '+ Gradrenne') + _takBtn(`_takFeatStart(${fid},'guard')`, '+ Snøfanger')}</div>`;
     if (!anyEave) h += warn(s.roof_type.value === 'flat' ? 'Ingen kant har utvendig renne. Merk en kant som takfot for å legge et rennestrekk.' : 'Ingen kant er merket takfot ennå.');
   }
   for (const g of G) {
@@ -84226,8 +84437,10 @@ function _takPitch(t, s, pt) {
   if (rt === 'flat') return { deg: 0, src: 'flat', note: 'flatt tak' };
   const pv = s && s.pitch_deg;
   if (pv && pv.value != null && isFinite(pv.value)) return { deg: pv.value, src: 'user', note: 'satt av bruker' };
-  const H = (s && s.heights) || {}, ev = H.eave_m && H.eave_m.value, rv = H.ridge_m && H.ridge_m.value;
-  const ridge = _takEdgesOf(t, s).find(e => e.type === 'ridge');
+  const H = (s && s.heights) || {}, ev = H.eave_m && H.eave_m.value;
+  // 220: flere møner → det nærmeste, med sin egen høyde. Med ett møne og uten egen høyde er regnestykket det samme som før.
+  const R220 = _takRidgesOf(t, s), ridge = pt && R220.length > 1 ? _takRidgeNearest(R220, { a: pt, b: pt }) : R220[0];
+  const rv = ridge && ridge.height_m && ridge.height_m.value != null ? ridge.height_m.value : H.ridge_m && H.ridge_m.value;
   if (ev != null && rv != null && rv > ev && ridge && pt) {
     const dx = ridge.b.x - ridge.a.x, dy = ridge.b.y - ridge.a.y, L = Math.hypot(dx, dy);
     const run = L ? Math.abs((pt.x - ridge.a.x) * dy - (pt.y - ridge.a.y) * dx) / L / 100 : 0;
@@ -85795,7 +86008,7 @@ async function _takRegressionTest204() {
     check('C: kortet: «Omriss fra Kartverket»', 'ja', kort.includes('Omriss fra Kartverket'), '');
     check('C: kortet: gesims 4,3 ±0,5 (målt i høydedata)', 'ja', kort.includes('value="4,3"') && kort.includes('±0,5') && kort.includes('(målt i høydedata)'), '');
     check('C: kortet: møne merket som anslag', 'ja', kort.includes('value="7,5"') && kort.includes('(anslag — kan treffe pipe eller tre)'), '');
-    check('C: kortet: referansepunkt ved hver høyde', '2× over terreng + moh.', (kort.match(/over terreng/g) || []).length === 2 && kort.includes('moh.'), '');
+    check('C: kortet: referansepunkt ved hver høyde', '2× over terreng + moh.', (kort.split('tak-ridge-card')[0].match(/over terreng/g) || []).length === 2 && kort.includes('moh.'), '');   // 220: møneradene har sitt eget referansepunkt
     check('C: kortet: Skråtak (antatt)', 'ja', kort.includes('Skråtak') && kort.includes('(antatt)'), '');
     check('C: kortet: terreng 182,4', 'ja', kort.includes('value="182,4"'), '');
     check('C: sidepanelet viser kortet', 'ja', document.getElementById('sb-tree').innerHTML.includes('tak-card'), '');
@@ -88257,6 +88470,168 @@ async function _takRegressionTest218() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_takRegressionTest218: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+
+// 220: tegn møne med ekte hendelser — snapping, delt punkt, koblingen i lerretet, retting med klikk, melding, hint,
+// lagring, og at musa utenfor tak-modulen er uendret. Geometrien i 3D testes i docs/3d/test-3d.mjs.
+async function _takRegressionTest220() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '220: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, ro: S.ui.readOnly, part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId, tool: S.ui.toolMode };
+  const app = document.getElementById('app'), appD = app.style.display;
+  const L = [[0,0],[1400,0],[1400,700],[900,700],[900,1200],[200,1200],[200,900],[0,900]].map(([x, y]) => ({ x, y }));
+  const R4 = [[0,0],[1200,0],[1200,800],[0,800]].map(([x, y]) => ({ x, y }));
+  const typer = { k1: 'eave', k2: 'rake', k3: 'eave', k4: 'eave', k5: 'rake', k6: 'eave', k7: 'eave', k8: 'eave' };
+  const menu = document.getElementById('ctx-menu');
+  try {
+    const tekster = [];
+    window._showToast = m => tekster.push(m); window._scheduleAutoSave = () => {};
+    app.style.display = 'flex'; resizeCanvas();
+    _resetProjectState(); addPart('roof');
+    const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+    S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null; S.ui.toolMode = 'arrow';
+    const nytt = (pts, rt) => { _takRidgeSel = null; if (_takFeat) _takFeatStop(); S.tak = { [fid]: _takManual(pts) }; _takSetRoofType(fid, rt || 'pitched'); _takStepOpen[fid] = 3; fitAll(); render(); return S.tak[fid]; };
+    const nyL = () => { const t = nytt(L); _takSetHeight(fid, 'eave_m', '5,4'); _takSetHeight(fid, 'ridge_m', '8,2'); for (const [id, ty] of Object.entries(typer)) _takSetEdgeType(fid, id, ty); return t; };
+    const mus = (type, w, o, px) => { const s = w2s(w.x, w.y), r = canvas.getBoundingClientRect(), k = r.width / canvas.width;
+      canvas.dispatchEvent(new MouseEvent(type, { clientX: r.left + (s.x + (px ? px[0] : 0)) * k, clientY: r.top + (s.y + (px ? px[1] : 0)) * k, bubbles: true, cancelable: true, button: 0, buttons: type === 'mousemove' || type === 'mousedown' ? 1 : 0, ...(o || {}) })); };
+    const klikk = (w, px) => { mus('mousedown', w, null, px); mus('mouseup', w, null, px); mus('click', w, null, px); };
+    const kant = (t, id) => t.edges.find(e => e.id === id);
+    const mer = () => S.tak[fid];
+    const panel = () => _takEdgesCardHtml(fid, S.tak[fid], _takSurface(fid));
+    const tegnL = () => {
+      _takFeatStart(fid, 'ridge');
+      klikk({ x: 1400, y: 350 }, [-5, 3]); klikk({ x: 550, y: 350 });
+      klikk({ x: 550, y: 1200 }, [4, -6]); klikk({ x: 550, y: 350 }, [6, 4]);
+      _takFeatStop();
+    };
+
+    // ── Knappen ──
+    let t = nyL();
+    check('Knapp: «+ Møne» i verktøylinja i steg 3, ved siden av gradrenne', 'står', _takToolbarHtml(fid).includes(`_takFeatStart(${fid},'ridge')`) && _takToolbarHtml(fid).indexOf('+ Møne') < _takToolbarHtml(fid).indexOf('+ Gradrenne'), '');
+    check('Knapp: også i panelet', 'står', _takFeaturesCardHtml(fid, t, _takSurface(fid), 3).includes(`_takFeatStart(${fid},'ridge')`), '');
+
+    // ── Tegne og snappe ──
+    tegnL(); t = mer();
+    const lin = t.edges.filter(e => e.kind === 'line');
+    check('Tegne: to møner, USER_DRAWN', '2', lin.length === 2 && lin.every(e => e.prov.source === 'USER_DRAWN' && e.type === 'ridge'), lin.length);
+    check('Snapp: kantmidten på k2 treffes eksakt (0 mm)', '1400,350', lin[0] && lin[0].a.x === 1400 && lin[0].a.y === 350, lin[0] && JSON.stringify(lin[0].a));
+    check('Snapp: kantmidten på k5 treffes eksakt (0 mm)', '550,1200', lin[1] && lin[1].a.x === 550 && lin[1].a.y === 1200, lin[1] && JSON.stringify(lin[1].a));
+    check('Snapp: to møner deler punkt, eksakt', 'likt', lin[1] && lin[1].b.x === lin[0].b.x && lin[1].b.y === lin[0].b.y, lin[1] && JSON.stringify([lin[0].b, lin[1].b]));
+    check('Høyde: standard er takflatens', '8.2', lin[0] && lin[0].height_m.value === 8.2 && lin[0].height_m.prov.from === 'ridge_m', lin[0] && JSON.stringify(lin[0].height_m));
+    check('Nettopp tegnet = valgt', 'm2', _takRidgeSel && _takRidgeSel.id === 'm2', JSON.stringify(_takRidgeSel));
+    _takFeatStart(fid, 'ridge'); klikk({ x: 1400, y: 0 }, [-5, 5]); klikk({ x: 1000, y: 200 }); _takFeatStop();
+    const m3 = kant(mer(), 'm3');
+    check('Snapp: hjørnet treffes eksakt (0 mm)', '1400,0', m3 && m3.a.x === 1400 && m3.a.y === 0, m3 && JSON.stringify(m3.a));
+    _takRemoveEdgeLine(fid, 'm3');
+    const n0 = mer().edges.length;
+    _takFeatStart(fid, 'ridge'); klikk({ x: 1200, y: 500 }); klikk({ x: 600, y: 1100 });
+    check('Utenfor omrisset: nektes med melding, og starten står', 'nektet', mer().edges.length === n0 && _takFeat.pts.length === 1 && tekster[tekster.length - 1] === 'Mønet må ligge inne i omrisset.', tekster[tekster.length - 1]);
+    _takFeatStop();
+
+    // ── Koblingen vises i tegningen ──
+    t = mer();
+    const halo = { k1: { x: 700, y: 0 }, k3: { x: 1150, y: 700 }, k4: { x: 900, y: 950 }, k8: { x: 0, y: 450 }, k2: { x: 1400, y: 150 } };
+    const px6 = (id, n) => { render(); const s = w2s(halo[id].x, halo[id].y), d = ctx.getImageData(Math.round(s.x + n[0] * 6), Math.round(s.y + n[1] * 6), 1, 1).data; return d[3] > 100 && d[0] > 180 && d[1] > 130 && d[2] < 100; };   // mønets farge #eab308, halvgjennomsiktig
+    _takRidgeSelect(fid, 'm1');
+    check('Vises: m1 valgt → k1 og k3 lyser', 'gul', px6('k1', [0, 1]) && px6('k3', [0, -1]), '');
+    check('Vises: m1 valgt → k4 og k8 lyser ikke', 'ikke gul', !px6('k4', [-1, 0]) && !px6('k8', [1, 0]), '');
+    check('Vises: gavlen k2 lyser ikke', 'ikke gul', !px6('k2', [-1, 0]), '');
+    _takRidgeSelect(fid, 'm2');
+    check('Vises: m2 valgt → k4 og k8 lyser', 'gul', px6('k4', [-1, 0]) && px6('k8', [1, 0]), '');
+    check('Vises: m2 valgt → k1 lyser ikke', 'ikke gul', !px6('k1', [0, 1]), '');
+    check('Panelet: valgt møne sier hva klikket gjør', 'tekst', panel().includes('Klikk en takfot for å bytte'), '');
+
+    // ── Rette koblingen med klikk (også der en renne ligger på kanten) ──
+    _takAddGutter(fid, 'k1');
+    _takRidgeSelect(fid, 'm2');
+    hideCtx(); _takFeatSel = null;
+    klikk({ x: 700, y: 0 });
+    t = mer();
+    check('Rette: klikk på takfot bytter møne', 'm2', kant(t, 'k1').ridge_link.id === 'm2', kant(t, 'k1').ridge_link.id);
+    check('Rette: prov blir USER_CONFIRMED', 'USER_CONFIRMED', kant(t, 'k1').ridge_link.prov.source === 'USER_CONFIRMED', JSON.stringify(kant(t, 'k1').ridge_link.prov));
+    check('Rette: ingen meny, og renna ble ikke valgt', 'ingen', menu.style.display === 'none' && !_takFeatSel, menu.style.display);
+    check('Rette: mønet er fortsatt valgt, så flere kan rettes', 'm2', _takRidgeSel && _takRidgeSel.id === 'm2', '');
+    check('Rette: det lyser straks', 'gul', px6('k1', [0, 1]), '');
+    klikk({ x: 1400, y: 150 });
+    check('Gavl med møne valgt: vanlig meny, ingen kobling', 'meny', menu.style.display !== 'none' && !kant(mer(), 'k2').ridge_link, menu.style.display);
+    hideCtx(); _takEdgeSel = null;
+    check('Klikk på annen kant slipper mønet', 'null', _takRidgeSel === null, JSON.stringify(_takRidgeSel));
+
+    // ── Velge og slippe med musa ──
+    klikk({ x: 900, y: 350 });
+    check('Klikk på mønet velger det, og menyen kommer som før', 'm1 + meny', _takRidgeSel && _takRidgeSel.id === 'm1' && menu.style.display !== 'none', JSON.stringify(_takRidgeSel));
+    hideCtx(); _takEdgeSel = null;
+    klikk({ x: 500, y: 100 });
+    check('Klikk utenfor kantene slipper mønet', 'null', _takRidgeSel === null, JSON.stringify(_takRidgeSel));
+    klikk({ x: 1150, y: 700 });
+    check('Uten valgt møne: takfot åpner menyen, koblingen urørt', 'meny', menu.style.display !== 'none' && kant(mer(), 'k3').ridge_link.id === 'm1' && kant(mer(), 'k3').ridge_link.prov.source === 'AI_SUGGESTION', menu.style.display);
+    hideCtx(); _takEdgeSel = null;
+
+    // ── Høyde i panelet ──
+    check('Høyde: feltet per møne står i panelet', '2', panel().includes('id="tak-ridge-h-m1"') && panel().includes('id="tak-ridge-h-m2"'), '');
+    _takSetRidgeHeight(fid, 'm2', '7,5');
+    check('Høyde: rettes per møne', '7.5/8.2', kant(mer(), 'm2').height_m.value === 7.5 && kant(mer(), 'm1').height_m.value === 8.2, '');
+
+    // ── Melding og hint ──
+    check('Hint: to møner + innvendig hjørne → én linje', 'står', panel().includes('Et innvendig hjørne har som regel en gradrenne. Tegn den med + Gradrenne.'), '');
+    check('Hint: tegner ingenting', '0 gradrenner', _takFeats(mer(), 'VALLEY_GUTTER').length === 0, _takFeats(mer(), 'VALLEY_GUTTER').length);
+    delete kant(mer(), 'k6').ridge_link;
+    check('Melding: takfot uten møne sier fra', 'tekst', panel().includes('k6 har ingen møne — takflaten kan ikke reises.'), '');
+    let t4 = nytt(R4); _takSetHeight(fid, 'eave_m', '5'); _takSetHeight(fid, 'ridge_m', '8');
+    check('Hint: ett møne → ingen linje', 'borte', !panel().includes('innvendig hjørne'), '');
+    _takRemoveEdgeLine(fid, 'm1');
+    _takAddRidge(fid, { x: 0, y: 300 }, { x: 1200, y: 300 }); _takAddRidge(fid, { x: 0, y: 500 }, { x: 1200, y: 500 });
+    check('Hint: to møner uten innvendig hjørne → ingen linje', 'borte', _takRidgesOf(mer()).length === 2 && !panel().includes('innvendig hjørne'), '');
+
+    // ── Rene 205-forslag lagres som før ──
+    t4 = nytt(R4);
+    _takSetEdgeType(fid, 'k1', 'eave');
+    check('205-forslag: ingen koblinger lagres', 'ingen', !t4.edges.some(e => 'ridge_link' in e) && !('height_m' in kant(t4, 'm1')), '');
+    check('205-forslag: mønet viser likevel koblingen', 'k1', _takRidgeLinkOf(t4, _takSurface(fid), kant(t4, 'k1')) === kant(t4, 'm1'), '');
+    check('205-forslag: ingen melding om manglende møne', 'ingen', !panel().includes('har ingen møne'), '');
+
+    // ── Flatt tak ──
+    nytt(R4, 'flat');
+    check('Flatt tak: ingen «+ Møne»', 'borte', !_takToolbarHtml(fid).includes(`_takFeatStart(${fid},'ridge')`), '');
+    check('Flatt tak: ingen Møner-blokk', 'borte', !panel().includes('tak-ridge-card'), '');
+
+    // ── Lagring ──
+    nyL(); tegnL();
+    _takLinkEave(fid, 'k7', 'm1'); _takSetRidgeHeight(fid, 'm2', '7,1');
+    const j = JSON.parse(JSON.stringify(_buildSaveData()));
+    _resetProjectState(); _restoreProject(j);
+    const tl = S.tak[fid];
+    check('Lagring: møne, høyde og kobling overlever', 'ok', tl && kant(tl, 'k7').ridge_link.id === 'm1' && kant(tl, 'k7').ridge_link.prov.source === 'USER_CONFIRMED' && kant(tl, 'm2').height_m.value === 7.1 && kant(tl, 'm2').prov.source === 'USER_DRAWN', '');
+    check('Lagring: valget er ikke med', 'ingen', !JSON.stringify(j).includes('_takRidgeSel'), '');
+
+    // ── Låst prosjekt ──
+    S.ui.activeFloorId = fid; _takRidgeSel = { fid, id: 'm1' };
+    S.ui.readOnly = true;
+    const pre = JSON.stringify(S.tak[fid]);
+    check('Låst: ingen kobling', 'false', _takLinkEave(fid, 'k8', 'm1') === false && JSON.stringify(S.tak[fid]) === pre, '');
+    check('Låst: nytt møne nektes', 'null', _takAddRidge(fid, { x: 100, y: 100 }, { x: 500, y: 100 }) === null && JSON.stringify(S.tak[fid]) === pre, '');
+    S.ui.readOnly = keep.ro;
+
+    // ── Utenfor tak-modulen ──
+    _takRidgeSel = { fid, id: 'm1' };
+    addPart('indoor');
+    const p2 = S.project.parts[S.project.parts.length - 1], fIn = S.floors.find(f => f.partId === p2.id).id;
+    S.ui.activePartId = p2.id; S.ui.activeFloorId = fIn;
+    let kalt = 0; const pd = { button: 0, preventDefault() { kalt++; }, clientX: 300, clientY: 300 };
+    check('Utenfor: valgt møne fra taket gjør ingenting', 'false', _takRidgeLinkMouseDown(pd) === false && kalt === 0, '');
+    check('Utenfor: taket er urørt', 'likt', JSON.stringify(S.tak[fid]) === pre, '');
+  } catch (e) {
+    check('testen kastet ikke', 'ingen feil', false, e.stack || String(e));
+  } finally {
+    _takRidgeSel = null; if (_takFeat) _takFeatStop(); hideCtx(); _takEdgeSel = null;
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; S.ui.readOnly = keep.ro; S.ui.toolMode = keep.tool;
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    app.style.display = appD; renderSidebar(); updateCtxBar(); render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest220: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
   return { ok: allOk, results };
 }
 
