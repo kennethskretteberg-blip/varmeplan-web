@@ -1310,6 +1310,8 @@ body.kunde-maal #minimap-widget{display:none !important}
 .roof-addr-row{min-height:44px;box-sizing:border-box;padding:8px 12px;cursor:pointer;display:flex;flex-direction:column;justify-content:center;gap:2px;border-top:1px solid var(--border)}
 .roof-addr-row:first-child{border-top:none}
 .roof-addr-row:hover,.roof-addr-row.hi{background:var(--surface2)}
+#_tak-addr-list{position:absolute;top:calc(100% + 10px);left:0;width:340px;max-width:70vw;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,.35);white-space:normal;z-index:5}
+#_tak-addr-list:empty{display:none}
 
 /* 110 · Trappebyggeren: flytt segmenter (dra/piler) og sett inn hvor som helst.
    Innsettingsstripa mellom radene er normalt en tynn strek; ved hover (eller mens et segment
@@ -73319,6 +73321,7 @@ function _showCycleBadge(clientX, clientY, idx, total) {
 function _hideCycleBadge() { if (_cycleBadgeEl) _cycleBadgeEl.style.display = 'none'; }
 
 canvas.addEventListener('mousedown', e=>{
+  document.getElementById('_tak-addr')?.blur();   // 216: klikk i tegningen = ut av adressefeltet (linja ville ellers gitt det fokus igjen)
   // 201: «Hent bygg» eier venstreklikket mens den står på — før alt annet, så kaskaden under aldri ser det.
   if (_geoPick && _geoPickMouseDown(e)) return;
   if (_takSectionMouseDown(e)) return;   // 210: klikk i snitt-innfeltet tilhører innfeltet (× lukker)
@@ -77678,7 +77681,9 @@ function updateCtxBar() {
     const bgGroup = _bgCtxGroupHtml();
     if (bgGroup) html = bgGroup + html;
   }
+  const takAddr = _takAddrBefore();   // 216: adressefeltet bor i linja, og linja bygges på nytt hele tiden
   bar.innerHTML = html;
+  _takAddrAfter(takAddr);
   bar.classList.toggle('show', !!html);
   _updateVfDirVisibility();
   _updateStairSettingsPanel();
@@ -81748,12 +81753,12 @@ function _takCardHtml(fid, only) {
     if (only != null && only !== 1) return '';   // 214: veiviseren sier hva som mangler
     const bg = S.bgs && S.bgs[fid], g = S.geo && S.geo[fid];
     // 211: tre veier til bygget, ett valg. 1 = adressen (standard), 2 = plantegning, 3 = frihånd.
+    const w2a = _takWay2(fid);   // 216: samme navn som toppmenyen
     const way = (nr, title, body) => `<div class="tak-way" data-way="${nr}" style="padding:5px 0 4px;${nr > 1 ? 'border-top:1px solid var(--border);margin-top:4px' : ''}">
       <div style="font-weight:700">${nr}. ${title}</div>${body}</div>`;
     let w1;
     if (!_bgIsGeo(bg)) {
-      w1 = `<div>${dim('Skriv adressen, så henter appen kart, omriss, høyder og taktype.')}</div>
-        <div style="margin-top:4px">${_takBtn(`_roofOpenDialog(${fid})`, IC('map', 14) + ' Hent kart', true)}</div>`;
+      w1 = `<div>${dim('Skriv adressen i feltet øverst, så henter appen kart, omriss, høyder og taktype.')}</div>`;   // 216: feltet står i toppmenyen, ingen knapp her
     } else {
       const cands = ((g && g.candidates) || []).filter(c => c.footprintWorld && c.footprintWorld.length >= 3);
       const rows = cands.slice(0, 6).map(c => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:2px 0">
@@ -81768,21 +81773,21 @@ function _takCardHtml(fid, only) {
     let w2;
     if (bs.kind === 'none') {
       w2 = `<div>${dim('For nybygg som ikke finnes i kartet. Last inn tegningen, sett målestokken og klikk hjørnene.')}</div>
-        <div style="margin-top:4px">${_takBtn(`setActiveBgFloor(${fid});openBgImportPanel()`, 'Last inn plantegning')}</div>`;
+        <div style="margin-top:4px">${_takBtn(w2a.on, w2a.label)}</div>`;
     } else if (!bs.ready) {
       w2 = `<div style="color:var(--warn,#d97706);font-size:11px">⚠ Målestokk mangler — uten den blir alle lengder feil. Sett den før du tegner.</div>
-        <div style="margin-top:4px">${_takBtn(`S.ui.activeFloorId=${fid};startBgCalibrate()`, 'Sett målestokk', true)}<button class="snap-chip" disabled title="Sett målestokken først" style="margin:2px 4px 2px 0;padding:3px 7px;font-size:11px;min-height:0;height:auto;opacity:.45;cursor:not-allowed">Tegn omrisset</button></div>`;
+        <div style="margin-top:4px">${_takBtn(w2a.on, w2a.label, true)}<button class="snap-chip" disabled title="Sett målestokken først" style="margin:2px 4px 2px 0;padding:3px 7px;font-size:11px;min-height:0;height:auto;opacity:.45;cursor:not-allowed">Tegn omrisset</button></div>`;
     } else {
       const sc = _takBgScale(bs.bg);
       w2 = `<div style="font-size:11px">Målestokk: ${esc(sc.txt)} ${dim('· tegningen er ' + _takNum(sc.width_m, 2) + ' m bred')}</div>
-        <div style="margin-top:4px">${_takBtn(`_takPlanStart(${fid})`, 'Tegn omrisset', true)}</div>`;
+        <div style="margin-top:4px">${_takBtn(w2a.on, w2a.label, true)}</div>`;
     }
     const w3 = `<div>${dim('Skriv lengden på hver kant, som vegg-for-vegg for rom. Trenger ingen tegning.')}</div>
-      <div style="margin-top:4px">${_takBtn(`_takFreeStart(${fid})`, 'Tegn for frihånd')}</div>`;
+      <div style="margin-top:4px">${_takBtn(`_takFreeStart(${fid})`, 'Tegn frihånd')}</div>`;
     return box(`<div style="font-weight:700;margin-bottom:2px">Hvordan finner vi bygget?</div>
       ${way(1, 'Finn bygget fra adressen', w1)}
-      ${way(2, 'Tegn over en plantegning', w2)}
-      ${way(3, 'Tegn for frihånd', w3)}
+      ${way(2, w2a.label, w2)}
+      ${way(3, 'Tegn frihånd', w3)}
       <div style="font-size:11px;margin-top:3px">${dim('Tegner du selv, finnes ingen høydedata — du oppgir gesims og velger taktype etterpå.')}</div>`);
   }
   // ── Statuskortet ──
@@ -81945,7 +81950,7 @@ function _takWizardToTop() { const w = document.querySelector('.tak-wizard'); if
 /** Linja øverst: hvor du er, og hva som er neste handling. Sier hva som mangler — sperrer ingenting. */
 function _takStepMsg(fid, n, f) {
   const pre = `Steg ${n} av 4 — `, nEdge = x => `${x} ${x === 1 ? 'kant står' : 'kanter står'} som «ikke valgt».`;
-  if (n === 1) return f.s ? pre + 'bygget er funnet. Neste: kontroller målene.' : pre + 'finn bygget. Hent det fra kartet, eller tegn det selv.';
+  if (n === 1) return f.s ? pre + 'bygget er funnet. Neste: kontroller målene.' : pre + 'finn bygget. Skriv adressen øverst, eller tegn det selv.';
   if (!f.s) return pre + 'bygget mangler. Finn det i steg 1 først.';
   if (n === 2) {
     if (!f.roofReady) return pre + 'velg taktype, og ta gjerne et kontrollmål.';
@@ -82122,6 +82127,78 @@ function _takWizardHtml(fid) {
   if (n < 4) h += `<div class="tak-step-next" style="margin:6px 10px 8px">${_takBtn(`_takStepGo(${fid},${n + 1})`, `Videre til steg ${n + 1} →`, f.done[n] && n !== 2)}</div>`;
   return h + '</div>';
 }
+/** 216: plantegnings-veien sier hva som er neste handling. Du importerer ikke en tegning du alt har. */
+function _takWay2(fid) {
+  const bs = _takBgState(fid);
+  if (bs.kind === 'none') return { label: 'Importer plantegning', on: `setActiveBgFloor(${fid});openBgImportPanel()`, title: 'Last inn tegningen, sett målestokken og klikk hjørnene' };
+  if (!bs.ready) return { label: 'Sett målestokk', on: `S.ui.activeFloorId=${fid};startBgCalibrate()`, title: 'Uten målestokk blir alle lengder feil' };
+  return { label: 'Tegn omrisset', on: `_takPlanStart(${fid})`, title: 'Klikk hjørnene på tegningen' };
+}
+// ── 216 · ADRESSEFELTET I TOPPMENYEN ──────────────────────────────────────────────────────────
+// Samme maskineri som kartdialogen (139): _roofAddrInput/_roofAddrKey/_roofAddrPick mot _kvAddrLookup.
+// Feltet eier en _roofDlg med `bar: true`, som ikke tegner noen dialog. Først når kartet skal hentes
+// slutter den å være bar-dialog (_roofFindBuildings), og da får brukeren dialogens fremdrift og «Prøv igjen».
+var _takAddrFocusFid = null;   // etasjen feltet alt har fått fokus for; nullstilles når feltet forsvinner
+function _takAddrFieldHtml(fid, f) {
+  const g = S.geo && S.geo[fid], pa = S.project && S.project.address;
+  const text = (_bgIsGeo(f.bg) && g && g.address) || (pa && pa.text) || '';   // S.geo nullstilles ikke med prosjektet, kartet gjør det
+  const done = !!f.s;   // bygget er funnet: å bytte kart under et ferdig omriss går via «Velg en annen vei»
+  return `<span class="tak-addr" style="position:relative;display:inline-flex;align-items:center;gap:5px"><b style="color:var(--accent);font-size:12px">1</b><input id="_tak-addr" class="ctxbar-inp" type="text" autocomplete="off" style="width:${f.bg ? 168 : 230}px;font-size:12px;padding:4px 8px" placeholder="Skriv inn adresse" value="${esc(text)}" data-fid="${fid}" data-empty="${!f.s && !f.bg ? 1 : 0}"${done ? ' disabled title="Bygget er funnet. Velg «Velg en annen vei» i panelet for å bytte."' : ''} oninput="_takAddrInput(${fid},this.value)" onkeydown="_takAddrKey(${fid},event)" onblur="_takAddrBlur()"><div id="_tak-addr-list" onmousedown="event.preventDefault()"></div></span>`;
+}
+/** Dialog-objektet feltet jobber mot. null når kartdialogen selv er åpen. */
+function _takAddrDlg(fid, text) {
+  if (_roofDlg && !_roofDlg.bar) return null;
+  if (!_roofDlg || _roofDlg.floorId !== fid) { _roofDlg = _roofNewDlg(fid, (text || '').trim()); _roofDlg.bar = true; }
+  return _roofDlg;
+}
+function _takAddrInput(fid, v) { if (_takAddrDlg(fid, v)) _roofAddrInput(v); }
+function _takAddrKey(fid, ev) {
+  const inp = ev.target, d = _takAddrDlg(fid, inp.value); if (!d) return;
+  if (ev.key === 'Enter' && !inp.value.trim()) { ev.preventDefault(); d.addrMsg = 'Skriv inn en adresse.'; _roofAddrRenderList(); return; }
+  // Esc uten liste: ut av feltet, så hurtigtastene virker igjen.
+  if (ev.key === 'Escape' && !d.addrHits.length && !d.addrMsg) { inp.blur(); return; }
+  _roofAddrKey(ev);
+}
+/** Lista ligger over tegningen og skal ikke bli stående. Utsatt: en ombygd linje gir blur, men fokus er tilbake straks. */
+function _takAddrBlur() {
+  setTimeout(() => {
+    const d = _roofDlg, el = document.getElementById('_tak-addr');
+    if (!d || !d.bar || (el && document.activeElement === el)) return;
+    if (d.addrTimer) { clearTimeout(d.addrTimer); d.addrTimer = null; }
+    d.addrSeq++; d.addrHits = []; d.addrHi = -1; d.addrMsg = null; d.addrSearching = false; _roofAddrRenderList();
+  }, 0);
+}
+function _takAddrReset() {
+  const el = document.getElementById('_tak-addr'); if (el) el.closest('.tak-addr').remove();
+  if (_roofDlg && _roofDlg.bar) _roofClose();
+  _takAddrFocusFid = null;
+}
+function _takAddrBefore() {
+  const el = document.getElementById('_tak-addr'); if (!el) return null;
+  return { fid: el.dataset.fid, value: el.value, edited: el.value !== el.defaultValue, focus: document.activeElement === el, a: el.selectionStart, b: el.selectionEnd };
+}
+function _takAddrAfter(was) {
+  const el = document.getElementById('_tak-addr'), d = _roofDlg;
+  if (!el) { if (d && d.bar) _roofClose(); _takAddrFocusFid = null; return; }
+  const fid = el.dataset.fid;
+  if (d && d.bar && String(d.floorId) !== fid) _roofClose();
+  if (was && was.fid === fid && !el.disabled) {
+    if (was.edited) el.value = was.value;
+    if (was.focus) { el.focus(); el.setSelectionRange(was.a, was.b); }
+    if (_roofDlg && _roofDlg.bar) _roofAddrRenderList();
+  }
+  if (el.dataset.empty === '1' && _takAddrFocusFid !== fid && _takAddrMayFocus()) {
+    el.focus(); el.select();
+    if (document.activeElement === el) _takAddrFocusFid = fid;
+  }
+}
+/** Fokus tas bare i selve tegnebildet, og aldri fra noen som skriver et annet sted. */
+function _takAddrMayFocus() {
+  for (const id of ['auth-screen', 'project-list-screen']) { const s = document.getElementById(id); if (s && getComputedStyle(s).display !== 'none') return false; }
+  if (document.getElementById('_roof-ov')) return false;
+  const ae = document.activeElement;
+  return !(ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable));
+}
 /** Verktøylinja øverst: bare det som hører til steget som står åpent. */
 function _takToolbarHtml(fid) {
   const n = _takWizardStep(fid), f = _takStepFacts(fid);
@@ -82130,7 +82207,12 @@ function _takToolbarHtml(fid) {
   const start = (kind, label) => chip(`_takFeatStart(${fid},'${kind}')`, label);
   const sep = '<span class="tc-sep"></span>';
   const stop = _takFeat ? chip('_takFeatStop()', '✓ Ferdig', 'Avslutt verktøyet (Esc)') : '';
-  if (n === 1) return lbl + chip(`_takPlanStart(${fid})`, IC('pencil', 14) + ' Tegn over plantegning', 'Klikk hjørnene på en plantegning med målestokk') + chip(`_takFreeStart(${fid})`, IC('pencil', 14) + ' Tegn for frihånd', 'Skriv lengden på hver kant (vegg-for-vegg)') + (_bgIsGeo(f.bg) ? chip(`_takDrawStart(${fid})`, IC('pencil', 14) + ' Tegn omrisset selv', 'Tegn takflatens omriss med klikk i hjørnene i kartet') : '');
+  if (n === 1) {   // 216: de tre veiene i rekkefølge. Knapp 2 sier det neste du faktisk skal gjøre.
+    const nr = k => `<b style="color:var(--accent);margin-right:4px">${k}</b>`, w2 = _takWay2(fid);
+    return lbl + _takAddrFieldHtml(fid, f)
+      + (_bgIsGeo(f.bg) ? chip(`_takDrawStart(${fid})`, nr(2) + 'Tegn omrisset selv', 'Tegn takflatens omriss med klikk i hjørnene i kartet') : chip(w2.on, nr(2) + w2.label, w2.title))
+      + chip(`_takFreeStart(${fid})`, nr(3) + 'Tegn frihånd', 'Skriv lengden på hver kant (vegg-for-vegg)');
+  }
   const map = f.bg ? sep + _takMapChipHtml(fid) : '';
   if (!f.s) return lbl + `<span style="font-size:11px;color:var(--dim);padding:0 6px">Finn bygget i steg 1 først</span>`;
   if (n === 2) return lbl + chip('_takCheckToggle()', IC('ruler', 14) + ' Kontrollmål', 'Mål en vegg du kjenner lengden på (M)') + chip(`_takToDrawing(${fid})`, 'Gjør om til tegning', 'Kartet legges bort, bygget fyller skjermen') + map;
@@ -85539,7 +85621,7 @@ async function _takRegressionTest204() {
     check('C: tak-delen får etasjen «Tak»', 'Tak', fl && fl.name === 'Tak', fl && fl.name);
     check('C: S.tak er tomt før noe er hentet', '{}', Object.keys(S.tak || {}).length === 0, JSON.stringify(S.tak));
     // 211: uten kart viser kortet tre veier (adresse, plantegning, frihånd) — «Tegn omrisset selv» står bare med kart.
-    check('C: kortet ber om kart når etasjen ikke har kart (211: + plantegning og frihånd)', 'Hent kart', _takCardHtml(fid).includes('Hent kart') && _takCardHtml(fid).includes('Tegn over en plantegning') && _takCardHtml(fid).includes('_takFreeStart(' + fid + ')'), '');
+    check('C: kortet ber om kart når etasjen ikke har kart (211: + plantegning og frihånd)', 'feltet øverst', _takCardHtml(fid).includes('feltet øverst') && _takCardHtml(fid).includes('Importer plantegning') && _takCardHtml(fid).includes('_takFreeStart(' + fid + ')'), '');
     const bg = _installTileBackground(fid, { east: E, north: N }, 'Testveien 4');
     S.bgs = { [fid]: bg };
     const fpW = ring.map(([e, n]) => _geoToWorld(bg, e, n));
@@ -86968,10 +87050,10 @@ async function _takRegressionTest211() {
     let fid = nyttTak();
     let k = _takCardHtml(fid);
     check('A: uten omriss viser kortet tre veier: adresse, plantegning, frihånd', '1 · 2 · 3',
-      k.includes('1. Finn bygget fra adressen') && k.includes('2. Tegn over en plantegning') && k.includes('3. Tegn for frihånd') &&
-      k.indexOf('1. Finn') < k.indexOf('2. Tegn') && k.indexOf('2. Tegn') < k.indexOf('3. Tegn'), '');
-    check('A: adressen er standard (første vei, primærknapp «Hent kart»)', 'Hent kart', k.includes(`_roofOpenDialog(${fid})`) && k.includes('Hent kart'), '');
-    check('A: ingen plantegning → «Last inn plantegning» (rom-modulens import)', 'openBgImportPanel', k.includes('Last inn plantegning') && k.includes('openBgImportPanel()'), '');
+      k.includes('1. Finn bygget fra adressen') && k.includes('2. Importer plantegning') && k.includes('3. Tegn frihånd') &&
+      k.indexOf('1. Finn') < k.indexOf('2. Importer') && k.indexOf('2. Importer') < k.indexOf('3. Tegn'), '');
+    check('A: adressen er standard (første vei, 216: peker på feltet øverst, ingen knapp)', 'feltet øverst', k.includes('feltet øverst') && !k.includes(`_roofOpenDialog(${fid})`) && !k.includes('Hent kart'), '');
+    check('A: ingen plantegning → «Importer plantegning» (rom-modulens import)', 'openBgImportPanel', k.includes('Importer plantegning') && k.includes('openBgImportPanel()'), '');
     check('A: plantegning uten bakgrunn kan ikke startes', 'nekter', _takPlanStart(fid) === false && !S.ui.drawMode, S.ui.drawMode);
 
     // ── B. Plantegning med kjent målestokk, ekte klikk ──
@@ -87347,10 +87429,10 @@ async function _takRegressionTest214() {
     fid = nyTak(); renderSidebar();
     check('G: statuslinja i tak: ingen R/P/L/W', 'ingen', !ROMTAST.test(hint()), hint());
     check('G: statuslinja i tak: heller ikke M når kontrollmålet er av', 'ingen M=', !/M=/.test(hint()), hint());
-    check('G: steg 1: tegnemåtene', 'ja', bar().includes('Tegn for frihånd') && !bar().includes('Kontrollmål') && !bar().includes('+ Rennestrekk'), '');
+    check('G: steg 1: tegnemåtene', 'ja', bar().includes('Tegn frihånd') && !bar().includes('Kontrollmål') && !bar().includes('+ Rennestrekk'), '');
     S.tak = { [fid]: _takManual(R) }; _takSetRoofType(fid, 'pitched');
     const gG = _takAddGutter(fid, S.tak[fid].edges.find(e => e.type === 'eave').id); _takFeatSel = null;
-    _takStepGo(fid, 2); check('G: steg 2: kontrollmål og gjør om, ingen tegnemåter', 'ja', bar().includes('Kontrollmål') && bar().includes('Gjør om til tegning') && !bar().includes('Tegn for frihånd') && !bar().includes('+ Rennestrekk'), '');
+    _takStepGo(fid, 2); check('G: steg 2: kontrollmål og gjør om, ingen tegnemåter', 'ja', bar().includes('Kontrollmål') && bar().includes('Gjør om til tegning') && !bar().includes('Tegn frihånd') && !bar().includes('+ Rennestrekk'), '');
     _takStepGo(fid, 3); check('G: steg 3: kantene og delene', 'ja', bar().includes('+ Rennestrekk') && bar().includes('+ Takvindu') && !bar().includes('Kontrollmål') && !bar().includes('Startpunkt'), '');
     check('G: statuslinja i steg 3', 'Klikk en kant', hint().includes('Klikk en kant'), hint());
     _takStepGo(fid, 4); check('G: steg 4: kabelen', 'ja', bar().includes('Startpunkt for kabel') && bar().includes('Kabel ') && !bar().includes('+ Rennestrekk'), '');
@@ -87382,6 +87464,184 @@ async function _takRegressionTest214() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_takRegressionTest214: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+
+// 216: adressefeltet i toppmenyen — rekkefølge, fokus, samme søk som kartdialogen, navnene, og at snø-modulen er uendret.
+async function _takRegressionTest216() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '216: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly, fetch: window.fetch, dlg: _roofDlg,
+                 url: window.VARMEPLAN_ROOF_URL, resolved: _roofResolved, part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId };
+  const sov = ms => new Promise(r => setTimeout(r, ms));
+  const nyTak = () => { _resetProjectState(); addPart('roof'); const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+    S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null; S.geo = {}; delete _takStepOpen[fid]; document.activeElement && document.activeElement.blur && document.activeElement.blur();
+    _takAddrFocusFid = null; updateCtxBar(); return fid; };
+  const felt = () => document.getElementById('_tak-addr'), rader = () => document.querySelectorAll('#_tak-addr-list .roof-addr-row');
+  const skriv = v => { const e = felt(); e.focus(); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); };
+  const tast = key => { const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }); felt().dispatchEvent(e); return e; };
+  const panelTekst = fid => _takCardHtml(fid, 1);
+  const barTekst = () => document.getElementById('ctxbar').innerText.replace(/\s+/g, ' ');
+  const way = (fid, nr) => { const d = document.createElement('div'); d.innerHTML = panelTekst(fid); return d.querySelector(`.tak-way[data-way="${nr}"]`); };
+  const HITS = [{ adressetekst: 'Steinliveien 1', postnummer: '1400', poststed: 'SKI', kommunenavn: 'NORDRE FOLLO', representasjonspunkt: { lat: 59.7, lon: 10.8 } },
+                { adressetekst: 'Steinliveien 1B', postnummer: '1400', poststed: 'SKI', kommunenavn: 'NORDRE FOLLO', representasjonspunkt: { lat: 59.71, lon: 10.81 } }];
+  let adresseKall = [], svar = HITS, vent = null, locateFeil = false, locateKall = 0;
+  window.fetch = async url => {
+    const u = String(url);
+    if (u.includes('ws.geonorge.no/adresser')) { adresseKall.push(u); if (vent) await vent; return new Response(JSON.stringify({ adresser: svar }), { status: 200 }); }
+    if (u.endsWith('/health')) return new Response('{"ok":true}', { status: 200 });
+    if (u.includes('/roof/locate')) { locateKall++; if (locateFeil) return new Response('{}', { status: 502 }); return new Response(JSON.stringify({ query: { point: { east: 262000, north: 6630000 } }, candidates: [] }), { status: 200 }); }
+    throw new TypeError('uventet kall i test: ' + u);
+  };
+  try {
+    window._showToast = () => {}; window._scheduleAutoSave = () => {}; window.confirm = () => true;
+    window.VARMEPLAN_ROOF_URL = 'http://roof.test'; _roofResolved = null; _roofDlg = null;
+    for (const id of ['auth-screen', 'project-list-screen']) { const s = document.getElementById(id); if (s) s.style.display = 'none'; }
+    document.getElementById('app').style.display = 'flex'; resizeCanvas();
+
+    // ── A. Toppmenyen ──
+    let fid = nyTak();
+    const barDeler = () => [...document.getElementById('ctxbar').querySelectorAll('input#_tak-addr, button.snap-chip')];
+    const d0 = barDeler();
+    check('A: tre i rekkefølge, feltet først', 'felt · 2 · 3', d0.length === 3 && d0[0].id === '_tak-addr' && d0[1].textContent.trim() === '2Importer plantegning' && d0[2].textContent.trim() === '3Tegn frihånd', d0.map(x => x.id || x.textContent).join(' | '));
+    check('A: feltet er et ekte felt med ledetekst, ikke en knapp', 'input', felt().tagName === 'INPUT' && felt().placeholder === 'Skriv inn adresse' && !felt().disabled, felt().outerHTML.slice(0, 80));
+    check('A: «1» står foran feltet', '1', barTekst().includes('1') && felt().previousElementSibling.textContent === '1', barTekst());
+
+    // ── B. Fokus ──
+    check('B: tomt tak på steg 1 → feltet har fokus', '_tak-addr', document.activeElement === felt(), document.activeElement.id || document.activeElement.tagName);
+    felt().blur(); updateCtxBar();
+    check('B: går brukeren ut av feltet, tas ikke fokus tilbake', 'ikke feltet', document.activeElement !== felt(), document.activeElement.id);
+    _takStepGo(fid, 2); check('B: steg 2 har ikke feltet', 'null', !felt(), '');
+    _takStepGo(fid, 1); check('B: tilbake til steg 1 → fokus igjen', '_tak-addr', document.activeElement === felt(), document.activeElement.id);
+    felt().blur(); _takAddrFocusFid = null;
+    const annet = document.createElement('input'); document.body.appendChild(annet); annet.focus(); updateCtxBar();
+    check('B: stjeler ikke fokus fra et annet felt', 'annet', document.activeElement === annet, document.activeElement.id); annet.remove();
+
+    // ── C. Feltet overlever at linja bygges på nytt ──
+    fid = nyTak(); adresseKall = [];
+    skriv('Stein'); felt().setSelectionRange(2, 2); updateCtxBar();
+    check('C: tekst, fokus og markør står etter ny linje', 'Stein@2', felt().value === 'Stein' && document.activeElement === felt() && felt().selectionStart === 2, felt().value + '@' + felt().selectionStart);
+
+    // ── D. Trefflista oppfører seg som i kartdialogen ──
+    fid = nyTak(); adresseKall = [];
+    skriv('St'); await sov(320);
+    check('D: under 3 tegn: ingen oppslag', '0', adresseKall.length === 0 && rader().length === 0, adresseKall.length);
+    skriv('Ste'); await sov(100); skriv('Stei'); await sov(100);
+    check('D: forsinkelsen: ingenting etter 100 ms', '0', adresseKall.length === 0, adresseKall.length);
+    await sov(320);
+    check('D: 250 ms etter siste tast: ett oppslag, på siste tekst', '1 · Stei*', adresseKall.length === 1 && adresseKall[0].includes('sok=Stei*'), adresseKall.join());
+    check('D: samme parametre som dialogen (8 treff)', '8', adresseKall[0].includes('treffPerSide=' + ROOF_ADDR_TREFF), adresseKall[0]);
+    check('D: lista viser treffene', '2', rader().length === 2, rader().length);
+    updateCtxBar(); check('D: lista står etter ny linje', '2', rader().length === 2, rader().length);
+    tast('ArrowDown'); check('D: pil ned markerer første', 'hi', rader()[0].classList.contains('hi'), rader()[0].className);
+    tast('ArrowDown'); check('D: pil ned markerer andre', 'hi', rader()[1].classList.contains('hi'), '');
+    tast('ArrowDown'); check('D: stopper på siste', 'hi', rader()[1].classList.contains('hi'), '');
+    tast('ArrowUp'); check('D: pil opp går tilbake', 'hi', rader()[0].classList.contains('hi'), '');
+    tast('Escape'); check('D: Esc lukker lista, feltet beholder teksten og fokus', 'tom', rader().length === 0 && felt().value === 'Stei' && document.activeElement === felt(), rader().length);
+    tast('Escape'); check('D: Esc uten liste går ut av feltet', 'ikke fokus', document.activeElement !== felt(), document.activeElement.id);
+    skriv('Steinl'); let slipp; vent = new Promise(r => { slipp = r; }); await sov(300);
+    skriv('Steinliveien'); vent = null; svar = [HITS[1]]; await sov(320);
+    check('D: nytt søk gir sin liste', '1', rader().length === 1, rader().length);
+    svar = HITS; slipp(); await sov(30);
+    check('D: svar på gammel tekst vises ikke', 'fortsatt 1', rader().length === 1, rader().length);
+    skriv('Steinlivx'); svar = []; await sov(320); tast('Enter'); await sov(30);
+    check('D: ingen treff gir samme melding som dialogen', 'melding', document.getElementById('_tak-addr-list').textContent === ROOF_ADDR_INGEN, document.getElementById('_tak-addr-list').textContent);
+    felt().blur(); await sov(10);
+    check('D: lista lukkes når feltet forlates', 'tom', document.getElementById('_tak-addr-list').textContent === '', document.getElementById('_tak-addr-list').textContent);
+    svar = HITS;
+    fid = nyTak(); felt().value = ''; tast('Enter');
+    check('D: Enter på tomt felt åpner ingen dialog', 'melding', !document.getElementById('_roof-ov') && document.getElementById('_tak-addr-list').textContent === 'Skriv inn en adresse.', document.getElementById('_tak-addr-list').textContent);
+
+    // ── E. Velge adresse henter kartet ──
+    fid = nyTak(); locateKall = 0;
+    skriv('Steinliveien 1'); await sov(320);
+    check('E: trefflista kommer', '2', rader().length === 2, rader().length);
+    tast('Enter'); await sov(30);
+    check('E: første Enter markerer første treff, som i dialogen', 'hi', rader()[0] && rader()[0].classList.contains('hi'), '');
+    tast('Enter'); for (let i = 0; i < 100 && !(S.geo && S.geo[fid]); i++) await sov(20);
+    check('E: Enter velger, karttjenesten får punktet', '1 kall', locateKall === 1, locateKall);
+    check('E: kartet er hentet på etasjen', 'geo', _bgIsGeo(S.bgs[fid]), '');
+    check('E: S.geo har adresse og punkt', 'ja', S.geo[fid] && S.geo[fid].address === 'Steinliveien 1, 1400 SKI' && S.geo[fid].addrPoint.lat === 59.7, JSON.stringify(S.geo[fid] && S.geo[fid].addrPoint));
+    check('E: ingen dialog igjen', 'null', _roofDlg === null && !document.getElementById('_roof-ov'), String(!!_roofDlg));
+    check('E: feltet viser adressen, og er fortsatt i bruk', 'adressen', felt().value === 'Steinliveien 1, 1400 SKI' && !felt().disabled, felt().value);
+    let b = barTekst();
+    check('E: med kart er knapp 2 «Tegn omrisset selv», ikke import', 'ja', b.includes('Tegn omrisset selv') && !b.includes('Importer plantegning') && b.includes('Tegn frihånd'), b);
+
+    fid = nyTak(); locateFeil = true; _roofResolved = null;
+    skriv('Steinliveien 1'); await sov(320); tast('ArrowDown'); tast('Enter');
+    for (let i = 0; i < 100 && !(_roofDlg && _roofDlg.error); i++) await sov(20);
+    check('E: feil hos karttjenesten vises i dialogen med «Prøv igjen»', 'dialog', !!document.getElementById('_roof-retry') && !_roofDlg.bar, _roofDlg && _roofDlg.error);
+    _roofClose(); locateFeil = false;
+    check('E: Avbryt lar teksten stå i feltet', 'adressen', felt().value === 'Steinliveien 1, 1400 SKI', felt().value);
+
+    // Prosjektets adresse: rett videre, som i dialogen.
+    fid = nyTak(); S.project.address = { text: 'Testveien 4, 1400 SKI', representasjonspunkt: { lat: 60.1, lon: 10.2 } }; felt().blur(); _takAddrFocusFid = null; updateCtxBar();
+    check('E: prosjektets adresse står i feltet, merket', 'ja', felt().value === 'Testveien 4, 1400 SKI' && felt().selectionEnd - felt().selectionStart === felt().value.length, felt().value);
+    adresseKall = []; locateKall = 0; tast('Enter');
+    for (let i = 0; i < 100 && !(S.geo && S.geo[fid]); i++) await sov(20);
+    check('E: prosjektets adresse: Enter henter uten oppslag', '0 · 1', adresseKall.length === 0 && locateKall === 1, adresseKall.length + ' · ' + locateKall);
+
+    // ── F. Kartdialogen er sin egen ──
+    fid = nyTak(); skriv('Stein'); _roofOpenDialog(fid);
+    check('F: kartdialogen tar over, og beholder «Hent kart»', 'Hent kart', !_roofDlg.bar && document.getElementById('_roof-ov').innerText.includes('Hent kart'), '');
+    _takAddrInput(fid, 'Annet'); check('F: toppfeltet rører ikke en åpen dialog', 'Stein ikke Annet', _roofDlg.address !== 'Annet', _roofDlg.address);
+    _roofClose();
+    fid = nyTak(); skriv('Stein'); _takStepGo(fid, 2);
+    check('F: steg 2: feltets søk er avsluttet', 'null', _roofDlg === null, String(!!_roofDlg));
+
+    // ── G. Navnene ──
+    fid = nyTak();
+    const P = panelTekst(fid); b = barTekst();
+    for (const ord of ['Tegn over plantegning', 'Tegn over en plantegning', 'Tegn for frihånd', 'Hent kart'])
+      check(`G: «${ord}» er borte fra panel og toppmeny`, 'borte', !P.includes(ord) && !b.includes(ord), '');
+    const w1 = way(fid, 1), w2 = way(fid, 2), w3 = way(fid, 3);
+    check('G: punkt 1 har ingen knapp, og peker oppover', 'ja', w1.querySelectorAll('button').length === 0 && w1.textContent.includes('Skriv adressen i feltet øverst, så henter appen kart, omriss, høyder og taktype.'), w1.textContent);
+    check('G: punkt 2 og 3 har samme navn som toppmenyen', 'ja', w2.querySelector('button').textContent.trim() === 'Importer plantegning' && w3.querySelector('button').textContent.trim() === 'Tegn frihånd', w2.querySelector('button').textContent);
+    check('G: panelets rekkefølge: adresse, plantegning, frihånd', 'ja', P.indexOf('data-way="1"') < P.indexOf('data-way="2"') && P.indexOf('data-way="2"') < P.indexOf('data-way="3"') && w2.textContent.includes('2. Importer plantegning') && w3.textContent.includes('3. Tegn frihånd'), '');
+
+    // ── H. De andre veiene virker ──
+    let filKlikk = 0; const finp = document.getElementById('bg-file-inp'), oclick = finp.click; finp.click = () => { filKlikk++; };
+    fid = nyTak(); barDeler()[1].click(); finp.click = oclick;
+    check('H: «Importer plantegning» åpner filvalget', '1', filKlikk === 1, filKlikk);
+    fid = nyTak(); const bgP = _newBgObj(); bgP.img = document.createElement('canvas'); bgP.widthCm = 1000; bgP.heightCm = 800; bgP._needsCalibration = true; S.bgs = { [fid]: bgP }; felt().blur(); _takAddrFocusFid = null; updateCtxBar();
+    check('H: tegning uten målestokk: knapp 2 sier «Sett målestokk», på begge steder', 'ja', barDeler().some(x => x.textContent.trim() === '2Sett målestokk') && way(fid, 2).querySelector('button').textContent.trim() === 'Sett målestokk', barTekst());
+    check('H: en plantegning alene gir ikke fokus', 'ikke feltet', document.activeElement !== felt(), '');
+    bgP._needsCalibration = false; updateCtxBar();
+    check('H: med målestokk: «Tegn omrisset», på begge steder', 'ja', barDeler().some(x => x.textContent.trim() === '2Tegn omrisset') && way(fid, 2).querySelector('button').textContent.trim() === 'Tegn omrisset', barTekst());
+    barDeler().find(x => x.textContent.trim() === '2Tegn omrisset').click();
+    check('H: knappen starter tegningen over plantegningen', 'polygon', S.ui.drawMode === 'polygon' && _takRoomDraw && _takRoomDraw.via === 'plan', S.ui.drawMode);
+    _takRoomDrawCancel();
+    fid = nyTak(); barDeler()[2].click();
+    check('H: «Tegn frihånd» starter vegg-for-vegg', 'wbw', S.ui.drawMode === 'wbw' && _takRoomDraw && _takRoomDraw.via === 'free', S.ui.drawMode);
+    _takRoomDrawCancel();
+
+    // ── I. Bygget er funnet ──
+    fid = nyTak(); S.tak = { [fid]: _takManual([[0,0],[1200,0],[1200,800],[0,800]].map(([x, y]) => ({ x, y }))) }; _takStepOpen[fid] = 1; document.activeElement.blur && document.activeElement.blur(); _takAddrFocusFid = null; updateCtxBar();
+    check('I: bygget funnet: feltet er sperret og får ikke fokus', 'disabled', felt().disabled && document.activeElement !== felt(), '');
+
+    // Klikk i lerretet
+    fid = nyTak(); skriv('Stein'); await sov(320);
+    { const r = canvas.getBoundingClientRect(), c = { clientX: r.left + r.width * .6, clientY: r.top + r.height * .7, button: 0, bubbles: true, cancelable: true }; canvas.dispatchEvent(new MouseEvent('mousedown', c)); canvas.dispatchEvent(new MouseEvent('mouseup', c)); }
+    await sov(10);
+    check('I: klikk i tegningen: ut av feltet, lista lukkes, teksten står', 'ja', document.activeElement !== felt() && rader().length === 0 && felt().value === 'Stein', document.activeElement.id);
+
+    // ── J. Snø-modulen ──
+    _resetProjectState(); addPart('snow'); { const part = S.project.parts[0], f2 = S.floors.find(f => f.partId === part.id); S.ui.activePartId = part.id; S.ui.activeFloorId = f2.id; }
+    renderSidebar(); updateCtxBar();
+    check('J: snø har ikke toppfeltet', 'null', !felt(), '');
+    check('J: snøens tomme tilstand sier fortsatt «Hent kart»', 'ja', document.body.innerHTML.includes('Hent kart'), '');
+  } catch (e) {
+    check('testen kastet ikke', 'ingen feil', false, e.stack || String(e));
+  } finally {
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm; S.ui.readOnly = keep.ro; window.fetch = keep.fetch;
+    window.VARMEPLAN_ROOF_URL = keep.url; _roofResolved = keep.resolved; _roofClose(); _roofDlg = keep.dlg;
+    if (S.ui.drawMode) cancelDrawing();
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    renderSidebar(); updateCtxBar(); render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest216: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
   return { ok: allOk, results };
 }
 
@@ -87736,7 +87996,7 @@ function _roofOpenDialog(floorId) {
   _roofRender();
   _roofSvcCheck();   // 139: samme oppvarming som _roofWarmResolve ga — men svaret VISES i steg 1
 }
-function _roofClose() { _roofDlg = null; document.getElementById('_roof-ov')?.remove(); }
+function _roofClose() { if (_roofDlg && _roofDlg.addrTimer) clearTimeout(_roofDlg.addrTimer); _roofDlg = null; document.getElementById('_roof-ov')?.remove(); }   // 216: timeren ville ellers truffet neste søk
 
 // 142: Kartinnstillinger — flyttet ut av veien inn. Lagres per bruker (`_roofPrefs`) og gjelder
 // neste utsnitt. «Hent på nytt» finnes bare når etasjen ikke har rom: et nytt utsnitt flytter
@@ -87887,8 +88147,10 @@ const ROOF_ADDR_INGEN = 'Fant ingen adresse som passer. Sjekk stavemåten eller 
 const ROOF_ADDR_NETT = 'Fikk ikke kontakt med Kartverkets adressesøk. Prøv igjen om litt.';
 
 /** Leser feltet inn i d.address; endret tekst gjør et tidligere valgt punkt ugyldig. */
+// 216: feltet er enten dialogens eller toppmenyens (d.bar).
+function _roofAddrEl(d, list) { return document.getElementById((d.bar ? '_tak-addr' : '_roof-addr') + (list ? '-list' : '')); }
 function _roofAddrSync(d) {
-  const inp = document.getElementById('_roof-addr');
+  const inp = _roofAddrEl(d);
   const v = inp ? inp.value.trim() : d.address;
   if (v === d.address) return;
   d.address = v;
@@ -87965,7 +88227,7 @@ function _roofAddrPick(i) {
   d.addrPoint = a.representasjonspunkt || null; d.addrPointFor = d.address;
   d.addrHits = []; d.addrHi = -1; d.addrMsg = null; d.addrSearching = false; d.addrSeq++;
   if (d.addrTimer) { clearTimeout(d.addrTimer); d.addrTimer = null; }
-  const inp = document.getElementById('_roof-addr'); if (inp) inp.value = d.address;
+  const inp = _roofAddrEl(d); if (inp) inp.value = d.address;
   if (!d.addrPoint) { d.addrMsg = 'Adressen mangler koordinater hos Kartverket. Velg en annen.'; _roofAddrRenderList(); return; }
   _roofAddrRenderList();
   _roofGo();
@@ -87983,7 +88245,7 @@ function _roofAddrListHtml(d) {
 }
 // Oppdaterer BARE lista — aldri hele dialogen, for da mister feltet fokus og markør mens man skriver.
 function _roofAddrRenderList() {
-  const d = _roofDlg, el = document.getElementById('_roof-addr-list');
+  const d = _roofDlg, el = d && _roofAddrEl(d, true);
   if (!d || !el) return;
   el.innerHTML = _roofAddrListHtml(d);
   const hi = el.querySelector('.roof-addr-row.hi');
@@ -88040,7 +88302,10 @@ async function _roofFindBuildings(opts) {
   // 139: tjenesten får alltid et PUNKT, aldri fritekst. Mangler punkt for teksten → via lista.
   const pt = _roofAddrPointFor(d);
   if (!pt) { _roofAddrSubmit(); return; }
+  const fraLinja = !!d.bar;
+  if (fraLinja) { const l = _roofAddrEl(d, true); if (l) l.innerHTML = ''; d.bar = false; }   // 216: nå tar dialogen over
   d.busy = true; d.busyText = 'Finner bygg ved adressen …'; d.error = null; d.retry = null; _roofRender();
+  if (fraLinja) _roofSvcCheck();
   try {
     const res = await _roofApi.locate({ lat: pt.lat, lon: pt.lon }, _roofDlgStatus);
     d.candidates = res.candidates || [];
@@ -114308,6 +114573,7 @@ function _resetToNpScreen() {
 function _resetProjectState() {
   _projectDirty = false;
   _takStepOpen = {}; _takCheckDims = {};   // 214: visning, ikke prosjektdata
+  _takAddrReset();   // 216: etasje-id-er går igjen mellom prosjekter, skrevet tekst skal ikke det
   // 052: bekreft-linja og rom-kortet er løse DOM-elementer utenfor #app. Uten dette blir de
   // stående igjen over NESTE prosjekt (samme felle som #_plan-bar hadde, STEG 0.2).
   document.getElementById('_plan-bekreft')?.remove();
