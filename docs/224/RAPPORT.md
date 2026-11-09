@@ -1,6 +1,6 @@
 # 224 · Inter-skrift og skjul-knapp på venstrepanelet — rapport
 
-09.11.2026 · gren `design/varmeplan-stil` (worktree `~/Code/varmeplan-web-design`) · én commit, ikke pushet · ingen SQL ·
+09.11.2026 · gren `design/varmeplan-stil` (worktree `~/Code/varmeplan-web-design`) · én commit `cd4cf2a` (+ hash-oppfølging), ikke pushet · ingen SQL ·
 tredje prompt i løpet serie-223-design (KUN design: ingen knapp, meny, flyt, hurtigtast, snapping eller beregning er endret;
 skjul-knappen er den ene nye knappen prompten ba om).
 
