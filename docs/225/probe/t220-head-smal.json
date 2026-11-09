@@ -1,0 +1,9 @@
+{
+ "_takRegressionTest220": {
+  "pass": 43,
+  "total": 44,
+  "fail": [
+   "220: Vises: m2 valgt → k4 og k8 lyser ⇒ "
+  ]
+ }
+}
