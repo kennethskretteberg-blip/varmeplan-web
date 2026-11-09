@@ -1,0 +1,62 @@
+@@@ FINN
+    <div class="modal-title">Legg til etasje</div>
+@@@ SETT
+    <div class="modal-title">Legg til etasje</div>
+    <div class="modal-body">
+@@@ SLUTT
+@@@ FINN
+      <input class="modal-inp" id="floor-name-inp" type="text" placeholder="F.eks. 1. etasje">
+    </div>
+    <div class="modal-footer" style="flex-direction:column;gap:8px">
+@@@ SETT
+      <input class="modal-inp" id="floor-name-inp" type="text" placeholder="F.eks. 1. etasje">
+    </div>
+    </div>
+    <div class="modal-footer" style="flex-direction:column;gap:8px">
+@@@ SLUTT
+@@@ FINN
+    <div class="modal-title">Sett målestokk</div>
+@@@ SETT
+    <div class="modal-title">Sett målestokk</div>
+    <div class="modal-body">
+@@@ SLUTT
+@@@ FINN
+        <span id="bg-calib-unit-lbl" style="font-size:14px;color:var(--muted);margin-left:4px">m</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+@@@ SETT
+        <span id="bg-calib-unit-lbl" style="font-size:14px;color:var(--muted);margin-left:4px">m</span>
+      </div>
+    </div>
+    </div>
+    <div class="modal-footer">
+@@@ SLUTT
+@@@ FINN
+    <div class="modal-title">Fast målestokk</div>
+@@@ SETT
+    <div class="modal-title">Fast målestokk</div>
+    <div class="modal-body">
+@@@ SLUTT
+@@@ FINN
+    <p style="font-size:11px;color:var(--dim);margin:8px 0 0">Vanlige målestokker: 1:50, 1:100, 1:200, 1:500</p>
+    <div class="modal-footer">
+@@@ SETT
+    <p style="font-size:11px;color:var(--dim);margin:8px 0 0">Vanlige målestokker: 1:50, 1:100, 1:200, 1:500</p>
+    </div>
+    <div class="modal-footer">
+@@@ SLUTT
+@@@ FINN
+    <div class="modal-title">Endre status</div>
+@@@ SETT
+    <div class="modal-title">Endre status</div>
+    <div class="modal-body">
+@@@ SLUTT
+@@@ FINN
+    <div class="status-chips" id="batch-status-chips"></div>
+    <div class="modal-footer">
+@@@ SETT
+    <div class="status-chips" id="batch-status-chips"></div>
+    </div>
+    <div class="modal-footer">
+@@@ SLUTT

@@ -1,0 +1,74 @@
+@@@ FINN
+function maybeCloseModal(e) { if(e.target===document.getElementById('modal-ov')) closeModal(); } // kept for compat
+@@@ SETT
+function maybeCloseModal(e) { if(e.target===document.getElementById('modal-ov')) closeModal(); } // kept for compat
+
+// ═══ 216 · REGRESJON: KNAPPENE I BUNNEN AV DIALOGER SKAL ALLTID SYNES (Kenneth 08.11.2026) ═══════════
+// Kjøres fra konsollen: await _dialogRegressionTest216(). Åpner hver dialog i lista og sjekker
+//   (a) boksen har en max-height som ikke er høyere enn vinduet (regelen «aldri høyere enn vinduet»),
+//   (b) boksen ligger innenfor vinduet,
+//   (c) hver knapp i bunnlinja er helt innenfor vinduet og klikkbar (elementFromPoint) UTEN scrolling,
+//   (d) ingen knapp ligger inne i et element som scroller (annet enn selve boksen) — det var feilen i
+//       Eksporter PDF, der knappene lå nederst i venstre kolonne,
+//   (e) Eksporter PDF med 40 midlertidige rom: romlista scroller, knappene står fast.
+// Lista er MANUELL (som _SHORTCUTS): ny dialog → ny rad her. Vindusstørrelsene (1366×650, 1280×720,
+// 1440×900, 1024×600) måles utenfra med docs/216-dialoger/probe/maal.mjs; her måles det vinduet testen
+// kjører i, pluss max-height-regelen som gjelder uansett størrelse.
+const _DIALOG_TEST_216 = [
+  { navn: 'Eksporter PDF', aapne: () => _showExportDialog(), boks: '#export-dialog > div', knapper: '#export-dialog .vp-modal__foot button', rull: '#export-dialog .exp-left',
+    lukk: () => { const o = document.getElementById('export-dialog'); if (o) o.style.display = 'none'; } },
+  ...['modal-room1', 'modal-shape', 'modal-hindring', 'modal-rect', 'modal-lshape', 'modal-floor', 'modal-bg-calib', 'modal-fixed-scale', 'modal-batch-status'].map(id => ({
+    navn: id, aapne: () => showModal(id), boks: '#' + id, knapper: '#' + id + ' .modal-footer button', rull: '#' + id + ' .modal-body', lukk: () => closeModal() })),
+];
+async function _dialogRegressionTest216() {
+  const results = [];
+  const t = (name, ok, info) => results.push({ name, ok: !!ok, info });
+  const H = innerHeight;
+  const vent = ms => new Promise(r => setTimeout(r, ms));
+  // Finnes det et element MELLOM knappen og boksen som faktisk scroller? (Boksen selv er lov.)
+  const scrollerMellom = (el, boks) => { let p = el.parentElement; while (p && p !== boks) { const o = getComputedStyle(p).overflowY; if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight + 1) return p; p = p.parentElement; } return null; };
+  const sjekk = async (d, merke) => {
+    const navn = d.navn + (merke || '');
+    try {
+      d.aapne(); await vent(60);
+      const boks = document.querySelector(d.boks);
+      t(`${navn}: boksen finnes`, !!boks);
+      if (!boks) return null;
+      const mh = parseFloat(getComputedStyle(boks).maxHeight);
+      t(`${navn}: max-height ≤ vinduet`, Number.isFinite(mh) && mh <= H, `${mh} / ${H}`);
+      const bb = boks.getBoundingClientRect();
+      t(`${navn}: boksen innenfor vinduet`, bb.top >= 0 && bb.bottom <= H + 0.5, `${Math.round(bb.top)}..${Math.round(bb.bottom)} / ${H}`);
+      const kn = [...document.querySelectorAll(d.knapper)].filter(b => b.getClientRects().length);
+      t(`${navn}: har knapper i bunnlinja`, kn.length > 0, kn.length);
+      for (const b of kn) {
+        const r = b.getBoundingClientRect(); const tekst = b.textContent.trim().slice(0, 24);
+        const topp = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        t(`${navn}: «${tekst}» innenfor vinduet`, r.top >= 0 && r.bottom <= H + 0.5, `${Math.round(r.top)}..${Math.round(r.bottom)}`);
+        t(`${navn}: «${tekst}» klikkbar uten scrolling`, !!topp && (topp === b || b.contains(topp)), topp ? (topp.id || topp.className || topp.tagName) : 'ingenting');
+        const s = scrollerMellom(b, boks);
+        t(`${navn}: «${tekst}» ikke inne i en kolonne som scroller`, !s, s ? (s.id || s.className) : '');
+      }
+      return boks;
+    } catch (e) { t(`${navn}: unntak`, false, String(e.message).slice(0, 160)); return null; }
+  };
+  for (const d of _DIALOG_TEST_216) { await sjekk(d); try { d.lukk(); } catch (e) {} }
+  // (e) lang romliste: 40 midlertidige rom, så venstre kolonne må scrolle — knappene skal stå fast.
+  const d0 = _DIALOG_TEST_216[0]; const rooms0 = S.rooms;
+  try {
+    const fid = S.ui.activeFloorId, pid = S.ui.activePartId;
+    const pts = [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 300 }, { x: 0, y: 300 }];
+    S.rooms = (rooms0 || []).concat(Array.from({ length: 40 }, (_, k) => ({ id: 216000 + k, floorId: fid, partId: pid, name: 'Testrom 216-' + (k + 1), points: pts.map(p => ({ x: p.x + k * 400, y: p.y })), walls: [], area: 9, dims: [] })));
+    const boks = await sjekk(d0, ' (40 rom)');
+    if (boks) {
+      const rull = document.querySelector(d0.rull);
+      t('Eksporter PDF (40 rom): romlista scroller', !!rull && rull.scrollHeight > rull.clientHeight + 1, rull ? `${rull.scrollHeight} > ${rull.clientHeight}` : 'ingen kolonne');
+      if (rull) { rull.scrollTop = 1e6; const sist = rull.lastElementChild; const sr = sist.getBoundingClientRect(), rr = rull.getBoundingClientRect();
+        t('Eksporter PDF (40 rom): siste element i lista nås ved scrolling', sr.bottom <= rr.bottom + 1 && sr.bottom <= H, `${Math.round(sr.bottom)} ≤ ${Math.round(rr.bottom)}`); rull.scrollTop = 0; }
+    }
+  } catch (e) { t('Eksporter PDF (40 rom): unntak', false, String(e.message).slice(0, 160)); }
+  finally { S.rooms = rooms0; try { d0.lukk(); } catch (e) {} }
+  const ok = results.every(r => r.ok);
+  console[ok ? 'log' : 'error'](`_dialogRegressionTest216: ${ok ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
+  return { ok, results };
+}
+@@@ SLUTT

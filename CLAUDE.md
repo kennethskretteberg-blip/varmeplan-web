@@ -317,6 +317,24 @@ When modifying code:
 
 ---
 
+# Dialoger (216) — felles modal-struktur
+
+Alle dialoger, modaler og popup-paneler med knapper nederst bruker den felles strukturen i `index.html`
+(blokken «216 · FELLES DIALOGOPPSETT» i CSS-en): boksen får `class="vp-modal"`, innholdet ligger i
+`.vp-modal__body` og knappene i `.vp-modal__foot` (tittel + × i `.vp-modal__head`, valgfritt). De ni
+faste dialogene i `#modal-ov` bruker samme mønster med `.modal` / `.modal-body` / `.modal-footer`.
+
+Reglene: (1) en dialog er **aldri høyere enn vinduet** — klassen setter `max-height` mot `100dvh − 32px`;
+sett derfor **ikke** `max-height`/`overflow` inline på boksen; (2) topp og bunn står fast, **bare
+innholdet scroller**; (3) knappene ligger i bunnlinja over hele dialogens bredde — **aldri inne i en
+kolonne som scroller**; (4) flere kolonner scroller hver for seg inne i innholdsdelen
+(`.vp-modal__body--split`), bunnlinja ligger under begge; (5) `min-height:0` på flex-barn som skal scrolle.
+
+Ny dialog → bruk klassene, og legg til en rad i `_DIALOG_TEST_216` (regresjonen `_dialogRegressionTest216`
+sjekker at knappene er innenfor vinduet og klikkbare uten scrolling). Lista er manuell, som `_SHORTCUTS`.
+
+---
+
 # Documentation, Warranty & Claims Module (implemented — Fase 1–3)
 
 A separate, mobile-first module on the same login, built on top of existing

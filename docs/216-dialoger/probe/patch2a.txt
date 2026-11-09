@@ -1,0 +1,99 @@
+@@@ FINN
+  ['modal-room1','modal-shape','modal-floor','modal-hindring','modal-rect','modal-lshape','modal-bg-calib','modal-fixed-scale','modal-batch-status'].forEach(mid=>{
+    document.getElementById(mid).style.display=mid===id?'block':'none';
+  });
+@@@ SETT
+  // 216: '' (ikke 'block') så .modal-CSS-en bestemmer visningen — den er en flex-kolonne der bare
+  // .modal-body scroller. Et inline display:block ville slått den av.
+  ['modal-room1','modal-shape','modal-floor','modal-hindring','modal-rect','modal-lshape','modal-bg-calib','modal-fixed-scale','modal-batch-status'].forEach(mid=>{
+    document.getElementById(mid).style.display=mid===id?'':'none';
+  });
+@@@ SLUTT
+@@@ FINN
+    <div class="modal-title">Legg til rom</div>
+@@@ SETT
+    <div class="modal-title">Legg til rom</div>
+    <div class="modal-body">
+@@@ SLUTT
+@@@ FINN
+      <select class="modal-inp" id="room-floor-sel" style="cursor:pointer"></select>
+    </div>
+    <div class="modal-footer">
+@@@ SETT
+      <select class="modal-inp" id="room-floor-sel" style="cursor:pointer"></select>
+    </div>
+    </div>
+    <div class="modal-footer">
+@@@ SLUTT
+@@@ FINN
+    <div class="modal-title">Velg romform</div>
+@@@ SETT
+    <div class="modal-title">Velg romform</div>
+    <div class="modal-body">
+@@@ SLUTT
+@@@ FINN
+        <div class="shape-desc">Les av rom automatisk fra vektor-PDF</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+@@@ SETT
+        <div class="shape-desc">Les av rom automatisk fra vektor-PDF</div>
+      </div>
+    </div>
+    </div>
+    <div class="modal-footer">
+@@@ SLUTT
+@@@ FINN
+    <div class="modal-title">Lag hindring — velg type</div>
+@@@ SETT
+    <div class="modal-title">Lag hindring — velg type</div>
+    <div class="modal-body">
+@@@ SLUTT
+@@@ FINN
+        <input class="modal-inp" id="hindring-lengde-inp" type="number" min="1" step="1" placeholder="↕ Lengde cm" style="flex:1">
+      </div>
+    </div>
+    <div class="modal-footer">
+@@@ SETT
+        <input class="modal-inp" id="hindring-lengde-inp" type="number" min="1" step="1" placeholder="↕ Lengde cm" style="flex:1">
+      </div>
+    </div>
+    </div>
+    <div class="modal-footer">
+@@@ SLUTT
+@@@ FINN
+    <div class="modal-title">Rektangulært rom — Mål</div>
+@@@ SETT
+    <div class="modal-title">Rektangulært rom — Mål</div>
+    <div class="modal-body">
+@@@ SLUTT
+@@@ FINN
+        <input class="modal-inp" id="rect-h-inp" type="number" min="10" step="1" value="300" placeholder="300">
+      </div>
+    </div>
+    <div class="modal-footer">
+@@@ SETT
+        <input class="modal-inp" id="rect-h-inp" type="number" min="10" step="1" value="300" placeholder="300">
+      </div>
+    </div>
+    </div>
+    <div class="modal-footer">
+@@@ SLUTT
+@@@ FINN
+    <div class="modal-title">L-form rom — Velg variant og mål</div>
+@@@ SETT
+    <div class="modal-title">L-form rom — Velg variant og mål</div>
+    <div class="modal-body">
+@@@ SLUTT
+@@@ FINN
+        <input class="modal-inp" id="ls-ch-inp" type="number" min="10" step="1" value="200" placeholder="200">
+      </div>
+    </div>
+    <div class="modal-footer">
+@@@ SETT
+        <input class="modal-inp" id="ls-ch-inp" type="number" min="10" step="1" value="200" placeholder="200">
+      </div>
+    </div>
+    </div>
+    <div class="modal-footer">
+@@@ SLUTT

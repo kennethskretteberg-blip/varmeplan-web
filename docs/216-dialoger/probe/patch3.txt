@@ -1,0 +1,39 @@
+@@@ FINN
+  overlay.innerHTML = `<div style="background:var(--surface);border-radius:16px;width:85vw;max-width:1100px;height:80vh;overflow:hidden;border:1px solid var(--border)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border)">
+      <h3 style="font-size:18px;font-weight:700;color:var(--text);margin:0">Eksporter PDF</h3>
+@@@ SETT
+  // 216: .vp-modal — topp og bunnlinje står fast, kolonnene i .exp-split scroller hver for seg.
+  // height:80vh beholdes som ønsket høyde, .vp-modal klemmer den under vinduet.
+  overlay.innerHTML = `<div class="vp-modal" style="background:var(--surface);border-radius:16px;width:85vw;max-width:1100px;height:80vh;overflow:hidden;border:1px solid var(--border)">
+    <div class="vp-modal__head" style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border)">
+      <h3 style="font-size:18px;font-weight:700;color:var(--text);margin:0">Eksporter PDF</h3>
+@@@ SLUTT
+@@@ FINN
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="adm-btn ghost" onclick="document.getElementById('export-dialog').style.display='none'" style="flex:1">Avbryt</button>
+          <button class="adm-btn primary" onclick="_runExportPDF()" style="flex:1">Generer PDF</button>
+        </div>
+      </div>
+      <div class="exp-right">
+@@@ SETT
+      </div>
+      <div class="exp-right">
+@@@ SLUTT
+@@@ FINN
+          <div style="color:var(--dim);font-size:13px;text-align:center">Klikk på et navn (seksjon, rom eller trapp)<br>for å se forhåndsvisning</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+@@@ SETT
+          <div style="color:var(--dim);font-size:13px;text-align:center">Klikk på et navn (seksjon, rom eller trapp)<br>for å se forhåndsvisning</div>
+        </div>
+      </div>
+    </div>
+    <div class="vp-modal__foot exp-foot">
+      <button class="adm-btn ghost" onclick="document.getElementById('export-dialog').style.display='none'">Avbryt</button>
+      <button class="adm-btn primary" onclick="_runExportPDF()">Generer PDF</button>
+    </div>
+  </div>`;
+@@@ SLUTT

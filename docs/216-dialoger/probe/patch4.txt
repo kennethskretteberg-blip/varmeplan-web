@@ -1,0 +1,10 @@
+@@@ FINN
+.modal-body{flex:1 1 auto;min-height:0;overflow-y:auto}
+@@@ SETT
+.modal-body{flex:1 1 auto;min-height:0;overflow-y:auto}
+/* Avstandene var 20 px før (tittelens 20 falt sammen med første barns topp-marg, og siste felts 16 med
+   footerens 20). .modal-body er en rullekontekst der marger ikke faller sammen, så første barns topp-marg
+   og siste felts bunn-marg nulles — målt: same bokshøyde som før for alle ni dialogene. */
+.modal-body > :first-child{margin-top:0}
+.modal-body > .modal-field:last-child{margin-bottom:0}
+@@@ SLUTT

@@ -1,0 +1,141 @@
+@@@ FINN
+  let body = '';
+
+  if (d.step === 1) {
+@@@ SETT
+  let body = '', foot = '';   // 216: stegets knapper ligger i bunnlinja (foot), ikke i innholdet som scroller
+
+  if (d.step === 1) {
+@@@ SLUTT
+@@@ FINN
+      <div id="_roof-addr-list">${_roofAddrListHtml(d)}</div>
+      <div style="display:flex;justify-content:flex-end;gap:10px">
+        <button onclick="_roofClose()"
+@@@ SETT
+      <div id="_roof-addr-list">${_roofAddrListHtml(d)}</div>`;
+    foot = `<div style="display:flex;justify-content:flex-end;gap:10px">
+        <button onclick="_roofClose()"
+@@@ SLUTT
+@@@ FINN
+      ${tom}<div style="max-height:40vh;overflow:auto">${rows}</div>
+      <div style="display:flex;justify-content:space-between;gap:10px">
+        <button onclick="_roofDlg.step=1;_roofRender()"
+@@@ SETT
+      ${tom}<div style="max-height:40vh;overflow:auto">${rows}</div>`;
+    foot = `<div style="display:flex;justify-content:space-between;gap:10px">
+        <button onclick="_roofDlg.step=1;_roofRender()"
+@@@ SLUTT
+@@@ FINN
+Terrengskygge <span style="font-size:11px;color:var(--dim)">(tar ~1,5 s ekstra)</span></label>
+      <div style="display:flex;justify-content:space-between;gap:10px">
+        <button onclick="_roofDlg.step=2;_roofRender()"
+@@@ SETT
+Terrengskygge <span style="font-size:11px;color:var(--dim)">(tar ~1,5 s ekstra)</span></label>`;
+    foot = `<div style="display:flex;justify-content:space-between;gap:10px">
+        <button onclick="_roofDlg.step=2;_roofRender()"
+@@@ SLUTT
+@@@ FINN
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);max-height:88vh;overflow:auto;padding:22px;display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:16px;font-weight:700;color:var(--text)">${IC('map', 16)} Hent fra kart</div>
+      <button onclick="_roofClose()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
+    </div>
+    ${err}${spin}${body}
+    <div style="font-size:11px;color:var(--dim);border-top:1px solid var(--border);padding-top:8px">Kartgrunnlag © Kartverket (CC BY 4.0)</div>
+  </div>`;
+@@@ SETT
+  ov.innerHTML = `<div class="vp-modal" onclick="event.stopPropagation()" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);padding:22px;display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:16px;font-weight:700;color:var(--text)">${IC('map', 16)} Hent fra kart</div>
+      <button onclick="_roofClose()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div class="vp-modal__body" style="display:flex;flex-direction:column;gap:12px">${err}${spin}${body}</div>
+    <div class="vp-modal__foot" style="display:flex;flex-direction:column;gap:12px">${foot}
+    <div style="font-size:11px;color:var(--dim);border-top:1px solid var(--border);padding-top:8px">Kartgrunnlag © Kartverket (CC BY 4.0)</div></div>
+  </div>`;
+@@@ SLUTT
+@@@ FINN
+  div.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--brd);border-radius:10px;padding:16px;z-index:10000;box-shadow:0 8px 32px rgba(0,0,0,0.35);max-width:440px;max-height:80vh;overflow-y:auto;font-size:13px;color:var(--text)';
+@@@ SETT
+  div.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--brd);border-radius:10px;padding:16px;z-index:10000;box-shadow:0 8px 32px rgba(0,0,0,0.35);max-width:440px;font-size:13px;color:var(--text)';
+  div.className = 'vp-modal';   // 216: aldri høyere enn vinduet; knappene i egen bunnlinje
+@@@ SLUTT
+@@@ FINN
+  div.innerHTML = `${intro}
+    <div style="font-weight:600;margin-bottom:4px">${head}</div>
+@@@ SETT
+  div.innerHTML = `<div class="vp-modal__body">${intro}
+    <div style="font-weight:600;margin-bottom:4px">${head}</div>
+@@@ SLUTT
+@@@ FINN
+    ${restNote}
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button id="mat-zone-cancel"
+@@@ SETT
+    ${restNote}
+    </div>
+    <div class="vp-modal__foot" style="display:flex;gap:8px;margin-top:10px">
+      <button id="mat-zone-cancel"
+@@@ SLUTT
+@@@ FINN
+    panel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--brd);border-radius:10px;padding:16px;z-index:900;box-shadow:0 8px 32px rgba(0,0,0,0.35);width:380px;max-height:80vh;overflow-y:auto;font-size:13px;color:var(--text)';
+@@@ SETT
+    panel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--brd);border-radius:10px;padding:16px;z-index:900;box-shadow:0 8px 32px rgba(0,0,0,0.35);width:380px;font-size:13px;color:var(--text)';
+    panel.className = 'vp-modal';   // 216
+@@@ SLUTT
+@@@ FINN
+    <div style="color:var(--dim);font-size:12px;margin-bottom:10px">${esc(targetLabel)}${dimsLabel ? ' · ' + dimsLabel : ''}</div>
+@@@ SETT
+    <div style="color:var(--dim);font-size:12px;margin-bottom:10px">${esc(targetLabel)}${dimsLabel ? ' · ' + dimsLabel : ''}</div>
+    <div class="vp-modal__body">
+@@@ SLUTT
+@@@ FINN
+    ${resultHtml}
+    ${othersHtml}
+    <div style="display:flex;gap:6px;margin-top:12px">
+      <button onclick="_mwbCancel()"
+@@@ SETT
+    ${resultHtml}
+    ${othersHtml}
+    </div>
+    <div class="vp-modal__foot" style="display:flex;gap:6px;margin-top:12px">
+      <button onclick="_mwbCancel()"
+@@@ SLUTT
+@@@ FINN
+  ov.innerHTML = `<div style="background:var(--surface,#16171c);border-top-left-radius:16px;border-top-right-radius:16px;
+      width:min(640px,100%);max-height:88vh;overflow:auto;padding:16px 16px 20px;border:1px solid var(--border)">
+    <div style="font-size:16px;font-weight:700;margin-bottom:3px">Om rommet</div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:14px">${(r.area/10000).toFixed(1).replace('.',',')} m² · ${r.points.length} hjørner</div>
+@@@ SETT
+  ov.innerHTML = `<div class="vp-modal" style="background:var(--surface,#16171c);border-top-left-radius:16px;border-top-right-radius:16px;
+      width:min(640px,100%);padding:16px 16px 20px;border:1px solid var(--border)">
+    <div style="font-size:16px;font-weight:700;margin-bottom:3px">Om rommet</div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:14px">${(r.area/10000).toFixed(1).replace('.',',')} m² · ${r.points.length} hjørner</div>
+    <div class="vp-modal__body">
+@@@ SLUTT
+@@@ FINN
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button onclick="_kundeSlettRom(${roomId});_kundeRoomFormClose()"
+@@@ SETT
+    </div>
+    <div class="vp-modal__foot" style="display:flex;gap:8px;margin-top:16px">
+      <button onclick="_kundeSlettRom(${roomId});_kundeRoomFormClose()"
+@@@ SLUTT
+@@@ FINN
+  ov.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:460px;max-width:94vw;max-height:88vh;overflow:auto;padding:24px">
+    <div style="font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px">Hva er vegger?</div>
+@@@ SETT
+  ov.innerHTML=`<div class="vp-modal" onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:460px;max-width:94vw;padding:24px">
+    <div style="font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px">Hva er vegger?</div>
+    <div class="vp-modal__body">
+@@@ SLUTT
+@@@ FINN
+    ${_engineStatusLineHTML()}
+    <div style="display:flex;justify-content:flex-end;gap:10px">
+      <button onclick="document.getElementById('_ar-layer-ov').remove()"
+@@@ SETT
+    ${_engineStatusLineHTML()}
+    </div>
+    <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:10px">
+      <button onclick="document.getElementById('_ar-layer-ov').remove()"
+@@@ SLUTT

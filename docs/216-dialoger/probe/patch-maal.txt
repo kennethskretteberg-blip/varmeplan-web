@@ -1,0 +1,5 @@
+@@@ FINN
+        if (${JSON.stringify(d.rull || null)}) { const el = document.querySelector(${JSON.stringify(d.rull)}); if (el) { el.scrollTop = 1e6;
+@@@ SETT
+        if (${JSON.stringify(d.rull || null)}) { const el = document.querySelector(${JSON.stringify(d.rull)}) || boks; if (el) { el.scrollTop = 1e6;
+@@@ SLUTT

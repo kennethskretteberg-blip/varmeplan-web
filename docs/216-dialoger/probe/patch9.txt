@@ -1,0 +1,79 @@
+@@@ FINN
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:${replacing ? 480 : 600}px;max-width:94vw;max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:16px;font-weight:700;color:var(--text)">${heading}</div>
+        <button onclick="_pdfPagePickerClose()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted)">${intro}</div>
+      <div>${rows}</div>
+      <div style="display:flex;justify-content:flex-end;gap:10px">
+        <button onclick="_pdfPagePickerClose()" style="padding:8px 16px;
+@@@ SETT
+    <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:${replacing ? 480 : 600}px;max-width:94vw;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:16px;font-weight:700;color:var(--text)">${heading}</div>
+        <button onclick="_pdfPagePickerClose()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
+      </div>
+      <div class="vp-modal__body" style="display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:12px;color:var(--muted)">${intro}</div>
+      <div>${rows}</div>
+      </div>
+      <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:10px">
+        <button onclick="_pdfPagePickerClose()" style="padding:8px 16px;
+@@@ SLUTT
+@@@ FINN
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:460px;max-width:94vw;max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:17px;font-weight:700;color:var(--text)">Importer tegning</div>
+        <button onclick="_pdfImportClose()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
+      </div>
+@@@ SETT
+    <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:460px;max-width:94vw;display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:17px;font-weight:700;color:var(--text)">Importer tegning</div>
+        <button onclick="_pdfImportClose()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
+      </div>
+      <div class="vp-modal__body" style="display:flex;flex-direction:column;gap:16px">
+@@@ SLUTT
+@@@ FINN
+      <div id="_pdf-import-msg" style="font-size:12px;color:var(--accent)"></div>
+      <div style="display:flex;justify-content:flex-end;gap:10px">
+        <button onclick="_pdfImportClose()" style="padding:8px 16px;
+@@@ SETT
+      <div id="_pdf-import-msg" style="font-size:12px;color:var(--accent)"></div>
+      </div>
+      <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:10px">
+        <button onclick="_pdfImportClose()" style="padding:8px 16px;
+@@@ SLUTT
+@@@ FINN
+    <div style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(520px,92vw);max-height:88vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+      <h3 style="margin:0 0 14px;font-size:16px;color:var(--text)">🪜 ${editing ? 'Rediger hesteskotrapp' : 'Bygg hesteskotrapp'}</h3>
+@@@ SETT
+    <div class="vp-modal" style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(520px,92vw);box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+      <h3 style="margin:0 0 14px;font-size:16px;color:var(--text)">🪜 ${editing ? 'Rediger hesteskotrapp' : 'Bygg hesteskotrapp'}</h3>
+      <div class="vp-modal__body">
+@@@ SLUTT
+@@@ FINN
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        ${editing ? '' : `<button onclick="document.getElementById('stair-modal-bg').remove();_showStairDesignPicker()"
+@@@ SETT
+      </div>
+      <div class="vp-modal__foot" style="display:flex;gap:8px;justify-content:flex-end">
+        ${editing ? '' : `<button onclick="document.getElementById('stair-modal-bg').remove();_showStairDesignPicker()"
+@@@ SLUTT
+@@@ FINN
+    <div style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(500px,92vw);max-height:88vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+      <h3 style="margin:0 0 14px;font-size:16px;color:var(--text)">🪜 ${_stairBuilderEditingId != null ? 'Rediger trinn/soner' : 'Bygg trapp'}</h3>
+@@@ SETT
+    <div class="vp-modal" style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(500px,92vw);box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+      <h3 style="margin:0 0 14px;font-size:16px;color:var(--text)">🪜 ${_stairBuilderEditingId != null ? 'Rediger trinn/soner' : 'Bygg trapp'}</h3>
+      <div class="vp-modal__body">
+@@@ SLUTT
+@@@ FINN
+      <!-- Action buttons -->
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+@@@ SETT
+      </div>
+      <!-- Action buttons (216: egen bunnlinje) -->
+      <div class="vp-modal__foot" style="display:flex;gap:8px;justify-content:flex-end">
+@@@ SLUTT

@@ -1,0 +1,93 @@
+@@@ FINN
+.profile-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:440px;max-height:90vh;overflow-y:auto}
+@@@ SETT
+/* 216: flex-kolonne, aldri høyere enn vinduet; tittelen står, .vp-modal__body scroller (overflow-y:auto = reserve). */
+.profile-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:440px;box-sizing:border-box;display:flex;flex-direction:column;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto}
+.profile-card h3{flex:0 0 auto}
+@@@ SLUTT
+@@@ FINN
+    <h3>Innstillinger <button onclick="_closeProfile()">&times;</button></h3>
+@@@ SETT
+    <h3>Innstillinger <button onclick="_closeProfile()">&times;</button></h3>
+    <div class="vp-modal__body">
+@@@ SLUTT
+@@@ FINN
+    <button class="auth-btn-ghost" onclick="_closeProfile();_openShortcutsPanel()" style="width:100%;margin-top:6px">Hurtigtaster…</button>
+  </div>
+</div>
+@@@ SETT
+    <button class="auth-btn-ghost" onclick="_closeProfile();_openShortcutsPanel()" style="width:100%;margin-top:6px">Hurtigtaster…</button>
+    </div>
+  </div>
+</div>
+@@@ SLUTT
+@@@ FINN
+.cust-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto}
+@@@ SETT
+/* 216: flex-kolonne og aldri høyere enn vinduet, så .vp-modal__body/__foot virker inni (overflow-y:auto = reserve). */
+.cust-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:560px;max-width:95vw;box-sizing:border-box;display:flex;flex-direction:column;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto}
+@@@ SLUTT
+@@@ FINN
+.fb-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:440px;max-width:95vw}
+@@@ SETT
+.fb-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:440px;max-width:95vw;box-sizing:border-box;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto}   /* 216: aldri høyere enn vinduet */
+@@@ SLUTT
+@@@ FINN
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px;width:700px;max-width:95vw;max-height:90vh;overflow-y:auto;display:flex;flex-direction:column;gap:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--text)">Importer produkter fra Excel</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:4px">Last opp .xlsx-fil — data forhåndsvises før import til Supabase</div>
+      </div>
+      <button onclick="closeExcelModal()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
+    </div>
+@@@ SETT
+  <!-- 216: .vp-modal — topp og knapperad (#excel-foot) står fast, innholdet (inkl. forhåndsvisningstabellen) scroller. -->
+  <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px;width:700px;max-width:95vw;display:flex;flex-direction:column;gap:20px">
+    <div class="vp-modal__head" style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-size:18px;font-weight:700;color:var(--text)">Importer produkter fra Excel</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:4px">Last opp .xlsx-fil — data forhåndsvises før import til Supabase</div>
+      </div>
+      <button onclick="closeExcelModal()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div class="vp-modal__body" style="display:flex;flex-direction:column;gap:20px">
+@@@ SLUTT
+@@@ FINN
+      <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+        <button onclick="closeExcelModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 20px;font-size:14px;color:var(--muted);cursor:pointer">Avbryt</button>
+@@@ SETT
+    </div>
+
+    <div id="excel-status" style="display:none;text-align:center;padding:16px;border-radius:8px;font-weight:500"></div>
+    </div>
+    <!-- 216: knappene lå inne i #excel-preview etter tabellen; nå egen bunnlinje som vises/skjules sammen med forhåndsvisningen. -->
+    <div id="excel-foot" class="vp-modal__foot" style="display:none;gap:10px;justify-content:flex-end">
+        <button onclick="closeExcelModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 20px;font-size:14px;color:var(--muted);cursor:pointer">Avbryt</button>
+@@@ SLUTT
+@@@ FINN
+      </div>
+    </div>
+
+    <div id="excel-status" style="display:none;text-align:center;padding:16px;border-radius:8px;font-weight:500"></div>
+  </div>
+</div>
+@@@ SETT
+    </div>
+  </div>
+</div>
+@@@ SLUTT
+@@@ FINN
+  document.getElementById('excel-preview').style.display='none';
+  document.getElementById('excel-status').style.display='none';
+@@@ SETT
+  document.getElementById('excel-preview').style.display='none';
+  document.getElementById('excel-foot').style.display='none';   // 216: knapperaden følger forhåndsvisningen
+  document.getElementById('excel-status').style.display='none';
+@@@ SLUTT
+@@@ FINN
+document.getElementById('excel-preview').style.display='block';
+@@@ SETT
+document.getElementById('excel-preview').style.display='block';
+  document.getElementById('excel-foot').style.display='flex';   // 216
+@@@ SLUTT

@@ -942,13 +942,37 @@ body.kunde-maal #minimap-widget{display:none !important}
      - #ctx-menu/#produkt-menu/#gap-panel/#label-color-panel (200-210): allerede godt under 1000,
        uendret forhold ved 1250. */
 #modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:1250;backdrop-filter:blur(3px)}
-.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;width:500px;max-height:85vh;overflow-y:auto}
+/* 216: .modal er nå en flex-kolonne som aldri er høyere enn vinduet. Tittel (.modal-title) og knapper
+   (.modal-footer) står fast; feltene ligger i .modal-body som er det eneste som scroller. overflow-y:auto
+   på selve .modal står som RESERVE for en .modal uten .modal-body (da scroller hele dialogen, men
+   knappene er fortsatt aldri utenfor vinduet). */
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;width:500px;box-sizing:border-box;display:flex;flex-direction:column;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto}
+.modal-body{flex:1 1 auto;min-height:0;overflow-y:auto}
+/* Avstandene var 20 px før (tittelens 20 falt sammen med første barns topp-marg, og siste felts 16 med
+   footerens 20). .modal-body er en rullekontekst der marger ikke faller sammen, så første barns topp-marg
+   og siste felts bunn-marg nulles — målt: same bokshøyde som før for alle ni dialogene. */
+.modal-body > :first-child{margin-top:0}
+.modal-body > .modal-field:last-child{margin-bottom:0}
 .modal-title{font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:700;margin-bottom:20px}
 .modal-field{margin-bottom:16px}
 .modal-field label{display:block;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
 .modal-inp{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:15px;outline:none;transition:border-color .15s;color:var(--text)}
 .modal-inp:focus{border-color:var(--accent)}
-.modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+.modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;flex:0 0 auto}
+.modal-title{flex:0 0 auto}
+
+/* ═══ 216 · FELLES DIALOGOPPSETT (Kenneth 08.11.2026: «valgknappene blir borte i bunnen») ═══════════
+   Regelen for ALLE dialoger: (1) aldri høyere enn vinduet — max-height mot 100dvh minus marg, 100vh som
+   reserve; (2) delt i tre: topp (tittel + ×), innhold, bunn (knapper) — topp og bunn står fast, BARE
+   innholdet scroller; (3) knappene ligger i en egen bunnlinje over hele dialogens bredde, aldri inne i en
+   kolonne som scroller; (4) flere kolonner (liste + forhåndsvisning): hver kolonne scroller for seg inne i
+   innholdsdelen, bunnlinja ligger under begge; (5) min-height:0 på flex-barn som skal scrolle, ellers
+   vokser de forbi høyden. Nye dialoger SKAL bruke disse klassene (CLAUDE.md). Regresjon: _dialogRegressionTest216. */
+.vp-modal{display:flex;flex-direction:column;box-sizing:border-box;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);min-height:0;overflow:hidden}
+.vp-modal__head{flex:0 0 auto}
+.vp-modal__body{flex:1 1 auto;min-height:0;overflow-y:auto}
+.vp-modal__body--split{flex:1 1 auto;min-height:0;display:flex;overflow:hidden}
+.vp-modal__foot{flex:0 0 auto}
 
 /* Status chips */
 .status-chips{display:flex;flex-wrap:wrap;gap:8px}
@@ -1218,7 +1242,9 @@ body.kunde-maal #minimap-widget{display:none !important}
 .dash-avatar-btn:hover{box-shadow:0 0 0 3px rgba(34,211,238,.25)}
 /* Profile settings modal */
 .profile-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1100;display:flex;align-items:center;justify-content:center}
-.profile-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:440px;max-height:90vh;overflow-y:auto}
+/* 216: flex-kolonne, aldri høyere enn vinduet; tittelen står, .vp-modal__body scroller (overflow-y:auto = reserve). */
+.profile-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:440px;box-sizing:border-box;display:flex;flex-direction:column;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto}
+.profile-card h3{flex:0 0 auto}
 .profile-card h3{font-size:18px;font-weight:700;color:var(--text);margin-bottom:20px;display:flex;align-items:center;justify-content:space-between}
 .profile-card h3 button{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:0 4px}
 .profile-card h3 button:hover{color:var(--text)}
@@ -1303,7 +1329,7 @@ body.kunde-maal #minimap-widget{display:none !important}
 #feedback-btn{position:fixed;bottom:16px;right:16px;z-index:100;background:var(--accent);color:#0d0e10;border:none;border-radius:50%;width:48px;height:48px;font-size:20px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);transition:transform .15s,box-shadow .15s;display:none}
 #feedback-btn:hover{transform:scale(1.08);box-shadow:0 6px 24px rgba(0,0,0,.35)}
 .fb-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1200;display:flex;align-items:center;justify-content:center}
-.fb-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:440px;max-width:95vw}
+.fb-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:440px;max-width:95vw;box-sizing:border-box;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto}   /* 216: aldri høyere enn vinduet */
 .fb-types{display:flex;gap:8px;margin-bottom:16px}
 .fb-type{padding:8px 16px;border:1px solid var(--border);border-radius:20px;font-size:13px;color:var(--muted);cursor:pointer;background:none;transition:all .12s}
 .fb-type.active{border-color:var(--accent);color:var(--accent);background:rgba(8,145,178,.06)}
@@ -1320,9 +1346,13 @@ body.kunde-maal #minimap-widget{display:none !important}
 .exp-check input{accent-color:var(--accent);width:16px;height:16px}
 .exp-check.sub{padding-left:24px;font-size:12px;color:var(--muted)}
 .exp-check.sub input{width:14px;height:14px}
-.exp-split{display:flex;gap:0;height:80vh;max-height:80vh}
-.exp-left{width:280px;flex-shrink:0;overflow-y:auto;padding:24px;border-right:1px solid var(--border)}
-.exp-right{flex:1;display:flex;flex-direction:column;padding:24px;background:var(--bg)}
+/* 216: delingen fyller plassen MELLOM topp og bunnlinje (flex:1, min-height:0) i stedet for en egen 80vh —
+   før lå en 80vh-deling inni en 80vh-boks med en 57 px topp over seg, så bunnen av venstre kolonne (og
+   knappene som lå der) ble kuttet. Hver kolonne scroller for seg; knappene ligger i .vp-modal__foot under begge. */
+.exp-split{display:flex;gap:0;flex:1 1 auto;min-height:0}
+.exp-left{width:280px;flex-shrink:0;min-height:0;overflow-y:auto;padding:24px;border-right:1px solid var(--border)}
+.exp-right{flex:1;min-height:0;display:flex;flex-direction:column;padding:24px;background:var(--bg)}
+.exp-foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 24px;border-top:1px solid var(--border)}
 .exp-preview-img{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;background:var(--surface2);border-radius:8px;margin-bottom:12px}
 .exp-preview-img img{max-width:100%;max-height:100%;object-fit:contain}
 .exp-zoom{display:flex;gap:6px;align-items:center;margin-bottom:8px}
@@ -1332,7 +1362,8 @@ body.kunde-maal #minimap-widget{display:none !important}
 
 /* Customer card */
 .cust-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1100;display:flex;align-items:center;justify-content:center}
-.cust-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto}
+/* 216: flex-kolonne og aldri høyere enn vinduet, så .vp-modal__body/__foot virker inni (overflow-y:auto = reserve). */
+.cust-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:560px;max-width:95vw;box-sizing:border-box;display:flex;flex-direction:column;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow-y:auto}
 .cust-search-results{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 30px rgba(20,40,60,.18);max-height:240px;overflow-y:auto;overflow-x:hidden;z-index:10;left:0;right:0;top:calc(100% + 6px);padding:5px}
 .cust-search-results>div{border-radius:8px;border-bottom:none !important}
 /* 139: adresselista i «Hent fra kart» (steg 1). Ligger I FLYTEN inne i dialogen, ikke absolutt —
@@ -1510,6 +1541,7 @@ body.kunde-maal #minimap-widget{display:none !important}
 <div id="profile-overlay" class="profile-overlay" style="display:none" onclick="if(event.target===this)_closeProfile()">
   <div class="profile-card">
     <h3>Innstillinger <button onclick="_closeProfile()">&times;</button></h3>
+    <div class="vp-modal__body">
     <div class="pf-field">
       <label>Fullt navn</label>
       <input id="pf-name" type="text" placeholder="Ola Nordmann">
@@ -1589,6 +1621,7 @@ body.kunde-maal #minimap-widget{display:none !important}
     <h4 style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px">Visning</h4>
     <button class="auth-btn-ghost" onclick="_resetSidebarWidth()" style="width:100%">Tilbakestill sidebar-bredde</button>
     <button class="auth-btn-ghost" onclick="_closeProfile();_openShortcutsPanel()" style="width:100%;margin-top:6px">Hurtigtaster…</button>
+    </div>
   </div>
 </div>
 
@@ -2547,6 +2580,7 @@ body.kunde-maal #minimap-widget{display:none !important}
   <!-- Step 1: Room name -->
   <div class="modal" id="modal-room1" style="display:none" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();const fb=this.querySelector('.floor-choice-btn:focus');if(fb)fb.click();}">
     <div class="modal-title">Legg til rom</div>
+    <div class="modal-body">
     <div class="modal-field">
       <label>Romnavn</label>
       <input class="modal-inp" id="room-name-inp" type="text" placeholder="F.eks. Stue">
@@ -2554,6 +2588,7 @@ body.kunde-maal #minimap-widget{display:none !important}
     <div class="modal-field" id="room-floor-field">
       <label>Etasje</label>
       <select class="modal-inp" id="room-floor-sel" style="cursor:pointer"></select>
+    </div>
     </div>
     <div class="modal-footer">
       <button class="floor-choice-btn" onclick="closeModal()">Avbryt</button>
@@ -2564,6 +2599,7 @@ body.kunde-maal #minimap-widget{display:none !important}
   <!-- Step 2: Shape picker -->
   <div class="modal" id="modal-shape" style="display:none;width:540px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();const fb=this.querySelector('.floor-choice-btn:focus');if(fb)fb.click();}">
     <div class="modal-title">Velg romform</div>
+    <div class="modal-body">
     <div class="shape-grid">
       <div class="shape-card sel" data-shape="rect" onclick="selShape('rect')">
         <span class="shape-ico">▬</span>
@@ -2593,6 +2629,7 @@ body.kunde-maal #minimap-widget{display:none !important}
         <div class="shape-desc">Les av rom automatisk fra vektor-PDF</div>
       </div>
     </div>
+    </div>
     <div class="modal-footer">
       <button class="floor-choice-btn" onclick="backToRoomName()">← Tilbake</button>
       <button class="floor-choice-btn" onclick="confirmShape()">Start tegning</button>
@@ -2602,6 +2639,7 @@ body.kunde-maal #minimap-widget{display:none !important}
   <!-- Hindring type picker -->
   <div class="modal" id="modal-hindring" style="display:none;width:480px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();const fb=this.querySelector('.floor-choice-btn:focus');if(fb)fb.click();}">
     <div class="modal-title">Lag hindring — velg type</div>
+    <div class="modal-body">
     <div class="shape-grid" id="hindring-grid" style="margin-bottom:10px"></div>
     <div class="modal-field">
       <label>Navn (valgfritt)</label>
@@ -2615,6 +2653,7 @@ body.kunde-maal #minimap-widget{display:none !important}
         <input class="modal-inp" id="hindring-lengde-inp" type="number" min="1" step="1" placeholder="↕ Lengde cm" style="flex:1">
       </div>
     </div>
+    </div>
     <div class="modal-footer">
       <button class="floor-choice-btn" onclick="closeModal()">Avbryt</button>
       <button class="floor-choice-btn" onclick="confirmHindringPolygon()">⬡ Tegn polygon →</button>
@@ -2626,6 +2665,7 @@ body.kunde-maal #minimap-widget{display:none !important}
   <!-- Rect form -->
   <div class="modal" id="modal-rect" style="display:none;width:480px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();const fb=this.querySelector('.floor-choice-btn:focus');if(fb)fb.click();}">
     <div class="modal-title">Rektangulært rom — Mål</div>
+    <div class="modal-body">
     <div class="form-sketch">
       <svg width="210" height="140" viewBox="0 0 210 140" style="font-family:'IBM Plex Mono',monospace">
         <rect x="35" y="18" width="140" height="100" fill="rgba(71,180,255,0.06)" stroke="none" rx="1"/>
@@ -2650,6 +2690,7 @@ body.kunde-maal #minimap-widget{display:none !important}
         <input class="modal-inp" id="rect-h-inp" type="number" min="10" step="1" value="300" placeholder="300">
       </div>
     </div>
+    </div>
     <div class="modal-footer">
       <button class="floor-choice-btn" onclick="backToShapePicker()">← Tilbake</button>
       <button class="floor-choice-btn" onclick="confirmRectForm()">Opprett rom</button>
@@ -2659,6 +2700,7 @@ body.kunde-maal #minimap-widget{display:none !important}
   <!-- L-shape form -->
   <div class="modal" id="modal-lshape" style="display:none;width:560px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();const fb=this.querySelector('.floor-choice-btn:focus');if(fb)fb.click();}">
     <div class="modal-title">L-form rom — Velg variant og mål</div>
+    <div class="modal-body">
     <!-- Variant picker -->
     <div class="lv-row">
       <div class="lv-card" id="lv1" onclick="selLshapeVariant(1)" title="Hakk øverst-høyre">
@@ -2704,6 +2746,7 @@ body.kunde-maal #minimap-widget{display:none !important}
         <input class="modal-inp" id="ls-ch-inp" type="number" min="10" step="1" value="200" placeholder="200">
       </div>
     </div>
+    </div>
     <div class="modal-footer">
       <button class="floor-choice-btn" onclick="backToShapePicker()">← Tilbake</button>
       <button class="floor-choice-btn" onclick="confirmLShapeForm()">Opprett rom</button>
@@ -2713,9 +2756,11 @@ body.kunde-maal #minimap-widget{display:none !important}
   <!-- Add floor -->
   <div class="modal" id="modal-floor" style="display:none;width:400px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();const fb=this.querySelector('.floor-choice-btn:focus');if(fb)fb.click();}">
     <div class="modal-title">Legg til etasje</div>
+    <div class="modal-body">
     <div class="modal-field">
       <label>Etasjenavn</label>
       <input class="modal-inp" id="floor-name-inp" type="text" placeholder="F.eks. 1. etasje">
+    </div>
     </div>
     <div class="modal-footer" style="flex-direction:column;gap:8px">
       <button class="floor-choice-btn" onclick="confirmAddFloorWithBg()" style="width:100%">Importer plantegning</button>
@@ -2726,6 +2771,7 @@ body.kunde-maal #minimap-widget{display:none !important}
   <!-- BG CALIBRATION — enter real-world distance -->
   <div class="modal" id="modal-bg-calib" style="display:none;max-width:400px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();const fb=this.querySelector('.floor-choice-btn:focus');if(fb){fb.click();}else{confirmBgCalibrate();}}">
     <div class="modal-title">Sett målestokk</div>
+    <div class="modal-body">
     <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Du har merket to punkter på tegningen. Oppgi den virkelige avstanden mellom dem.</p>
     <div style="display:flex;gap:6px;margin-bottom:10px">
       <button class="snap-chip on" data-unit="m" onclick="setCalibUnit('m')" title="Meter">m</button>
@@ -2741,6 +2787,7 @@ body.kunde-maal #minimap-widget{display:none !important}
         <span id="bg-calib-unit-lbl" style="font-size:14px;color:var(--muted);margin-left:4px">m</span>
       </div>
     </div>
+    </div>
     <div class="modal-footer">
       <button class="floor-choice-btn" onclick="confirmBgCalibrate()">Sett målestokk →</button>
       <button class="floor-choice-btn" onclick="cancelBgCalibrate()">Avbryt</button>
@@ -2750,6 +2797,7 @@ body.kunde-maal #minimap-widget{display:none !important}
   <!-- FIXED SCALE MODAL -->
   <div class="modal" id="modal-fixed-scale" style="display:none;max-width:360px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmFixedScale();}">
     <div class="modal-title">Fast målestokk</div>
+    <div class="modal-body">
     <p style="font-size:13px;color:var(--muted);margin:0 0 14px">Oppgi tegningens målestokk (f.eks. 1:100 betyr at 1 cm på tegningen = 100 cm i virkeligheten).</p>
     <div class="modal-field">
       <label>Målestokk</label>
@@ -2759,6 +2807,7 @@ body.kunde-maal #minimap-widget{display:none !important}
       </div>
     </div>
     <p style="font-size:11px;color:var(--dim);margin:8px 0 0">Vanlige målestokker: 1:50, 1:100, 1:200, 1:500</p>
+    </div>
     <div class="modal-footer">
       <button class="floor-choice-btn" onclick="confirmFixedScale()">Bruk målestokk →</button>
       <button class="floor-choice-btn" onclick="closeModal()">Avbryt</button>
@@ -2768,8 +2817,10 @@ body.kunde-maal #minimap-widget{display:none !important}
   <!-- Batch status picker -->
   <div class="modal" id="modal-batch-status" style="display:none;max-width:380px" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">
     <div class="modal-title">Endre status</div>
+    <div class="modal-body">
     <p style="font-size:13px;color:var(--muted);margin:0 0 16px" id="batch-status-subtitle"></p>
     <div class="status-chips" id="batch-status-chips"></div>
+    </div>
     <div class="modal-footer">
       <button class="floor-choice-btn" onclick="closeModal()">Avbryt</button>
     </div>
@@ -2868,14 +2919,16 @@ body.kunde-maal #minimap-widget{display:none !important}
 </div>
 
 <div id="excel-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2000;display:none;align-items:center;justify-content:center">
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px;width:700px;max-width:95vw;max-height:90vh;overflow-y:auto;display:flex;flex-direction:column;gap:20px">
-    <div style="display:flex;align-items:center;justify-content:space-between">
+  <!-- 216: .vp-modal — topp og knapperad (#excel-foot) står fast, innholdet (inkl. forhåndsvisningstabellen) scroller. -->
+  <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px;width:700px;max-width:95vw;display:flex;flex-direction:column;gap:20px">
+    <div class="vp-modal__head" style="display:flex;align-items:center;justify-content:space-between">
       <div>
         <div style="font-size:18px;font-weight:700;color:var(--text)">Importer produkter fra Excel</div>
         <div style="font-size:13px;color:var(--muted);margin-top:4px">Last opp .xlsx-fil — data forhåndsvises før import til Supabase</div>
       </div>
       <button onclick="closeExcelModal()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
     </div>
+    <div class="vp-modal__body" style="display:flex;flex-direction:column;gap:20px">
 
     <!-- Forventet kolonneformat -->
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:12px;color:var(--muted)">
@@ -2913,13 +2966,15 @@ body.kunde-maal #minimap-widget{display:none !important}
           <tbody id="excel-tbody"></tbody>
         </table>
       </div>
-      <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
-        <button onclick="closeExcelModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 20px;font-size:14px;color:var(--muted);cursor:pointer">Avbryt</button>
-        <button id="excel-import-btn" onclick="confirmExcelImport()" style="background:var(--accent);color:#0d0e10;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">Importer til Supabase →</button>
-      </div>
     </div>
 
     <div id="excel-status" style="display:none;text-align:center;padding:16px;border-radius:8px;font-weight:500"></div>
+    </div>
+    <!-- 216: knappene lå inne i #excel-preview etter tabellen; nå egen bunnlinje som vises/skjules sammen med forhåndsvisningen. -->
+    <div id="excel-foot" class="vp-modal__foot" style="display:none;gap:10px;justify-content:flex-end">
+        <button onclick="closeExcelModal()" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 20px;font-size:14px;color:var(--muted);cursor:pointer">Avbryt</button>
+        <button id="excel-import-btn" onclick="confirmExcelImport()" style="background:var(--accent);color:#0d0e10;border:none;border-radius:8px;padding:10px 20px;font-size:14px;font-weight:600;cursor:pointer">Importer til Supabase →</button>
+    </div>
   </div>
 </div>
 
@@ -3813,12 +3868,13 @@ function _openSnowCalc() {
   const fld = (label, inner) => `<div class="snow-field"><label>${label}</label>${inner}</div>`;
 
   const html = `<div class="modal-backdrop" id="snow-modal-bg" onclick="if(event.target===this)this.remove()">
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 24px;width:min(960px,95vw);max-height:94vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.4)">
+    <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 24px;width:min(960px,95vw);box-shadow:0 24px 64px rgba(0,0,0,.4)">
       <div style="display:flex;align-items:center;gap:11px;margin-bottom:16px">
         <div style="width:40px;height:40px;border-radius:11px;background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);display:flex;align-items:center;justify-content:center">${IC('snowflake',22)}</div>
         <div style="flex:1"><div style="font-size:19px;font-weight:800;color:var(--text);letter-spacing:-.01em">Snøsmelting – effektbehov</div><div style="font-size:12.5px;color:var(--muted)">Værforhold + gulvoppbygging → overflatelast, kabeltemp, bakketap, produkt</div></div>
         <button onclick="document.getElementById('snow-modal-bg').remove()" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1">&times;</button>
       </div>
+      <div class="vp-modal__body">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
         <div>
           <div class="snow-sec">Værforhold → overflatelast</div>
@@ -3862,7 +3918,8 @@ function _openSnowCalc() {
         </div>
         <div id="snow-warnbox" style="background:rgba(201,138,18,.14);border-radius:9px;padding:9px 12px;font-size:12px;color:var(--warn);margin-top:10px;display:none"></div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      </div>
+      <div class="vp-modal__foot" style="display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
         <input id="snow-save-name" class="snow-inp" type="text" placeholder="Prosjektnavn…" style="flex:1;max-width:280px">
         <button id="snow-save-btn" onclick="_snowSaveToProject()" class="dash-create-btn">${IC('save',15)} Lagre i prosjekt</button>
         <span id="snow-save-msg" style="font-size:12px;color:var(--muted)"></span>
@@ -4044,12 +4101,13 @@ function _openFrostModule() {
   const isoOpts = FROST_ISO.map(v => `<option value="${v}"${v===30?' selected':''}>${v} mm</option>`).join('');
   const fld = (label, inner) => `<div class="dash-create-field" style="margin-bottom:12px"><label>${label}</label>${inner}</div>`;
   const html = `<div class="modal-backdrop" id="frost-modal-bg" onclick="if(event.target===this)this.remove()">
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 24px;width:min(720px,94vw);max-height:92vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.4)">
+    <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 24px;width:min(720px,94vw);box-shadow:0 24px 64px rgba(0,0,0,.4)">
       <div style="display:flex;align-items:center;gap:11px;margin-bottom:18px">
         <div style="width:40px;height:40px;border-radius:11px;background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);display:flex;align-items:center;justify-content:center">${IC('droplet',22)}</div>
         <div style="flex:1"><div style="font-size:19px;font-weight:800;color:var(--text);letter-spacing:-.01em">Frostsikring rør</div><div style="font-size:12.5px;color:var(--muted)">Fyll inn rør og forhold → behov i W/m → foreslått kabel</div></div>
         <button onclick="document.getElementById('frost-modal-bg').remove()" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1">&times;</button>
       </div>
+      <div class="vp-modal__body">
       <div style="display:grid;grid-template-columns:1.05fr .95fr;gap:22px;align-items:start">
         <div>
           ${fld('Rørdiameter', `<select id="frost-diam" class="dash-create-input" onchange="_frostCalc()">${diamOpts}</select>`)}
@@ -4070,7 +4128,8 @@ function _openFrostModule() {
           <div id="frost-cablebox"></div>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+      </div>
+      <div class="vp-modal__foot" style="display:flex;align-items:center;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
         <input id="frost-save-name" class="dash-create-input" type="text" placeholder="Prosjektnavn…" style="flex:1;max-width:280px">
         <button id="frost-save-btn" onclick="_frostSaveToProject()" class="dash-create-btn">${IC('save',15)} Lagre i prosjekt</button>
         <span id="frost-save-msg" style="font-size:12px;color:var(--muted)"></span>
@@ -10917,11 +10976,12 @@ function openKundeLinkModal() {
   ov.id = '_kunde-ov';
   ov.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(540px,94vw);max-height:88vh;overflow:auto;padding:24px">
+  ov.innerHTML = `<div class="vp-modal" onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(540px,94vw);padding:24px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
       <div style="font-size:17px;font-weight:700;color:var(--text)">Be kunde om mål</div>
       <button onclick="document.getElementById('_kunde-ov').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">&times;</button>
     </div>
+    <div class="vp-modal__body">
     <div style="font-size:12px;color:var(--dim);margin-bottom:16px">Kunden får en lenke som viser tegningen uten innlogging — kun geometri og romnavn. Ingen produkter, priser eller kundeopplysninger.</div>
 
     <div style="margin-bottom:14px">
@@ -10966,8 +11026,9 @@ function openKundeLinkModal() {
     </div>
 
     <div id="kunde-result" style="display:none;margin-bottom:14px"></div>
+    </div>
 
-    <div style="display:flex;justify-content:flex-end;gap:9px">
+    <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:9px">
       <button onclick="document.getElementById('_kunde-ov').remove()" style="padding:8px 15px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer">Avbryt</button>
       <button id="kunde-create" onclick="_kundeCreateLink()" style="padding:8px 19px;background:var(--accent);border:none;border-radius:8px;font-size:13px;font-weight:600;color:#0d0e10;cursor:pointer">Lag lenke</button>
     </div>
@@ -12464,10 +12525,11 @@ function _kundeRoomForm(roomId) {
              border:1px solid ${valgt===v?'var(--accent)':'var(--border)'};
              background:${valgt===v?'var(--accent)':'var(--surface2)'};color:${valgt===v?'#0d0e10':'var(--text)'}">${esc(l)}</button>`).join('');
 
-  ov.innerHTML = `<div style="background:var(--surface,#16171c);border-top-left-radius:16px;border-top-right-radius:16px;
-      width:min(640px,100%);max-height:88vh;overflow:auto;padding:16px 16px 20px;border:1px solid var(--border)">
+  ov.innerHTML = `<div class="vp-modal" style="background:var(--surface,#16171c);border-top-left-radius:16px;border-top-right-radius:16px;
+      width:min(640px,100%);padding:16px 16px 20px;border:1px solid var(--border)">
     <div style="font-size:16px;font-weight:700;margin-bottom:3px">Om rommet</div>
     <div style="font-size:12px;color:var(--dim);margin-bottom:14px">${(r.area/10000).toFixed(1).replace('.',',')} m² · ${r.points.length} hjørner</div>
+    <div class="vp-modal__body">
 
     <label style="display:block;font-size:12px;color:var(--dim);margin-bottom:4px">Romnavn</label>
     <input value="${esc(r.name||'')}" oninput="_kundeRoomSet(${roomId},'name',this.value,true)"
@@ -12493,7 +12555,8 @@ function _kundeRoomForm(roomId) {
     <textarea rows="2" oninput="_kundeRoomSet(${roomId},'_kundeKommentar',this.value,true)"
       style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface2);color:var(--text);font-size:14px;resize:vertical">${esc(r._kundeKommentar||'')}</textarea>
 
-    <div style="display:flex;gap:8px;margin-top:16px">
+    </div>
+    <div class="vp-modal__foot" style="display:flex;gap:8px;margin-top:16px">
       <button onclick="_kundeSlettRom(${roomId});_kundeRoomFormClose()"
         style="padding:12px 15px;border:1px solid var(--border);border-radius:9px;background:var(--surface2);color:#f87171;font-size:13px;cursor:pointer;min-height:48px">Slett rommet</button>
       <span style="flex:1"></span>
@@ -13295,11 +13358,12 @@ function _presentShareModal(url, forslagToken) {
   ov.id = '_del-ov';
   ov.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);padding:24px">
+  ov.innerHTML = `<div class="vp-modal" onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);padding:24px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
       <div style="font-size:17px;font-weight:700;color:var(--text)">Del presentasjon</div>
       <button onclick="document.getElementById('_del-ov').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">&times;</button>
     </div>
+    <div class="vp-modal__body">
     <div style="font-size:12px;color:var(--dim);margin-bottom:16px">Lim inn i e-posten — kunden trykker på <b>PRESENTASJON</b> og ser prosjektet uten innlogging.</div>
 
     <div style="font-size:12px;font-weight:600;margin-bottom:5px">Lenketekst</div>
@@ -13329,7 +13393,8 @@ function _presentShareModal(url, forslagToken) {
         style="padding:7px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;font-size:12px;color:var(--text);cursor:pointer">Kopier adresse</button>
     </div>
 
-    <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+    </div>
+    <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
       <a id="_del-apne" href="${esc(_delUrler.forslag || url)}" target="_blank" rel="noopener"
         style="padding:8px 15px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text);text-decoration:none">Åpne</a>
       <button onclick="document.getElementById('_del-ov').remove()"
@@ -18654,14 +18719,15 @@ function _showMatZoneProposalPanel(room, prod, zonePlan, opts) {
   if (old) old.remove();
   const div = document.createElement('div');
   div.id = 'mat-zone-panel';
-  div.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--brd);border-radius:10px;padding:16px;z-index:10000;box-shadow:0 8px 32px rgba(0,0,0,0.35);max-width:440px;max-height:80vh;overflow-y:auto;font-size:13px;color:var(--text)';
+  div.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--brd);border-radius:10px;padding:16px;z-index:10000;box-shadow:0 8px 32px rgba(0,0,0,0.35);max-width:440px;font-size:13px;color:var(--text)';
+  div.className = 'vp-modal';   // 216: aldri høyere enn vinduet; knappene i egen bunnlinje
   // 134 / D: et rektangulært rom kommer hit bare med et kvalifisert restfelt (Regel 29).
   const intro = zonePlan.single
     ? `<div style="font-weight:700;font-size:14px;margin-bottom:4px">Én matte med tverrstykker i restfeltet</div>
     <div style="color:var(--dim);font-size:12px;margin-bottom:6px">${esc(room.name || 'Rommet')} er rektangulært, men restfeltet langs veggen er for smalt for en vanlig bredde og bredt nok for tverrlagte stykker — det fylles på tvers som fortsettelse av samme matte (Regel 29), med et fritt hopp inn (Regel 28).</div>`
     : `<div style="font-weight:700;font-size:14px;margin-bottom:4px">Én matte gjennom ${nChap} soner</div>
     <div style="color:var(--dim);font-size:12px;margin-bottom:6px">${esc(room.name || 'Rommet')} er ikke rektangulært — matta legges kapittel for kapittel i rekkefølgen retningsvelgeren gir, med et fritt hopp mellom kapitlene (Regel 28). Ledig plass i nabosonen brukes og breddene ankres inntil hverandre (Regel 27); slakken ligger mot ytterveggene (Regel 20).</div>`;
-  div.innerHTML = `${intro}
+  div.innerHTML = `<div class="vp-modal__body">${intro}
     <div style="font-weight:600;margin-bottom:4px">${head}</div>
     ${zoneRows}
     <div style="margin-top:10px;margin-bottom:4px;font-weight:600">Ruller (Σ bredder = ${(zonePlan.totalCm / 100).toFixed(1)} m)</div>
@@ -18670,7 +18736,8 @@ function _showMatZoneProposalPanel(room, prod, zonePlan, opts) {
     ${btaNote}
     ${excludedNote}
     ${restNote}
-    <div style="display:flex;gap:8px;margin-top:10px">
+    </div>
+    <div class="vp-modal__foot" style="display:flex;gap:8px;margin-top:10px">
       <button id="mat-zone-cancel" style="flex:1;padding:8px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer">Avbryt</button>
       <button id="mat-zone-apply" style="flex:1;padding:8px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-weight:600">Legg ut</button>
     </div>`;
@@ -51889,7 +51956,8 @@ function showMatWholeBandPanel(targetType, targetId) {
   if (!panel) {
     panel = document.createElement('div');
     panel.id = 'mwb-panel';
-    panel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--brd);border-radius:10px;padding:16px;z-index:900;box-shadow:0 8px 32px rgba(0,0,0,0.35);width:380px;max-height:80vh;overflow-y:auto;font-size:13px;color:var(--text)';
+    panel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--brd);border-radius:10px;padding:16px;z-index:900;box-shadow:0 8px 32px rgba(0,0,0,0.35);width:380px;font-size:13px;color:var(--text)';
+    panel.className = 'vp-modal';   // 216
     document.body.appendChild(panel);
   }
   _mwbRender();
@@ -51965,13 +52033,15 @@ function _mwbRender() {
   panel.innerHTML = `
     <div style="font-weight:700;font-size:14px;margin-bottom:2px">Del så matta går opp</div>
     <div style="color:var(--dim);font-size:12px;margin-bottom:10px">${esc(targetLabel)}${dimsLabel ? ' · ' + dimsLabel : ''}</div>
+    <div class="vp-modal__body">
     <div style="margin-bottom:8px">
       <label style="font-size:11px;color:var(--dim);display:block;margin-bottom:3px">Mattprodukt</label>
       <select onchange="_mwbSetProduct(this.value)" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);font-size:12px">${famOpts}</select>
     </div>
     ${resultHtml}
     ${othersHtml}
-    <div style="display:flex;gap:6px;margin-top:12px">
+    </div>
+    <div class="vp-modal__foot" style="display:flex;gap:6px;margin-top:12px">
       <button onclick="_mwbCancel()" style="flex:1;padding:8px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer;font-size:12px">Avbryt</button>
       <button onclick="_mwbToggleOthers()" style="flex:1;padding:8px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer;font-size:12px">${_mwbShowOthers ? 'Skjul' : 'Vis'} andre matter</button>
       ${canApply ? `<button onclick="_mwbApply()" style="flex:1;padding:8px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-weight:600;font-size:12px">Del i ${plan.nBands} bånd</button>` : ''}
@@ -66299,14 +66369,16 @@ function _pdfPagePickerShowModal(pdf, file, fileName, pages, ctx) {
     ? `${esc(fileName)} — ${pages.length} sider. Velg ÉN side som skal erstatte plantegningen i ${esc(replaceFloor ? replaceFloor.name : 'etasjen')}. Rommene beholdes; er den nye siden like stor som den gamle, beholdes også målestokken.`
     : `${esc(fileName)} — ${pages.length} sider. Huk av sidene du vil importere, og velg hvilken etasje hver skal ligge i. «+ Ny etasje» bruker navnet du skriver, ellers et standardnavn du kan endre etterpå.`;
   ov.innerHTML = `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:${replacing ? 480 : 600}px;max-width:94vw;max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:12px">
+    <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:${replacing ? 480 : 600}px;max-width:94vw;display:flex;flex-direction:column;gap:12px">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div style="font-size:16px;font-weight:700;color:var(--text)">${heading}</div>
         <button onclick="_pdfPagePickerClose()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
       </div>
+      <div class="vp-modal__body" style="display:flex;flex-direction:column;gap:12px">
       <div style="font-size:12px;color:var(--muted)">${intro}</div>
       <div>${rows}</div>
-      <div style="display:flex;justify-content:flex-end;gap:10px">
+      </div>
+      <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:10px">
         <button onclick="_pdfPagePickerClose()" style="padding:8px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer">Avbryt</button>
         <button id="_pdf-page-picker-go" disabled style="padding:8px 20px;background:var(--accent);border:none;border-radius:8px;font-size:13px;font-weight:600;color:#0d0e10;cursor:default;opacity:0.5">${replacing ? 'Erstatt plantegning' : 'Importer 0 sider'}</button>
       </div>
@@ -69757,8 +69829,9 @@ function _renderHsBuilder() {
   for (const p of cableProds) prodOpts += `<option value="${p.id}">${esc(p.name)} (${p.cable_length_m || '?'}m, ${p.watt_per_m || '?'}W/m)</option>`;
   const lbl = t => `<span style="color:var(--muted)">${t}</span>`;
   const html = `<div class="modal-backdrop" id="stair-modal-bg" onclick="if(event.target===this)this.remove()">
-    <div style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(520px,92vw);max-height:88vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+    <div class="vp-modal" style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(520px,92vw);box-shadow:0 12px 40px rgba(0,0,0,0.4)">
       <h3 style="margin:0 0 14px;font-size:16px;color:var(--text)">🪜 ${editing ? 'Rediger hesteskotrapp' : 'Bygg hesteskotrapp'}</h3>
+      <div class="vp-modal__body">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;font-size:13px;margin-bottom:12px">
         <label style="grid-column:1/3">${lbl('Navn')}<br><input id="stair-name" value="${esc(b.name)}" style="${inp}"></label>
         <label>${lbl('Toppflate bredde (cm)')}<br>${num('topW', 'topW', b.topW)}</label>
@@ -69789,7 +69862,8 @@ function _renderHsBuilder() {
         <label>${lbl('Maks CC (cm)')}<br>${num('maxCC', 'maxCC', b.maxCC, `min="3" max="${_stairBuilderMaxCc()}" step="0.5"`)}</label>
         <label style="grid-column:1/3">${lbl('Kabelprodukt')}<br><select id="stair-product" style="${inp}">${prodOpts}</select></label>
       </div>`}
-      <div style="display:flex;gap:8px;justify-content:flex-end">
+      </div>
+      <div class="vp-modal__foot" style="display:flex;gap:8px;justify-content:flex-end">
         ${editing ? '' : `<button onclick="document.getElementById('stair-modal-bg').remove();_showStairDesignPicker()" style="padding:8px 16px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;margin-right:auto">← Trappedesign</button>`}
         <button onclick="document.getElementById('stair-modal-bg').remove()" style="padding:8px 16px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px">Avbryt</button>
         <button id="shs-ok" onclick="_confirmHsBuilder()" style="padding:8px 16px;border-radius:6px;border:none;background:#4ea8ff;color:#fff;cursor:pointer;font-size:13px;font-weight:600">${editing ? 'Lagre endringer' : 'Plasser trapp'}</button>
@@ -70023,8 +70097,9 @@ function _renderStairBuilderModal() {
   const stats = _stairBuilderStats();
 
   const html = `<div class="modal-backdrop" id="stair-modal-bg" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45)">
-    <div style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(500px,92vw);max-height:88vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+    <div class="vp-modal" style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(500px,92vw);box-shadow:0 12px 40px rgba(0,0,0,0.4)">
       <h3 style="margin:0 0 14px;font-size:16px;color:var(--text)">🪜 ${_stairBuilderEditingId != null ? 'Rediger trinn/soner' : 'Bygg trapp'}</h3>
+      <div class="vp-modal__body">
 
       <!-- Name + direction row -->
       <!-- DEL B (spec-trapp-navn-oversikt.md): navnefeltet ble FJERNET HELT i redigeringsmodus —
@@ -70071,8 +70146,9 @@ function _renderStairBuilderModal() {
         <label id="stair-landing-cc-wrap" style="color:var(--muted);${_stairBuilderSegs.some(sg => sg.type === 'landing') ? '' : 'display:none'}">Maks CC repos (cm)<br><input id="stair-landing-cc" type="number" value="10" min="3" max="${_stairBuilderMaxCc()}" step="0.5" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);font-size:13px"></label>
       </div>`}
 
-      <!-- Action buttons -->
-      <div style="display:flex;gap:8px;justify-content:flex-end">
+      </div>
+      <!-- Action buttons (216: egen bunnlinje) -->
+      <div class="vp-modal__foot" style="display:flex;gap:8px;justify-content:flex-end">
         <button onclick="document.getElementById('stair-modal-bg').remove()" style="padding:8px 16px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px">Avbryt</button>
         <button onclick="_confirmAddStair()" style="padding:8px 16px;border-radius:6px;border:none;background:#4ea8ff;color:#fff;cursor:pointer;font-size:13px;font-weight:600" ${_stairBuilderSegs.length===0?'disabled':''}>${_stairBuilderEditingId != null ? 'Lagre endringer' : 'Plasser trapp'}</button>
       </div>
@@ -70533,8 +70609,10 @@ function showAddFloorModal() {
   setTimeout(()=>{ const el=document.getElementById('floor-name-inp'); el.focus(); el.select(); },60);
 }
 function showModal(id) {
+  // 216: '' (ikke 'block') så .modal-CSS-en bestemmer visningen — den er en flex-kolonne der bare
+  // .modal-body scroller. Et inline display:block ville slått den av.
   ['modal-room1','modal-shape','modal-floor','modal-hindring','modal-rect','modal-lshape','modal-bg-calib','modal-fixed-scale','modal-batch-status'].forEach(mid=>{
-    document.getElementById(mid).style.display=mid===id?'block':'none';
+    document.getElementById(mid).style.display=mid===id?'':'none';
   });
   document.getElementById('modal-ov').style.display='flex';
 }
@@ -70553,6 +70631,94 @@ function closeModal() {
   if (S.floors && S.floors.length > 0) showDrawToolbar();
 }
 function maybeCloseModal(e) { if(e.target===document.getElementById('modal-ov')) closeModal(); } // kept for compat
+
+// ═══ 216 · REGRESJON: KNAPPENE I BUNNEN AV DIALOGER SKAL ALLTID SYNES (Kenneth 08.11.2026) ═══════════
+// Kjøres fra konsollen: await _dialogRegressionTest216(). Åpner hver dialog i lista og sjekker
+//   (a) boksen har en max-height som ikke er høyere enn vinduet (regelen «aldri høyere enn vinduet»),
+//   (b) boksen ligger innenfor vinduet,
+//   (c) hver knapp i bunnlinja er helt innenfor vinduet og klikkbar (elementFromPoint) UTEN scrolling,
+//   (d) ingen knapp ligger inne i et element som scroller (annet enn selve boksen) — det var feilen i
+//       Eksporter PDF, der knappene lå nederst i venstre kolonne,
+//   (e) Eksporter PDF med 40 midlertidige rom: romlista scroller, knappene står fast.
+// Lista er MANUELL (som _SHORTCUTS): ny dialog → ny rad her. Vindusstørrelsene (1366×650, 1280×720,
+// 1440×900, 1024×600) måles utenfra med docs/216-dialoger/probe/maal.mjs; her måles det vinduet testen
+// kjører i, pluss max-height-regelen som gjelder uansett størrelse.
+const _DIALOG_TEST_216 = [
+  { navn: 'Eksporter PDF', aapne: () => _showExportDialog(), boks: '#export-dialog > div', knapper: '#export-dialog .vp-modal__foot button', rull: '#export-dialog .exp-left',
+    lukk: () => { const o = document.getElementById('export-dialog'); if (o) o.style.display = 'none'; } },
+  ...['modal-room1', 'modal-shape', 'modal-hindring', 'modal-rect', 'modal-lshape', 'modal-floor', 'modal-bg-calib', 'modal-fixed-scale', 'modal-batch-status'].map(id => ({
+    navn: id, aapne: () => showModal(id), boks: '#' + id, knapper: '#' + id + ' .modal-footer button', rull: '#' + id + ' .modal-body', lukk: () => closeModal() })),
+  // JS-bygde dialoger som kan åpnes i en blank app (uten innlogging, prosjekt eller karttjeneste).
+  // Innstillinger har ingen felles bunnlinje (tre seksjoner med hver sin knapp) — der sjekkes bare ×.
+  { navn: 'Innstillinger', aapne: () => _openProfile(), boks: '#profile-overlay .profile-card', knapper: '#profile-overlay h3 button', rull: '#profile-overlay .vp-modal__body', lukk: () => _closeProfile() },
+  { navn: 'Importer produkter fra Excel', aapne: () => { openExcelModal(); document.getElementById('excel-preview').style.display = 'block'; document.getElementById('excel-foot').style.display = 'flex'; },
+    boks: '#excel-modal > div', knapper: '#excel-foot button', rull: '#excel-modal .vp-modal__body',
+    lukk: () => { closeExcelModal(); document.getElementById('excel-preview').style.display = 'none'; document.getElementById('excel-foot').style.display = 'none'; } },
+  { navn: 'Snøsmelting – effektbehov', aapne: () => _openSnowCalc(), boks: '#snow-modal-bg > div', knapper: '#snow-modal-bg .vp-modal__foot button', rull: '#snow-modal-bg .vp-modal__body', lukk: () => document.getElementById('snow-modal-bg')?.remove() },
+  { navn: 'Frostsikring rør', aapne: () => _openFrostModule(), boks: '#frost-modal-bg > div', knapper: '#frost-modal-bg .vp-modal__foot button', rull: '#frost-modal-bg .vp-modal__body', lukk: () => document.getElementById('frost-modal-bg')?.remove() },
+  { navn: 'Del presentasjon', aapne: () => _presentShareModal('https://example.invalid/?present=test', 'test'), boks: '#_del-ov > div', knapper: '#_del-ov .vp-modal__foot button, #_del-ov .vp-modal__foot a', rull: '#_del-ov .vp-modal__body', lukk: () => document.getElementById('_del-ov')?.remove() },
+  { navn: 'Kunde & prosjektinfo', aapne: () => _wfKundeModal(), boks: '#wf-kunde-modal > div', knapper: '#wf-kunde-modal .vp-modal__foot button', rull: '#wf-kunde-modal .vp-modal__body', lukk: () => document.getElementById('wf-kunde-modal')?.remove() },
+  { navn: 'Bygg hesteskotrapp', aapne: () => _showHsBuilder(), boks: '#stair-modal-bg > div', knapper: '#stair-modal-bg .vp-modal__foot button', rull: '#stair-modal-bg .vp-modal__body', lukk: () => document.getElementById('stair-modal-bg')?.remove() },
+  { navn: 'Bygg trapp', aapne: () => _showStraightStairBuilder(), boks: '#stair-modal-bg > div', knapper: '#stair-modal-bg .vp-modal__foot button', rull: '#stair-modal-bg .vp-modal__body', lukk: () => document.getElementById('stair-modal-bg')?.remove() },
+  { navn: 'Ny kunde', aapne: () => _showNewCustomerPopup(), boks: '#new-customer-popup-overlay > div', knapper: '#new-customer-popup-overlay .vp-modal__foot button', rull: '#new-customer-popup-overlay .vp-modal__body', lukk: () => { const o = document.getElementById('new-customer-popup-overlay'); if (o) o.style.display = 'none'; } },
+  { navn: 'Gi kunden tilgang til Varmeplan', aapne: () => _coOpen(), boks: '#co-overlay .cust-card', knapper: '#co-foot button', rull: '#co-overlay .vp-modal__body', lukk: () => { const o = document.getElementById('co-overlay'); if (o) o.style.display = 'none'; } },
+];
+async function _dialogRegressionTest216() {
+  const results = [];
+  const t = (name, ok, info) => results.push({ name, ok: !!ok, info });
+  const H = innerHeight;
+  const vent = ms => new Promise(r => setTimeout(r, ms));
+  // Innloggings-/prosjektlisteskjermen ligger på z-index 1100 og ville dekket dialoger på samme nivå
+  // (elementFromPoint) når testen kjøres uten innlogging — skjules under testen, settes tilbake etterpå.
+  const skjermer = ['auth-screen', 'project-list-screen'].map(id => { const el = document.getElementById(id); return el ? [el, el.style.display] : null; }).filter(Boolean);
+  for (const [el] of skjermer) el.style.display = 'none';
+  // Finnes det et element MELLOM knappen og boksen som faktisk scroller? (Boksen selv er lov.)
+  const scrollerMellom = (el, boks) => { let p = el.parentElement; while (p && p !== boks) { const o = getComputedStyle(p).overflowY; if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight + 1) return p; p = p.parentElement; } return null; };
+  const sjekk = async (d, merke) => {
+    const navn = d.navn + (merke || '');
+    try {
+      d.aapne(); await vent(60);
+      const boks = document.querySelector(d.boks);
+      t(`${navn}: boksen finnes`, !!boks);
+      if (!boks) return null;
+      const mh = parseFloat(getComputedStyle(boks).maxHeight);
+      t(`${navn}: max-height ≤ vinduet`, Number.isFinite(mh) && mh <= H, `${mh} / ${H}`);
+      const bb = boks.getBoundingClientRect();
+      t(`${navn}: boksen innenfor vinduet`, bb.top >= 0 && bb.bottom <= H + 0.5, `${Math.round(bb.top)}..${Math.round(bb.bottom)} / ${H}`);
+      const kn = [...document.querySelectorAll(d.knapper)].filter(b => b.getClientRects().length);
+      t(`${navn}: har knapper i bunnlinja`, kn.length > 0, kn.length);
+      for (const b of kn) {
+        const r = b.getBoundingClientRect(); const tekst = b.textContent.trim().slice(0, 24);
+        const topp = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        t(`${navn}: «${tekst}» innenfor vinduet`, r.top >= 0 && r.bottom <= H + 0.5, `${Math.round(r.top)}..${Math.round(r.bottom)}`);
+        t(`${navn}: «${tekst}» klikkbar uten scrolling`, !!topp && (topp === b || b.contains(topp)), topp ? (topp.id || topp.className || topp.tagName) : 'ingenting');
+        const s = scrollerMellom(b, boks);
+        t(`${navn}: «${tekst}» ikke inne i en kolonne som scroller`, !s, s ? (s.id || s.className) : '');
+      }
+      return boks;
+    } catch (e) { t(`${navn}: unntak`, false, String(e.message).slice(0, 160)); return null; }
+  };
+  for (const d of _DIALOG_TEST_216) { await sjekk(d); try { d.lukk(); } catch (e) {} }
+  // (e) lang romliste: 40 midlertidige rom, så venstre kolonne må scrolle — knappene skal stå fast.
+  const d0 = _DIALOG_TEST_216[0]; const rooms0 = S.rooms;
+  try {
+    const fid = S.ui.activeFloorId, pid = S.ui.activePartId;
+    const pts = [{ x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 300 }, { x: 0, y: 300 }];
+    S.rooms = (rooms0 || []).concat(Array.from({ length: 40 }, (_, k) => ({ id: 216000 + k, floorId: fid, partId: pid, name: 'Testrom 216-' + (k + 1), points: pts.map(p => ({ x: p.x + k * 400, y: p.y })), walls: [], area: 9, dims: [] })));
+    const boks = await sjekk(d0, ' (40 rom)');
+    if (boks) {
+      const rull = document.querySelector(d0.rull);
+      t('Eksporter PDF (40 rom): romlista scroller', !!rull && rull.scrollHeight > rull.clientHeight + 1, rull ? `${rull.scrollHeight} > ${rull.clientHeight}` : 'ingen kolonne');
+      if (rull) { rull.scrollTop = 1e6; const sist = rull.lastElementChild; const sr = sist.getBoundingClientRect(), rr = rull.getBoundingClientRect();
+        t('Eksporter PDF (40 rom): siste element i lista nås ved scrolling', sr.bottom <= rr.bottom + 1 && sr.bottom <= H, `${Math.round(sr.bottom)} ≤ ${Math.round(rr.bottom)}`); rull.scrollTop = 0; }
+    }
+  } catch (e) { t('Eksporter PDF (40 rom): unntak', false, String(e.message).slice(0, 160)); }
+  finally { S.rooms = rooms0; try { d0.lukk(); } catch (e) {} }
+  for (const [el, disp] of skjermer) el.style.display = disp;
+  const ok = results.every(r => r.ok);
+  console[ok ? 'log' : 'error'](`_dialogRegressionTest216: ${ok ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
+  return { ok, results };
+}
 
 function goToShapePicker() {
   S.ui.pendingRoomName=document.getElementById('room-name-inp').value.trim()||_roomWord(true)+' '+S.counters.nextRoomId;
@@ -89130,7 +89296,7 @@ function _roofRender() {
     ? `<button id="_roof-retry" onclick="${d.retry}()" style="flex:none;padding:5px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;font-size:12px;font-weight:600;color:var(--text);cursor:pointer">Prøv igjen</button>` : '';
   const err = d.error ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;color:var(--warn);background:rgba(245,158,11,.12);border:1px solid var(--warn);border-radius:8px;padding:8px 10px"><span>⚠ ${esc(d.error)}</span>${retryBtn}</div>` : '';
   const spin = d.busy ? `<div id="_roof-busy" style="font-size:12px;color:var(--accent)">${esc(d.busyText || 'Henter …')}</div>` : '';
-  let body = '';
+  let body = '', foot = '';   // 216: stegets knapper ligger i bunnlinja (foot), ikke i innholdet som scroller
 
   if (d.step === 1) {
     // 139: tjenestestatus-linje, adresseliste i flyten under feltet, Enter/«Finn bygg» → _roofAddrSubmit.
@@ -89140,8 +89306,8 @@ function _roofRender() {
       <input id="_roof-addr" type="text" value="${esc(d.address)}" placeholder="Adresse, f.eks. Storgata 1, 0155 Oslo" autocomplete="off"
         oninput="_roofAddrInput(this.value)" onkeydown="_roofAddrKey(event)"
         style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);color:var(--text);font-size:14px">
-      <div id="_roof-addr-list">${_roofAddrListHtml(d)}</div>
-      <div style="display:flex;justify-content:flex-end;gap:10px">
+      <div id="_roof-addr-list">${_roofAddrListHtml(d)}</div>`;
+    foot = `<div style="display:flex;justify-content:flex-end;gap:10px">
         <button onclick="_roofClose()" style="padding:8px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer">Avbryt</button>
         <button onclick="_roofAddrSubmit()" ${d.busy ? 'disabled' : ''} style="padding:8px 20px;background:var(--accent);border:none;border-radius:8px;font-size:13px;font-weight:600;color:#0d0e10;cursor:pointer">Hent kart</button>
       </div>`;
@@ -89161,8 +89327,8 @@ function _roofRender() {
     const tom = d.candidates.length ? '' :
       `<div style="font-size:13px;color:var(--dim)">Ingen bygg innen 40 m. Du kan hente kartet likevel og tegne omrisset selv.</div>`;
     body = `<div style="font-size:13px;color:var(--dim)">Hvilket bygg gjelder det?</div>
-      ${tom}<div style="max-height:40vh;overflow:auto">${rows}</div>
-      <div style="display:flex;justify-content:space-between;gap:10px">
+      ${tom}<div style="max-height:40vh;overflow:auto">${rows}</div>`;
+    foot = `<div style="display:flex;justify-content:space-between;gap:10px">
         <button onclick="_roofDlg.step=1;_roofRender()" style="padding:8px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer">‹ Tilbake</button>
         <div style="display:flex;gap:10px">
           <button onclick="_roofPick(null)" style="padding:8px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text);cursor:pointer">Fortsett uten bygg</button>
@@ -89178,20 +89344,21 @@ function _roofRender() {
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);cursor:pointer">
         <input type="checkbox" ${d.eiendom ? 'checked' : ''} onchange="_roofDlg.eiendom=this.checked"> Eiendomsgrenser</label>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);cursor:pointer">
-        <input type="checkbox" ${d.hillshade ? 'checked' : ''} onchange="_roofDlg.hillshade=this.checked"> Terrengskygge <span style="font-size:11px;color:var(--dim)">(tar ~1,5 s ekstra)</span></label>
-      <div style="display:flex;justify-content:space-between;gap:10px">
+        <input type="checkbox" ${d.hillshade ? 'checked' : ''} onchange="_roofDlg.hillshade=this.checked"> Terrengskygge <span style="font-size:11px;color:var(--dim)">(tar ~1,5 s ekstra)</span></label>`;
+    foot = `<div style="display:flex;justify-content:space-between;gap:10px">
         <button onclick="_roofDlg.step=2;_roofRender()" style="padding:8px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer">‹ Tilbake</button>
         <button onclick="_roofFetchBackground()" ${d.busy ? 'disabled' : ''} style="padding:8px 20px;background:var(--accent);border:none;border-radius:8px;font-size:13px;font-weight:600;color:#0d0e10;cursor:pointer">Hent kart</button>
       </div>`;
   }
 
-  ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);max-height:88vh;overflow:auto;padding:22px;display:flex;flex-direction:column;gap:12px">
+  ov.innerHTML = `<div class="vp-modal" onclick="event.stopPropagation()" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);padding:22px;display:flex;flex-direction:column;gap:12px">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div style="font-size:16px;font-weight:700;color:var(--text)">${IC('map', 16)} Hent fra kart</div>
       <button onclick="_roofClose()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
     </div>
-    ${err}${spin}${body}
-    <div style="font-size:11px;color:var(--dim);border-top:1px solid var(--border);padding-top:8px">Kartgrunnlag © Kartverket (CC BY 4.0)</div>
+    <div class="vp-modal__body" style="display:flex;flex-direction:column;gap:12px">${err}${spin}${body}</div>
+    <div class="vp-modal__foot" style="display:flex;flex-direction:column;gap:12px">${foot}
+    <div style="font-size:11px;color:var(--dim);border-top:1px solid var(--border);padding-top:8px">Kartgrunnlag © Kartverket (CC BY 4.0)</div></div>
   </div>`;
   document.body.appendChild(ov);
   if (d.step === 1) setTimeout(() => { const i = document.getElementById('_roof-addr'); if (i) { i.focus(); i.select(); } }, 40);
@@ -90040,8 +90207,9 @@ function _wfKundeModal() {
   wrap.id = 'wf-kunde-modal';
   wrap.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
   wrap.onclick = (e) => { if (e.target === wrap) wrap.remove(); };
-  wrap.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:420px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,.4)">
+  wrap.innerHTML = `<div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:420px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,.4)">
     <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:14px">Kunde & prosjektinfo</div>
+    <div class="vp-modal__body">
     <div class="dash-create-field" style="margin-bottom:10px"><label>Kontaktperson</label><input id="wf-k-contact" class="dash-create-input" value="${_esc(p.contact_name||'')}"></div>
     <div class="dash-create-field" style="margin-bottom:10px"><label>Adresse</label><input id="wf-k-addr" class="dash-create-input" value="${_esc(p.description||'')}"></div>
     <!-- 036: matrikkel + boligmappenummer tastes ÉN gang her ved prosjektering og følger
@@ -90070,7 +90238,8 @@ function _wfKundeModal() {
       <span style="font-size:12.5px;color:var(--muted)">Elektrobedriften som skal montere og dokumentere</span>
       <button id="wf-k-del" class="npc-btn-ghost" onclick="_shrOpen(_supabaseProjectId, (S.project && S.project.name) || '')">Del med elektriker</button>
     </div>` : ''}
-    <div style="display:flex;gap:8px;justify-content:flex-end">
+    </div>
+    <div class="vp-modal__foot" style="display:flex;gap:8px;justify-content:flex-end">
       <button class="npc-btn-ghost" onclick="document.getElementById('wf-kunde-modal').remove()">Avbryt</button>
       <button id="wf-k-save" class="dash-create-btn" onclick="_wfKundeSave()">Lagre</button>
     </div></div>`;
@@ -90455,12 +90624,14 @@ function _autoReadLayerDialog(file, mpp, layers){
   const ov=document.createElement('div'); ov.id='_ar-layer-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center';
   ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
-  ov.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:460px;max-width:94vw;max-height:88vh;overflow:auto;padding:24px">
+  ov.innerHTML=`<div class="vp-modal" onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:460px;max-width:94vw;padding:24px">
     <div style="font-size:17px;font-weight:700;color:var(--text);margin-bottom:4px">Hva er vegger?</div>
+    <div class="vp-modal__body">
     <div style="font-size:12px;color:var(--dim);margin-bottom:14px">Huk av lagene som er yttervegger/delevegger. La møbler og inventar stå avhuket — de vises kun i bakgrunnen, så du tegner hindringer over dem selv.</div>
     <div style="max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:16px">${rows}</div>
     ${_engineStatusLineHTML()}
-    <div style="display:flex;justify-content:flex-end;gap:10px">
+    </div>
+    <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:10px">
       <button onclick="document.getElementById('_ar-layer-ov').remove()" style="padding:9px 16px;background:var(--surface2,#1d1f26);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer">Avbryt</button>
       <button id="_ar-go" style="padding:9px 20px;background:var(--accent);border:none;border-radius:8px;font-size:13px;font-weight:700;color:#0d0e10;cursor:pointer">Les av rom</button>
     </div>
@@ -90557,11 +90728,12 @@ function _pdfImportShowModal(file, layers, scaleMeta){
   ov.id = '_pdf-import-ov';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:3000;display:flex;align-items:center;justify-content:center';
   ov.innerHTML = `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:460px;max-width:94vw;max-height:88vh;overflow:auto;display:flex;flex-direction:column;gap:16px">
+    <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:460px;max-width:94vw;display:flex;flex-direction:column;gap:16px">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div style="font-size:17px;font-weight:700;color:var(--text)">Importer tegning</div>
         <button onclick="_pdfImportClose()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">×</button>
       </div>
+      <div class="vp-modal__body" style="display:flex;flex-direction:column;gap:16px">
       <div style="font-size:12px;color:var(--muted)">${_pdfEsc(file.name)}</div>
       ${_engineStatusLineHTML()}
       <div>
@@ -90583,7 +90755,8 @@ function _pdfImportShowModal(file, layers, scaleMeta){
         <button id="_pdf-clickscale" style="width:100%;padding:9px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text);cursor:pointer"><svg class="ic ic-ruler" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M3 16.5 16.5 3l4.5 4.5L7.5 21z"/><path d="M9 10l1.5 1.5M12 7l1.5 1.5M6 13l1.5 1.5M15 4l1.5 1.5"/></svg> Klikk et kjent mål i tegningen</button>
       </div>`}
       <div id="_pdf-import-msg" style="font-size:12px;color:var(--accent)"></div>
-      <div style="display:flex;justify-content:flex-end;gap:10px">
+      </div>
+      <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:10px">
         <button onclick="_pdfImportClose()" style="padding:8px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer">Avbryt</button>
         <button id="_pdf-import-go" style="padding:8px 20px;background:var(--accent);border:none;border-radius:8px;font-size:13px;font-weight:600;color:#0d0e10;cursor:pointer">Importer rom</button>
       </div>
@@ -92320,8 +92493,10 @@ function _showExportDialog() {
   const priceGroups = _projectProductGroups();
   _expFloorplanIdx = 0;   // 154: forhåndsvisningen starter på første etasje
 
-  overlay.innerHTML = `<div style="background:var(--surface);border-radius:16px;width:85vw;max-width:1100px;height:80vh;overflow:hidden;border:1px solid var(--border)">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border)">
+  // 216: .vp-modal — topp og bunnlinje står fast, kolonnene i .exp-split scroller hver for seg.
+  // height:80vh beholdes som ønsket høyde, .vp-modal klemmer den under vinduet.
+  overlay.innerHTML = `<div class="vp-modal" style="background:var(--surface);border-radius:16px;width:85vw;max-width:1100px;height:80vh;overflow:hidden;border:1px solid var(--border)">
+    <div class="vp-modal__head" style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border)">
       <h3 style="font-size:18px;font-weight:700;color:var(--text);margin:0">Eksporter PDF</h3>
       <button onclick="document.getElementById('export-dialog').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer">&times;</button>
     </div>
@@ -92401,10 +92576,6 @@ function _showExportDialog() {
             ? `<label class="exp-check" title="Nettleseren spør hvor PDF-en skal lagres, og åpner samme mappe neste gang"><input type="checkbox" id="exp-savepicker"${_pdfSavePickerPref() ? ' checked' : ''}> Velg navn og mappe ved lagring</label>`
             : `<div id="exp-savepicker-info" style="font-size:11px;color:var(--muted);line-height:1.5">${PDF_SAVE_FALLBACK_INFO}</div>`}
         </div>
-        <div style="display:flex;gap:8px;margin-top:12px">
-          <button class="adm-btn ghost" onclick="document.getElementById('export-dialog').style.display='none'" style="flex:1">Avbryt</button>
-          <button class="adm-btn primary" onclick="_runExportPDF()" style="flex:1">Generer PDF</button>
-        </div>
       </div>
       <div class="exp-right">
         <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">Forhåndsvisning — klikk på et navn til venstre</div>
@@ -92412,6 +92583,10 @@ function _showExportDialog() {
           <div style="color:var(--dim);font-size:13px;text-align:center">Klikk på et navn (seksjon, rom eller trapp)<br>for å se forhåndsvisning</div>
         </div>
       </div>
+    </div>
+    <div class="vp-modal__foot exp-foot">
+      <button class="adm-btn ghost" onclick="document.getElementById('export-dialog').style.display='none'">Avbryt</button>
+      <button class="adm-btn primary" onclick="_runExportPDF()">Generer PDF</button>
     </div>
   </div>`;
   overlay.style.display = 'flex';
@@ -98910,6 +99085,7 @@ function openExcelModal()  { document.getElementById('excel-modal').style.displa
 function closeExcelModal() {
   document.getElementById('excel-modal').style.display='none';
   document.getElementById('excel-preview').style.display='none';
+  document.getElementById('excel-foot').style.display='none';   // 216: knapperaden følger forhåndsvisningen
   document.getElementById('excel-status').style.display='none';
   document.getElementById('excel-drop-zone').style.display='block';
   document.getElementById('excel-file-inp').value='';
@@ -98962,6 +99138,7 @@ function _renderExcelPreview(headers, fieldMap, sample, total) {
   document.getElementById('excel-row-count').textContent=total;
   document.getElementById('excel-drop-zone').style.display='none';
   document.getElementById('excel-preview').style.display='block';
+  document.getElementById('excel-foot').style.display='flex';   // 216
 }
 
 async function confirmExcelImport() {
@@ -99562,16 +99739,18 @@ function showAccessoriesModal() {
     }
 
     overlay.innerHTML = `
-      <div style="background:var(--bg,#fff);border-radius:10px;padding:24px;max-width:560px;width:90%;max-height:90vh;overflow:auto;color:var(--text,#111)">
+      <div class="vp-modal" style="background:var(--bg,#fff);border-radius:10px;padding:24px;max-width:560px;width:90%;color:var(--text,#111)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
           <h3 style="font-size:18px;font-weight:700;margin:0">Tilbehør</h3>
           <button id="acc-close" style="background:none;border:none;color:var(--muted,#666);font-size:20px;cursor:pointer">&times;</button>
         </div>
+        <div class="vp-modal__body">
         ${foilQtyHtml}
         ${foilHtml}
         ${cableHtml}
         ${matHtml}
-        <div style="display:flex;gap:8px;margin-top:18px">
+        </div>
+        <div class="vp-modal__foot" style="display:flex;gap:8px;margin-top:18px">
           <button id="acc-cancel" class="adm-btn ghost" style="flex:1">Avbryt</button>
           <button id="acc-confirm" class="adm-btn primary" style="flex:1">Generer rapport →</button>
         </div>
@@ -103203,11 +103382,12 @@ function _showNewCustomerPopup() {
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;animation:fadeIn .15s ease';
   ov.onclick=e=>{if(e.target===ov)ov.style.display='none'};
   ov.innerHTML = `
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(520px,92vw);max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.4);padding:32px 28px 24px" onclick="event.stopPropagation()">
+    <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(520px,92vw);box-shadow:0 24px 64px rgba(0,0,0,.4);padding:32px 28px 24px" onclick="event.stopPropagation()">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
         <h2 style="margin:0;font-size:20px;font-weight:700;color:var(--text)">Ny kunde</h2>
         <button onclick="document.getElementById('new-customer-popup-overlay').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:4px 8px;border-radius:6px" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">&times;</button>
       </div>
+      <div class="vp-modal__body">
       <div style="display:flex;flex-direction:column;gap:14px">
         <div style="position:relative">
           <label style="display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Kundenavn *</label>
@@ -103262,7 +103442,8 @@ function _showNewCustomerPopup() {
         </div>
       </div>
       <div id="ncp-msg" style="display:none;margin-top:12px;padding:8px 12px;border-radius:8px;background:rgba(239,68,68,.15);color:#f87171;font-size:13px"></div>
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:24px">
+      </div>
+      <div class="vp-modal__foot" style="display:flex;gap:10px;justify-content:flex-end;margin-top:24px">
         <button onclick="document.getElementById('new-customer-popup-overlay').style.display='none'" style="padding:10px 20px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:14px;cursor:pointer;font-weight:500">Avbryt</button>
         <button onclick="_createCustomerFromPopup()" style="padding:10px 24px;border-radius:8px;border:none;background:var(--accent);color:#0d0e10;font-size:14px;cursor:pointer;font-weight:600">Opprett kunde</button>
       </div>
@@ -103825,13 +104006,13 @@ function _custNoRenderSuggestions() {
     <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Ingen treff (${d.ingen.length}) — søk manuelt på kundekortet</div>
     <div style="font-size:12px;color:var(--dim)">${d.ingen.map(e => esc(e.customer.name)).join(', ')}</div>
   </div>` : '';
-  overlay.innerHTML = `<div class="cust-card" style="width:560px;max-height:80vh;overflow-y:auto">
+  overlay.innerHTML = `<div class="cust-card vp-modal" style="width:560px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <h3 style="font-size:16px;font-weight:700;color:var(--text);margin:0">Forslag til kundenumre</h3>
       <button onclick="document.getElementById('custno-suggest-overlay').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer">&times;</button>
     </div>
-    ${sikkerHtml}${flereHtml}${usikkerHtml}${ingenHtml}
-    <div style="display:flex;gap:8px;margin-top:6px">
+    <div class="vp-modal__body">${sikkerHtml}${flereHtml}${usikkerHtml}${ingenHtml}</div>
+    <div class="vp-modal__foot" style="display:flex;gap:8px;margin-top:6px">
       <button onclick="_custNoConfirmSuggestions()" style="padding:8px 20px;border-radius:6px;border:none;background:var(--accent);color:#0d0e10;font-size:13px;font-weight:600;cursor:pointer">Bekreft</button>
       <button onclick="document.getElementById('custno-suggest-overlay').remove()" style="padding:8px 20px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;cursor:pointer">Avbryt</button>
       <span id="custno-suggest-msg" style="font-size:12px;color:var(--dim);align-self:center"></span>
@@ -105625,11 +105806,12 @@ async function _coOpen(prefill) {
     if (c) p = { name: c.name, org_nr: c.org_number, erp: c.erp_customer_no, email: c.email,
                  address: [c.address, [c.postal_code, c.city].filter(Boolean).join(' ')].filter(Boolean).join(', ') };
   }
-  overlay.innerHTML = `<div class="cust-card" style="width:620px">
+  overlay.innerHTML = `<div class="cust-card vp-modal" style="width:620px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
       <h3 style="font-size:18px;font-weight:700;color:var(--text);margin:0">${sh ? 'Inviter elektrobedriften og del' : 'Gi kunden tilgang til Varmeplan'}</h3>
       <button onclick="document.getElementById('co-overlay').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer">&times;</button>
     </div>
+    <div class="vp-modal__body">
     <p style="font-size:13px;color:var(--muted);margin:0 0 14px;line-height:1.45">Bedriften opprettes i Varmeplan med tilgang til ${_esc(_userOrg?.supplier_name || 'deres')} sine produkter, og kontaktpersonen får en invitasjon. Dere blir ikke medlem av bedriften og ser ikke prosjektene deres.${sh ? ` Prosjektet <b>${_esc(sh.projectName || '')}</b> deles med bedriften i samme steg.` : ''}</p>
     <div id="co-form">
       <div style="position:relative;margin-bottom:12px">
@@ -105661,12 +105843,13 @@ async function _coOpen(prefill) {
         <input id="co-override-reason" placeholder="Begrunnelse (lagres med navnet ditt)" oninput="_coCheckOrgNr()" style="display:none;width:100%;margin-top:6px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-size:13px;box-sizing:border-box">
         <div style="font-size:11px;color:var(--dim);margin-top:4px">Uten org.nr kan Varmeplan ikke oppdage om bedriften alt finnes.</div>
       </div>
-      <div style="display:flex;gap:10px;align-items:center">
-        <button id="co-submit" onclick="_coSubmit()" style="padding:9px 20px;border-radius:6px;border:none;background:var(--accent);color:#0d0e10;font-size:13px;font-weight:600;cursor:pointer">${_coSubmitLabel()}</button>
-        <span id="co-msg" style="font-size:12px;color:var(--dim)"></span>
-      </div>
     </div>
     <div id="co-result" style="display:none"></div>
+    </div>
+    <div id="co-foot" class="vp-modal__foot" style="display:flex;gap:10px;align-items:center">
+        <button id="co-submit" onclick="_coSubmit()" style="padding:9px 20px;border-radius:6px;border:none;background:var(--accent);color:#0d0e10;font-size:13px;font-weight:600;cursor:pointer">${_coSubmitLabel()}</button>
+        <span id="co-msg" style="font-size:12px;color:var(--dim)"></span>
+    </div>
   </div>`;
   overlay.style.display = 'flex';
   _coCheckOrgNr();
@@ -105842,6 +106025,7 @@ function _coShowResult(r) {
   const box = document.getElementById('co-result');
   if (!box) return;
   if (form) form.style.display = 'none';
+  const foot = document.getElementById('co-foot'); if (foot) foot.style.display = 'none';   // 216: knapperaden hører til skjemaet
   box.style.display = 'block';
   const close = `<button onclick="document.getElementById('co-overlay').style.display='none'" style="padding:8px 18px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;cursor:pointer">Lukk</button>`;
   if (r.existed) {
@@ -106183,11 +106367,12 @@ async function _shrOpen(projectId, projectName) {
   // Samme form som «Del presentasjon» (#_del-ov): mørk bakgrunn, kort på 520 px, tittel + ×.
   ov.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
-  ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);max-height:90vh;overflow:auto;padding:24px">
+  ov.innerHTML = `<div class="vp-modal" onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);padding:24px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
       <div style="font-size:17px;font-weight:700;color:var(--text)">Del med elektriker</div>
       <button onclick="document.getElementById('_shr-ov').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">&times;</button>
     </div>
+    <div class="vp-modal__body">
     <div style="font-size:12px;color:var(--dim);margin-bottom:16px"><b style="color:var(--text)">${esc(_shrState.projectName)}</b> — elektrobedriften kan se prosjektet og dokumentere det i appen, men ikke endre tegningen. Dere blir ikke medlem av bedriften, og de blir ikke medlem hos dere.</div>
 
     <div style="font-size:12px;font-weight:600;margin-bottom:5px">Velg bedrift</div>
@@ -106209,7 +106394,8 @@ async function _shrOpen(projectId, projectName) {
       <div id="_shr-liste"><div style="font-size:12px;color:var(--dim)">Laster …</div></div>
     </div>
 
-    <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+    </div>
+    <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
       <button onclick="document.getElementById('_shr-ov').remove()"
         style="padding:8px 15px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--muted);cursor:pointer">Lukk</button>
     </div>
@@ -107654,9 +107840,10 @@ function _vismaPasteRender() {
     <span style="flex:1">Tilbehør: ${accLineCount ? `${accLineCount} linje${accLineCount === 1 ? '' : 'r'} (lagret på prosjektet)` : 'ingen valgt'}</span>
     <button onclick="_vismaPasteEditAccessories()" style="padding:4px 10px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer;font-size:11px">Endre tilbehør</button>
   </div>`;
-  const html = `<div style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(560px,92vw);max-height:88vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+  const html = `<div class="vp-modal" style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(560px,92vw);box-shadow:0 12px 40px rgba(0,0,0,0.4)">
     <h3 style="margin:0 0 4px;font-size:16px;color:var(--text)">📋 Kopier til Visma</h3>
     <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Lim inn i et allerede åpent tilbud i Visma Global (Ctrl+V i varelinjene).</div>
+    <div class="vp-modal__body">
     ${accRowHtml}
     <div style="border:1px solid var(--brd);border-radius:8px;padding:10px 12px;max-height:280px;overflow:auto">
       <table style="border-collapse:collapse;font-size:12px;font-family:var(--font-mono,monospace);color:var(--text)">
@@ -107667,7 +107854,8 @@ function _vismaPasteRender() {
     <div style="font-size:11px;color:var(--dim);margin-top:8px">${built.lines.length} varelinje${built.lines.length === 1 ? '' : 'r'} · ${built.totalAntall} totalt antall</div>
     ${missingHtml}
     <div id="visma-paste-fallback"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+    </div>
+    <div class="vp-modal__foot" style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
       <button onclick="_vismaPasteClose()" style="padding:8px 16px;border-radius:6px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px">Lukk</button>
       <button onclick="_vismaPasteCopy()" style="padding:8px 16px;border-radius:6px;border:none;background:#4ea8ff;color:#fff;cursor:pointer;font-size:13px;font-weight:600" ${(built.missing.length || !built.lines.length) ? 'disabled' : ''}>📋 Kopier ${built.lines.length} linje${built.lines.length === 1 ? '' : 'r'}</button>
     </div>

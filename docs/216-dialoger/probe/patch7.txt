@@ -1,0 +1,46 @@
+@@@ FINN
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 24px;width:min(960px,95vw);max-height:94vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.4)">
+@@@ SETT
+    <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 24px;width:min(960px,95vw);box-shadow:0 24px 64px rgba(0,0,0,.4)">
+@@@ SLUTT
+@@@ FINN
+        <button onclick="document.getElementById('snow-modal-bg').remove()" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1">&times;</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+@@@ SETT
+        <button onclick="document.getElementById('snow-modal-bg').remove()" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1">&times;</button>
+      </div>
+      <div class="vp-modal__body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+@@@ SLUTT
+@@@ FINN
+      <div style="display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+        <input id="snow-save-name"
+@@@ SETT
+      </div>
+      <div class="vp-modal__foot" style="display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+        <input id="snow-save-name"
+@@@ SLUTT
+@@@ FINN
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 24px;width:min(720px,94vw);max-height:92vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.4)">
+@@@ SETT
+    <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px 24px;width:min(720px,94vw);box-shadow:0 24px 64px rgba(0,0,0,.4)">
+@@@ SLUTT
+@@@ FINN
+        <button onclick="document.getElementById('frost-modal-bg').remove()" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1">&times;</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1.05fr .95fr;gap:22px;align-items:start">
+@@@ SETT
+        <button onclick="document.getElementById('frost-modal-bg').remove()" style="background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1">&times;</button>
+      </div>
+      <div class="vp-modal__body">
+      <div style="display:grid;grid-template-columns:1.05fr .95fr;gap:22px;align-items:start">
+@@@ SLUTT
+@@@ FINN
+      <div style="display:flex;align-items:center;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+        <input id="frost-save-name"
+@@@ SETT
+      </div>
+      <div class="vp-modal__foot" style="display:flex;align-items:center;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+        <input id="frost-save-name"
+@@@ SLUTT

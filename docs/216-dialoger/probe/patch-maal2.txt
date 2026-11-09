@@ -1,0 +1,6 @@
+@@@ FINN
+      await p.eval(d.aapne); await sov(d.vent || 400);
+@@@ SETT
+      // Pakkes inn så eval ikke venter på et løfte som først løses når brukeren klikker (showAccessoriesModal).
+      await p.eval("(() => { " + d.aapne + "; })()"); await sov(d.vent || 400);
+@@@ SLUTT

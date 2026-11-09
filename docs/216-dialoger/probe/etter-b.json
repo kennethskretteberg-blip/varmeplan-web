@@ -1,0 +1,234 @@
+{
+ "Tilbehør": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 16,
+   "boksBunn": 634,
+   "boksHoyde": 618,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Generer rapport →",
+     "topp": 571,
+     "bunn": 610,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1090,
+    "clientHeight": 481,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 16,
+   "boksBunn": 704,
+   "boksHoyde": 688,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Generer rapport →",
+     "topp": 641,
+     "bunn": 680,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1090,
+    "clientHeight": 551,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 16,
+   "boksBunn": 884,
+   "boksHoyde": 868,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Generer rapport →",
+     "topp": 821,
+     "bunn": 860,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1090,
+    "clientHeight": 731,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 16,
+   "boksBunn": 584,
+   "boksHoyde": 568,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Generer rapport →",
+     "topp": 521,
+     "bunn": 560,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1090,
+    "clientHeight": 431,
+    "sistInne": true
+   }
+  }
+ },
+ "Hent fra kart": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 196,
+   "boksBunn": 454,
+   "boksHoyde": 258,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 361,
+     "bunn": 396,
+     "inne": true,
+     "klikkbar": true
+    },
+    {
+     "tekst": "Hent kart",
+     "topp": 361,
+     "bunn": 396,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 96,
+    "clientHeight": 96,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 231,
+   "boksBunn": 489,
+   "boksHoyde": 258,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 396,
+     "bunn": 431,
+     "inne": true,
+     "klikkbar": true
+    },
+    {
+     "tekst": "Hent kart",
+     "topp": 396,
+     "bunn": 431,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 96,
+    "clientHeight": 96,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 321,
+   "boksBunn": 579,
+   "boksHoyde": 258,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 486,
+     "bunn": 521,
+     "inne": true,
+     "klikkbar": true
+    },
+    {
+     "tekst": "Hent kart",
+     "topp": 486,
+     "bunn": 521,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 96,
+    "clientHeight": 96,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 171,
+   "boksBunn": 429,
+   "boksHoyde": 258,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 336,
+     "bunn": 371,
+     "inne": true,
+     "klikkbar": true
+    },
+    {
+     "tekst": "Hent kart",
+     "topp": 336,
+     "bunn": 371,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 96,
+    "clientHeight": 96,
+    "sistInne": true
+   }
+  }
+ }
+}

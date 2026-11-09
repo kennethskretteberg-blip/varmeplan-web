@@ -1,0 +1,40 @@
+@@@ FINN
+    navn: id, aapne: () => showModal(id), boks: '#' + id, knapper: '#' + id + ' .modal-footer button', rull: '#' + id + ' .modal-body', lukk: () => closeModal() })),
+];
+@@@ SETT
+    navn: id, aapne: () => showModal(id), boks: '#' + id, knapper: '#' + id + ' .modal-footer button', rull: '#' + id + ' .modal-body', lukk: () => closeModal() })),
+  // JS-bygde dialoger som kan åpnes i en blank app (uten innlogging, prosjekt eller karttjeneste).
+  // Innstillinger har ingen felles bunnlinje (tre seksjoner med hver sin knapp) — der sjekkes bare ×.
+  { navn: 'Innstillinger', aapne: () => _openProfile(), boks: '#profile-overlay .profile-card', knapper: '#profile-overlay h3 button', rull: '#profile-overlay .vp-modal__body', lukk: () => _closeProfile() },
+  { navn: 'Importer produkter fra Excel', aapne: () => { openExcelModal(); document.getElementById('excel-preview').style.display = 'block'; document.getElementById('excel-foot').style.display = 'flex'; },
+    boks: '#excel-modal > div', knapper: '#excel-foot button', rull: '#excel-modal .vp-modal__body',
+    lukk: () => { closeExcelModal(); document.getElementById('excel-preview').style.display = 'none'; document.getElementById('excel-foot').style.display = 'none'; } },
+  { navn: 'Snøsmelting – effektbehov', aapne: () => _openSnowCalc(), boks: '#snow-modal-bg > div', knapper: '#snow-modal-bg .vp-modal__foot button', rull: '#snow-modal-bg .vp-modal__body', lukk: () => document.getElementById('snow-modal-bg')?.remove() },
+  { navn: 'Frostsikring rør', aapne: () => _openFrostModule(), boks: '#frost-modal-bg > div', knapper: '#frost-modal-bg .vp-modal__foot button', rull: '#frost-modal-bg .vp-modal__body', lukk: () => document.getElementById('frost-modal-bg')?.remove() },
+  { navn: 'Del presentasjon', aapne: () => _presentShareModal('https://example.invalid/?present=test', 'test'), boks: '#_del-ov > div', knapper: '#_del-ov .vp-modal__foot button, #_del-ov .vp-modal__foot a', rull: '#_del-ov .vp-modal__body', lukk: () => document.getElementById('_del-ov')?.remove() },
+  { navn: 'Kunde & prosjektinfo', aapne: () => _wfKundeModal(), boks: '#wf-kunde-modal > div', knapper: '#wf-kunde-modal .vp-modal__foot button', rull: '#wf-kunde-modal .vp-modal__body', lukk: () => document.getElementById('wf-kunde-modal')?.remove() },
+  { navn: 'Bygg hesteskotrapp', aapne: () => _showHsBuilder(), boks: '#stair-modal-bg > div', knapper: '#stair-modal-bg .vp-modal__foot button', rull: '#stair-modal-bg .vp-modal__body', lukk: () => document.getElementById('stair-modal-bg')?.remove() },
+  { navn: 'Bygg trapp', aapne: () => _showStraightStairBuilder(), boks: '#stair-modal-bg > div', knapper: '#stair-modal-bg .vp-modal__foot button', rull: '#stair-modal-bg .vp-modal__body', lukk: () => document.getElementById('stair-modal-bg')?.remove() },
+  { navn: 'Ny kunde', aapne: () => _showNewCustomerPopup(), boks: '#new-customer-popup-overlay > div', knapper: '#new-customer-popup-overlay .vp-modal__foot button', rull: '#new-customer-popup-overlay .vp-modal__body', lukk: () => { const o = document.getElementById('new-customer-popup-overlay'); if (o) o.style.display = 'none'; } },
+  { navn: 'Gi kunden tilgang til Varmeplan', aapne: () => _coOpen(), boks: '#co-overlay .cust-card', knapper: '#co-foot button', rull: '#co-overlay .vp-modal__body', lukk: () => { const o = document.getElementById('co-overlay'); if (o) o.style.display = 'none'; } },
+];
+@@@ SLUTT
+@@@ FINN
+  const H = innerHeight;
+  const vent = ms => new Promise(r => setTimeout(r, ms));
+@@@ SETT
+  const H = innerHeight;
+  const vent = ms => new Promise(r => setTimeout(r, ms));
+  // Innloggings-/prosjektlisteskjermen ligger på z-index 1100 og ville dekket dialoger på samme nivå
+  // (elementFromPoint) når testen kjøres uten innlogging — skjules under testen, settes tilbake etterpå.
+  const skjermer = ['auth-screen', 'project-list-screen'].map(id => { const el = document.getElementById(id); return el ? [el, el.style.display] : null; }).filter(Boolean);
+  for (const [el] of skjermer) el.style.display = 'none';
+@@@ SLUTT
+@@@ FINN
+  finally { S.rooms = rooms0; try { d0.lukk(); } catch (e) {} }
+  const ok = results.every(r => r.ok);
+@@@ SETT
+  finally { S.rooms = rooms0; try { d0.lukk(); } catch (e) {} }
+  for (const [el, disp] of skjermer) el.style.display = disp;
+  const ok = results.every(r => r.ok);
+@@@ SLUTT

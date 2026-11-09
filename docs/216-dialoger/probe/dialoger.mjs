@@ -1,0 +1,33 @@
+// 216-dialoger: dialogene som måles. navn, fil (skjermbildenavn), aapne (JS i siden), boks (velger),
+// knapper (velger for knappene i bunnlinja — valgt så den treffer BÅDE før (HEAD) og etter),
+// rull (velger for det som skal rulle; finnes den ikke, brukes boksen), mangeRom, forberede.
+const modal = (navn, fil, id, ekstra) => ({ navn, fil, aapne: `showModal("${id}")`, boks: "#" + id, knapper: `#${id} .modal-footer button`, rull: `#${id} .modal-body`, ...(ekstra || {}) });
+const js = (navn, fil, aapne, boks, knapper, ekstra) => ({ navn, fil, aapne, boks, knapper, rull: boks + " .vp-modal__body", ...(ekstra || {}) });
+export const DIALOGER = [
+  { navn: "Eksporter PDF", fil: "eksporter-pdf", aapne: "_showExportDialog()", boks: "#export-dialog > div",
+    knapper: "#export-dialog .adm-btn", rull: "#export-dialog .exp-left", mangeRom: true },
+  modal("Legg til rom", "legg-til-rom", "modal-room1"),
+  modal("Velg romform", "velg-romform", "modal-shape"),
+  modal("Lag hindring", "lag-hindring", "modal-hindring", { forberede: "showHindringModal(22, null)" }),
+  modal("Rektangulært rom", "rekt-rom", "modal-rect"),
+  modal("L-form rom", "lform-rom", "modal-lshape"),
+  modal("Legg til etasje", "legg-til-etasje", "modal-floor"),
+  modal("Sett målestokk", "sett-maalestokk", "modal-bg-calib"),
+  modal("Fast målestokk", "fast-maalestokk", "modal-fixed-scale"),
+  modal("Endre status", "endre-status", "modal-batch-status"),
+  js("Innstillinger (profil)", "profil", "_openProfile()", "#profile-overlay .profile-card", "#profile-overlay h3 button"),
+  js("Importer produkter fra Excel", "excel", "openExcelModal(); document.getElementById(\"excel-preview\").style.display=\"block\"; const ef=document.getElementById(\"excel-foot\"); if (ef) ef.style.display=\"flex\"; document.getElementById(\"excel-tbody\").innerHTML = Array.from({length:40},(_,i)=>\"<tr><td>rad \"+i+\"</td></tr>\").join(\"\")", "#excel-modal > div", "#excel-import-btn"),
+  js("Snøsmelting – effektbehov", "snosmelting", "_openSnowCalc()", "#snow-modal-bg > div", "#snow-save-btn"),
+  js("Frostsikring rør", "frost", "_openFrostModule()", "#frost-modal-bg > div", "#frost-save-btn"),
+  js("Be kunde om mål", "be-kunde-om-maal", "_supabaseProjectId = \"216-test\"; openKundeLinkModal()", "#_kunde-ov > div", "#kunde-create"),
+  js("Del presentasjon", "del-presentasjon", "_presentShareModal(\"https://example.test/?present=x\", \"tok\")", "#_del-ov > div", "#_del-apne"),
+  js("Del med elektriker", "del-med-elektriker", "_shrOpen(\"216-test\", \"Testprosjekt\")", "#_shr-ov > div", "#_shr-ov > div > div:last-child button"),
+  js("Kunde & prosjektinfo", "kunde-prosjektinfo", "_wfKundeModal()", "#wf-kunde-modal > div", "#wf-k-save"),
+  js("Bygg hesteskotrapp", "hesteskotrapp", "_showHsBuilder()", "#stair-modal-bg > div", "#shs-ok"),
+  js("Bygg trapp", "bygg-trapp", "_showStraightStairBuilder()", "#stair-modal-bg > div", "#stair-modal-bg > div > div:last-child button"),
+  js("Tilbehør", "tilbehor", "window.showAccessoriesModal = window.__accOrig; showAccessoriesModal()", "#modal-accessories > div", "#acc-confirm", { vent: 900 }),
+  js("Ny kunde", "ny-kunde", "_showNewCustomerPopup()", "#new-customer-popup-overlay > div", "#new-customer-popup-overlay > div > div:last-child button"),
+  js("Gi kunden tilgang til Varmeplan", "gi-kunden-tilgang", "_coOpen()", "#co-overlay .cust-card", "#co-submit", { vent: 900 }),
+  js("Hent fra kart", "hent-fra-kart", "S.ui.activePartId = 72; S.ui.activeFloorId = 2; _roofOpenDialog(2)", "#_roof-ov > div", "#_roof-ov div[style*=\"justify-content:flex-end\"] button", { vent: 900 }),
+  js("Om rommet (kundelenke)", "om-rommet", "_kundeRoomForm(22)", "#_kunde-roomform > div", "#_kunde-roomform > div > div:last-child button"),
+];

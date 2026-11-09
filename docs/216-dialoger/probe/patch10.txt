@@ -1,0 +1,129 @@
+@@@ FINN
+      <div style="background:var(--bg,#fff);border-radius:10px;padding:24px;max-width:560px;width:90%;max-height:90vh;overflow:auto;color:var(--text,#111)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <h3 style="font-size:18px;font-weight:700;margin:0">Tilbehør</h3>
+          <button id="acc-close" style="background:none;border:none;color:var(--muted,#666);font-size:20px;cursor:pointer">&times;</button>
+        </div>
+@@@ SETT
+      <div class="vp-modal" style="background:var(--bg,#fff);border-radius:10px;padding:24px;max-width:560px;width:90%;color:var(--text,#111)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <h3 style="font-size:18px;font-weight:700;margin:0">Tilbehør</h3>
+          <button id="acc-close" style="background:none;border:none;color:var(--muted,#666);font-size:20px;cursor:pointer">&times;</button>
+        </div>
+        <div class="vp-modal__body">
+@@@ SLUTT
+@@@ FINN
+        <div style="display:flex;gap:8px;margin-top:18px">
+          <button id="acc-cancel" class="adm-btn ghost" style="flex:1">Avbryt</button>
+@@@ SETT
+        </div>
+        <div class="vp-modal__foot" style="display:flex;gap:8px;margin-top:18px">
+          <button id="acc-cancel" class="adm-btn ghost" style="flex:1">Avbryt</button>
+@@@ SLUTT
+@@@ FINN
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(520px,92vw);max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.4);padding:32px 28px 24px" onclick="event.stopPropagation()">
+@@@ SETT
+    <div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(520px,92vw);box-shadow:0 24px 64px rgba(0,0,0,.4);padding:32px 28px 24px" onclick="event.stopPropagation()">
+@@@ SLUTT
+@@@ FINN
+        <h2 style="margin:0;font-size:20px;font-weight:700;color:var(--text)">Ny kunde</h2>
+        <button onclick="document.getElementById('new-customer-popup-overlay').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:4px 8px;border-radius:6px" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">&times;</button>
+      </div>
+@@@ SETT
+        <h2 style="margin:0;font-size:20px;font-weight:700;color:var(--text)">Ny kunde</h2>
+        <button onclick="document.getElementById('new-customer-popup-overlay').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:4px 8px;border-radius:6px" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">&times;</button>
+      </div>
+      <div class="vp-modal__body">
+@@@ SLUTT
+@@@ FINN
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:24px">
+        <button onclick="document.getElementById('new-customer-popup-overlay').style.display='none'" style="padding:10px 20px
+@@@ SETT
+      </div>
+      <div class="vp-modal__foot" style="display:flex;gap:10px;justify-content:flex-end;margin-top:24px">
+        <button onclick="document.getElementById('new-customer-popup-overlay').style.display='none'" style="padding:10px 20px
+@@@ SLUTT
+@@@ FINN
+  overlay.innerHTML = `<div class="cust-card" style="width:560px;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h3 style="font-size:16px;font-weight:700;color:var(--text);margin:0">Forslag til kundenumre</h3>
+      <button onclick="document.getElementById('custno-suggest-overlay').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer">&times;</button>
+    </div>
+    ${sikkerHtml}${flereHtml}${usikkerHtml}${ingenHtml}
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button onclick="_custNoConfirmSuggestions()"
+@@@ SETT
+  overlay.innerHTML = `<div class="cust-card vp-modal" style="width:560px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h3 style="font-size:16px;font-weight:700;color:var(--text);margin:0">Forslag til kundenumre</h3>
+      <button onclick="document.getElementById('custno-suggest-overlay').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer">&times;</button>
+    </div>
+    <div class="vp-modal__body">${sikkerHtml}${flereHtml}${usikkerHtml}${ingenHtml}</div>
+    <div class="vp-modal__foot" style="display:flex;gap:8px;margin-top:6px">
+      <button onclick="_custNoConfirmSuggestions()"
+@@@ SLUTT
+@@@ FINN
+  overlay.innerHTML = `<div class="cust-card" style="width:620px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <h3 style="font-size:18px;font-weight:700;color:var(--text);margin:0">${sh ? 'Inviter elektrobedriften og del' : 'Gi kunden tilgang til Varmeplan'}</h3>
+      <button onclick="document.getElementById('co-overlay').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer">&times;</button>
+    </div>
+@@@ SETT
+  overlay.innerHTML = `<div class="cust-card vp-modal" style="width:620px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <h3 style="font-size:18px;font-weight:700;color:var(--text);margin:0">${sh ? 'Inviter elektrobedriften og del' : 'Gi kunden tilgang til Varmeplan'}</h3>
+      <button onclick="document.getElementById('co-overlay').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer">&times;</button>
+    </div>
+    <div class="vp-modal__body">
+@@@ SLUTT
+@@@ FINN
+      <div style="display:flex;gap:10px;align-items:center">
+        <button id="co-submit" onclick="_coSubmit()"
+@@@ SETT
+    </div>
+    <div id="co-result" style="display:none"></div>
+    </div>
+    <div id="co-foot" class="vp-modal__foot" style="display:flex;gap:10px;align-items:center">
+        <button id="co-submit" onclick="_coSubmit()"
+@@@ SLUTT
+@@@ FINN
+        <span id="co-msg" style="font-size:12px;color:var(--dim)"></span>
+      </div>
+    </div>
+    <div id="co-result" style="display:none"></div>
+  </div>`;
+@@@ SETT
+        <span id="co-msg" style="font-size:12px;color:var(--dim)"></span>
+    </div>
+  </div>`;
+@@@ SLUTT
+@@@ FINN
+  if (form) form.style.display = 'none';
+  box.style.display = 'block';
+  const close = `<button onclick="document.getElementById('co-overlay').style.display='none'"
+@@@ SETT
+  if (form) form.style.display = 'none';
+  const foot = document.getElementById('co-foot'); if (foot) foot.style.display = 'none';   // 216: knapperaden hører til skjemaet
+  box.style.display = 'block';
+  const close = `<button onclick="document.getElementById('co-overlay').style.display='none'"
+@@@ SLUTT
+@@@ FINN
+  const html = `<div style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(560px,92vw);max-height:88vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+    <h3 style="margin:0 0 4px;font-size:16px;color:var(--text)">📋 Kopier til Visma</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Lim inn i et allerede åpent tilbud i Visma Global (Ctrl+V i varelinjene).</div>
+@@@ SETT
+  const html = `<div class="vp-modal" style="background:var(--bg);border:1px solid var(--brd);border-radius:12px;padding:20px 24px;width:min(560px,92vw);box-shadow:0 12px 40px rgba(0,0,0,0.4)">
+    <h3 style="margin:0 0 4px;font-size:16px;color:var(--text)">📋 Kopier til Visma</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Lim inn i et allerede åpent tilbud i Visma Global (Ctrl+V i varelinjene).</div>
+    <div class="vp-modal__body">
+@@@ SLUTT
+@@@ FINN
+    <div id="visma-paste-fallback"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button onclick="_vismaPasteClose()"
+@@@ SETT
+    <div id="visma-paste-fallback"></div>
+    </div>
+    <div class="vp-modal__foot" style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button onclick="_vismaPasteClose()"
+@@@ SLUTT

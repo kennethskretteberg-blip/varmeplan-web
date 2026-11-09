@@ -1,0 +1,1440 @@
+{
+ "Innstillinger (profil)": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 33,
+   "boksBunn": 618,
+   "boksHoyde": 585,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "×",
+     "topp": 66,
+     "bunn": 92,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1260,
+    "clientHeight": 583,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 36,
+   "boksBunn": 684,
+   "boksHoyde": 648,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "×",
+     "topp": 69,
+     "bunn": 95,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1260,
+    "clientHeight": 646,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 45,
+   "boksBunn": 855,
+   "boksHoyde": 810,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "×",
+     "topp": 78,
+     "bunn": 104,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1260,
+    "clientHeight": 808,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 30,
+   "boksBunn": 570,
+   "boksHoyde": 540,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "×",
+     "topp": 63,
+     "bunn": 89,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1260,
+    "clientHeight": 538,
+    "sistInne": true
+   }
+  }
+ },
+ "Importer produkter fra Excel": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 33,
+   "boksBunn": 618,
+   "boksHoyde": 585,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Importer til Supabase →",
+     "topp": 1122,
+     "bunn": 1162,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1164,
+    "clientHeight": 583,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 36,
+   "boksBunn": 684,
+   "boksHoyde": 648,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Importer til Supabase →",
+     "topp": 1125,
+     "bunn": 1165,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1164,
+    "clientHeight": 646,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 45,
+   "boksBunn": 855,
+   "boksHoyde": 810,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Importer til Supabase →",
+     "topp": 1134,
+     "bunn": 1174,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1164,
+    "clientHeight": 808,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 30,
+   "boksBunn": 570,
+   "boksHoyde": 540,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Importer til Supabase →",
+     "topp": 1119,
+     "bunn": 1159,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1164,
+    "clientHeight": 538,
+    "sistInne": true
+   }
+  }
+ },
+ "Snøsmelting – effektbehov": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 20,
+   "boksBunn": 631,
+   "boksHoyde": 611,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Lagre i prosjekt",
+     "topp": 964,
+     "bunn": 1010,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1058,
+    "clientHeight": 609,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 22,
+   "boksBunn": 698,
+   "boksHoyde": 677,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Lagre i prosjekt",
+     "topp": 966,
+     "bunn": 1012,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1058,
+    "clientHeight": 675,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 27,
+   "boksBunn": 873,
+   "boksHoyde": 846,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Lagre i prosjekt",
+     "topp": 971,
+     "bunn": 1017,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1058,
+    "clientHeight": 844,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 18,
+   "boksBunn": 582,
+   "boksHoyde": 564,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Lagre i prosjekt",
+     "topp": 962,
+     "bunn": 1008,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 1058,
+    "clientHeight": 562,
+    "sistInne": true
+   }
+  }
+ },
+ "Frostsikring rør": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 34,
+   "boksBunn": 617,
+   "boksHoyde": 583,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lagre i prosjekt",
+     "topp": 518,
+     "bunn": 564,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 581,
+    "clientHeight": 581,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 69,
+   "boksBunn": 652,
+   "boksHoyde": 583,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lagre i prosjekt",
+     "topp": 553,
+     "bunn": 599,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 581,
+    "clientHeight": 581,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 159,
+   "boksBunn": 742,
+   "boksHoyde": 583,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lagre i prosjekt",
+     "topp": 643,
+     "bunn": 689,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 581,
+    "clientHeight": 581,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 24,
+   "boksBunn": 576,
+   "boksHoyde": 552,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lagre i prosjekt",
+     "topp": 508,
+     "bunn": 554,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 581,
+    "clientHeight": 550,
+    "sistInne": true
+   }
+  }
+ },
+ "Be kunde om mål": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 79,
+   "boksBunn": 571,
+   "boksHoyde": 492,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lag lenke",
+     "topp": 511,
+     "bunn": 546,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 490,
+    "clientHeight": 490,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 114,
+   "boksBunn": 606,
+   "boksHoyde": 492,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lag lenke",
+     "topp": 546,
+     "bunn": 581,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 490,
+    "clientHeight": 490,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 204,
+   "boksBunn": 696,
+   "boksHoyde": 492,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lag lenke",
+     "topp": 636,
+     "bunn": 671,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 490,
+    "clientHeight": 490,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 54,
+   "boksBunn": 546,
+   "boksHoyde": 492,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lag lenke",
+     "topp": 486,
+     "bunn": 521,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 490,
+    "clientHeight": 490,
+    "sistInne": true
+   }
+  }
+ },
+ "Del presentasjon": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 107,
+   "boksBunn": 543,
+   "boksHoyde": 436,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Åpne",
+     "topp": 483,
+     "bunn": 518,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 434,
+    "clientHeight": 434,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 142,
+   "boksBunn": 578,
+   "boksHoyde": 436,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Åpne",
+     "topp": 518,
+     "bunn": 553,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 434,
+    "clientHeight": 434,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 232,
+   "boksBunn": 668,
+   "boksHoyde": 436,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Åpne",
+     "topp": 608,
+     "bunn": 643,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 434,
+    "clientHeight": 434,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 82,
+   "boksBunn": 518,
+   "boksHoyde": 436,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Åpne",
+     "topp": 458,
+     "bunn": 493,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 434,
+    "clientHeight": 434,
+    "sistInne": true
+   }
+  }
+ },
+ "Del med elektriker": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 112,
+   "boksBunn": 539,
+   "boksHoyde": 427,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lukk",
+     "topp": 479,
+     "bunn": 514,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 425,
+    "clientHeight": 425,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 147,
+   "boksBunn": 574,
+   "boksHoyde": 427,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lukk",
+     "topp": 514,
+     "bunn": 549,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 425,
+    "clientHeight": 425,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 237,
+   "boksBunn": 664,
+   "boksHoyde": 427,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lukk",
+     "topp": 604,
+     "bunn": 639,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 425,
+    "clientHeight": 425,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 87,
+   "boksBunn": 514,
+   "boksHoyde": 427,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lukk",
+     "topp": 454,
+     "bunn": 489,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 425,
+    "clientHeight": 425,
+    "sistInne": true
+   }
+  }
+ },
+ "Kunde & prosjektinfo": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 98,
+   "boksBunn": 552,
+   "boksHoyde": 454,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lagre",
+     "topp": 485,
+     "bunn": 531,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 452,
+    "clientHeight": 452,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 133,
+   "boksBunn": 587,
+   "boksHoyde": 454,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lagre",
+     "topp": 520,
+     "bunn": 566,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 452,
+    "clientHeight": 452,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 223,
+   "boksBunn": 677,
+   "boksHoyde": 454,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lagre",
+     "topp": 610,
+     "bunn": 656,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 452,
+    "clientHeight": 452,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 73,
+   "boksBunn": 527,
+   "boksHoyde": 454,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Lagre",
+     "topp": 460,
+     "bunn": 506,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 452,
+    "clientHeight": 452,
+    "sistInne": true
+   }
+  }
+ },
+ "Bygg hesteskotrapp": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 39,
+   "boksBunn": 611,
+   "boksHoyde": 572,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Plasser trapp",
+     "topp": 892,
+     "bunn": 925,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 906,
+    "clientHeight": 572,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 43,
+   "boksBunn": 677,
+   "boksHoyde": 634,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Plasser trapp",
+     "topp": 896,
+     "bunn": 929,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 906,
+    "clientHeight": 634,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 54,
+   "boksBunn": 846,
+   "boksHoyde": 792,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Plasser trapp",
+     "topp": 907,
+     "bunn": 940,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 906,
+    "clientHeight": 792,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 36,
+   "boksBunn": 564,
+   "boksHoyde": 528,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Plasser trapp",
+     "topp": 889,
+     "bunn": 922,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 906,
+    "clientHeight": 528,
+    "sistInne": true
+   }
+  }
+ },
+ "Bygg trapp": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 39,
+   "boksBunn": 611,
+   "boksHoyde": 572,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 733,
+     "bunn": 766,
+     "inne": false,
+     "klikkbar": false
+    },
+    {
+     "tekst": "Plasser trapp",
+     "topp": 733,
+     "bunn": 766,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 747,
+    "clientHeight": 572,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 43,
+   "boksBunn": 677,
+   "boksHoyde": 634,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 737,
+     "bunn": 770,
+     "inne": false,
+     "klikkbar": false
+    },
+    {
+     "tekst": "Plasser trapp",
+     "topp": 737,
+     "bunn": 770,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 747,
+    "clientHeight": 634,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 76,
+   "boksBunn": 824,
+   "boksHoyde": 747,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 771,
+     "bunn": 804,
+     "inne": true,
+     "klikkbar": true
+    },
+    {
+     "tekst": "Plasser trapp",
+     "topp": 771,
+     "bunn": 804,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 747,
+    "clientHeight": 747,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 36,
+   "boksBunn": 564,
+   "boksHoyde": 528,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 730,
+     "bunn": 763,
+     "inne": false,
+     "klikkbar": false
+    },
+    {
+     "tekst": "Plasser trapp",
+     "topp": 730,
+     "bunn": 763,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 747,
+    "clientHeight": 528,
+    "sistInne": true
+   }
+  }
+ },
+ "Tilbehør": {
+  "1366x650": {
+   "feil": "ingen boks"
+  },
+  "1280x720": {
+   "feil": "ingen boks"
+  },
+  "1440x900": {
+   "feil": "ingen boks"
+  },
+  "1024x600": {
+   "feil": "ingen boks"
+  }
+ },
+ "Ny kunde": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 33,
+   "boksBunn": 618,
+   "boksHoyde": 585,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 677,
+     "bunn": 717,
+     "inne": false,
+     "klikkbar": false
+    },
+    {
+     "tekst": "Opprett kunde",
+     "topp": 677,
+     "bunn": 717,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 707,
+    "clientHeight": 583,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 36,
+   "boksBunn": 684,
+   "boksHoyde": 648,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": true,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 680,
+     "bunn": 720,
+     "inne": true,
+     "klikkbar": false
+    },
+    {
+     "tekst": "Opprett kunde",
+     "topp": 680,
+     "bunn": 720,
+     "inne": true,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 707,
+    "clientHeight": 646,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 96,
+   "boksBunn": 805,
+   "boksHoyde": 709,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 740,
+     "bunn": 780,
+     "inne": true,
+     "klikkbar": true
+    },
+    {
+     "tekst": "Opprett kunde",
+     "topp": 740,
+     "bunn": 780,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 707,
+    "clientHeight": 707,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 30,
+   "boksBunn": 570,
+   "boksHoyde": 540,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Avbryt",
+     "topp": 674,
+     "bunn": 714,
+     "inne": false,
+     "klikkbar": false
+    },
+    {
+     "tekst": "Opprett kunde",
+     "topp": 674,
+     "bunn": 714,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 707,
+    "clientHeight": 538,
+    "sistInne": true
+   }
+  }
+ },
+ "Gi kunden tilgang til Varmeplan": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 35,
+   "boksBunn": 615,
+   "boksHoyde": 581,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Opprett og inviter",
+     "topp": 551,
+     "bunn": 586,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 579,
+    "clientHeight": 579,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 70,
+   "boksBunn": 650,
+   "boksHoyde": 581,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Opprett og inviter",
+     "topp": 586,
+     "bunn": 621,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 579,
+    "clientHeight": 579,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 160,
+   "boksBunn": 740,
+   "boksHoyde": 581,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Opprett og inviter",
+     "topp": 676,
+     "bunn": 711,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 579,
+    "clientHeight": 579,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 30,
+   "boksBunn": 570,
+   "boksHoyde": 540,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 1,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Opprett og inviter",
+     "topp": 565,
+     "bunn": 600,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 597,
+    "clientHeight": 538,
+    "sistInne": true
+   }
+  }
+ },
+ "Hent fra kart": {
+  "1366x650": {
+   "feil": "ingen boks"
+  },
+  "1280x720": {
+   "feil": "ingen boks"
+  },
+  "1440x900": {
+   "feil": "ingen boks"
+  },
+  "1024x600": {
+   "feil": "ingen boks"
+  }
+ },
+ "Om rommet (kundelenke)": {
+  "1366x650": {
+   "H": 650,
+   "W": 1366,
+   "boksTopp": 78,
+   "boksBunn": 650,
+   "boksHoyde": 572,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Slett rommet",
+     "topp": 676,
+     "bunn": 724,
+     "inne": false,
+     "klikkbar": false
+    },
+    {
+     "tekst": "Ferdig",
+     "topp": 676,
+     "bunn": 724,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 665,
+    "clientHeight": 570,
+    "sistInne": true
+   }
+  },
+  "1280x720": {
+   "H": 720,
+   "W": 1280,
+   "boksTopp": 86,
+   "boksBunn": 720,
+   "boksHoyde": 634,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": false,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Slett rommet",
+     "topp": 684,
+     "bunn": 732,
+     "inne": false,
+     "klikkbar": true
+    },
+    {
+     "tekst": "Ferdig",
+     "topp": 684,
+     "bunn": 732,
+     "inne": false,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 665,
+    "clientHeight": 632,
+    "sistInne": true
+   }
+  },
+  "1440x900": {
+   "H": 900,
+   "W": 1440,
+   "boksTopp": 233,
+   "boksBunn": 900,
+   "boksHoyde": 667,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": true,
+   "alleKlikkbare": true,
+   "knapper": [
+    {
+     "tekst": "Slett rommet",
+     "topp": 831,
+     "bunn": 879,
+     "inne": true,
+     "klikkbar": true
+    },
+    {
+     "tekst": "Ferdig",
+     "topp": 831,
+     "bunn": 879,
+     "inne": true,
+     "klikkbar": true
+    }
+   ],
+   "rull": {
+    "scrollHeight": 665,
+    "clientHeight": 665,
+    "sistInne": true
+   }
+  },
+  "1024x600": {
+   "H": 600,
+   "W": 1024,
+   "boksTopp": 72,
+   "boksBunn": 600,
+   "boksHoyde": 528,
+   "hoyereEnnVindu": false,
+   "antallKnapper": 2,
+   "alleInne": false,
+   "alleKlikkbare": false,
+   "knapper": [
+    {
+     "tekst": "Slett rommet",
+     "topp": 670,
+     "bunn": 718,
+     "inne": false,
+     "klikkbar": false
+    },
+    {
+     "tekst": "Ferdig",
+     "topp": 670,
+     "bunn": 718,
+     "inne": false,
+     "klikkbar": false
+    }
+   ],
+   "rull": {
+    "scrollHeight": 665,
+    "clientHeight": 526,
+    "sistInne": true
+   }
+  }
+ }
+}

@@ -4,6 +4,12 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 216 — Dialoger: fast bunnlinje med knapper, bare innholdet scroller, aldri høyere enn vinduet (09.11.2026, `main`, ikke pushet)
+
+Kenneth 08.11.2026: «valgknappene blir borte i bunnen … på flere steder». Eksporter PDF hadde en 80vh-deling inni en 80vh-boks med en 57 px topp over seg — knappene lå nederst i venstre kolonne og var alltid kuttet. Felles struktur `.vp-modal` / `__head` / `__body` / `__foot` (max-height mot `100dvh − 32px`, topp og bunn faste, bare innholdet scroller); `.modal` i `#modal-ov` er nå en flex-kolonne med `.modal-body` rundt feltene (bokshøydene målt identiske med før). 34 dialoger lagt om: Eksporter PDF, de ni faste, Innstillinger, Excel-import, Snøsmelting, Frostsikring, Be kunde om mål, Del presentasjon, Del med elektriker, Kunde & prosjektinfo, PDF-sidevelger, Importer tegning, Hva er vegger?, begge trappebyggerne, Tilbehør, Ny kunde, Forslag til kundenumre, Gi kunden tilgang, Kopier til Visma, Hent fra kart, matte-panelene og kundelenkas «Om rommet». Ingen tekster, rekkefølge eller logikk endret. Ny `_dialogRegressionTest216` + `docs/216-dialoger/probe/maal.mjs` (1366×650, 1280×720, 1440×900, 1024×600). Se `docs/216-dialoger/RAPPORT.md`.
+
+---
+
 ## 219 — 3D fase 0: motoren som bygger taket fra prosjektets egne data (08.11.2026, `main`, ikke pushet)
 
 Ny fil `varmeplan-3d.js` med `byggTak`, `maal` og `tegnScene` (three.js 0.160.0, lastes først når 3D åpnes). `index.html` er urørt. Forhåndsvisning på `docs/3d/forhandsvisning.html`. `docs/3d/test-3d.mjs` sammenligner med den ekte 2D-motoren, skåret ut av `index.html`: 640 av 640, filmens bygg 110,15/80,15 m. Funn: L-formede skråtak har ingen lagret mønelinje og kan ikke reises. Se `docs/219/RAPPORT.md`.

@@ -1,0 +1,87 @@
+@@@ FINN
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(540px,94vw);max-height:88vh;overflow:auto;padding:24px">
+@@@ SETT
+  ov.innerHTML = `<div class="vp-modal" onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(540px,94vw);padding:24px">
+@@@ SLUTT
+@@@ FINN
+      <button onclick="document.getElementById('_kunde-ov').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:16px">Kunden får en lenke
+@@@ SETT
+      <button onclick="document.getElementById('_kunde-ov').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <div class="vp-modal__body">
+    <div style="font-size:12px;color:var(--dim);margin-bottom:16px">Kunden får en lenke
+@@@ SLUTT
+@@@ FINN
+    <div id="kunde-result" style="display:none;margin-bottom:14px"></div>
+
+    <div style="display:flex;justify-content:flex-end;gap:9px">
+@@@ SETT
+    <div id="kunde-result" style="display:none;margin-bottom:14px"></div>
+    </div>
+
+    <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:9px">
+@@@ SLUTT
+@@@ FINN
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);padding:24px">
+@@@ SETT
+  ov.innerHTML = `<div class="vp-modal" onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);padding:24px">
+@@@ SLUTT
+@@@ FINN
+      <button onclick="document.getElementById('_del-ov').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:16px">Lim inn i e-posten
+@@@ SETT
+      <button onclick="document.getElementById('_del-ov').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <div class="vp-modal__body">
+    <div style="font-size:12px;color:var(--dim);margin-bottom:16px">Lim inn i e-posten
+@@@ SLUTT
+@@@ FINN
+    <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+      <a id="_del-apne"
+@@@ SETT
+    </div>
+    <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+      <a id="_del-apne"
+@@@ SLUTT
+@@@ FINN
+  ov.innerHTML = `<div onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);max-height:90vh;overflow:auto;padding:24px">
+@@@ SETT
+  ov.innerHTML = `<div class="vp-modal" onclick="event.stopPropagation()" style="background:var(--surface,#16171c);border:1px solid var(--border);border-radius:16px;width:min(520px,94vw);padding:24px">
+@@@ SLUTT
+@@@ FINN
+      <button onclick="document.getElementById('_shr-ov').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:16px"><b style="color:var(--text)">${esc(_shrState.projectName)}</b>
+@@@ SETT
+      <button onclick="document.getElementById('_shr-ov').remove()" style="background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <div class="vp-modal__body">
+    <div style="font-size:12px;color:var(--dim);margin-bottom:16px"><b style="color:var(--text)">${esc(_shrState.projectName)}</b>
+@@@ SLUTT
+@@@ FINN
+    <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+      <button onclick="document.getElementById('_shr-ov').remove()"
+@@@ SETT
+    </div>
+    <div class="vp-modal__foot" style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px">
+      <button onclick="document.getElementById('_shr-ov').remove()"
+@@@ SLUTT
+@@@ FINN
+  wrap.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:420px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,.4)">
+    <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:14px">Kunde & prosjektinfo</div>
+@@@ SETT
+  wrap.innerHTML = `<div class="vp-modal" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:420px;width:90%;box-shadow:0 12px 40px rgba(0,0,0,.4)">
+    <div style="font-size:16px;font-weight:700;color:var(--text);margin-bottom:14px">Kunde & prosjektinfo</div>
+    <div class="vp-modal__body">
+@@@ SLUTT
+@@@ FINN
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="npc-btn-ghost" onclick="document.getElementById('wf-kunde-modal').remove()">Avbryt</button>
+@@@ SETT
+    </div>
+    <div class="vp-modal__foot" style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="npc-btn-ghost" onclick="document.getElementById('wf-kunde-modal').remove()">Avbryt</button>
+@@@ SLUTT
