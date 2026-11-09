@@ -6584,6 +6584,12 @@ function drawRooms() {
   // polygon orientation. Without this, CW rooms put V1 outside and V3 inside
   // (asymmetric), causing collisions with the outside room-dim chain.
   if (room.walls && S.view.zoom > 0.45) {
+    // 226: i PDF får veggetikettene («V1 400 cm») den felles målstørrelsen på papiret (_dimPdfStyle)
+    // og heltrukken farge; luften inn fra veggen skaleres med skriften (10 px ≙ skriften på skjermen),
+    // så teksten fortsatt står like innenfor veggen. Skjermen er uendret.
+    const P226=_dimPdfStyle();
+    const WALL_LABEL_FONT=P226?P226.fontPx:10;
+    const WALL_LABEL_OFF=P226?P226.fontPx:10;
     room.walls.forEach((wl, wi) => {
       const s1=w2s(wl.x1,wl.y1), s2=w2s(wl.x2,wl.y2);
       const mx=(s1.x+s2.x)/2, my=(s1.y+s2.y)/2;
@@ -6594,12 +6600,11 @@ function drawRooms() {
       const dot=(mx-cx)*Math.cos(perpAng)+(my-cy)*Math.sin(perpAng);
       const inDir=dot>=0?-1:1;
       const inx=Math.cos(perpAng)*inDir, iny=Math.sin(perpAng)*inDir;
-      const WALL_LABEL_OFF=10;
       ctx.save();
       ctx.translate(mx+inx*WALL_LABEL_OFF, my+iny*WALL_LABEL_OFF);
       ctx.rotate(drawAng);
-      ctx.fillStyle=_lc('rgba(0,70,110,0.9)','rgba(34,211,238,0.82)');
-      ctx.font=`10px ${CANVAS_NUM_FONT}`;
+      ctx.fillStyle=P226?P226.col:_lc('rgba(0,70,110,0.9)','rgba(34,211,238,0.82)');
+      ctx.font=`${WALL_LABEL_FONT}px ${CANVAS_NUM_FONT}`;
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText('V'+(wi+1)+' '+Math.round(wl.length)+' cm', 0, 0);
       ctx.restore();
@@ -45919,6 +45924,34 @@ function _pdfOverviewFontPx() {
   return Math.max(8, _labelFontCm() * S.view.zoom * BASE_SCALE);
 }
 
+// ═══ 226 · MÅL I PDF: FELLES STØRRELSE PÅ PAPIRET (Kenneth 09.11.2026) ══════════════════════════
+// «Målene på rommene i PDF-en er for små og for svake.» Veggmål, målekjedene (folie/kabel/matte),
+// brukerens egne mål og hindringsmålene ble alle tegnet med 10–11 px skrift og 0,5–1,2 px streker —
+// i SKJERMPUNKTER. Romsiden tegnes i ~2100 px over 180 mm (300 DPI), så 10 px ble 0,85 mm tekst på
+// papiret og strekene hårstreker; JPEG smurte resten ut. Produktetikettene hadde alt riktig regel
+// (_labelFontCm, 051): fast størrelse på PAPIRET, regnet fra `S.ui._pdfScaleMmPerCm`. Samme regel
+// her, for alle mål: 2,0 mm ved «Normal» × profilens pdfLabelScale (litt under etikettenes 2,2 mm,
+// så rangeringen beholdes), minst 1,6 mm der teksten krympes (217). Streker 0,2 / 0,15 mm, ende-
+// merker 1,5 mm, heltrukken mørk grå med hvit boks bak teksten — usikre/røde mål beholder rødt, men
+// med full dekkevne. SKJERMEN ER UENDRET: utenfor PDF-modus (eller uten kjent skala) returneres null,
+// og hvert tegnested bruker da nøyaktig de gamle skjermtallene.
+const DIM_PDF_MM = 2.0, DIM_PDF_MIN_MM = 1.6;            // skrift ved Normal (× pdfLabelScale); minste ved krymping
+const DIM_PDF_LINE_MM = 0.2, DIM_PDF_EXT_MM = 0.15;      // målestrek / hjelpelinje
+const DIM_PDF_TICK_MM = 1.5;                             // endemerke, hele lengden
+const DIM_PDF_COL = '#374151', DIM_PDF_RED = 'rgb(200,30,40)', DIM_PDF_BG = '#ffffff';
+function _dimPdfStyle() {
+  if (!S.ui?._pdfMode) return null;
+  const mmPerCm = S.ui._pdfScaleMmPerCm;
+  if (!(mmPerCm > 0)) return null;                        // ukjent skala (kallvei utenom _renderRoomToImage) → som før
+  const k = (S.view.zoom * BASE_SCALE) / mmPerCm;          // px per mm på papiret i DETTE bildet
+  const sk = _userPrefs().pdfLabelScale || 1;
+  const fontPx = DIM_PDF_MM * sk * k;
+  return { pxPerMm: k, fontPx, minPx: DIM_PDF_MIN_MM * sk * k,
+           line: DIM_PDF_LINE_MM * k, ext: DIM_PDF_EXT_MM * k, tickHalf: DIM_PDF_TICK_MM * k / 2,
+           col: DIM_PDF_COL, colRed: DIM_PDF_RED, bg: DIM_PDF_BG,
+           dash: fontPx / 10 };                           // skjerm-px → papir-px for stiplinger og små avstander (10 px skjerm ≙ skriften)
+}
+
 function _labelScaleName(v) {
   const t = LABEL_PDF_SCALES.find(x => Math.abs(x.v - v) < 0.001);
   return t ? t.navn : _labelScaleNum(v);
@@ -61220,7 +61253,17 @@ function _dimChainLayout(room, dir, items, build) {
 // Tegner ett oppsett. st: { col, colRed, bg, fmt(cm) }. Samme strek, haker, stiplede hjelpelinjer
 // og tekstplassering som de tre kjedene hadde hver for seg før 164 (bit-identisk for rektangler).
 function _drawDimChainLayout(layout, st) {
-  const TICK = 8;
+  // 226: i PDF kommer skrift, streker, endemerker, farger og boks fra papirregelen (_dimPdfStyle);
+  // på skjermen (P = null) er hvert tall nøyaktig som før. Kjedenes PLASSERING (offPx) er uendret.
+  const P = _dimPdfStyle();
+  const TICK = P ? P.tickHalf * 2 : 8;
+  const FONT = P ? P.fontPx : 10;
+  const LW = P ? P.line : 0.8, LWX = P ? P.ext : 0.5;
+  const DASH = P ? [2 * P.dash, 3 * P.dash] : [2, 3];
+  const GAP = P ? 4 * P.dash : 4;                           // luft mellom vegg og hjelpelinje
+  const BOXH = P ? FONT * 1.4 : 14, PAD = P ? FONT * 0.3 : 3;
+  const TXTOFF = P ? -FONT * 0.9 : -12;                     // tekstens senter over kjedelinja
+  const COL = P ? P.col : st.col, COLRED = P ? P.colRed : st.colRed, BG = P ? P.bg : st.bg;
   const zps = S.view.zoom * BASE_SCALE;
   function _label(str, mx, my, isVert, col, offPx) {
     const tw = ctx.measureText(str).width;
@@ -61228,8 +61271,8 @@ function _drawDimChainLayout(layout, st) {
     ctx.translate(mx, my);
     if (isVert) ctx.rotate(-Math.PI / 2);
     ctx.translate(0, offPx);
-    ctx.fillStyle = st.bg;
-    ctx.fillRect(-tw / 2 - 3, -7, tw + 6, 14);
+    ctx.fillStyle = BG;
+    ctx.fillRect(-tw / 2 - PAD, -BOXH / 2, tw + 2 * PAD, BOXH);
     ctx.fillStyle = col;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(str, 0, 0);
@@ -61238,8 +61281,8 @@ function _drawDimChainLayout(layout, st) {
   function _seg(sx1, sy1, sx2, sy2, seg, perpNx, perpNy, isVert) {
     const cm = seg.cm != null ? seg.cm : seg.to - seg.from;
     if (cm < 0.3 && !seg.red) return;   // et rødt 0-mål skal fortsatt vises
-    const col = seg.red ? st.colRed : st.col;
-    ctx.strokeStyle = col; ctx.lineWidth = 0.8; ctx.setLineDash([]);
+    const col = seg.red ? COLRED : COL;
+    ctx.strokeStyle = col; ctx.lineWidth = LW; ctx.setLineDash([]);
     ctx.beginPath(); ctx.moveTo(sx1, sy1); ctx.lineTo(sx2, sy2); ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(sx1 - perpNx * TICK / 2, sy1 - perpNy * TICK / 2);
@@ -61247,10 +61290,10 @@ function _drawDimChainLayout(layout, st) {
     ctx.moveTo(sx2 - perpNx * TICK / 2, sy2 - perpNy * TICK / 2);
     ctx.lineTo(sx2 + perpNx * TICK / 2, sy2 + perpNy * TICK / 2);
     ctx.stroke();
-    _label(st.fmt(cm), (sx1 + sx2) / 2, (sy1 + sy2) / 2, isVert, col, -12);
+    _label(st.fmt(cm), (sx1 + sx2) / 2, (sy1 + sy2) / 2, isVert, col, TXTOFF);
   }
   function _ext(wallSx, wallSy, chainSx, chainSy) {
-    ctx.strokeStyle = st.col; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
+    ctx.strokeStyle = COL; ctx.lineWidth = LWX; ctx.setLineDash(DASH);
     ctx.beginPath(); ctx.moveTo(wallSx, wallSy); ctx.lineTo(chainSx, chainSy); ctx.stroke();
     ctx.setLineDash([]);
   }
@@ -61258,7 +61301,7 @@ function _drawDimChainLayout(layout, st) {
   function _chainX(segs, wallY, sign, offPx) {
     const chainY = w2s(0, wallY).y + sign * offPx;
     const bounds = new Set(); for (const s of segs) { bounds.add(s.from); bounds.add(s.to); }
-    for (const bx of bounds) { const sw = w2s(bx, wallY); _ext(sw.x, sw.y + sign * 4, sw.x, chainY); }
+    for (const bx of bounds) { const sw = w2s(bx, wallY); _ext(sw.x, sw.y + sign * GAP, sw.x, chainY); }
     for (const s of segs) { const s1 = w2s(s.from, wallY), s2 = w2s(s.to, wallY); _seg(s1.x, chainY, s2.x, chainY, s, 0, 1, false); }
     return chainY;
   }
@@ -61266,12 +61309,12 @@ function _drawDimChainLayout(layout, st) {
   function _chainY(segs, wallX, sign, offPx) {
     const chainX = w2s(wallX, 0).x + sign * offPx;
     const bounds = new Set(); for (const s of segs) { bounds.add(s.from); bounds.add(s.to); }
-    for (const by of bounds) { const sw = w2s(wallX, by); _ext(sw.x + sign * 4, sw.y, chainX, sw.y); }
+    for (const by of bounds) { const sw = w2s(wallX, by); _ext(sw.x + sign * GAP, sw.y, chainX, sw.y); }
     for (const s of segs) { const s1 = w2s(wallX, s.from), s2 = w2s(wallX, s.to); _seg(chainX, s1.y, chainX, s2.y, s, 1, 0, true); }
     return chainX;
   }
   ctx.save();
-  ctx.font = `10px ${CANVAS_NUM_FONT}`;
+  ctx.font = `${FONT}px ${CANVAS_NUM_FONT}`;
   const out = { across: [], along: [] };
   for (const ch of layout.across) {
     const offPx = (DIM_CHAIN_OFF_CM + DIM_CHAIN_STEP_CM * ch.depth) * zps;
@@ -61285,7 +61328,10 @@ function _drawDimChainLayout(layout, st) {
     out.along.push({ ch, at });
   }
   ctx.restore();
-  out.label = (str, mx, my, isVert, col, offPx) => { ctx.save(); ctx.font = `10px ${CANVAS_NUM_FONT}`; _label(str, mx, my, isVert, col, offPx); ctx.restore(); };
+  // Merknaden (matte: «Kabel → vegg …») gis i skjerm-px fra kalleren; i PDF skaleres avstanden med skriften.
+  // 226: fargen følger også papirregelen (rødt beholdes).
+  out.label = (str, mx, my, isVert, col, offPx) => { ctx.save(); ctx.font = `${FONT}px ${CANVAS_NUM_FONT}`;
+    _label(str, mx, my, isVert, P ? (col === st.colRed ? COLRED : COL) : col, P ? offPx * P.dash : offPx); ctx.restore(); };
   return out;
 }
 // Oppsettene for et rom og en produkttype ('strip' | 'cable' | 'mat'), husket per tegneomgang
@@ -61785,9 +61831,14 @@ function _dimChainEdgeRegressionTest() {
 }
 function _drawDimAnnotationsForRoom(room, opts) {
   if(!room||!room.walls||!room.points) return;
-  const TICK=8;
+  // 226: papirregelen i PDF (P), skjermtallene uendret (P = null). Avstanden fra veggen (baseOff) er uendret.
+  const P=_dimPdfStyle();
+  const TICK=P?P.tickHalf:8;
+  const FONT=P?P.fontPx:10;
+  const BOXH=P?FONT*1.4:14, PAD=P?FONT*0.3:3;
+  const BG=P?P.bg:_lc('rgba(240,244,248,0.88)','rgba(13,14,16,0.7)');
   ctx.save();
-  ctx.font=`10px ${CANVAS_NUM_FONT}`;
+  ctx.font=`${FONT}px ${CANVAS_NUM_FONT}`;
   const cxW=room.points.reduce((a,p)=>a+p.x,0)/room.points.length;
   const cyW=room.points.reduce((a,p)=>a+p.y,0)/room.points.length;
   for (const wl of room.walls) {
@@ -61816,10 +61867,11 @@ function _drawDimAnnotationsForRoom(room, opts) {
     // kaller render(), så PDF-romsiden arver markeringen uten en egen kodevei.
     const _wIdx = room.walls.indexOf(wl);
     const _unsure = _isWallUncertain(room, _wIdx);
-    const col = _unsure ? _lc('rgba(200,30,40,0.95)','rgba(248,113,113,0.95)')
+    const col = P ? (_unsure ? P.colRed : P.col)
+              : _unsure ? _lc('rgba(200,30,40,0.95)','rgba(248,113,113,0.95)')
               : (isSel?_lc('rgba(8,80,130,0.95)','rgba(34,211,238,0.95)'):_lc('rgba(26,111,204,0.8)','rgba(71,180,255,0.65)'));
-    ctx.strokeStyle=col; ctx.lineWidth=_unsure?1.6:(isSel?1.5:1); ctx.fillStyle=col;
-    ctx.setLineDash(_unsure?[5,3]:[]);
+    ctx.strokeStyle=col; ctx.lineWidth=P?(_unsure?P.line*1.5:P.line):(_unsure?1.6:(isSel?1.5:1)); ctx.fillStyle=col;
+    ctx.setLineDash(_unsure?(P?[5*P.dash,3*P.dash]:[5,3]):[]);
     ctx.beginPath();ctx.moveTo(ox1,oy1);ctx.lineTo(ox2,oy2);ctx.stroke();
     ctx.setLineDash([]);   // T-endene og teksten skal ikke være stiplet
     // T-ende: tverr-strek VINKELRETT på målestreken (perpAng), sentrert på endepunktet
@@ -61834,9 +61886,9 @@ function _drawDimAnnotationsForRoom(room, opts) {
     ctx.save();
     ctx.translate((ox1+ox2)/2,(oy1+oy2)/2);ctx.rotate(drawAng);
     ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillStyle=_lc('rgba(240,244,248,0.88)','rgba(13,14,16,0.7)');
+    ctx.fillStyle=BG;
     const tw=ctx.measureText(_lbl).width;
-    ctx.fillRect(-tw/2-3,-7,tw+6,14);
+    ctx.fillRect(-tw/2-PAD,-BOXH/2,tw+2*PAD,BOXH);
     ctx.fillStyle=col;ctx.fillText(_lbl,0,0);
     ctx.restore();
     if(isSel){
@@ -61874,18 +61926,20 @@ function _drawDimAnnotationsForRoom(room, opts) {
       const HOFF=20;
       const hox1=hs1.x+hnx*HOFF,hoy1=hs1.y+hny*HOFF;
       const hox2=hs2.x+hnx*HOFF,hoy2=hs2.y+hny*HOFF;
-      ctx.strokeStyle=_lc('rgba(208,88,32,0.7)','rgba(255,200,80,0.65)');ctx.lineWidth=0.8;ctx.fillStyle=_lc('rgba(208,88,32,0.8)','rgba(255,200,80,0.75)');
-      ctx.setLineDash([2,3]);
-      ctx.beginPath();ctx.moveTo(hs1.x+hnx*4,hs1.y+hny*4);ctx.lineTo(hox1,hoy1);ctx.moveTo(hs2.x+hnx*4,hs2.y+hny*4);ctx.lineTo(hox2,hoy2);ctx.stroke();
+      const hGap=P?4*P.dash:4;
+      ctx.strokeStyle=P?P.col:_lc('rgba(208,88,32,0.7)','rgba(255,200,80,0.65)');ctx.lineWidth=P?P.ext:0.8;ctx.fillStyle=_lc('rgba(208,88,32,0.8)','rgba(255,200,80,0.75)');
+      ctx.setLineDash(P?[2*P.dash,3*P.dash]:[2,3]);
+      ctx.beginPath();ctx.moveTo(hs1.x+hnx*hGap,hs1.y+hny*hGap);ctx.lineTo(hox1,hoy1);ctx.moveTo(hs2.x+hnx*hGap,hs2.y+hny*hGap);ctx.lineTo(hox2,hoy2);ctx.stroke();
       ctx.setLineDash([]);
+      if(P) ctx.lineWidth=P.line;
       ctx.beginPath();ctx.moveTo(hox1,hoy1);ctx.lineTo(hox2,hoy2);ctx.stroke();
       const dAng2=(wAng>Math.PI/2||wAng<-Math.PI/2)?wAng+Math.PI:wAng;
       ctx.save();ctx.translate((hox1+hox2)/2,(hoy1+hoy2)/2);ctx.rotate(dAng2);
       ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.fillStyle=_lc('rgba(240,244,248,0.88)','rgba(13,14,16,0.7)');
+      ctx.fillStyle=BG;
       const tw3=ctx.measureText(wLen2+' cm').width;
-      ctx.fillRect(-tw3/2-3,-7,tw3+6,14);
-      ctx.fillStyle=_lc('rgba(208,88,32,0.95)','rgba(255,200,80,0.9)');ctx.fillText(wLen2+' cm',0,0);
+      ctx.fillRect(-tw3/2-PAD,-BOXH/2,tw3+2*PAD,BOXH);
+      ctx.fillStyle=P?P.col:_lc('rgba(208,88,32,0.95)','rgba(255,200,80,0.9)');ctx.fillText(wLen2+' cm',0,0);
       ctx.restore();
     }
   }
@@ -62059,21 +62113,25 @@ function _drawCableSkewDimChain(room, skewCables) {
   if (uMax - maxSweep > 0.3) alongSegs.push({ a: maxSweep, b: uMax });
 
   ctx.save();
-  ctx.font = `10px ${CANVAS_NUM_FONT}`;
-  const COL = _lc('rgba(180,90,30,0.85)', 'rgba(255,150,60,0.75)');
-  const COL_BG = _lc('rgba(240,244,248,0.92)', 'rgba(13,14,16,0.8)');
-  const TICK = 8, OFF = 25; // world-cm offset from wall to the dimension chain
+  // 226: papirregelen i PDF (P), skjermtallene uendret (P = null).
+  const P = _dimPdfStyle();
+  const FONT = P ? P.fontPx : 10;
+  const BOXH = P ? FONT * 1.4 : 14, PAD = P ? FONT * 0.3 : 3, TXTOFF = P ? -FONT * 0.9 : -8;
+  ctx.font = `${FONT}px ${CANVAS_NUM_FONT}`;
+  const COL = P ? P.col : _lc('rgba(180,90,30,0.85)', 'rgba(255,150,60,0.75)');
+  const COL_BG = P ? P.bg : _lc('rgba(240,244,248,0.92)', 'rgba(13,14,16,0.8)');
+  const TICK = P ? P.tickHalf * 2 : 8, OFF = 25; // world-cm offset from wall to the dimension chain
   // Frame (across cN, along cU) → world → screen.
   const W = (cN, cU) => w2s(ux * cU + nx * cN, uy * cU + ny * cN);
   function drawExt(a, b) {
-    ctx.strokeStyle = COL; ctx.lineWidth = 0.5; ctx.setLineDash([2, 3]);
+    ctx.strokeStyle = COL; ctx.lineWidth = P ? P.ext : 0.5; ctx.setLineDash(P ? [2 * P.dash, 3 * P.dash] : [2, 3]);
     ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
   }
   function drawSeg(s1, s2, valueCm) {
     if (valueCm < 0.3) return;
     const label = Math.round(valueCm * 10) / 10;
     const str = (label % 1 === 0 ? label.toFixed(0) : label.toFixed(1)) + ' cm';
-    ctx.strokeStyle = COL; ctx.lineWidth = 0.8; ctx.setLineDash([]);
+    ctx.strokeStyle = COL; ctx.lineWidth = P ? P.line : 0.8; ctx.setLineDash([]);
     ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
     const ang = Math.atan2(s2.y - s1.y, s2.x - s1.x);
     const px = Math.cos(ang + Math.PI / 2), py = Math.sin(ang + Math.PI / 2);
@@ -62084,8 +62142,8 @@ function _drawCableSkewDimChain(room, skewCables) {
     const mx = (s1.x + s2.x) / 2, my = (s1.y + s2.y) / 2;
     let la = ang; if (la > Math.PI / 2 || la < -Math.PI / 2) la += Math.PI;
     const tw = ctx.measureText(str).width;
-    ctx.save(); ctx.translate(mx, my); ctx.rotate(la); ctx.translate(0, -8);
-    ctx.fillStyle = COL_BG; ctx.fillRect(-tw / 2 - 3, -7, tw + 6, 14);
+    ctx.save(); ctx.translate(mx, my); ctx.rotate(la); ctx.translate(0, TXTOFF);
+    ctx.fillStyle = COL_BG; ctx.fillRect(-tw / 2 - PAD, -BOXH / 2, tw + 2 * PAD, BOXH);
     ctx.fillStyle = COL; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(str, 0, 0);
     ctx.restore();
   }
@@ -62186,7 +62244,10 @@ function _collectVisibleDims() {
 function drawUserDimLines() {
   const _dims = _collectVisibleDims();
   if(!_dims.length) return;
-  const TICK=7, OVERHANG=6;
+  // 226: papirregelen i PDF (P), skjermtallene uendret (P = null). Målets plassering (offset) er uendret.
+  const P=_dimPdfStyle();
+  const TICK=P?P.tickHalf:7, OVERHANG=P?6*P.dash:6, GAP=P?3*P.dash:3;
+  const FONT=P?P.fontPx:11;
   ctx.save();
   for (const dim of _dims) {
     const isSel=dim.id===S.ui.selectedDimId;
@@ -62201,29 +62262,29 @@ function drawUserDimLines() {
     const sd1=w2s(dim.p1.x+wnx*off, dim.p1.y+wny*off);
     const sd2=w2s(dim.p2.x+wnx*off, dim.p2.y+wny*off);
     const sp1=w2s(dim.p1.x,dim.p1.y), sp2=w2s(dim.p2.x,dim.p2.y);
-    const col=isSel?_lc('rgba(8,80,130,0.95)','rgba(34,211,238,0.95)'):_lc('rgba(26,111,204,0.85)','rgba(71,180,255,0.8)');
+    const col=P?P.col:isSel?_lc('rgba(8,80,130,0.95)','rgba(34,211,238,0.95)'):_lc('rgba(26,111,204,0.85)','rgba(71,180,255,0.8)');
     ctx.setLineDash([]);
     // Extension lines (only when offset != 0)
     const ext1len=Math.hypot(sd1.x-sp1.x,sd1.y-sp1.y);
     const ext2len=Math.hypot(sd2.x-sp2.x,sd2.y-sp2.y);
-    ctx.strokeStyle=col; ctx.lineWidth=0.8;
+    ctx.strokeStyle=col; ctx.lineWidth=P?P.ext:0.8;
     if (ext1len>2) {
       const ux=(sd1.x-sp1.x)/ext1len, uy=(sd1.y-sp1.y)/ext1len;
       ctx.beginPath();
-      ctx.moveTo(sp1.x+ux*3,sp1.y+uy*3);
+      ctx.moveTo(sp1.x+ux*GAP,sp1.y+uy*GAP);
       ctx.lineTo(sd1.x+ux*OVERHANG,sd1.y+uy*OVERHANG);
       ctx.stroke();
     }
     if (ext2len>2) {
       const ux=(sd2.x-sp2.x)/ext2len, uy=(sd2.y-sp2.y)/ext2len;
       ctx.beginPath();
-      ctx.moveTo(sp2.x+ux*3,sp2.y+uy*3);
+      ctx.moveTo(sp2.x+ux*GAP,sp2.y+uy*GAP);
       ctx.lineTo(sd2.x+ux*OVERHANG,sd2.y+uy*OVERHANG);
       ctx.stroke();
     }
     // Dim line between offset endpoints
     const ang=Math.atan2(sd2.y-sd1.y,sd2.x-sd1.x);
-    ctx.strokeStyle=col; ctx.lineWidth=isSel?1.8:1.2;
+    ctx.strokeStyle=col; ctx.lineWidth=P?P.line:(isSel?1.8:1.2);
     ctx.beginPath(); ctx.moveTo(sd1.x,sd1.y); ctx.lineTo(sd2.x,sd2.y); ctx.stroke();
     // T-ende: tverr-strek VINKELRETT på målestreken, sentrert på endepunktet
     const tx=-Math.sin(ang)*TICK, ty=Math.cos(ang)*TICK;
@@ -62237,12 +62298,14 @@ function drawUserDimLines() {
     const drawAng=(ang>Math.PI/2||ang<-Math.PI/2)?ang+Math.PI:ang;
     ctx.save();
     ctx.translate(mx,my); ctx.rotate(drawAng);
-    ctx.fillStyle=_lc('rgba(240,244,248,0.88)','rgba(13,14,16,0.75)');
-    ctx.font=`11px ${CANVAS_NUM_FONT}`;
+    ctx.fillStyle=P?P.bg:_lc('rgba(240,244,248,0.88)','rgba(13,14,16,0.75)');
+    ctx.font=`${FONT}px ${CANVAS_NUM_FONT}`;
     const tw=ctx.measureText(len+' cm').width;
-    ctx.fillRect(-tw/2-3,-9,tw+6,13);
+    // Skjerm: boks −9…+4 og tekst 2 px over streken (som før). PDF: samme forhold, skalert med skriften.
+    if (P) ctx.fillRect(-tw/2-FONT*0.3,-FONT*0.9,tw+FONT*0.6,FONT*1.3);
+    else ctx.fillRect(-tw/2-3,-9,tw+6,13);
     ctx.fillStyle=col; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(len+' cm',0,-2);
+    ctx.fillText(len+' cm',0,P?-FONT*0.2:-2);
     ctx.restore();
   }
   ctx.restore();
@@ -62259,20 +62322,16 @@ function drawUserDimLines() {
 //
 // Regelen: (1) målestrek inne i hindringen, parallelt med siden, med luft inn fra kanten;
 // (2) tekst, streker og T-ender helt innenfor omrisset, og ikke over hindringens navn;
-// (3) for liten → teksten krympes trinnvis ned til minstestørrelsen (skjerm 8 px, PDF 0,9 mm);
+// (3) for liten → teksten krympes trinnvis ned til minstestørrelsen (skjerm 8 px, PDF 1,6 mm);
 // får den fortsatt ikke plass vises målet utenfor som før, og for to like, motstående sider
 // (rektangel) vises bare det med minst kabel/folie/matte under seg; (4) i PDF følger størrelsen
-// profilens labelstørrelse (1,2 mm × skala, som kjedetekstene); (5) teksten leses alltid fra
-// bunnen eller fra høyre.
+// den felles papirregelen for mål (226: _dimPdfStyle — 2,0 mm × profilens labelstørrelse, som
+// kjedetekstene og veggmålene; før 226 var det 1,2 mm); (5) teksten leses alltid fra bunnen eller fra høyre.
 const HIND_DIM_SCREEN_PX = 11, HIND_DIM_SCREEN_MIN_PX = 8;   // skjerm: som andre mål → minst 8 px
-const HIND_DIM_PDF_MM = 1.2, HIND_DIM_PDF_MIN_MM = 0.9;      // papir: ved Normal; × pdfLabelScale
 const HIND_DIM_OUT_CM = 20;                                    // reserveplassering utenfor (som før 217)
 function _hindDimFontPx() {
-  if (S.ui?._pdfMode && S.ui._pdfScaleMmPerCm > 0) {
-    const pxPerMm = (S.view.zoom * BASE_SCALE) / S.ui._pdfScaleMmPerCm;
-    const sk = _userPrefs().pdfLabelScale || 1;
-    return { base: HIND_DIM_PDF_MM * sk * pxPerMm, min: HIND_DIM_PDF_MIN_MM * sk * pxPerMm };
-  }
+  const P = _dimPdfStyle();                                    // 226: felles papirstørrelse for alle mål
+  if (P) return { base: P.fontPx, min: P.minPx };
   return { base: HIND_DIM_SCREEN_PX, min: HIND_DIM_SCREEN_MIN_PX };
 }
 // +1 når normalen (-dy,dx) fra siden p1→p2 peker inn i polygonet, ellers -1.
@@ -62357,7 +62416,8 @@ function _hindDimLayout(dim) {
   const offCm = dim.offset || inw * _hindDimInsetCm(pts, p1, p2);
   const sp1 = w2s(p1.x, p1.y), sp2 = w2s(p2.x, p2.y);
   const text = Math.round(wLen) + ' cm';
-  const TICK = 7, OVERHANG = 6;
+  const P226 = _dimPdfStyle();                                   // 226: endemerke og overheng i papirmål i PDF
+  const TICK = P226 ? P226.tickHalf : 7, OVERHANG = P226 ? 6 * P226.dash : 6;
   const place = (o) => {
     const sd1 = w2s(p1.x + wnx * o, p1.y + wny * o), sd2 = w2s(p2.x + wnx * o, p2.y + wny * o);
     const ang = Math.atan2(sd2.y - sd1.y, sd2.x - sd1.x);
@@ -62422,22 +62482,24 @@ function _hindDimLayout(dim) {
 }
 function _drawHindDim(L, isSel) {
   const { sd1, sd2, sp1, sp2, ang, TICK, OVERHANG, text, fontPx } = L;
-  const col = isSel ? _lc('rgba(8,80,130,0.95)', 'rgba(34,211,238,0.95)') : _lc('rgba(26,111,204,0.85)', 'rgba(71,180,255,0.8)');
+  const P = _dimPdfStyle();   // 226: papirregelen i PDF (farge, streker, hvit boks); skjermen som før
+  const col = P ? P.col : isSel ? _lc('rgba(8,80,130,0.95)', 'rgba(34,211,238,0.95)') : _lc('rgba(26,111,204,0.85)', 'rgba(71,180,255,0.8)');
+  const gap = P ? 3 * P.dash : 3;
   ctx.save(); ctx.setLineDash([]);
-  ctx.strokeStyle = col; ctx.lineWidth = 0.8;
+  ctx.strokeStyle = col; ctx.lineWidth = P ? P.ext : 0.8;
   for (const [sp, sd] of [[sp1, sd1], [sp2, sd2]]) {
     const el = Math.hypot(sd.x - sp.x, sd.y - sp.y); if (el <= 2) continue;
     const ux = (sd.x - sp.x) / el, uy = (sd.y - sp.y) / el;
-    ctx.beginPath(); ctx.moveTo(sp.x + ux * 3, sp.y + uy * 3); ctx.lineTo(sd.x + ux * OVERHANG, sd.y + uy * OVERHANG); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sp.x + ux * gap, sp.y + uy * gap); ctx.lineTo(sd.x + ux * OVERHANG, sd.y + uy * OVERHANG); ctx.stroke();
   }
-  ctx.lineWidth = isSel ? 1.8 : 1.2;
+  ctx.lineWidth = P ? P.line : (isSel ? 1.8 : 1.2);
   ctx.beginPath(); ctx.moveTo(sd1.x, sd1.y); ctx.lineTo(sd2.x, sd2.y); ctx.stroke();
   const tx = -Math.sin(ang) * TICK, ty = Math.cos(ang) * TICK;
   ctx.beginPath(); ctx.moveTo(sd1.x - tx, sd1.y - ty); ctx.lineTo(sd1.x + tx, sd1.y + ty); ctx.moveTo(sd2.x - tx, sd2.y - ty); ctx.lineTo(sd2.x + tx, sd2.y + ty); ctx.stroke();
   ctx.translate((sd1.x + sd2.x) / 2, (sd1.y + sd2.y) / 2); ctx.rotate(_hindDimReadAng(ang));
   ctx.font = `${fontPx}px ${CANVAS_NUM_FONT}`;
   const tw = ctx.measureText(text).width;
-  ctx.fillStyle = _lc('rgba(240,244,248,0.88)', 'rgba(13,14,16,0.75)');
+  ctx.fillStyle = P ? P.bg : _lc('rgba(240,244,248,0.88)', 'rgba(13,14,16,0.75)');
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   if (L.inside) {   // teksten ligger PÅ streken, symmetrisk — da er den aldri nærmere kanten enn streken
     ctx.fillRect(-tw / 2 - 3, -fontPx * 0.62 - 1.5, tw + 6, fontPx * 1.24 + 3);
@@ -62533,14 +62595,16 @@ function _hindDimRegressionTest217() {
     // I: lesevinkel — fra bunnen eller fra høyre
     const deg = a => a * Math.PI / 180, r = a => Math.round(_hindDimReadAng(deg(a)) * 180 / Math.PI);
     check('I: 0° → 0°, 90° (nedover) → −90°, −90° → −90°, 180° → 0°, 135° → −45°, −135° → 45°', '0,-90,-90,0,-45,45', [0, 90, -90, 180, 135, -135].map(r).join(',') === '0,-90,-90,0,-45,45', [0, 90, -90, 180, 135, -135].map(r).join(','));
-    // J: PDF — 1,2 mm ved Normal, × profilens labelstørrelse; minste 0,9 mm
+    // J: PDF — 226: den FELLES målstørrelsen (DIM_PDF_MM 2,0 mm ved Normal, × profilens labelstørrelse;
+    // minste DIM_PDF_MIN_MM 1,6 mm). Før 226 hadde hindringsmålene sin egen 1,2 / 0,9 mm.
     S.ui._pdfMode = true; S.ui._pdfScaleMmPerCm = 0.3; S.view.zoom = 2;
     const pxPerMm = S.view.zoom * BASE_SCALE / 0.3;
     if (typeof _currentProfile !== 'undefined') _currentProfile = null;
     let F = _hindDimFontPx();
-    check('J: PDF Normal → 1,2 mm / minst 0,9 mm', '1.2 / 0.9', Math.abs(F.base / pxPerMm - 1.2) < 1e-9 && Math.abs(F.min / pxPerMm - 0.9) < 1e-9, (F.base / pxPerMm).toFixed(2) + ' / ' + (F.min / pxPerMm).toFixed(2));
+    check('J: PDF Normal → 2,0 mm / minst 1,6 mm (felles med kjedene, 226)', DIM_PDF_MM + ' / ' + DIM_PDF_MIN_MM, Math.abs(F.base / pxPerMm - DIM_PDF_MM) < 1e-9 && Math.abs(F.min / pxPerMm - DIM_PDF_MIN_MM) < 1e-9, (F.base / pxPerMm).toFixed(2) + ' / ' + (F.min / pxPerMm).toFixed(2));
+    check('J: samme tall som _dimPdfStyle', 'likt', Math.abs(F.base - _dimPdfStyle().fontPx) < 1e-9 && Math.abs(F.min - _dimPdfStyle().minPx) < 1e-9, [F.base, _dimPdfStyle().fontPx]);
     if (typeof _currentProfile !== 'undefined') { _currentProfile = { prefs: { pdfLabelScale: 1.5 } }; F = _hindDimFontPx();
-      check('J: Ekstra stor (1,5) → 1,8 mm', 1.8, Math.abs(F.base / pxPerMm - 1.8) < 1e-9, (F.base / pxPerMm).toFixed(2)); _currentProfile = null; }
+      check('J: Ekstra stor (1,5) → 3,0 mm', DIM_PDF_MM * 1.5, Math.abs(F.base / pxPerMm - DIM_PDF_MM * 1.5) < 1e-9, (F.base / pxPerMm).toFixed(2)); _currentProfile = null; }
     S.ui._pdfMode = false; S.ui._pdfScaleMmPerCm = undefined;
     check('J: skjerm → 11 px / minst 8 px', '11 / 8', _hindDimFontPx().base === 11 && _hindDimFontPx().min === 8, JSON.stringify(_hindDimFontPx()));
     // K: chip-en slår av igjen
@@ -95445,7 +95509,9 @@ function _pdfPreviewRegressionTest() {
       const toW = (x, y) => { const m = ctx.getTransform(); const sx = m.a * x + m.c * y + m.e, sy = m.b * x + m.d * y + m.f; const sc = S.view.zoom * BASE_SCALE;
         return { x: Math.round(((sx - canvas.width / 2) / sc + S.view.panX) * 100) / 100, y: Math.round(((sy - canvas.height / 2) / sc + S.view.panY) * 100) / 100 }; };
       ctx.fillText = function (s, x, y, ...r) { if (S.ui._pdfMode) { const w = toW(x, y); texts.push(`${s}@${w.x},${w.y}`); } return oT.call(this, s, x, y, ...r); };
-      ctx.fillRect = function (x, y, w, h, ...r) { if (S.ui._pdfMode && h === 14) { const a = toW(x, y), b = toW(x + w, y + h); boxes.push({ x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x), y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) }); } return oR.call(this, x, y, w, h, ...r); };
+      // 226: kjede-/veggmålboksene er 14 px på skjermen, men 1,4 × målskriften i PDF (_dimPdfStyle).
+      const boksH = () => { const P = _dimPdfStyle(); return P ? P.fontPx * 1.4 : 14; };
+      ctx.fillRect = function (x, y, w, h, ...r) { if (S.ui._pdfMode && Math.abs(h - boksH()) < 1e-6) { const a = toW(x, y), b = toW(x + w, y + h); boxes.push({ x0: Math.min(a.x, b.x), x1: Math.max(a.x, b.x), y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) }); } return oR.call(this, x, y, w, h, ...r); };
       try { fn(); } finally { ctx.fillText = oT; ctx.fillRect = oR; }
       return { texts, boxes };
     };
@@ -95461,13 +95527,15 @@ function _pdfPreviewRegressionTest() {
       _pdfPrev.res.view.renderW === pdfPx && _pdfPrev.res.view.outW === cvD.width && cvD.width < pdfPx && pdfResD.w === pdfPx, [_pdfPrev.res.view.renderW, _pdfPrev.res.view.outW, cvD.width]);
     check('D2: alle tekster (kjedetall, romdimensjoner, labels) står på samme verdenspunkt i dialog og PDF', `identisk (${pdfCap.texts.length} tekster)`,
       prevCap.texts.length > 20 && JSON.stringify(prevCap.texts) === JSON.stringify(pdfCap.texts), [prevCap.texts.length, pdfCap.texts.length, firstDiff(prevCap.texts, pdfCap.texts)]);
-    check('D2: etikettboksene (14 px) dekker samme verdens-cm', `identisk (${pdfCap.boxes.length} bokser)`,
+    check('D2: målboksene (1,4 × målskriften, 226) dekker samme verdens-cm', `identisk (${pdfCap.boxes.length} bokser)`,
       prevCap.boxes.length > 5 && JSON.stringify(prevCap.boxes) === JSON.stringify(pdfCap.boxes), [prevCap.boxes.length, pdfCap.boxes.length]);
     // D3: bunnkjedene (folie/kabel/matte, linje y = 425) har boksene sine UNDER veggen y = 400 — ikke oppå rommet
     const bunn = prevCap.boxes.filter(b => b.x0 > 0 && b.x1 < 500 && b.y0 > 400 - 80 && b.y1 < 400 + 60);   // bare boksene under rommet (sidekjedene står ved x ≈ −25 / 525)
     check('D3: ingen etikettboks ved bunnkjeden krysser veggen (alle y0 > 400)', 'alle > 400', bunn.length >= 3 && bunn.every(b => b.y0 > 400), bunn.map(b => b.y0));
     const boksCm = bunn[0] ? Math.round((bunn[0].y1 - bunn[0].y0) * 10) / 10 : null;
-    check('D3: boksen er PDF-ens 14 px = 14 / (2126/800) ≈ 5,3 cm høy (ikke lerretets)', '5.3', boksCm != null && near(boksCm, 14 / (pdfPx / 800), 0.1), boksCm);
+    // 226: boksen er 1,4 × 2,0 mm på papiret = 2,8 mm; med 180 mm over 800 cm er det 2,8 / 0,225 ≈ 12,4 cm (før: 14 px ≈ 5,3 cm)
+    const boksVentetCm = DIM_PDF_MM * 1.4 / (layD.imgW2 / 800);
+    check('D3: boksen er PDF-ens 1,4 × 2,0 mm ≈ 12,4 cm høy (papirregelen, ikke lerretets px)', boksVentetCm.toFixed(1), boksCm != null && near(boksCm, boksVentetCm, 0.1), boksCm);
     // D4: label-treff i dialogen peker på samme verdenspunkt som PDF-ens label-boks
     const bPrev = _pdfPrev.res.labels.cable[cable.id], bPdf = pdfResD.labels.cable[cable.id];
     const wPrev = bPrev && _pdfPrevS2W(bPrev.sx + bPrev.w / 2, bPrev.sy + bPrev.h / 2);
@@ -96219,7 +96287,7 @@ async function exportPDF(opts, lev) {
       const { imgW2, imgH, imgX } = _pdfFloorImgLayout(box);
       try {
         const imgRes = _renderFloorToImage(grp.floor, { box, selIds: _fpSel, targetWidthMm: imgW2 });
-        if (imgRes && imgRes.url) doc.addImage(imgRes.url, 'JPEG', imgX, y, imgW2, imgH);
+        if (imgRes && imgRes.url) doc.addImage(imgRes.url, imgRes.fmt || 'PNG', imgX, y, imgW2, imgH, undefined, imgRes.comp);   // 226: PNG (Flate)
       } catch (e) { console.warn('PDF floorplan image failed:', e); }
       y += imgH + 3;
       // 007: kartgrunnlag krediteres der det vises — som under romtegningene.
@@ -96298,7 +96366,7 @@ async function exportPDF(opts, lev) {
       const imgRes = _numMode ? _renderRoomToImage(room, { focusRoom: true, targetWidthMm: imgW2, numberMode: true })
                               : _renderRoomToImage(room, { focusRoom: true, targetWidthMm: imgW2 });
       if (imgRes && imgRes.url) {
-        doc.addImage(imgRes.url, 'JPEG', imgX, y, imgW2, imgH);
+        doc.addImage(imgRes.url, imgRes.fmt || 'PNG', imgX, y, imgW2, imgH, undefined, imgRes.comp);   // 226: PNG (Flate) — skarp tekst og streker
         // 196: forklaringen øverst til høyre, ved siden av tegningen — tekst i PDF-en, ikke bilde.
         // Er tabellen høyere enn tegningen (lavt rom), fortsetter siden under tabellen.
         if (_numMode && _lay.place === 'side') {
@@ -98696,9 +98764,8 @@ function _renderRoomToImage(room, opts) {
   // JPEG has NO alpha channel, so any transparent pixels (everything outside the
   // drawn walls) would flatten to BLACK. Composite the rendered canvas onto a
   // white background first so the printout shows a clean white page.
-  const q = opts.jpegQuality || 0.9;
   // 155: forhåndsvisningen får pikslene rett inn i sitt eget lerret (`opts.toCanvas`), synkront
-  // og uten JPEG-omvei (`opts.noUrl`). PDF-veien lager dataURL som før.
+  // og uten bildekoding (`opts.noUrl`). PDF-veien lager dataURL — 226: PNG, via _pdfImgEncode.
   const _flat = opts.toCanvas || document.createElement('canvas');
   _flat.width = canvas.width;
   _flat.height = canvas.height;
@@ -98706,7 +98773,8 @@ function _renderRoomToImage(room, opts) {
   _fctx.fillStyle = '#ffffff';
   _fctx.fillRect(0, 0, _flat.width, _flat.height);
   _fctx.drawImage(canvas, 0, 0);
-  const dataURL = opts.noUrl ? null : _flat.toDataURL('image/jpeg', q);
+  const _enc = opts.noUrl ? null : _pdfImgEncode(_flat, opts);
+  const dataURL = _enc ? _enc.url : null;
   // 155: label-boksene slik de ble tegnet i DETTE bildet (lerretspiksler), tatt FØR gjenopp-
   // rettingen under tegner hovedlerretet på nytt og overskriver lagrene. Dialogen treffer labels
   // med nøyaktig samme bokser som hovedlerretets hitCableLabel/hitMatLabel/… leser.
@@ -98746,7 +98814,21 @@ function _renderRoomToImage(room, opts) {
   room.matDimSnap = saved.matDimSnap;
   if (typeof markDirty === 'function') markDirty();
   if (typeof render === 'function') render();
-  return { url: dataURL, w: outW, h: outH, aspect, view, labels, numbers };   // 155: view + labels · 196: numbers
+  return { url: dataURL, fmt: _enc ? _enc.fmt : null, comp: _enc ? _enc.comp : undefined, w: outW, h: outH, aspect, view, labels, numbers };   // 155: view + labels · 196: numbers · 226: fmt/comp
+}
+
+// ═══ 226 · BILDEFORMAT I PDF-EN ═══════════════════════════════════════════════════════════════
+// Romsidene og plantegningen gikk som JPEG (kvalitet 0,9). JPEG smører ut 2 mm tekst og 0,2 mm
+// streker — det er det man ser som «uskarpt» når man zoomer i PDF-en. PNG er tapsfritt; jsPDF
+// pakker det med Flate. Målt på 217-fixturet (4 rom + plantegning, docs/226/RAPPORT.md):
+// JPEG 0,9 → PNG ga en PDF på omtrent samme størrelse, så PNG er standard. Trappesidene og
+// tak-snittet har sine egne kodeveier og er ikke rørt.
+// ⚠ `comp` MÅ sendes til doc.addImage (8. argument): uten kompresjon legger jsPDF PNG-piksler
+// RÅ i PDF-en — målt 67 MB for fem sider (mot 0,7 MB som JPEG). Med Flate («FAST») pakkes de.
+function _pdfImgEncode(flat, opts) {
+  opts = opts || {};
+  if (opts.jpegQuality) return { url: flat.toDataURL('image/jpeg', opts.jpegQuality), fmt: 'JPEG', comp: undefined };   // eksplisitt ønske (ingen kallere i dag)
+  return { url: flat.toDataURL('image/png'), fmt: 'PNG', comp: 'FAST' };
 }
 
 // ═══ 154 · PLANTEGNING PER ETASJE (Kenneth 28.10.2026) ═════════════════════════════════════
@@ -98869,9 +98951,9 @@ function _renderFloorToImage(floor, opts) {
     }
     if (typeof markDirty === 'function') markDirty();
     if (typeof render === 'function') render();
-    // JPEG uten alfa → legg på hvit bunn først (som romsidene). 158: forhåndsvisningen får
-    // pikslene rett inn i sitt eget lerret (`opts.toCanvas`), uten JPEG-omvei (`opts.noUrl`).
-    const q = opts.jpegQuality || 0.9;
+    // Hvit bunn først (som romsidene — siden er hvit, og en JPEG har ingen alfa). 158: forhånds-
+    // visningen får pikslene rett inn i sitt eget lerret (`opts.toCanvas`), uten bildekoding (`opts.noUrl`).
+    // 226: PNG via _pdfImgEncode (som romsidene).
     const _flat = opts.toCanvas || document.createElement('canvas');
     _flat.width = canvas.width; _flat.height = canvas.height;
     const _fctx = _flat.getContext('2d');
@@ -98885,7 +98967,8 @@ function _renderFloorToImage(floor, opts) {
     } : null;
     const view = { zoom: S.view.zoom, panX: S.view.panX, panY: S.view.panY, outW, outH,
       worldW: box.worldW, worldH: box.worldH, scale: box.scale };
-    return { url: opts.noUrl ? null : _flat.toDataURL('image/jpeg', q), w: outW, h: outH,
+    const _enc = opts.noUrl ? null : _pdfImgEncode(_flat, opts);
+    return { url: _enc ? _enc.url : null, fmt: _enc ? _enc.fmt : null, comp: _enc ? _enc.comp : undefined, w: outW, h: outH,
       aspect: box.aspect, landscape: box.landscape, view, labels };
   } finally {
     canvas.width = saved.canvasW;

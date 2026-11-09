@@ -1,0 +1,137 @@
+{
+ "skala": 1,
+ "rom": {
+  "31": {
+   "navn": "Stue kabel",
+   "outW": 2126,
+   "imgW2": 180,
+   "mmPerCm": 0.2571,
+   "antall": {
+    "vegg": 4,
+    "hind": 21
+   },
+   "vegg": {
+    "s": "V1 400 cm",
+    "fontPx": 23.62,
+    "fontMm": 2,
+    "glyphPx": 17,
+    "glyphMm": 1.44,
+    "col": "#374151"
+   },
+   "kjede": null,
+   "hind": {
+    "s": "60 cm",
+    "fontPx": 23.62,
+    "fontMm": 2,
+    "glyphPx": 17,
+    "glyphMm": 1.44,
+    "col": "#374151"
+   },
+   "bruker": null,
+   "pxPerMm": 11.81
+  },
+  "32": {
+   "navn": "Stue folie",
+   "outW": 2126,
+   "imgW2": 180,
+   "mmPerCm": 0.2571,
+   "antall": {
+    "vegg": 4,
+    "kjede": 11,
+    "hind": 21
+   },
+   "vegg": {
+    "s": "V1 400 cm",
+    "fontPx": 23.62,
+    "fontMm": 2,
+    "glyphPx": 17,
+    "glyphMm": 1.44,
+    "col": "#374151"
+   },
+   "kjede": {
+    "s": "395 cm",
+    "fontPx": 23.62,
+    "fontMm": 2,
+    "glyphPx": 17,
+    "glyphMm": 1.44,
+    "col": "#374151"
+   },
+   "hind": {
+    "s": "60 cm",
+    "fontPx": 23.62,
+    "fontMm": 2,
+    "glyphPx": 17,
+    "glyphMm": 1.44,
+    "col": "#374151"
+   },
+   "bruker": null,
+   "pxPerMm": 11.81
+  },
+  "33": {
+   "navn": "Bad liten",
+   "outW": 2126,
+   "imgW2": 180,
+   "mmPerCm": 0.3,
+   "antall": {
+    "vegg": 4,
+    "hind": 21
+   },
+   "vegg": {
+    "s": "V1 300 cm",
+    "fontPx": 23.62,
+    "fontMm": 2,
+    "glyphPx": 17,
+    "glyphMm": 1.44,
+    "col": "#374151"
+   },
+   "kjede": null,
+   "hind": {
+    "s": "15 cm",
+    "fontPx": 23.62,
+    "fontMm": 2,
+    "glyphPx": 17,
+    "glyphMm": 1.44,
+    "col": "#374151"
+   },
+   "bruker": null,
+   "pxPerMm": 11.81
+  },
+  "34": {
+   "navn": "Kontor",
+   "outW": 2126,
+   "imgW2": 180,
+   "mmPerCm": 0.2571,
+   "antall": {
+    "vegg": 4,
+    "kjede": 13,
+    "hind": 21
+   },
+   "vegg": {
+    "s": "V1 400 cm",
+    "fontPx": 23.62,
+    "fontMm": 2,
+    "glyphPx": 17,
+    "glyphMm": 1.44,
+    "col": "#374151"
+   },
+   "kjede": {
+    "s": "395 cm",
+    "fontPx": 23.62,
+    "fontMm": 2,
+    "glyphPx": 17,
+    "glyphMm": 1.44,
+    "col": "#374151"
+   },
+   "hind": {
+    "s": "100 cm",
+    "fontPx": 23.62,
+    "fontMm": 2,
+    "glyphPx": 17,
+    "glyphMm": 1.44,
+    "col": "#374151"
+   },
+   "bruker": null,
+   "pxPerMm": 11.81
+  }
+ }
+}
