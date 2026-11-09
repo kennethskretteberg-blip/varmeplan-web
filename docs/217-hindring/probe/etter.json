@@ -1,0 +1,496 @@
+{
+ "tag": "etter",
+ "oppsett": {
+  "rom": 4,
+  "kabler": [
+   {
+    "rom": 31,
+    "cc": 19.494999999999997,
+    "runs": 0,
+    "els": 1
+   },
+   {
+    "rom": 33,
+    "cc": 18.453846153846154,
+    "runs": 0,
+    "els": 1
+   }
+  ],
+  "striper": 10,
+  "dims": [
+   "31:4",
+   "32:4",
+   "33:4",
+   "34:11"
+  ]
+ },
+ "rom": {
+  "31": {
+   "zoom": 1.292,
+   "dims": [
+    {
+     "id": 5000,
+     "hid": 901,
+     "offset": 10,
+     "len": 60,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5001,
+     "hid": 901,
+     "offset": 10,
+     "len": 40,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5002,
+     "hid": 901,
+     "offset": 10,
+     "len": 60,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5003,
+     "hid": 901,
+     "offset": 10,
+     "len": 40,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    }
+   ],
+   "pdf": {
+    "outW": 2126,
+    "keys": [
+     "url",
+     "w",
+     "h",
+     "aspect",
+     "view",
+     "labels",
+     "numbers"
+    ]
+   },
+   "pdfDims": [
+    {
+     "id": 5000,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5001,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5002,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5003,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    }
+   ]
+  },
+  "32": {
+   "zoom": 1.292,
+   "dims": [
+    {
+     "id": 5004,
+     "hid": 902,
+     "offset": 10,
+     "len": 60,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5005,
+     "hid": 902,
+     "offset": 10,
+     "len": 40,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5006,
+     "hid": 902,
+     "offset": 10,
+     "len": 60,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5007,
+     "hid": 902,
+     "offset": 10,
+     "len": 40,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    }
+   ],
+   "pdf": {
+    "outW": 2126,
+    "keys": [
+     "url",
+     "w",
+     "h",
+     "aspect",
+     "view",
+     "labels",
+     "numbers"
+    ]
+   },
+   "pdfDims": [
+    {
+     "id": 5004,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5005,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5006,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5007,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    }
+   ]
+  },
+  "33": {
+   "zoom": 1.467,
+   "dims": [
+    {
+     "id": 5008,
+     "hid": 903,
+     "offset": 5,
+     "len": 15,
+     "inside": false,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": false,
+     "partner": 5010
+    },
+    {
+     "id": 5009,
+     "hid": 903,
+     "offset": 5,
+     "len": 15,
+     "inside": false,
+     "draw": false,
+     "fontPx": 11,
+     "altInne": false,
+     "partner": 5011
+    },
+    {
+     "id": 5010,
+     "hid": 903,
+     "offset": 5,
+     "len": 15,
+     "inside": false,
+     "draw": false,
+     "fontPx": 11,
+     "altInne": false,
+     "partner": 5008
+    },
+    {
+     "id": 5011,
+     "hid": 903,
+     "offset": 5,
+     "len": 15,
+     "inside": false,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": false,
+     "partner": 5009
+    }
+   ],
+   "pdf": {
+    "outW": 2126,
+    "keys": [
+     "url",
+     "w",
+     "h",
+     "aspect",
+     "view",
+     "labels",
+     "numbers"
+    ]
+   },
+   "pdfDims": [
+    {
+     "id": 5008,
+     "inside": false,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5009,
+     "inside": false,
+     "draw": false,
+     "mm": 1.2
+    },
+    {
+     "id": 5010,
+     "inside": false,
+     "draw": false,
+     "mm": 1.2
+    },
+    {
+     "id": 5011,
+     "inside": false,
+     "draw": true,
+     "mm": 1.2
+    }
+   ]
+  },
+  "34": {
+   "zoom": 1.292,
+   "dims": [
+    {
+     "id": 5012,
+     "hid": 904,
+     "offset": 10,
+     "len": 100,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5013,
+     "hid": 904,
+     "offset": 10,
+     "len": 50,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5014,
+     "hid": 904,
+     "offset": 10,
+     "len": 50,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5015,
+     "hid": 904,
+     "offset": 10,
+     "len": 50,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5016,
+     "hid": 904,
+     "offset": 10,
+     "len": 50,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5017,
+     "hid": 904,
+     "offset": 10,
+     "len": 100,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5018,
+     "hid": 905,
+     "offset": 10,
+     "len": 53,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5019,
+     "hid": 905,
+     "offset": 10,
+     "len": 53,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5020,
+     "hid": 905,
+     "offset": 10,
+     "len": 53,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5021,
+     "hid": 905,
+     "offset": 10,
+     "len": 53,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    },
+    {
+     "id": 5022,
+     "hid": 905,
+     "offset": 10,
+     "len": 53,
+     "inside": true,
+     "draw": true,
+     "fontPx": 11,
+     "altInne": true,
+     "partner": null
+    }
+   ],
+   "pdf": {
+    "outW": 2126,
+    "keys": [
+     "url",
+     "w",
+     "h",
+     "aspect",
+     "view",
+     "labels",
+     "numbers"
+    ]
+   },
+   "pdfDims": [
+    {
+     "id": 5012,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5013,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5014,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5015,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5016,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5017,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5018,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5019,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5020,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5021,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    },
+    {
+     "id": 5022,
+     "inside": true,
+     "draw": true,
+     "mm": 1.2
+    }
+   ]
+  }
+ }
+}

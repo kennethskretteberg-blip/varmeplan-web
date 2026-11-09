@@ -4,6 +4,12 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 217 — Hindring: målene står inne i hindringen, ikke over kabel og folie (09.11.2026, `main`, ikke pushet)
+
+Kenneth 09.11.2026: «målene vises på utsiden og legger seg over varmekabel og varmefolie». `autoDimHindrings` la hvert mål 20 cm utenfor siden. Nå: samme `room.dims`-objekt med `hid` og offset innover (10 cm, maks en tredel av dybden); plasseringen regnes ved tegning i `_hindDimLayout` (delt av tegning, klikk-treff og gizmo): tekst på streken, alt innenfor omrisset og ikke over navnet; for liten → krymp (skjerm 11→8 px, PDF 1,2→0,9 mm × labelstørrelse) → utenfor som før, og for et rektangel bare den siden med minst kabel/folie/matte under teksten. Teksten leses fra bunnen eller høyre. Gamle mål migreres ved åpning (`_hindDimMigrate`). Rom-/veggmål, utlegget og avstandslinjene urørt. Ny `_hindDimRegressionTest217` 23/23. Se `docs/217-hindring/RAPPORT.md`.
+
+---
+
 ## 216 — Dialoger: fast bunnlinje med knapper, bare innholdet scroller, aldri høyere enn vinduet (09.11.2026, `main`, ikke pushet)
 
 Kenneth 08.11.2026: «valgknappene blir borte i bunnen … på flere steder». Eksporter PDF hadde en 80vh-deling inni en 80vh-boks med en 57 px topp over seg — knappene lå nederst i venstre kolonne og var alltid kuttet. Felles struktur `.vp-modal` / `__head` / `__body` / `__foot` (max-height mot `100dvh − 32px`, topp og bunn faste, bare innholdet scroller); `.modal` i `#modal-ov` er nå en flex-kolonne med `.modal-body` rundt feltene (bokshøydene målt identiske med før). 34 dialoger lagt om: Eksporter PDF, de ni faste, Innstillinger, Excel-import, Snøsmelting, Frostsikring, Be kunde om mål, Del presentasjon, Del med elektriker, Kunde & prosjektinfo, PDF-sidevelger, Importer tegning, Hva er vegger?, begge trappebyggerne, Tilbehør, Ny kunde, Forslag til kundenumre, Gi kunden tilgang, Kopier til Visma, Hent fra kart, matte-panelene og kundelenkas «Om rommet». Ingen tekster, rekkefølge eller logikk endret. Ny `_dialogRegressionTest216` + `docs/216-dialoger/probe/maal.mjs` (1366×650, 1280×720, 1440×900, 1024×600). Se `docs/216-dialoger/RAPPORT.md`.

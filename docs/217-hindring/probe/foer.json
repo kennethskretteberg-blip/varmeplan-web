@@ -1,0 +1,189 @@
+{
+ "tag": "foer",
+ "oppsett": {
+  "rom": 4,
+  "kabler": [
+   {
+    "rom": 31,
+    "cc": 19.494999999999997,
+    "runs": 0,
+    "els": 1
+   },
+   {
+    "rom": 33,
+    "cc": 18.453846153846154,
+    "runs": 0,
+    "els": 1
+   }
+  ],
+  "striper": 10,
+  "dims": [
+   "31:4",
+   "32:4",
+   "33:4",
+   "34:11"
+  ]
+ },
+ "rom": {
+  "31": {
+   "head": true,
+   "dims": [
+    {
+     "id": 5000,
+     "offset": -20
+    },
+    {
+     "id": 5001,
+     "offset": -20
+    },
+    {
+     "id": 5002,
+     "offset": -20
+    },
+    {
+     "id": 5003,
+     "offset": -20
+    }
+   ],
+   "pdf": {
+    "outW": 2126,
+    "keys": [
+     "url",
+     "w",
+     "h",
+     "aspect",
+     "view",
+     "labels",
+     "numbers"
+    ]
+   }
+  },
+  "32": {
+   "head": true,
+   "dims": [
+    {
+     "id": 5004,
+     "offset": -20
+    },
+    {
+     "id": 5005,
+     "offset": -20
+    },
+    {
+     "id": 5006,
+     "offset": -20
+    },
+    {
+     "id": 5007,
+     "offset": -20
+    }
+   ],
+   "pdf": {
+    "outW": 2126,
+    "keys": [
+     "url",
+     "w",
+     "h",
+     "aspect",
+     "view",
+     "labels",
+     "numbers"
+    ]
+   }
+  },
+  "33": {
+   "head": true,
+   "dims": [
+    {
+     "id": 5008,
+     "offset": -20
+    },
+    {
+     "id": 5009,
+     "offset": -20
+    },
+    {
+     "id": 5010,
+     "offset": -20
+    },
+    {
+     "id": 5011,
+     "offset": -20
+    }
+   ],
+   "pdf": {
+    "outW": 2126,
+    "keys": [
+     "url",
+     "w",
+     "h",
+     "aspect",
+     "view",
+     "labels",
+     "numbers"
+    ]
+   }
+  },
+  "34": {
+   "head": true,
+   "dims": [
+    {
+     "id": 5012,
+     "offset": -20
+    },
+    {
+     "id": 5013,
+     "offset": -20
+    },
+    {
+     "id": 5014,
+     "offset": -20
+    },
+    {
+     "id": 5015,
+     "offset": -20
+    },
+    {
+     "id": 5016,
+     "offset": -20
+    },
+    {
+     "id": 5017,
+     "offset": -20
+    },
+    {
+     "id": 5018,
+     "offset": -20
+    },
+    {
+     "id": 5019,
+     "offset": -20
+    },
+    {
+     "id": 5020,
+     "offset": -20
+    },
+    {
+     "id": 5021,
+     "offset": -20
+    },
+    {
+     "id": 5022,
+     "offset": -20
+    }
+   ],
+   "pdf": {
+    "outW": 2126,
+    "keys": [
+     "url",
+     "w",
+     "h",
+     "aspect",
+     "view",
+     "labels",
+     "numbers"
+    ]
+   }
+  }
+ }
+}
