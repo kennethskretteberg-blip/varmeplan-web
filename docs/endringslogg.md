@@ -4,6 +4,12 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 218 — Hindring: kan starte og slutte på samme vegg, lukkes langs veggen (09.11.2026, `main`, ikke pushet)
+
+Kenneth 09.11.2026: «en pipe midt på en vegg — klikk på veggen, to klikk for hjørnene og siste klikk tilbake til veggen». Klikk 4 på startveggen ble avvist med alert («må gå mellom to forskjellige vegger»); uten avvisningen ville delefunksjonen gått rundt hele rommet begge veier. Nå lukkes hindringen rett langs veggen mellom siste og første klikk (polygonens egen lukkekant er veggen), uten «velg halvdel»; knekk (flere hjørner) virker likt. Hjørnene snapper også vinkelrett/parallelt med startveggen (`_hindW2WAngleSnap`, identisk med før på rette vegger), siste klikk projiseres på veggen fra siste hjørne, grønn forhåndsvisning av lukkingen med lengder. Ulike vegger, andre tegnemåter og utlegget urørt. Ny `_hindW2WRegressionTest218` 22/22 med ekte klikk; hele suiten lik HEAD. Se `docs/218-hindring/RAPPORT.md`.
+
+---
+
 ## 217 — Hindring: målene står inne i hindringen, ikke over kabel og folie (09.11.2026, `main`, ikke pushet)
 
 Kenneth 09.11.2026: «målene vises på utsiden og legger seg over varmekabel og varmefolie». `autoDimHindrings` la hvert mål 20 cm utenfor siden. Nå: samme `room.dims`-objekt med `hid` og offset innover (10 cm, maks en tredel av dybden); plasseringen regnes ved tegning i `_hindDimLayout` (delt av tegning, klikk-treff og gizmo): tekst på streken, alt innenfor omrisset og ikke over navnet; for liten → krymp (skjerm 11→8 px, PDF 1,2→0,9 mm × labelstørrelse) → utenfor som før, og for et rektangel bare den siden med minst kabel/folie/matte under teksten. Teksten leses fra bunnen eller høyre. Gamle mål migreres ved åpning (`_hindDimMigrate`). Rom-/veggmål, utlegget og avstandslinjene urørt. Ny `_hindDimRegressionTest217` 23/23. Se `docs/217-hindring/RAPPORT.md`.

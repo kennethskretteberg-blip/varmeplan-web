@@ -1,0 +1,159 @@
+{
+ "oppsett": {
+  "rom": 4
+ },
+ "pipe": {
+  "antall": 1,
+  "modus": null,
+  "pkt": [
+   [
+    170,
+    0
+   ],
+   [
+    170,
+    40.05
+   ],
+   [
+    230.01,
+    40.05
+   ],
+   [
+    230.01,
+    0
+   ]
+  ],
+  "m2": 0.2403,
+  "label": "Pipe",
+  "alerts": []
+ },
+ "pipeMotsatt": {
+  "antall": 2,
+  "modus": null,
+  "pkt": [
+   [
+    830,
+    0
+   ],
+   [
+    830,
+    40.01
+   ],
+   [
+    769.99,
+    40.01
+   ],
+   [
+    769.99,
+    0
+   ]
+  ],
+  "m2": 0.2401
+ },
+ "knekk": {
+  "antall": 3,
+  "modus": null,
+  "pkt": [
+   [
+    1300,
+    0
+   ],
+   [
+    1300,
+    60
+   ],
+   [
+    1360,
+    60
+   ],
+   [
+    1360,
+    30
+   ],
+   [
+    1420,
+    30
+   ],
+   [
+    1420,
+    0
+   ]
+  ],
+  "m2": 0.54
+ },
+ "utlegg": {
+  "kabler": [
+   {
+    "rom": 31,
+    "els": 1,
+    "banepunkter": 3233,
+    "baneM": 60,
+    "punkterInneIHindring": 0
+   },
+   {
+    "rom": 33,
+    "els": 1,
+    "banepunkter": 3218,
+    "baneM": 59.4,
+    "punkterInneIHindring": 0
+   }
+  ],
+  "striper32": 3,
+  "striperInneIHindring": 0,
+  "dims": [
+   "31:4",
+   "32:4",
+   "33:6",
+   "34:0"
+  ]
+ },
+ "underveis": {
+  "fase": 1,
+  "pkt": 3,
+  "hint": "Steg 2/3: Klikk for å legge til hjørne · Klikk på en vegg for å avslutte (samme vegg lukkes langs veggen) · ESC avbryt",
+  "etterKlikk4": {
+   "antall": 4,
+   "modus": null
+  }
+ },
+ "flyttSlett": {
+  "treffId": true,
+  "foer": [
+   [
+    170,
+    0
+   ],
+   [
+    170,
+    40
+   ],
+   [
+    230,
+    40
+   ],
+   [
+    230,
+    0
+   ]
+  ],
+  "etter": [
+   [
+    220,
+    100
+   ],
+   [
+    220,
+    140
+   ],
+   [
+    280,
+    140
+   ],
+   [
+    280,
+    100
+   ]
+  ],
+  "slettet": true
+ }
+}
