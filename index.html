@@ -82084,6 +82084,7 @@ function _geoPickStore(fid, bg, c) {
     footprintWorld: c.footprint.polygon.map(([e, n]) => _geoToWorld(bg, e, n)),
     footprintSource: c.footprint.source || null,
     footprintConfidence: c.footprint.prov ? c.footprint.prov.confidence : null,
+    footprintNote: (c.footprint.prov && c.footprint.prov.note) || null,   // 224
   };
   const i = c.bygningsnr != null ? g.candidates.findIndex(x => x.bygningsnr === c.bygningsnr) : -1;
   if (i >= 0) { g.candidates[i] = { ...g.candidates[i], ...row }; return { kind: 'updated', cand: g.candidates[i] }; }
@@ -82158,7 +82159,21 @@ function _takFootprintProv(cand) {
   const src = cand && cand.footprintSource;
   return { source: src === 'DOM1' ? 'DOM_RASTER' : 'FKB',
            confidence: (cand && cand.footprintConfidence != null) ? cand.footprintConfidence : 0.9,
-           note: 'Kartverket' + (src ? ' (' + src + ')' : '') };
+           note: (cand && cand.footprintNote) || ('Kartverket' + (src ? ' (' + src + ')' : '')) };
+}
+/** 224: hva kortene sier om omrisset — alltid ut fra opphavet, så alle kort sier det samme.
+ *  `warn` er tjenestens eget notat, bare ved lav tillit (0,3). Appen skriver aldri sin egen advarsel:
+ *  prosjekter lagret før 224 har bare 'Kartverket (DOM1)' som notat, og får tittelen, ikke advarselen. */
+function _takFootprintInfo(fpp) {
+  const src = fpp && fpp.source;
+  if (src === 'USER_DRAWN') return { title: 'Omriss tegnet for hånd', derived: false, warn: null };
+  if (src !== 'DOM_RASTER') return { title: 'Omriss fra Kartverket', derived: false, warn: null };
+  const lav = fpp.confidence != null && fpp.confidence < 0.5;
+  return { title: 'Omriss avledet av høydedata', derived: true,
+           warn: lav && fpp.note && fpp.note !== 'Kartverket (DOM1)' ? fpp.note : null };
+}
+function _takFootprintWarnHtml(info) {
+  return info.warn ? `<div class="tak-fp-warn" style="font-size:11px;color:var(--warn,#d97706)">⚠ ${esc(info.warn)}</div>` : '';
 }
 
 /** Ren funksjon: svaret fra /roof/model?level=quick → et S.tak-objekt. Ingen sideeffekter. */
@@ -82230,7 +82245,8 @@ function _takRoofTypeReady(surface) { return !!(surface && surface.roof_type && 
 // ── Velg bygg → hent modellen ────────────────────────────────────────────────────────────────
 function _geoSetChosen(g, c) {
   g.chosen = { bygningsnr: c.bygningsnr, type: c.type, footprintWorld: c.footprintWorld || null,
-               footprintSource: c.footprintSource || null, footprintConfidence: c.footprintConfidence ?? null };
+               footprintSource: c.footprintSource || null, footprintConfidence: c.footprintConfidence ?? null,
+               footprintNote: c.footprintNote || null };
 }
 /** Tak: velg et bygg i etasjens kandidatliste og hent gesims/møne/taktype for det. */
 function _takChooseBuilding(fid, bygningsnr) {
@@ -82634,7 +82650,7 @@ function _takCardHtml(fid, only) {
   if (only === 1) return box(_takStep1Inner(fid, t, s));   // 214
   if (_takIsDrawn(t)) return box(_takDrawnCardInner(fid, t, s, only));   // 211: høydene er oppgitt, ikke målt
   const fpp = s.footprint && s.footprint.prov;
-  const kilde = fpp && fpp.source === 'USER_DRAWN' ? 'Omriss tegnet for hånd' : 'Omriss fra Kartverket' + (fpp && fpp.source === 'DOM_RASTER' ? ' (avledet av høydedata)' : '');
+  const fpi = _takFootprintInfo(fpp);   // 224
   const inp = (key, m) => `<input type="text" inputmode="decimal" value="${_takNum(m && m.value)}" placeholder="—" onchange="_takSetHeight(${fid},'${key}',this.value)" onkeydown="if(event.key==='Enter')this.blur()" style="width:52px;padding:1px 4px;font-size:12px;text-align:right;border:1px solid var(--border);border-radius:4px;background:var(--bg2,transparent);color:var(--text)">`;
   const row = (lbl, key, extra) => {
     const m = H[key] || {};
@@ -82653,7 +82669,8 @@ function _takCardHtml(fid, only) {
     const inner = (only === 3 ? _takEdgesCardHtml(fid, t, s) : '') + _takFlatCardHtml(fid, t, s, only) + _takFeaturesCardHtml(fid, t, s, only);
     return inner.trim() ? box(inner) : '';
   }
-  return box(`<div style="font-weight:700;margin-bottom:2px">${kilde}</div>
+  return box(`<div style="font-weight:700;margin-bottom:2px">${fpi.title}${fpi.derived ? ` <span style="font-weight:400;font-size:11px">${dim('(1 m raster)')}</span>` : ''}</div>
+    ${_takFootprintWarnHtml(fpi)}
     ${row('Gesims', 'eave_m', ' ±0,5')}
     ${eaveSvak ? `<div style="font-size:11px">${dim('Én verdi for hele bygget (median) — rett den hvis takfoten ligger ulikt.')}</div>` : ''}
     ${row('Møne', 'ridge_m')}
@@ -82817,7 +82834,7 @@ function _takStepSummary(fid, n, f) {
   if (!f.s) return n === 1 ? 'Omriss mangler' : '';
   if (n === 1) {
     const g = S.geo && S.geo[fid], H = f.s.heights || {}, m = f.s.footprint && f.s.footprint.prov && f.s.footprint.prov.method;
-    const hvor = (f.t.building && g && g.address) || (m === 'plan' ? 'Tegnet over plantegning' : m === 'free' ? 'Tegnet for frihånd' : _takIsDrawn(f.t) ? 'Tegnet for hånd' : 'Omriss fra Kartverket');
+    const hvor = (f.t.building && g && g.address) || (m === 'plan' ? 'Tegnet over plantegning' : m === 'free' ? 'Tegnet for frihånd' : _takIsDrawn(f.t) ? 'Tegnet for hånd' : _takFootprintInfo(f.s.footprint && f.s.footprint.prov).title);
     return esc(hvor) + (H.eave_m && H.eave_m.value != null ? ' · gesims ' + _takNum(H.eave_m.value) + ' m' : '');
   }
   if (n === 2) return (f.done[2] ? (f.bg ? 'Gjort om til tegning' : 'Ingen kart å legge bort') : 'Kartet ligger fortsatt under') + (f.checks ? ` · ${f.checks} kontrollmål` : '');
@@ -82836,11 +82853,12 @@ function _takStep1Inner(fid, t, s) {
   const dim = x => `<span style="color:var(--dim)">${x}</span>`;
   const W = s.footprint.world || [], fpp = s.footprint.prov || {}, m = fpp.method;
   const perim = W.reduce((a, p, i) => { const q = W[(i + 1) % W.length]; return a + Math.hypot(q.x - p.x, q.y - p.y); }, 0) / 100;
-  const drawn = _takIsDrawn(t);
-  const title = m === 'plan' ? 'Omriss tegnet over plantegning' : m === 'free' ? 'Omriss tegnet for frihånd' : drawn || fpp.source === 'USER_DRAWN' ? 'Omriss tegnet for hånd' : 'Omriss fra Kartverket';
+  const fpi = _takFootprintInfo(fpp);   // 224: opphavet bestemmer teksten, også her
+  const title = m === 'plan' ? 'Omriss tegnet over plantegning' : m === 'free' ? 'Omriss tegnet for frihånd' : fpi.title;
+  const maal = W.length + ' hjørner · omkrets ' + _takNum(perim, 2) + ' m';
   const again = m === 'plan' ? `_takPlanStart(${fid})` : m === 'free' ? `_takFreeStart(${fid})` : `_takDrawStart(${fid})`;
-  return `<div style="font-weight:700">${title}</div>
-    <div style="font-size:11px">${dim(W.length + ' hjørner · omkrets ' + _takNum(perim, 2) + ' m')}</div>
+  return `<div style="font-weight:700">${title}${fpi.derived ? ` <span style="font-weight:400;font-size:11px">${dim('(1 m raster) · ' + maal)}</span>` : ''}</div>
+    ${fpi.derived ? _takFootprintWarnHtml(fpi) : `<div style="font-size:11px">${dim(maal)}</div>`}
     <div style="margin-top:4px">${_geoPickAvailable() ? _takBtn('_geoPickStart()', IC('home', 14) + ' Hent et annet bygg') : ''}${t.building ? '' : _takBtn(again, 'Tegn på nytt')}${_takBtn(`_takStartOver(${fid})`, 'Velg en annen vei')}</div>`;
 }
 /** Kartet legges bort eller hentes tilbake — bare synligheten. `bg`, flisene og georeferansen røres ikke. */
@@ -89499,6 +89517,121 @@ async function _takRegressionTest218() {
 // 220: tegn møne med ekte hendelser — snapping, delt punkt, koblingen i lerretet, retting med klikk, melding, hint,
 // lagring, og at musa utenfor tak-modulen er uendret. Geometrien i 3D testes i docs/3d/test-3d.mjs.
 // 221: knappen per steg og uenighetslinja. Selve ruta (lasting, drag, nettkall, PDF) testes med ekte hendelser i docs/221/probe.
+// 224 · Kortet sier om omrisset er kartlagt, avledet av høydedata eller tegnet — begge veier inn, og etter lagring.
+async function _takRegressionTest224() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '224: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const keep = { fetch: window.fetch, override: window.VARMEPLAN_ROOF_URL, toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm,
+                 ro: S.ui.readOnly, part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId, dlg: _roofDlg };
+  const app = document.getElementById('app'), appD = app.style.display;
+  const NOTAT = 'sjekk omrisset — kan inneholde vegetasjon';
+  const cx = 574216, cy = 6670324;
+  const ring = [[574210, 6670320], [574222, 6670320], [574222, 6670328], [574210, 6670328], [574210, 6670320]];
+  const kand = (source, prov) => ({ bygningsnr: '224', type: 'Enebolig', distance_m: 0, point: { east: cx, north: cy },
+                                    footprint: { polygon: ring, area_m2: 96, source, prov } });
+  const TILFELLER = [
+    { navn: 'FKB', k: () => kand('INSPIRE', { source: 'FKB', confidence: 0.9, note: 'INSPIRE Buildings (Kartverket)' }), tittel: 'Omriss fra Kartverket', advarsel: false },
+    { navn: 'DOM 0,5', k: () => kand('DOM1', { source: 'DOM_RASTER', confidence: 0.5, note: 'avledet av DOM1 − DTM1 (1 m raster, Kartverket)' }), tittel: 'Omriss avledet av høydedata', advarsel: false },
+    { navn: 'DOM 0,3', k: () => kand('DOM1', { source: 'DOM_RASTER', confidence: 0.3, note: NOTAT }), tittel: 'Omriss avledet av høydedata', advarsel: true },
+  ];
+  // Tjenestens modellsvar sier alltid FOOTPRINT («omriss fra kalleren») — det skal aldri bli kortets opphav.
+  const modell = () => ({ bygningsnr: '224', origin: { epsg: 25833, east: cx, north: cy, ground_z: 10, prov: { source: 'DOM_RASTER', confidence: 0.8 } },
+    footprint: { polygon: ring.map(([e, n]) => [e - cx, n - cy]), area_m2: 96, prov: { source: 'FOOTPRINT', confidence: 0.9, note: 'omriss fra kalleren' } },
+    heights: { eave_m: { value: 4, prov: { source: 'DOM_RASTER', confidence: 0.6 } }, ridge_m: { value: 7, prov: { source: 'DOM_RASTER', confidence: 0.4 } } },
+    roof: { planes: [], edges: [], roof_type: 'pitched', prov: { source: 'DOM_RASTER', confidence: 0.5 } }, quality: { dom_nodata_frac: 0, method: 'quick', warnings: [] } });
+  const les = fid => { const kort = _takCardHtml(fid, 1), hel = _takCardHtml(fid); return {
+    steg1: kort, hel,
+    tittel: ['Omriss fra Kartverket', 'Omriss avledet av høydedata', 'Omriss tegnet for hånd'].filter(x => kort.includes(x) && hel.includes(x)).join('|'),
+    gammelTekst: (kort + hel).includes('(avledet av høydedata)'),
+    advarsel: [kort, hel].map(h => (h.match(/tak-fp-warn[^>]*>⚠ ([^<]*)</) || [])[1] || null),
+  }; };
+  const sjekkKort = (etikett, fid, c) => {
+    const L = les(fid);
+    check(`${etikett}: tittel i steg 1 og på kortet`, c.tittel, L.tittel === c.tittel, L.tittel);
+    check(`${etikett}: den gamle teksten er borte`, 'nei', !L.gammelTekst, L.gammelTekst);
+    const vent = c.advarsel ? NOTAT : null;
+    check(`${etikett}: advarsel`, String(vent), L.advarsel[0] === vent && L.advarsel[1] === vent, L.advarsel);
+    check(`${etikett}: «1 m raster» bare på avledet`, c.tittel.includes('avledet'), L.steg1.includes('1 m raster') === c.tittel.includes('avledet') && L.hel.includes('1 m raster') === c.tittel.includes('avledet'), '');
+    return L;
+  };
+  const nyttTak = () => {
+    _resetProjectState(); addPart('roof');
+    const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
+    S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null;
+    return fid;
+  };
+  try {
+    window.VARMEPLAN_ROOF_URL = 'http://stub224';
+    window._showToast = () => {}; window._scheduleAutoSave = () => {}; window.confirm = () => true;
+    window.fetch = async u => String(u).includes('/roof/model') ? new Response(JSON.stringify(modell()), { status: 200 }) : new Response('{}', { status: 404 });
+    S.ui.readOnly = false; app.style.display = 'flex'; resizeCanvas();
+
+    for (const c of TILFELLER) {
+      // Vei 1: klikk på bygget i kartet (_geoPickStore → _takChooseBuilding).
+      let fid = nyttTak();
+      const bg1 = _installTileBackground(fid, { east: cx, north: cy }, 'Testveien 1');
+      S.bgs = { [fid]: bg1 };
+      S.geo = { [fid]: { address: 'Testveien 1', center: { east: cx, north: cy }, chosen: null, candidates: [] } };
+      _geoPickStore(fid, bg1, c.k());
+      const r1 = await _takChooseBuilding(fid, '224');
+      check(`${c.navn} · klikk i kartet: modellen hentet`, 'ok', r1 && r1.kind === 'ok', JSON.stringify(r1));
+      const a = sjekkKort(`${c.navn} · klikk i kartet`, fid, c);
+
+      // Lagre og åpne igjen.
+      const sd = JSON.parse(JSON.stringify(_buildSaveData()));
+      _resetProjectState(); _restoreProject(sd);
+      S.ui.activeFloorId = fid; S.ui.activePartId = S.floors.find(f => f.id === fid).partId;
+      const b = sjekkKort(`${c.navn} · lagret og åpnet`, fid, c);
+      check(`${c.navn} · lagret og åpnet: samme kort`, 'likt', a.steg1 === b.steg1 && a.hel === b.hel, '');
+
+      // Vei 2: adressedialogen (_roofFetchBackground skriver S.geo), byggvalg fra kandidatlista.
+      fid = nyttTak();
+      S.bgs = {}; S.geo = {};
+      _roofDlg = _roofNewDlg(fid, 'Testveien 1'); _roofDlg.candidates = [c.k()]; _roofDlg.chosen = null; _roofDlg.query = { point: { east: cx, north: cy } };
+      await _roofFetchBackground();
+      const r2 = await _takChooseBuilding(fid, '224');
+      check(`${c.navn} · adressedialog: modellen hentet`, 'ok', r2 && r2.kind === 'ok', JSON.stringify(r2));
+      const d = sjekkKort(`${c.navn} · adressedialog`, fid, c);
+      check(`${c.navn}: begge veier gir samme tittel og advarsel`, 'likt', a.tittel === d.tittel && JSON.stringify(a.advarsel) === JSON.stringify(d.advarsel), '');
+
+      // Vei 2b: bygget er forhåndsvalgt i dialogen, modellen hentes fra g.chosen («Prøv igjen»).
+      fid = nyttTak();
+      S.bgs = {}; S.geo = {};
+      _roofDlg = _roofNewDlg(fid, 'Testveien 1'); _roofDlg.candidates = [c.k()]; _roofDlg.chosen = 0; _roofDlg.query = { point: { east: cx, north: cy } };
+      await _roofFetchBackground();
+      const r3 = await _takRetry(fid);
+      check(`${c.navn} · forhåndsvalgt: modellen hentet`, 'ok', r3 && r3.kind === 'ok', JSON.stringify(r3));
+      sjekkKort(`${c.navn} · forhåndsvalgt`, fid, c);
+    }
+
+    // Tegnet for hånd er uendret.
+    let fid = nyttTak();
+    S.tak = { [fid]: _takManual([[0, 0], [1000, 0], [1000, 800], [0, 800]].map(([x, y]) => ({ x, y }))) };
+    const h = _takCardHtml(fid, 1);
+    check('USER_DRAWN: «Omriss tegnet for hånd»', 'ja', h.includes('Omriss tegnet for hånd'), '');
+    check('USER_DRAWN: ingen advarsel, ikke raster', 'ingen', !h.includes('tak-fp-warn') && !h.includes('1 m raster'), '');
+
+    // Prosjekt lagret før 224: opphav og tillit finnes, notatet er appens eget — tittel, men ingen advarsel.
+    const gammel = _takFootprintInfo({ source: 'DOM_RASTER', confidence: 0.3, note: 'Kartverket (DOM1)' });
+    check('Gammelt lagret DOM-omriss: avledet, men appens notat vises ikke', 'avledet/null', gammel.title === 'Omriss avledet av høydedata' && gammel.warn === null, JSON.stringify(gammel));
+    check('Uten opphav: som før', 'Omriss fra Kartverket', _takFootprintInfo(null).title === 'Omriss fra Kartverket', '');
+    const html = _takFootprintWarnHtml({ warn: '<b>x</b>' });
+    check('Notatet escapes', 'ja', html.includes('&lt;b&gt;') && !html.includes('<b>x'), html);
+  } catch (e) {
+    check('testen kastet ikke', 'ingen feil', false, e.stack || String(e));
+  } finally {
+    window.fetch = keep.fetch; window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm;
+    if (keep.override === undefined) delete window.VARMEPLAN_ROOF_URL; else window.VARMEPLAN_ROOF_URL = keep.override;
+    S.ui.readOnly = keep.ro; _roofDlg = keep.dlg;
+    _restoreProject(lagret); S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    app.style.display = appD; renderSidebar(); updateCtxBar(); render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_takRegressionTest224: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return results;
+}
+
 async function _takRegressionTest221() {
   const results = [];
   const check = (name, expected, cond, got) => results.push({ name: '221: ' + name, expected, got, ok: !!cond });
@@ -90245,6 +90378,7 @@ async function _roofFetchBackground() {
           : null,
         footprintSource: cand.footprint ? cand.footprint.source : null,
         footprintConfidence: cand.footprint ? cand.footprint.prov.confidence : null,
+        footprintNote: (cand.footprint && cand.footprint.prov.note) || null,   // 224
       } : null,
       // 006 trenger OMRISSET på hver kandidat, ikke bare punktet — både for å tegne naboene grått
       // og for at «klikk på et annet bygg» skal kunne bytte uten å hente kartet på nytt.
@@ -90254,6 +90388,7 @@ async function _roofFetchBackground() {
         footprintWorld: c.footprint ? c.footprint.polygon.map(([e, n]) => _geoToWorld(bg, e, n)) : null,
         footprintSource: c.footprint ? c.footprint.source : null,
         footprintConfidence: c.footprint ? c.footprint.prov.confidence : null,
+        footprintNote: (c.footprint && c.footprint.prov.note) || null,   // 224
       })),
     };
     setActiveBgFloor(d.floorId);

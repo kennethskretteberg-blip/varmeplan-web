@@ -1,0 +1,83 @@
+{
+ "ekte_dom03": {
+  "r": {
+   "n": 1,
+   "tak": {
+    "kind": "ok"
+   }
+  },
+  "kort": {
+   "tekst": "Omriss avledet av høydedata (1 m raster) · 182 hjørner · omkrets 395,37 m\n    ⚠ sjekk omrisset — kan inneholde vegetasjon\n     Hent et annet byggVelg en annen vei",
+   "prov": {
+    "source": "DOM_RASTER",
+    "confidence": 0.3,
+    "note": "sjekk omrisset — kan inneholde vegetasjon"
+   },
+   "chosen": {
+    "bygningsnr": "300773770",
+    "type": "Annen industribygning",
+    "footprintSource": "DOM1",
+    "footprintConfidence": 0.3,
+    "footprintNote": "sjekk omrisset — kan inneholde vegetasjon"
+   }
+  }
+ },
+ "ekte_lagret": {
+  "likt": true,
+  "note": "sjekk omrisset — kan inneholde vegetasjon",
+  "geoNote": "sjekk omrisset — kan inneholde vegetasjon"
+ },
+ "1-fkb": {
+  "tekst": "Omriss fra Kartverket\n    4 hjørner · omkrets 40,00 m\n     Hent et annet byggVelg en annen vei",
+  "prov": {
+   "source": "FKB",
+   "confidence": 0.9,
+   "note": "INSPIRE Buildings (Kartverket)"
+  },
+  "chosen": {
+   "bygningsnr": "1",
+   "type": "Enebolig",
+   "footprintSource": "INSPIRE",
+   "footprintConfidence": 0.9,
+   "footprintNote": "INSPIRE Buildings (Kartverket)"
+  }
+ },
+ "2-dom-0-5": {
+  "tekst": "Omriss avledet av høydedata (1 m raster) · 4 hjørner · omkrets 40,00 m\n    \n     Hent et annet byggVelg en annen vei",
+  "prov": {
+   "source": "DOM_RASTER",
+   "confidence": 0.5,
+   "note": "avledet av DOM1 − DTM1 (1 m raster, Kartverket)"
+  },
+  "chosen": {
+   "bygningsnr": "1",
+   "type": "Enebolig",
+   "footprintSource": "DOM1",
+   "footprintConfidence": 0.5,
+   "footprintNote": "avledet av DOM1 − DTM1 (1 m raster, Kartverket)"
+  }
+ },
+ "4-tegnet": {
+  "tekst": "Omriss tegnet for hånd\n    4 hjørner · omkrets 40,00 m\n    Tegn på nyttVelg en annen vei",
+  "prov": {
+   "source": "USER_DRAWN",
+   "confidence": 1,
+   "note": "tegnet for hånd"
+  },
+  "chosen": {}
+ },
+ "mutasjoner": {
+  "notat droppes i _geoSetChosen": {
+   "røde": 3,
+   "av": 68
+  },
+  "notat ignoreres i _takFootprintProv": {
+   "røde": 4,
+   "av": 68
+  },
+  "steg 1 hardkodet som før 224": {
+   "røde": 8,
+   "av": 68
+  }
+ }
+}
