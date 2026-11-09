@@ -1,7 +1,7 @@
 # 225 · Flater, farger og ryddigere verktøylinje — rapport
 
 **Dato:** 09.11.2026 · **Gren:** `design/varmeplan-stil` (worktree `~/Code/varmeplan-web-design`), committet, ikke pushet ·
-**Commit:** _(settes inn etter commit)_ · **Løp:** serie-223-design, prompt 4 av 4, kun design.
+**Commit:** `ca4731c` · **Løp:** serie-223-design, prompt 4 av 4, kun design.
 
 ## Kort
 
