@@ -4,6 +4,12 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 219 — Hindring: enklere meny — Vegg til vegg, Polygon og Mål B×H, uten ferdige navngitte valg (09.11.2026, `main`, ikke pushet)
+
+Kenneth 09.11.2026: «Vi trenger ikke så mange valg her. Ta bort alle navnene.» Menyen «Sett inn hindring» hadde fem typekort (Kjøkkenøy, Innebygd skap, Pipe, Vegg / søyle, Annet) og fire knapper i bunnlinja. Nå: navnefelt (valgfritt, gjelder alle), to store knapper **Vegg til vegg** og **Polygon** i full bredde, og **Mål** med B og H i cm og én knapp **Sett inn** (Enter i feltet gjør det samme); bunnlinja har bare Avbryt. Tomt/0/minus/bokstaver → feltet markeres rødt, ingenting settes inn. Tegneverktøyene er urørt; det skjulte fjerde valget (tomme felt startet rektangel-tegning) er ikke lenger nåbart fra menyen. `label` er nå det brukeren skrev — tomt felt gir `''` og ingen tekst på tegningen (før: «Annet»); `_hindDisplayName(h)` samler de seks visningsstedene, gamle prosjekter med navn vises som før, PDF/panel/advarsel bruker reserveordet «Hindring». Datamodellen uendret (`type` alltid `'annet'` for nye). Typen styrte ingenting i utregningen (målt). Ny `_hindMenuRegressionTest219` 23/23; `_dialogRegressionTest216` 197/197. Se `docs/219-hindring/RAPPORT.md`.
+
+---
+
 ## 218 — Hindring: kan starte og slutte på samme vegg, lukkes langs veggen (09.11.2026, `main`, ikke pushet)
 
 Kenneth 09.11.2026: «en pipe midt på en vegg — klikk på veggen, to klikk for hjørnene og siste klikk tilbake til veggen». Klikk 4 på startveggen ble avvist med alert («må gå mellom to forskjellige vegger»); uten avvisningen ville delefunksjonen gått rundt hele rommet begge veier. Nå lukkes hindringen rett langs veggen mellom siste og første klikk (polygonens egen lukkekant er veggen), uten «velg halvdel»; knekk (flere hjørner) virker likt. Hjørnene snapper også vinkelrett/parallelt med startveggen (`_hindW2WAngleSnap`, identisk med før på rette vegger), siste klikk projiseres på veggen fra siste hjørne, grønn forhåndsvisning av lukkingen med lengder. Ulike vegger, andre tegnemåter og utlegget urørt. Ny `_hindW2WRegressionTest218` 22/22 med ekte klikk; hele suiten lik HEAD. Se `docs/218-hindring/RAPPORT.md`.

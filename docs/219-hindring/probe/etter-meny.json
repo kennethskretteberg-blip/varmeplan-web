@@ -1,0 +1,77 @@
+{
+ "W": 1366,
+ "H": 650,
+ "boks": {
+  "topp": 81,
+  "bunn": 569,
+  "hoyde": 488,
+  "bredde": 480
+ },
+ "tittel": "Sett inn hindring",
+ "kort": [],
+ "elementer": [
+  {
+   "hva": "input#hindring-name-inp.modal-inp",
+   "tekst": "F.eks. Pipe",
+   "topp": 173,
+   "bunn": 214,
+   "bredde": 422,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "button#hindring-w2w-btn.floor-choice-btn",
+   "tekst": "Vegg til vegg",
+   "topp": 230,
+   "bunn": 285,
+   "bredde": 422,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "button#hindring-polygon-btn.floor-choice-btn",
+   "tekst": "Polygon",
+   "topp": 295,
+   "bunn": 350,
+   "bredde": 422,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "input#hindring-bredde-inp.modal-inp",
+   "tekst": "Bredde",
+   "topp": 384,
+   "bunn": 425,
+   "bredde": 157,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "input#hindring-lengde-inp.modal-inp",
+   "tekst": "Høyde",
+   "topp": 384,
+   "bunn": 425,
+   "bredde": 157,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "button#hindring-dims-btn.floor-choice-btn",
+   "tekst": "Sett inn",
+   "topp": 435,
+   "bunn": 475,
+   "bredde": 102,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "button.floor-choice-btn",
+   "tekst": "Avbryt",
+   "topp": 495,
+   "bunn": 540,
+   "bredde": 107,
+   "inne": true,
+   "klikkbar": true
+  }
+ ]
+}

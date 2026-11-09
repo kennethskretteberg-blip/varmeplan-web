@@ -1,0 +1,128 @@
+{
+ "W": 1366,
+ "H": 650,
+ "boks": {
+  "topp": 19,
+  "bunn": 632,
+  "hoyde": 613,
+  "bredde": 480
+ },
+ "tittel": "Lag hindring — velg type",
+ "kort": [
+  "🍳\n       Kjøkkenøy",
+  "Innebygd skap",
+  "🏭\n       Pipe",
+  "🧱\n       Vegg / søyle",
+  "⬛\n       Annet"
+ ],
+ "elementer": [
+  {
+   "hva": "div.shape-card",
+   "tekst": "🍳\n       Kjøkkenøy",
+   "topp": 91,
+   "bunn": 190,
+   "bredde": 134,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "div.shape-card",
+   "tekst": "Innebygd skap",
+   "topp": 91,
+   "bunn": 190,
+   "bredde": 134,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "div.shape-card",
+   "tekst": "🏭\n       Pipe",
+   "topp": 91,
+   "bunn": 190,
+   "bredde": 134,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "div.shape-card",
+   "tekst": "🧱\n       Vegg / søyle",
+   "topp": 200,
+   "bunn": 299,
+   "bredde": 134,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "div.shape-card",
+   "tekst": "⬛\n       Annet",
+   "topp": 200,
+   "bunn": 299,
+   "bredde": 134,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "input#hindring-name-inp.modal-inp",
+   "tekst": "F.eks. Kjøkkenøy",
+   "topp": 329,
+   "bunn": 370,
+   "bredde": 422,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "input#hindring-bredde-inp.modal-inp",
+   "tekst": "↔ Bredde cm",
+   "topp": 420,
+   "bunn": 461,
+   "bredde": 199,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "input#hindring-lengde-inp.modal-inp",
+   "tekst": "↕ Lengde cm",
+   "topp": 420,
+   "bunn": 461,
+   "bredde": 199,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "button.floor-choice-btn",
+   "tekst": "Avbryt",
+   "topp": 481,
+   "bunn": 603,
+   "bredde": 107,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "button.floor-choice-btn",
+   "tekst": "⬡ Tegn polygon →",
+   "topp": 481,
+   "bunn": 603,
+   "bredde": 118,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "button.floor-choice-btn",
+   "tekst": "⤬ Vegg-til-vegg →",
+   "topp": 481,
+   "bunn": 603,
+   "bredde": 101,
+   "inne": true,
+   "klikkbar": true
+  },
+  {
+   "hva": "button.floor-choice-btn",
+   "tekst": "Legg til →",
+   "topp": 481,
+   "bunn": 603,
+   "bredde": 94,
+   "inne": true,
+   "klikkbar": true
+  }
+ ]
+}

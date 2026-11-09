@@ -1,0 +1,63 @@
+{
+ "oppsett": {
+  "rom": 2,
+  "gamle": 3
+ },
+ "w2w": {
+  "modusEtterKnapp": "hindring-w2w",
+  "antall": 4,
+  "label": "Pipe",
+  "pkt": 4,
+  "m2": 0.24,
+  "modusNaa": null,
+  "alerts": []
+ },
+ "polygon": {
+  "modusEtterKnapp": "hindring-polygon",
+  "antall": 5,
+  "label": "\"\"",
+  "pkt": 5,
+  "modusNaa": null
+ },
+ "maal": {
+  "antall": 6,
+  "label": "\"\"",
+  "pkt": [
+   [
+    170,
+    130
+   ],
+   [
+    230,
+    130
+   ],
+   [
+    230,
+    170
+   ],
+   [
+    170,
+    170
+   ]
+  ],
+  "lukket": true
+ },
+ "feil": {
+  "antall": 0,
+  "B": "modal-inp err",
+  "H": "modal-inp err",
+  "fokus": "hindring-bredde-inp",
+  "aapen": true
+ },
+ "gammelt": {
+  "tegnet": [
+   "Pipe",
+   "Kjøkkenøy",
+   "Pipe",
+   "Innebygd skap"
+  ]
+ },
+ "panel": {
+  "tittel": "Hindring"
+ }
+}
