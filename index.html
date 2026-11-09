@@ -31,9 +31,11 @@
   /* Teknisk mono — designtokens for typografi */
   --font-ui:'Space Grotesk', system-ui, sans-serif;
   --font-mono:'IBM Plex Mono', ui-monospace, monospace;
+  /* 223: tegneflaten og rutenettet — faste farger, leses av drawGrid() (ikke hardkodet der) */
+  --canvas-bg:#0d0e10; --grid-fine:#141720; --grid-major:#20242d; --grid-axis:#323848;
 }
-body.light-theme{--bg:#f0f4f8;--surface:#ffffff;--surface2:#eaecf1;--border:#c8cdd8;--text:#12151c;--muted:#4a5266;--dim:#8890a4;--accent:#0891b2;--accent2:#1a6fcc;--warn:#d05820;--success:#16a34a;--danger:#dc2626;--info:#2563eb;--modal-line:rgba(40,70,145,0.85);--modal-line-hl:#0891b2;--modal-vl:#1a5fcc;--modal-dim:rgba(70,88,120,0.8)}
-body.light-theme #canvas-wrap{background:var(--bg)}
+body.light-theme{--canvas-bg:#fbfcfd;--grid-fine:#edf0f5;--grid-major:#d9dee7;--grid-axis:#b9c3d1;--bg:#f0f4f8;--surface:#ffffff;--surface2:#eaecf1;--border:#c8cdd8;--text:#12151c;--muted:#4a5266;--dim:#8890a4;--accent:#0891b2;--accent2:#1a6fcc;--warn:#d05820;--success:#16a34a;--danger:#dc2626;--info:#2563eb;--modal-line:rgba(40,70,145,0.85);--modal-line-hl:#0891b2;--modal-vl:#1a5fcc;--modal-dim:rgba(70,88,120,0.8)}
+body.light-theme #canvas-wrap{background:var(--canvas-bg)}
 body.light-theme #ctxbar{background:rgba(240,244,248,0.96);color:var(--text)}
 body.light-theme .rwp-done-btn{color:#16a34a;border-color:rgba(22,163,74,.3);background:rgba(22,163,74,.1)}
 body.light-theme .rwp-done-btn:hover{background:rgba(22,163,74,.18)}
@@ -697,7 +699,7 @@ body.light-theme .room-name-prompt{background:rgba(255,255,255,0.97);border-colo
 .wall-len{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim);flex-shrink:0}
 
 /* ── CANVAS ── */
-#canvas-wrap{position:relative;flex:1;overflow:hidden;background:var(--bg)}
+#canvas-wrap{position:relative;flex:1;overflow:hidden;background:var(--canvas-bg)}
 /* 221: 3D ved siden av 2D. Fordelingen er flex-grow på ruta, så lerretet følger av seg selv (ResizeObserver → resizeCanvas). */
 #tak3d-split{flex:0 0 6px;cursor:col-resize;background:var(--border);touch-action:none}
 #tak3d-split:hover,#tak3d-split.drar{background:var(--accent)}
@@ -5011,13 +5013,39 @@ if (_tc) _tc.innerHTML = S.ui.theme === 'light' ? IC('moon',16) : IC('sun',16);
 const canvas = document.getElementById('canvas');
 const ctx    = canvas.getContext('2d');
 
+// ═══ 223 · SKARP TEGNEFLATE (retina) ═══════════════════════════════════════════════════════════
+// Lerretets lagringsbuffer (canvas.width/height) er i FYSISKE piksler: CSS-størrelse × _cvDpr.
+// All tegnekode regner fortsatt i CSS-punkter — render() setter ctx.setTransform(_cvDpr, …) først,
+// og all geometri (w2s/s2w/_evToCanvas, «fyll lerretet»-mål, klemming mot kanten) leser den LOGISKE
+// størrelsen _cvW()/_cvH() = canvas.width/_cvDpr, som er nøyaktig det canvas.width var før 223.
+// Valget «logisk bredde som funksjon av fysisk + én skala» framfor egne variabler: da kan koden som
+// setter canvas.width DIREKTE (PDF-bildene i _renderRoomToImage/_renderFloorToImage/_takSectionToImage,
+// og regresjonstestene) fortsette å gjøre det — de setter _cvDpr = 1 og tegner 1:1 som før, uten at
+// noen logisk variabel kan gå ut av synk med bufferen. _cvDpr begrenses til 2 (som forhåndsvisningen
+// i PDF-dialogen), og følger med når vinduet flyttes mellom skjerm med og uten retina (matchMedia).
+let _cvDpr = 1;
+function _cvW() { return canvas.width / _cvDpr; }
+function _cvH() { return canvas.height / _cvDpr; }
+function _cvPickDpr() { return Math.min(2, window.devicePixelRatio || 1); }
+
 function resizeCanvas() {
   const wrap = document.getElementById('canvas-wrap');
-  canvas.width  = wrap.clientWidth;
-  canvas.height = wrap.clientHeight;
+  const dpr = _cvPickDpr();
+  _cvDpr = dpr;
+  canvas.width  = Math.round(wrap.clientWidth * dpr);
+  canvas.height = Math.round(wrap.clientHeight * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // render() setter den også — dette dekker tegning før neste bilde
   markDirty();   // canvas resize clears the buffer — must redraw
 }
 window.addEventListener('resize', resizeCanvas);
+// 223: devicePixelRatio endrer seg uten resize-event når vinduet dras til en annen skjerm (eller
+// nettleseren zoomes). matchMedia på nåværende oppløsning fyrer én gang når den ikke lenger stemmer.
+(function _cvWatchDpr() {
+  if (!window.matchMedia) return;
+  const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+  const on = () => { mq.removeEventListener ? mq.removeEventListener('change', on) : mq.removeListener(on); resizeCanvas(); _cvWatchDpr(); };
+  mq.addEventListener ? mq.addEventListener('change', on) : mq.addListener(on);
+})();
 // #canvas-wrap kan endre størrelse UTEN et window.resize-event (kontekst-verktøylinje som bygger
 // om ved rom-valg, sidepanel, rom-arbeidsflyt-panelet) — window.resize alene fanget ikke dette, så
 // canvas sin backing-størrelse (canvas.width/height, brukt av w2s/s2w) kunne gå ut av synk med den
@@ -5052,23 +5080,24 @@ function _evToCanvas(e) {
   const rect = canvas.getBoundingClientRect();
   if (!rect.width || !rect.height) return { x: 0, y: 0 };
   const t = e.touches ? e.touches[0] : e;
+  // 223: logisk størrelse (CSS-punkter), ikke canvas.width (fysiske piksler) — forholdet er 1 som før.
   return {
-    x: (t.clientX - rect.left) * (canvas.width / rect.width),
-    y: (t.clientY - rect.top) * (canvas.height / rect.height)
+    x: (t.clientX - rect.left) * (_cvW() / rect.width),
+    y: (t.clientY - rect.top) * (_cvH() / rect.height)
   };
 }
 function w2s(wx, wy) {
   const sc = S.view.zoom * BASE_SCALE;
   return {
-    x: (wx - S.view.panX) * sc + canvas.width  / 2,
-    y: (wy - S.view.panY) * sc + canvas.height / 2
+    x: (wx - S.view.panX) * sc + _cvW() / 2,
+    y: (wy - S.view.panY) * sc + _cvH() / 2
   };
 }
 function s2w(sx, sy) {
   const sc = S.view.zoom * BASE_SCALE;
   return {
-    x: (sx - canvas.width  / 2) / sc + S.view.panX,
-    y: (sy - canvas.height / 2) / sc + S.view.panY
+    x: (sx - _cvW() / 2) / sc + S.view.panX,
+    y: (sy - _cvH() / 2) / sc + S.view.panY
   };
 }
 
@@ -5285,7 +5314,8 @@ setInterval(() => {
 
 function render() {
   _needsRender = false;   // we're rendering now — rAF loop can skip until next change
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.setTransform(_cvDpr, 0, 0, _cvDpr, 0, 0);   // 223: CSS-punkter → fysiske piksler; 1:1 i PDF-bildene
+  ctx.clearRect(0, 0, _cvW(), _cvH());
   _rebuildActiveFloorRoomIds();
   _violationsDirty = true;
   _cableViolationsDirty = true;
@@ -5456,7 +5486,7 @@ function drawSnapDot() {
   if (!m) return;
   const mp = S.drawing.mousePos;
   const s = w2s(mp.x, mp.y);
-  if (s.x < 0 || s.y < 0 || s.x > canvas.width || s.y > canvas.height) return;
+  if (s.x < 0 || s.y < 0 || s.x > _cvW() || s.y > _cvH()) return;
   ctx.save();
   ctx.beginPath();
   ctx.arc(s.x, s.y, 4, 0, Math.PI * 2);
@@ -5475,9 +5505,9 @@ function drawScaleBar() {
   if (S.ui?._pdfOverview) return;   // 154: 50 cm-pillen blir en uleselig 1 mm-flekk på plantegningen
   const barW = GRID * S.view.zoom * BASE_SCALE; // px = 50cm at current zoom
   // Don't draw if bar would be tiny or enormous
-  if (barW < 20 || barW > canvas.width * 0.4) return;
+  if (barW < 20 || barW > _cvW() * 0.4) return;
 
-  const x = 20, y = canvas.height - 22;
+  const x = 20, y = _cvH() - 22;
 
   // Background pill
   ctx.fillStyle = _lc('rgba(240,244,248,0.88)','rgba(13,14,16,0.55)');
@@ -6346,60 +6376,182 @@ const SUBGRID = 10; // cm — sub-grid interval
 
 // Light/dark canvas colour helper — _lc(lightColor, darkColor)
 function _lc(l,d){return S.ui.theme==='light'?l:d;}
+// ═══ 223 · RUTENETT ════════════════════════════════════════════════════════════════════════════
+// Samme prinsipp som Flow Busbar (viewport.ts → gridSteps): hovedlinjer hver 1 m, 5 m når 1 m blir
+// under 12 px; fine linjer hver 10 cm bare når de står minst 6 px fra hverandre, ellers 50 cm når de
+// står minst 8 px fra hverandre, ellers ingen. Faste farger fra CSS-variablene --grid-fine/-major/-axis
+// (lyst og mørkt tema i :root / body.light-theme), aldri halvgjennomsiktig svart. Linjene legges på
+// hele fysiske piksler (1 piksel ved dpr 1, 2 ved dpr 2 — samme vekt som 1 px SVG-strek), ikke
+// utsmurt over to. Snapping (GRID 50 / SUBGRID 10 / AGRID 500) er URØRT — dette er bare tegning.
+/** Trinn i cm for gitt skala (px per cm). minor = null → ingen fine linjer. */
+function _gridSteps(sc) {
+  const major = sc * 100 < 12 ? 500 : 100;
+  let minor = sc * 10 >= 6 ? 10 : sc * 50 >= 8 ? 50 : null;
+  if (minor != null && minor >= major) minor = null;
+  return { major, minor };
+}
+let _gridColorsCache = null;   // { theme, fine, major, axis } — getComputedStyle bare når temaet byttes
+function _gridColors() {
+  const theme = S.ui.theme === 'light' ? 'light' : 'dark';
+  if (_gridColorsCache && _gridColorsCache.theme === theme) return _gridColorsCache;
+  const cs = getComputedStyle(document.body);
+  const rd = (v, fb) => (cs.getPropertyValue(v) || '').trim() || fb;
+  _gridColorsCache = { theme, fine: rd('--grid-fine', '#edf0f5'), major: rd('--grid-major', '#d9dee7'), axis: rd('--grid-axis', '#b9c3d1') };
+  return _gridColorsCache;
+}
 function drawGrid() {
-  const W = canvas.width, H = canvas.height;
+  const W = _cvW(), H = _cvH();
   const tl = s2w(0,0), br = s2w(W,H);
   const sc = S.view.zoom * BASE_SCALE;
+  const { major, minor } = _gridSteps(sc);
+  const col = _gridColors();
+  // Strekbredde = hele fysiske piksler: 1 ved dpr 1, 2 ved dpr 2 (1,33 CSS-px = 2 fysiske ved 1,5).
+  const dpr = _cvDpr || 1, lwDev = Math.max(1, Math.round(dpr));
+  const snap = v => (Math.round(v * dpr - (lwDev % 2 ? 0.5 : 0)) + (lwDev % 2 ? 0.5 : 0)) / dpr;
+  ctx.save();
+  ctx.lineWidth = lwDev / dpr;
+  ctx.setLineDash([]);
+  const vline = x => { const px = snap(w2s(x, 0).x); ctx.moveTo(px, 0); ctx.lineTo(px, H); };
+  const hline = y => { const py = snap(w2s(0, y).y); ctx.moveTo(0, py); ctx.lineTo(W, py); };
+  const eps = 1e-6;
+  const isMult = (v, step) => Math.abs(v / step - Math.round(v / step)) < eps;
 
-  ctx.lineWidth = 1;
-  const _lt = S.ui.theme === 'light';
+  // Fine linjer (10 eller 50 cm) — hopper over dem som også er hovedlinjer eller akser
+  if (minor != null) {
+    ctx.strokeStyle = col.fine;
+    ctx.beginPath();
+    for (let x = Math.floor(tl.x / minor) * minor; x <= br.x + minor; x += minor) { if (isMult(x, major)) continue; vline(x); }
+    for (let y = Math.floor(tl.y / minor) * minor; y <= br.y + minor; y += minor) { if (isMult(y, major)) continue; hline(y); }
+    ctx.stroke();
+  }
+  // Hovedlinjer (1 m, eller 5 m langt ute) — aksene tegnes for seg
+  ctx.strokeStyle = col.major;
+  ctx.beginPath();
+  for (let x = Math.floor(tl.x / major) * major; x <= br.x + major; x += major) { if (Math.abs(x) < eps) continue; vline(x); }
+  for (let y = Math.floor(tl.y / major) * major; y <= br.y + major; y += major) { if (Math.abs(y) < eps) continue; hline(y); }
+  ctx.stroke();
+  // Aksene x = 0 og y = 0
+  ctx.strokeStyle = col.axis;
+  ctx.beginPath();
+  if (tl.x <= 0 && br.x >= 0) vline(0);
+  if (tl.y <= 0 && br.y >= 0) hline(0);
+  ctx.stroke();
 
-  // 10cm sub-grid — only when zoom makes them at least 4px apart
-  if (sc * SUBGRID >= 4) {
-    ctx.strokeStyle = _lt ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.013)';
-    const sx0 = Math.floor(tl.x/SUBGRID)*SUBGRID;
-    const sy0 = Math.floor(tl.y/SUBGRID)*SUBGRID;
-    for (let x = sx0; x <= br.x+SUBGRID; x += SUBGRID) {
-      if (x % GRID === 0) continue; // skip — 50cm lines drawn next
-      const px = w2s(x,0).x;
-      ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,H); ctx.stroke();
-    }
-    for (let y = sy0; y <= br.y+SUBGRID; y += SUBGRID) {
-      if (y % GRID === 0) continue;
-      const py = w2s(0,y).y;
-      ctx.beginPath(); ctx.moveTo(0,py); ctx.lineTo(W,py); ctx.stroke();
-    }
-  }
-
-  // 50cm grid — clear lines
-  ctx.strokeStyle = _lt ? 'rgba(0,0,0,0.14)' : 'rgba(255,255,255,0.06)';
-  for (let x = Math.floor(tl.x/GRID)*GRID; x <= br.x+GRID; x += GRID) {
-    if (x % AGRID === 0) continue;
-    const px = w2s(x,0).x;
-    ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,H); ctx.stroke();
-  }
-  for (let y = Math.floor(tl.y/GRID)*GRID; y <= br.y+GRID; y += GRID) {
-    if (y % AGRID === 0) continue;
-    const py = w2s(0,y).y;
-    ctx.beginPath(); ctx.moveTo(0,py); ctx.lineTo(W,py); ctx.stroke();
-  }
-
-  // 500cm accent grid
-  ctx.strokeStyle = _lt ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.1)';
-  for (let x = Math.floor(tl.x/AGRID)*AGRID; x <= br.x+AGRID; x += AGRID) {
-    const px = w2s(x,0).x;
-    ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,H); ctx.stroke();
-  }
-  for (let y = Math.floor(tl.y/AGRID)*AGRID; y <= br.y+AGRID; y += AGRID) {
-    const py = w2s(0,y).y;
-    ctx.beginPath(); ctx.moveTo(0,py); ctx.lineTo(W,py); ctx.stroke();
-  }
-
-  // Origin cross
+  // Origo-krysset (uendret form, aksefargen)
   const o = w2s(0,0);
-  ctx.strokeStyle = _lc('rgba(0,0,0,0.22)','rgba(255,255,255,0.22)');
+  ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(o.x-12,o.y); ctx.lineTo(o.x+12,o.y); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(o.x,o.y-12); ctx.lineTo(o.x,o.y+12); ctx.stroke();
+  ctx.restore();
+}
+
+// ═══ 223 · REGRESJON: skarp tegneflate + rutenett ══════════════════════════════════════════════
+// Kjør i konsollen: _canvasRegressionTest223(). Sjekker at bufferen er CSS × dpr, at et klikk gir samme
+// verdenskoordinat som formelen fra før 223 ved dpr 1 og 2 (også etter at sidepanelet er dratt bredere),
+// rutenett-trinnene, at fargene leses fra CSS-variablene i begge temaer, at snapping-konstantene står,
+// og at PDF-bildet fortsatt tegnes 1:1 (outW bredt, rommet midt i bildet) med lerretet gjenopprettet.
+function _canvasRegressionTest223() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '223: ' + name, expected, got, ok: !!cond });
+  const near = (a, b, t) => Math.abs(a - b) <= (t == null ? 1e-6 : t);
+  const wrap = document.getElementById('canvas-wrap'), app = document.getElementById('app'), sb = document.getElementById('sidebar');
+  const lagret = { view: { ...S.view }, rooms: S.rooms, floors: S.floors, aktiv: S.ui.activeFloorId, part: S.ui.activePartId, sel: S.ui.selectedRoomId,
+    grid: S.ui.showGrid, theme: S.ui.theme, sbW: sb ? sb.style.width : '', appDisplay: app ? app.style.display : '' };
+  const shownApp = app && !canvas.getBoundingClientRect().width;
+  if (shownApp) { app.style.display = 'flex'; resizeCanvas(); }
+  try {
+    // A. Buffer og logisk størrelse
+    resizeCanvas();
+    const dprV = Math.min(2, window.devicePixelRatio || 1);
+    check('dpr begrenses til maks 2 og følger skjermen', dprV, _cvDpr <= 2 && near(_cvDpr, dprV), _cvDpr);
+    check('lagringsbuffer = CSS-størrelse × dpr', `${Math.round(wrap.clientWidth * dprV)}×${Math.round(wrap.clientHeight * dprV)}`,
+      canvas.width === Math.round(wrap.clientWidth * dprV) && canvas.height === Math.round(wrap.clientHeight * dprV), canvas.width + '×' + canvas.height);
+    check('logisk bredde/høyde = CSS-størrelse (det canvas.width var før 223)', wrap.clientWidth + '×' + wrap.clientHeight,
+      near(_cvW(), wrap.clientWidth, 0.5) && near(_cvH(), wrap.clientHeight, 0.5), _cvW() + '×' + _cvH());
+    // B. Klikk → verden, uavhengig av dpr
+    S.view.zoom = 1.1; S.view.panX = 700; S.view.panY = 150; S.ui.showGrid = true; render();
+    { const m = ctx.getTransform(); check('render() setter transformen til dpr', _cvDpr, near(m.a, _cvDpr) && near(m.d, _cvDpr) && m.e === 0 && m.f === 0, `${m.a},${m.d},${m.e},${m.f}`); }
+    const sc = S.view.zoom * BASE_SCALE;
+    const fasit = (r, cx, cy) => ({ x: (cx - r.left - r.width / 2) / sc + S.view.panX, y: (cy - r.top - r.height / 2) / sc + S.view.panY });   // formelen fra før 223, med CSS-størrelsen
+    const avvik = (fr) => { const r = canvas.getBoundingClientRect(); let maks = 0;
+      for (const [fx, fy] of fr) { const cx = Math.round(r.left + r.width * fx), cy = Math.round(r.top + r.height * fy);
+        const c = _evToCanvas({ clientX: cx, clientY: cy }), w = s2w(c.x, c.y), f = fasit(r, cx, cy); maks = Math.max(maks, Math.abs(w.x - f.x), Math.abs(w.y - f.y)); }
+      return maks; };
+    const simuler = d => { _cvDpr = d; canvas.width = Math.round(wrap.clientWidth * d); canvas.height = Math.round(wrap.clientHeight * d); render(); };   // som resizeCanvas på en slik skjerm
+    const P = [[0.1, 0.1], [0.5, 0.5], [0.9, 0.9], [0.3, 0.7]];
+    for (const d of [1, 2]) { simuler(d); const m = avvik(P); check(`klikk → verden ved dpr ${d}: som før 223 (4 punkter)`, '< 0,01 cm', m < 0.01, m.toFixed(4) + ' cm'); }
+    if (sb) {
+      const r0 = canvas.getBoundingClientRect();
+      sb.style.width = '480px'; resizeCanvas(); render();
+      const r2 = canvas.getBoundingClientRect();
+      check('sidepanel dratt til 480 px: lerretet ble smalere og bufferen fulgte', `smalere enn ${Math.round(r0.width)}, buffer = CSS × dpr`,
+        r2.width < r0.width - 50 && canvas.width === Math.round(wrap.clientWidth * _cvDpr), `${Math.round(r2.width)}, ${canvas.width}`);
+      const m = avvik([[0.2, 0.3], [0.8, 0.6]]);
+      check('klikk → verden etter bredere sidepanel: som før', '< 0,01 cm', m < 0.01, m.toFixed(4) + ' cm');
+      sb.style.width = lagret.sbW || ''; resizeCanvas();
+    }
+    // C. Rutenett-trinn (Flow Busbar-regelen) og snapping urørt
+    const st = s => { const g = _gridSteps(s); return g.major + '/' + g.minor; };
+    check('trinn: 1 m = 5 px → 5 m, ingen fine', '500/null', st(0.05) === '500/null', st(0.05));
+    check('trinn: 1 m = 15 px, 50 cm = 7,5 px → 1 m, ingen fine', '100/null', st(0.15) === '100/null', st(0.15));
+    check('trinn: 50 cm = 10 px → 1 m + 50 cm', '100/50', st(0.2) === '100/50', st(0.2));
+    check('trinn: 10 cm = 5,9 px → 1 m + 50 cm', '100/50', st(0.59) === '100/50', st(0.59));
+    check('trinn: 10 cm = 6 px → 1 m + 10 cm', '100/10', st(0.6) === '100/10', st(0.6));
+    check('snapping urørt: GRID 50, SUBGRID 10, AGRID 500', '50/10/500', GRID === 50 && SUBGRID === 10 && AGRID === 500, GRID + '/' + SUBGRID + '/' + AGRID);
+    // D. Farger fra CSS-variabler i begge temaer, egen lerretsbakgrunn i lyst
+    const cssVar = v => getComputedStyle(document.body).getPropertyValue(v).trim();
+    S.ui.theme = 'light'; document.body.classList.add('light-theme'); _gridColorsCache = null;
+    const L = _gridColors();
+    check('lyst tema: fin/hoved/akse fra CSS', '#edf0f5/#d9dee7/#b9c3d1', L.fine === '#edf0f5' && L.major === '#d9dee7' && L.axis === '#b9c3d1', L.fine + '/' + L.major + '/' + L.axis);
+    check('lyst tema: egen lerretsbakgrunn #fbfcfd på #canvas-wrap', '#fbfcfd / rgb(251, 252, 253)', cssVar('--canvas-bg') === '#fbfcfd' && getComputedStyle(wrap).backgroundColor === 'rgb(251, 252, 253)', cssVar('--canvas-bg') + ' / ' + getComputedStyle(wrap).backgroundColor);
+    S.ui.theme = 'dark'; document.body.classList.remove('light-theme'); _gridColorsCache = null;
+    const D = _gridColors();
+    check('mørkt tema: fin/hoved/akse satt, og andre enn lyst', 'tre #-farger', /^#/.test(D.fine) && /^#/.test(D.major) && /^#/.test(D.axis) && D.fine !== L.fine, D.fine + '/' + D.major + '/' + D.axis);
+    // E. drawGrid: bare faste farger, hele piksler, transformen står
+    { const stiler = new Set(), xs = []; const d = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'strokeStyle'), oMove = ctx.moveTo;
+      Object.defineProperty(ctx, 'strokeStyle', { configurable: true, set(v) { stiler.add(String(v)); d.set.call(this, v); }, get() { return d.get.call(this); } });
+      ctx.moveTo = function (x, y) { xs.push([x, y]); return oMove.call(this, x, y); };
+      try { S.view.zoom = 0.7; simuler(2); drawGrid(); } finally { delete ctx.strokeStyle; delete ctx.moveTo; }
+      check('drawGrid bruker bare faste farger (ingen rgba(0,0,0,…)/rgba(255,255,255,…))', 'ingen', stiler.size > 0 && ![...stiler].some(s => /rgba\((0|255),/.test(s)), [...stiler].join(' '));
+      const vert = xs.filter(([x, y]) => y === 0).map(([x]) => x);   // loddrette linjer starter i y = 0
+      check('linjene ligger på hele fysiske piksler ved dpr 2 (x·2 er heltall)', 'alle', vert.length > 5 && vert.every(x => near(x * 2, Math.round(x * 2), 1e-6)), vert.slice(0, 4).join(','));
+      const m = ctx.getTransform(); check('transformen står etter drawGrid', 2, near(m.a, 2) && near(m.d, 2), m.a); }
+    // F. PDF-bildet tegnes 1:1 (ikke × dpr), og hovedlerretet får tilbake buffer og dpr
+    { const FID = 't223'; S.floors = [{ id: FID, name: 'T', partId: null }];
+      const pts = [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 300 }, { x: 0, y: 300 }];
+      S.rooms = [{ id: 992231, floorId: FID, partId: null, name: 'Rom 223', points: pts, walls: compWalls(pts), area: 120000, dims: [], annotOffsets: {} }];
+      S.ui.activeFloorId = FID; S.ui.activePartId = null; S.ui.theme = 'light'; document.body.classList.add('light-theme'); _gridColorsCache = null;
+      simuler(2);   // som på en Mac
+      const cv = document.createElement('canvas');
+      const im = _renderRoomToImage(S.rooms[0], { outW: 800, toCanvas: cv, noUrl: true });
+      check('PDF-bildet er nøyaktig outW bredt (800 px), ikke 1600', '800', im && im.w === 800 && cv.width === 800, cv.width);
+      // Rommets hjørner skal stå der 1:1-formelen sier (w2s med bildets zoom/pan og outW/2 som senter):
+      // en mørk piksel innen 4 px fra hvert forventet hjørne, og bildets midte = rommets midte.
+      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      const v = im && im.view, scI = v ? v.zoom * BASE_SCALE : 0;
+      const px = (wx, wy) => ({ x: (wx - v.panX) * scI + cv.width / 2, y: (wy - v.panY) * scI + cv.height / 2 });
+      const moerkNaer = p => { for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) { const x = Math.round(p.x) + dx, y = Math.round(p.y) + dy; if (x < 0 || y < 0 || x >= cv.width || y >= cv.height) continue; const i = (y * cv.width + x) * 4; if (d[i] < 200) return true; } return false; };   // omrisset er turkis (34,211,238) eller mørkt — rød kanal under 200
+      const hj = pts.map(q => px(q.x, q.y));
+      check('rommets fire hjørner er tegnet der 1:1-formelen sier (400 cm = 57 % av 700 cm)', `x ${Math.round(hj[0].x)}–${Math.round(hj[1].x)}, y ${Math.round(hj[0].y)}–${Math.round(hj[2].y)}`,
+        v && hj.every(moerkNaer) && near(hj[1].x - hj[0].x, 800 * 400 / 700, 1), v ? hj.map(p => `${Math.round(p.x)},${Math.round(p.y)}`).join(' ') : 'ingen view');
+      check('rommets midte = bildets midte (panX/panY = rommets senter)', '200,150', v && near(v.panX, 200) && near(v.panY, 150), v && `${v.panX},${v.panY}`);
+      check('hovedlerretet får tilbake buffer og dpr etter PDF-bildet', `${Math.round(wrap.clientWidth * 2)}×${Math.round(wrap.clientHeight * 2)} / 2`,
+        canvas.width === Math.round(wrap.clientWidth * 2) && canvas.height === Math.round(wrap.clientHeight * 2) && _cvDpr === 2, `${canvas.width}×${canvas.height} / ${_cvDpr}`);
+    }
+  } catch (e) {
+    results.push({ name: '223: uventet unntak', expected: 'ingen', got: e && e.stack || String(e), ok: false });
+  } finally {
+    S.rooms = lagret.rooms; S.floors = lagret.floors; S.ui.activeFloorId = lagret.aktiv; S.ui.activePartId = lagret.part; S.ui.selectedRoomId = lagret.sel; S.ui.showGrid = lagret.grid;
+    S.ui.theme = lagret.theme; document.body.classList.toggle('light-theme', lagret.theme === 'light'); _gridColorsCache = null;
+    S.view.zoom = lagret.view.zoom; S.view.panX = lagret.view.panX; S.view.panY = lagret.view.panY;
+    if (sb) sb.style.width = lagret.sbW || '';
+    if (shownApp) app.style.display = lagret.appDisplay || '';
+    resizeCanvas(); try { _rebuildActiveFloorRoomIds && _rebuildActiveFloorRoomIds(); } catch (e) {}
+    render();
+  }
+  const ok = results.every(r => r.ok);
+  console[ok ? 'log' : 'error'](`_canvasRegressionTest223: ${ok ? 'BESTÅTT' : 'FEILET'} ${results.filter(r => r.ok).length}/${results.length}`, results.filter(r => !r.ok));
+  return results;
 }
 
 // ─── DRAW ROOMS ──────────────────────────────────────────────
@@ -12495,7 +12647,7 @@ function _kpadLegg(retning) {
 
 // ⚠ MALT: uten denne var tegningen USYNLIG paa telefon. To grunner, begge i startDrawMode('wbw')
 // som regner ut startvisningen for en PC-bredde:
-//   1) zoom = canvas.width / (2000 * BASE_SCALE) ga 0,15 (minimum) paa 375 px — rommet ble
+//   1) zoom = _cvW() / (2000 * BASE_SCALE) ga 0,15 (minimum) paa 375 px — rommet ble
 //      en knappenaal.
 //   2) den sentrerer i HELE lerretet, men pad-en dekker de nederste ~390 px. Geometrien havnet
 //      paa y 596-650, altsaa bak tastaturet.
@@ -12504,20 +12656,20 @@ function _kpadFit() {
   const wbw = S.drawing && S.drawing.wbw;
   if (!wbw || !wbw.startPoint) return;
   const pad = document.getElementById('_kunde-wbwpad');
-  const synligH = pad ? Math.max(120, pad.getBoundingClientRect().top) : canvas.height;
+  const synligH = pad ? Math.max(120, pad.getBoundingClientRect().top) : _cvH();
   const pts = [wbw.startPoint, ...(wbw.walls || []).map(w => ({ x: w.x2, y: w.y2 }))];
   const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const bw = Math.max(200, maxX - minX), bh = Math.max(200, maxY - minY);
   const marg = 0.78;                                   // litt luft rundt
-  const z = Math.min(canvas.width * marg / (bw * BASE_SCALE), synligH * marg / (bh * BASE_SCALE));
+  const z = Math.min(_cvW() * marg / (bw * BASE_SCALE), synligH * marg / (bh * BASE_SCALE));
   S.view.zoom = Math.max(0.05, Math.min(3, z));
   const sc = S.view.zoom * BASE_SCALE;
-  // Sentrer kjeden i den synlige stripa, ikke i hele lerretet: w2s legger til canvas.height/2,
+  // Sentrer kjeden i den synlige stripa, ikke i hele lerretet: w2s legger til _cvH()/2,
   // saa panY forskyves med differansen mellom lerretets og stripas midtpunkt.
   S.view.panX = (minX + maxX) / 2;
-  S.view.panY = (minY + maxY) / 2 + (canvas.height / 2 - synligH / 2) / sc;
+  S.view.panY = (minY + maxY) / 2 + (_cvH() / 2 - synligH / 2) / sc;
   if (typeof updZoomBadge === 'function') updZoomBadge();
   render();
 }
@@ -22618,7 +22770,7 @@ function _matPathClickRegressionTest() {
         if (hitPt) break;
         const wp = { x: R.x0 + (R.x1 - R.x0) * (r.axis === 'h' ? t : 0.5), y: R.y0 + (R.y1 - R.y0) * (r.axis === 'h' ? 0.5 : t) };
         const s = w2s(wp.x, wp.y);
-        if (s.x < 5 || s.y < 5 || s.x > canvas.width - 5 || s.y > canvas.height - 5) continue;
+        if (s.x < 5 || s.y < 5 || s.x > _cvW() - 5 || s.y > _cvH() - 5) continue;
         if (hitMatLabel(s.x, s.y) !== null) continue;
         const h = _matPathAtWorld(wp);
         if (h && h.id === MPID) hitPt = { x: s.x, y: s.y };
@@ -22680,7 +22832,7 @@ function _matPathClickRegressionTest() {
     let roomPt = null;
     for (let gx = 20; gx < 390 && !roomPt; gx += 10) for (let gy = 20; gy < 290 && !roomPt; gy += 10) {
       const s = w2s(gx, gy);
-      if (s.x < 5 || s.y < 5 || s.x > canvas.width - 5 || s.y > canvas.height - 5) continue;
+      if (s.x < 5 || s.y < 5 || s.x > _cvW() - 5 || s.y > _cvH() - 5) continue;
       if (hitMatLabel(s.x, s.y) !== null) continue;
       if (_matPathAtWorld({ x: gx, y: gy })) continue;
       const hr = hitTest(gx, gy);
@@ -22704,7 +22856,7 @@ function _matPathClickRegressionTest() {
       for (let t = 0; t <= 1.001 && !labPt; t += 0.04) {
         const wp = { x: R.x0 + (R.x1 - R.x0) * (r.axis === 'h' ? t : 0.5), y: R.y0 + (R.y1 - R.y0) * (r.axis === 'h' ? 0.5 : t) };
         const s = w2s(wp.x, wp.y);
-        if (s.x < 5 || s.y < 5 || s.x > canvas.width - 5 || s.y > canvas.height - 5) continue;
+        if (s.x < 5 || s.y < 5 || s.x > _cvW() - 5 || s.y > _cvH() - 5) continue;
         if (hitMatLabel(s.x, s.y) !== MPID) continue;
         const h = _matPathAtWorld(wp);
         if (h && h.id === MPID) labPt = { x: s.x, y: s.y };
@@ -29201,8 +29353,8 @@ async function _geoPickRegressionTest201() {
     lagret.restoreVis = () => { if (appEl) appEl.style.display = vis0.app; if (authEl) authEl.style.display = vis0.auth; try { resizeCanvas(); } catch (e) {} };
     S.view.zoom = 0.5; S.view.panX = 400000; S.view.panY = -1000; S.ui.selectedRoomId = null;
     const rect = canvas.getBoundingClientRect();
-    check('lerretet er synlig for de ekte klikkene', '> 0 px', rect.width > 0 && canvas.width > 0, rect.width + '×' + rect.height);
-    const tilKlient = (wx, wy) => { const s = w2s(wx, wy); return { clientX: rect.left + s.x * rect.width / canvas.width, clientY: rect.top + s.y * rect.height / canvas.height }; };
+    check('lerretet er synlig for de ekte klikkene', '> 0 px', rect.width > 0 && _cvW() > 0, rect.width + '×' + rect.height);
+    const tilKlient = (wx, wy) => { const s = w2s(wx, wy); return { clientX: rect.left + s.x * rect.width / _cvW(), clientY: rect.top + s.y * rect.height / _cvH() }; };
     const ekteKlikk = (wx, wy) => { const c = tilKlient(wx, wy);
       canvas.dispatchEvent(new MouseEvent('mousedown', { ...c, button: 0, bubbles: true }));
       canvas.dispatchEvent(new MouseEvent('mouseup', { ...c, button: 0, bubbles: true })); };
@@ -62988,7 +63140,7 @@ function drawWbwLines() {
 
 // ─── IMPORT OVERLAY ──────────────────────────────────────────
 function drawImportOverlay() {
-  const W=canvas.width, H=canvas.height, m=80;
+  const W=_cvW(), H=_cvH(), m=80;
   ctx.strokeStyle='rgba(200,208,224,0.14)';
   ctx.lineWidth=1.5;
   ctx.setLineDash([8,6]);
@@ -65577,8 +65729,8 @@ function _positionRoomNamePrompt(room, box) {
   const xs = room.points.map(p => p.x), ys = room.points.map(p => p.y);
   const s = w2s(Math.max(...xs), Math.min(...ys));
   const rect = canvas.getBoundingClientRect();
-  const kx = canvas.width  ? rect.width  / canvas.width  : 1;
-  const ky = canvas.height ? rect.height / canvas.height : 1;
+  const kx = _cvW()  ? rect.width  / _cvW()  : 1;
+  const ky = _cvH() ? rect.height / _cvH() : 1;
   let nx = rect.left + s.x * kx + 16;
   let ny = rect.top  + s.y * ky + 16;
   box.style.left = nx + 'px';
@@ -66045,8 +66197,8 @@ function drawBgImage() {
   const bgsToDraw = S.ui?._pdfMode ? _bgsOnActiveFloor() : [..._bgRefsOnActiveFloor(), ..._bgsOnActiveFloor()];
   for (const bg of bgsToDraw) {
     if (!bg.img || bg.visible === false || bg.widthCm <= 0) continue;
-    const sx = (bg.originX - S.view.panX) * sc + canvas.width  / 2;
-    const sy = (bg.originY - S.view.panY) * sc + canvas.height / 2;
+    const sx = (bg.originX - S.view.panX) * sc + _cvW()  / 2;
+    const sy = (bg.originY - S.view.panY) * sc + _cvH() / 2;
     const sw = bg.widthCm  * sc;
     const sh = bg.heightCm * sc;
     ctx.save();
@@ -66335,8 +66487,8 @@ function fitBgToView() {
   const bg = _ctxBg(); if (!bg || !bg.img || bg.widthCm <= 0) return;
   S.view.panX = bg.originX + bg.widthCm / 2;
   S.view.panY = bg.originY + bg.heightCm / 2;
-  const zx = canvas.width  * 0.85 / (bg.widthCm  * BASE_SCALE);
-  const zy = canvas.height * 0.85 / (bg.heightCm * BASE_SCALE);
+  const zx = _cvW()  * 0.85 / (bg.widthCm  * BASE_SCALE);
+  const zy = _cvH() * 0.85 / (bg.heightCm * BASE_SCALE);
   S.view.zoom = Math.max(0.05, Math.min(zx, zy, 8));
   const zb = document.getElementById('zoom-badge'); if (zb) zb.textContent = Math.round(S.view.zoom*100)+'%';
   render();
@@ -66367,9 +66519,9 @@ function _bgGizmoGeom(bg) {
 // usynlig. En fast, alltid-synlig reserve-markering nederst midt på canvas dukker opp NÅR (og kun
 // når) intet av rammens hjørner er innenfor viewporten — den ordinære rammen er fortsatt primær og
 // vises som før når den faktisk er synlig.
-function _bgFallbackBadgePos() { return { x: canvas.width / 2, y: canvas.height - 46 }; }
+function _bgFallbackBadgePos() { return { x: _cvW() / 2, y: _cvH() - 46 }; }
 function _bgGizmoAnyCornerVisible(g) {
-  const inView = p => p.x >= 0 && p.x <= canvas.width && p.y >= 0 && p.y <= canvas.height;
+  const inView = p => p.x >= 0 && p.x <= _cvW() && p.y >= 0 && p.y <= _cvH();
   return g.corners.some(inView) || inView(g.rot);
 }
 // Draw the transform frame + handles for the selected background.
@@ -67104,7 +67256,7 @@ function _installBgImage(img, dataUrl, fileName, meta, ctx) {
     // Bytte, men annen størrelse → ny tegning må kalibreres på nytt. Si fra (ellers ser det ut som
     // et stille feilslag at tegningen plutselig ligger feil i forhold til rommene).
     const sc0 = S.view.zoom * BASE_SCALE;
-    const ratio0 = Math.min(canvas.width * 0.85 / sc0 / img.naturalWidth, canvas.height * 0.85 / sc0 / img.naturalHeight);
+    const ratio0 = Math.min(_cvW() * 0.85 / sc0 / img.naturalWidth, _cvH() * 0.85 / sc0 / img.naturalHeight);
     bg._autoW = img.naturalWidth * ratio0; bg._autoH = img.naturalHeight * ratio0;
     bg.widthCm = bg._autoW; bg.heightCm = bg._autoH;
     bg.originX = 0; bg.originY = -bg.heightCm; bg.opacity = 1.0;
@@ -67114,8 +67266,8 @@ function _installBgImage(img, dataUrl, fileName, meta, ctx) {
   } else if (!sameFile) {
     // New file: auto-fit to canvas for display, but mark as uncalibrated
     const sc = S.view.zoom * BASE_SCALE;
-    const fitW = canvas.width  * 0.85 / sc;
-    const fitH = canvas.height * 0.85 / sc;
+    const fitW = _cvW()  * 0.85 / sc;
+    const fitH = _cvH() * 0.85 / sc;
     const ratio = Math.min(fitW / img.naturalWidth, fitH / img.naturalHeight);
     bg._autoW   = img.naturalWidth  * ratio;   // temp display size
     bg._autoH   = img.naturalHeight * ratio;
@@ -67227,8 +67379,8 @@ function _installBgImageForFloor(img, dataUrl, fileName, meta, floorId, opts) {
     _carryBgTransform(oldBg, bg);
   } else {
     const sc = S.view.zoom * BASE_SCALE;
-    const fitW = canvas.width * 0.85 / sc;
-    const fitH = canvas.height * 0.85 / sc;
+    const fitW = _cvW() * 0.85 / sc;
+    const fitH = _cvH() * 0.85 / sc;
     const ratio = Math.min(fitW / img.naturalWidth, fitH / img.naturalHeight);
     bg._autoW = img.naturalWidth * ratio;
     bg._autoH = img.naturalHeight * ratio;
@@ -69583,7 +69735,7 @@ function fitRoom(id) {
     mny=Math.min(mny,p.y); mxy=Math.max(mxy,p.y);
   }
   const pad=150, ww=mxx-mnx+pad*2, wh=mxy-mny+pad*2;
-  S.view.zoom=Math.max(0.2,Math.min(8,Math.min(canvas.width/(ww*BASE_SCALE),canvas.height/(wh*BASE_SCALE))));
+  S.view.zoom=Math.max(0.2,Math.min(8,Math.min(_cvW()/(ww*BASE_SCALE),_cvH()/(wh*BASE_SCALE))));
   S.view.panX=(mnx+mxx)/2; S.view.panY=(mny+mxy)/2;
   updZoomBadge();
 }
@@ -71435,10 +71587,10 @@ function _hindW2WRegressionTest218() {
     S.rooms = [room]; S.hindrings = []; S.cables = []; S.strips = []; S.mats = []; S.foilFree = [];
     S.snap.a90 = true; S.snap.a45 = false; S.snap.grid = false; S.shiftHeld = false;
     // Hele piksler: musehendelser har heltalls clientX/Y, så 1 cm = 2 px (1 px på små lerret) og rommets origo på en hel piksel
-    const sc = (canvas.width >= 1100 && canvas.height >= 720) ? 2 : 1;
-    S.view.zoom = sc / BASE_SCALE; S.view.panX = 200 + (canvas.width / 2 - Math.round(canvas.width / 2)) / sc; S.view.panY = 150 + (canvas.height / 2 - Math.round(canvas.height / 2)) / sc;
+    const sc = (_cvW() >= 1100 && _cvH() >= 720) ? 2 : 1;
+    S.view.zoom = sc / BASE_SCALE; S.view.panX = 200 + (_cvW() / 2 - Math.round(_cvW() / 2)) / sc; S.view.panY = 150 + (_cvH() / 2 - Math.round(_cvH() / 2)) / sc;
     const click = (x, y) => { const sp = w2s(x, y), r = canvas.getBoundingClientRect();
-      canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: r.left + sp.x * (r.width / canvas.width), clientY: r.top + sp.y * (r.height / canvas.height), button: 0, bubbles: true })); };
+      canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: r.left + sp.x * (r.width / _cvW()), clientY: r.top + sp.y * (r.height / _cvH()), button: 0, bubbles: true })); };
     const start = () => { S.ui.hindringRoomId = 9218; S.ui.hindringType = 'annet'; S.ui.hindringCustomName = 'Pipe'; S.ui.drawMode = 'hindring-w2w'; S.drawing.active = true; S.drawing.points = []; S.drawing.rectStart = null;
       S.drawing.hindringW2W = { startWallIdx: null, startPt: null, endWallIdx: null, endPt: null, phase: 0, pendingSplit: null, hoverSide: null }; alerts = []; };
     const sig = h => h.points.map(p => Math.round(p.x) + ',' + Math.round(p.y)).sort().join(' ');
@@ -71928,11 +72080,11 @@ function startDrawMode(mode, name, floorId) {
     S.drawing.wbw={ started:true, startPoint:{x:_wbwSX,y:0}, walls:[], direction:'right', mouseMode:false };
     _wbwMouseAngleDeg = null;
     // Set initial view: ~20 m wide visible, start point at lower-left of canvas
-    const _sc = canvas.width / (2000 * BASE_SCALE);            // zoom so 2000 cm fills canvas width
+    const _sc = _cvW() / (2000 * BASE_SCALE);            // zoom so 2000 cm fills canvas width
     S.view.zoom = Math.max(0.15, Math.min(1, _sc));
     const _px = S.view.zoom * BASE_SCALE;
-    S.view.panX = _wbwSX + (canvas.width  / 2 - canvas.width  * 0.14) / _px;  // start point ~14% from left
-    S.view.panY =           (canvas.height / 2 - canvas.height * 0.80) / _px;  // start point ~80% from top
+    S.view.panX = _wbwSX + (_cvW()  / 2 - _cvW()  * 0.14) / _px;  // start point ~14% from left
+    S.view.panY =           (_cvH() / 2 - _cvH() * 0.80) / _px;  // start point ~80% from top
     updZoomBadge();
     document.getElementById('wbw-panel').style.display='block';
     updWbw();
@@ -72629,7 +72781,7 @@ function fitWbw() {
   let mnx=Infinity,mxx=-Infinity,mny=Infinity,mxy=-Infinity;
   for(const p of allPts){mnx=Math.min(mnx,p.x);mxx=Math.max(mxx,p.x);mny=Math.min(mny,p.y);mxy=Math.max(mxy,p.y);}
   const pad=200,ww=Math.max(1,mxx-mnx)+pad*2,wh=Math.max(1,mxy-mny)+pad*2;
-  S.view.zoom=Math.max(0.2,Math.min(8,Math.min(canvas.width/(ww*BASE_SCALE),canvas.height/(wh*BASE_SCALE))));
+  S.view.zoom=Math.max(0.2,Math.min(8,Math.min(_cvW()/(ww*BASE_SCALE),_cvH()/(wh*BASE_SCALE))));
   S.view.panX=(mnx+mxx)/2; S.view.panY=(mny+mxy)/2;
   updZoomBadge();
 }
@@ -78273,7 +78425,7 @@ document.addEventListener('keyup', e=>{
 // matches the wheel/trackpad handler's zoom-toward-cursor behavior.
 function _zoomBy(factor) {
   const nz = Math.max(_minZoom(), Math.min(8, S.view.zoom * factor));
-  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const cx = _cvW() / 2, cy = _cvH() / 2;
   const before = s2w(cx, cy);
   S.view.zoom = nz;
   const after = s2w(cx, cy);
@@ -78323,7 +78475,7 @@ function fitAll() {
   if (!hasContent) { S.view.zoom=1;S.view.panX=0;S.view.panY=0;updZoomBadge();return; }
   const pad=150, ww=mxx-mnx+pad*2, wh=mxy-mny+pad*2;
   // 214: tak: et stort bygg skal også fylle skjermen — samme gulv som kartet tillater (rom/trapp: 0,2 som før).
-  S.view.zoom=Math.max(mod==='roof'?Math.min(0.2,_minZoom()):0.2,Math.min(8,Math.min(canvas.width/(ww*BASE_SCALE),canvas.height/(wh*BASE_SCALE))));
+  S.view.zoom=Math.max(mod==='roof'?Math.min(0.2,_minZoom()):0.2,Math.min(8,Math.min(_cvW()/(ww*BASE_SCALE),_cvH()/(wh*BASE_SCALE))));
   S.view.panX=(mnx+mxx)/2; S.view.panY=(mny+mxy)/2;
   updZoomBadge();
 }
@@ -78346,7 +78498,7 @@ function _minZoom() {
 function _fitViewToBg(bg) {
   if (!bg || !(bg.widthCm > 0) || !(bg.heightCm > 0) || !canvas) return;
   const pad = 150, ww = bg.widthCm + pad * 2, wh = bg.heightCm + pad * 2;
-  S.view.zoom = Math.max(_bgIsGeo(bg) ? GEO_MIN_ZOOM : 0.2, Math.min(8, Math.min(canvas.width / (ww * BASE_SCALE), canvas.height / (wh * BASE_SCALE))));
+  S.view.zoom = Math.max(_bgIsGeo(bg) ? GEO_MIN_ZOOM : 0.2, Math.min(8, Math.min(_cvW() / (ww * BASE_SCALE), _cvH() / (wh * BASE_SCALE))));
   S.view.panX = bg.originX + bg.widthCm / 2;
   S.view.panY = bg.originY + bg.heightCm / 2;
   updZoomBadge();
@@ -79415,8 +79567,8 @@ function _ctxBarItems() {
 function setInitialView() {
   // Place grid origin (0,0) near bottom-left of viewport
   S.view.zoom = 1;
-  S.view.panX = (canvas.width/2 - 80) / BASE_SCALE;
-  S.view.panY = (80 - canvas.height/2) / BASE_SCALE;
+  S.view.panX = (_cvW()/2 - 80) / BASE_SCALE;
+  S.view.panY = (80 - _cvH()/2) / BASE_SCALE;
   updZoomBadge();
 }
 // startProject() removed: project creation is now inline on dashboard via _createProjectInline()
@@ -81754,7 +81906,7 @@ function _tileLoadP(l, z, r, c) {
 /** Tegner flisene som dekker lerretet. Kalles fra drawBgImage innenfor bakgrunnens globalAlpha. */
 function _tilesDraw(bg) {
   const g = bg.geo, layer = (g.tiles && g.tiles.layer) || 'topo';
-  const sc = S.view.zoom * BASE_SCALE, W = canvas.width, H = canvas.height;
+  const sc = S.view.zoom * BASE_SCALE, W = _cvW(), H = _cvH();
   const pdf = !!(S.ui && S.ui._pdfMode);
   if (!pdf) _tileFrame++;
   let z = _tilePickLevel(0.01 / sc);
@@ -81803,11 +81955,11 @@ function _tilesDraw(bg) {
 function _tilesDrawCredit(bg) {
   const txt = (bg.geo && bg.geo.attribution) || TILE_ATTRIBUTION;
   const pdf = !!(S.ui && S.ui._pdfMode);
-  const fs = pdf ? Math.max(14, Math.round(canvas.width / 70)) : 11;
+  const fs = pdf ? Math.max(14, Math.round(_cvW() / 70)) : 11;
   ctx.save();
   ctx.font = fs + 'px sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
   const w = ctx.measureText(txt).width, pad = Math.round(fs * 0.35);
-  const x = canvas.width - pad, y = canvas.height - pad;
+  const x = _cvW() - pad, y = _cvH() - pad;
   ctx.fillStyle = 'rgba(255,255,255,0.78)'; ctx.fillRect(x - w - pad, y - fs - pad, w + pad * 2, fs + pad * 2);
   ctx.fillStyle = '#222'; ctx.fillText(txt, x, y);
   ctx.restore();
@@ -83556,7 +83708,7 @@ function _takBrushDrawTag(fid) {
   ctx.save();
   ctx.font = '700 12px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.setLineDash([]);
   const w = ctx.measureText(txt).width + 12, h = 20;
-  const bx = x + 14 + w > canvas.width ? x - 14 - w : x + 14, by = y + 14 + h > canvas.height ? y - 14 - h : y + 14;
+  const bx = x + 14 + w > _cvW() ? x - 14 - w : x + 14, by = y + 14 + h > _cvH() ? y - 14 - h : y + 14;
   ctx.fillStyle = st.color; ctx.beginPath(); ctx.rect(bx, by, w, h); ctx.fill();
   ctx.fillStyle = k === 'ridge' || k === 'rake' ? '#111827' : '#fff'; ctx.fillText(txt, bx + 6, by + h / 2);
   ctx.restore();
@@ -85679,8 +85831,8 @@ function _takDrawSectionInset() {
   _takSectionBox = null;
   if (S.ui && S.ui._pdfMode) return;
   const M = _takSectionActive(); if (!M) return;
-  const w = Math.max(420, Math.min(860, canvas.width * 0.62)), h = Math.max(300, Math.min(w * 0.66, canvas.height - 32));
-  const box = { x: canvas.width - w - 16, y: canvas.height - h - 16, w, h };   // nede til høyre: verktøylinja står øverst i midten
+  const w = Math.max(420, Math.min(860, _cvW() * 0.62)), h = Math.max(300, Math.min(w * 0.66, _cvH() - 32));
+  const box = { x: _cvW() - w - 16, y: _cvH() - h - 16, w, h };   // nede til høyre: verktøylinja står øverst i midten
   ctx.save();
   ctx.shadowColor = 'rgba(15,23,42,0.25)'; ctx.shadowBlur = 14; ctx.fillStyle = '#ffffff';
   ctx.fillRect(box.x, box.y, box.w, box.h); ctx.shadowBlur = 0;
@@ -85745,10 +85897,10 @@ function _takSectionToImage(fid, on, opts) {
   opts = opts || {};
   const M = _takSectionModel(_takOf(fid), on); if (!M) return null;
   const outW = Math.round(opts.outW || 2600), outH = Math.round(outW * (opts.aspect || 0.62));
-  const saved = { w: canvas.width, h: canvas.height };
+  const saved = { w: canvas.width, h: canvas.height, dpr: _cvDpr };
   let url = null, info = null;
   try {
-    canvas.width = outW; canvas.height = outH;
+    canvas.width = outW; canvas.height = outH; _cvDpr = 1;   // 223: PDF-bildet tegnes 1:1, uten skjermens dpr
     ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, outW, outH);
     info = _takSectionPaint(ctx, M, { x: 0, y: 0, w: outW, h: outH }, { pdf: true, noTitle: !!opts.noTitle });
@@ -85757,7 +85909,7 @@ function _takSectionToImage(fid, on, opts) {
     const f = flat.getContext('2d'); f.fillStyle = '#ffffff'; f.fillRect(0, 0, outW, outH); f.drawImage(canvas, 0, 0);
     url = flat.toDataURL('image/jpeg', opts.quality || 0.9);
   } finally {
-    canvas.width = saved.w; canvas.height = saved.h;
+    _cvDpr = saved.dpr; canvas.width = saved.w; canvas.height = saved.h;
     if (typeof markDirty === 'function') markDirty();
     if (typeof render === 'function') render();
   }
@@ -86657,7 +86809,7 @@ function _tak3dDraStart(e) {
 /** Står hele omrisset innenfor lerretet? */
 function _tak3dOmrissSynlig(fid) {
   const W = (_takSurface(fid).footprint || {}).world || [];
-  return W.every(p => { const q = w2s(p.x, p.y); return q.x >= 0 && q.y >= 0 && q.x <= canvas.width && q.y <= canvas.height; });
+  return W.every(p => { const q = w2s(p.x, p.y); return q.x >= 0 && q.y >= 0 && q.x <= _cvW() && q.y <= _cvH(); });
 }
 function _tak3dToggle() { return _tak3d ? _tak3dClose() : _tak3dOpen(); }
 function _tak3dOpen() {
@@ -88355,7 +88507,7 @@ async function _takRegressionTest210() {
     // ── C. Klikk på nedløpet og «Vis snitt» ──
     _takFeatSel = null; fitAll(); render(); renderSidebar();
     const cr = canvas.getBoundingClientRect();
-    const sx = q => cr.left + q.x * cr.width / canvas.width, sy = q => cr.top + q.y * cr.height / canvas.height;
+    const sx = q => cr.left + q.x * cr.width / _cvW(), sy = q => cr.top + q.y * cr.height / _cvH();
     const mus = (type, q) => canvas.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: sx(q), clientY: sy(q) }));
     const klikkS = q => { mus('mousemove', q); mus('mousedown', q); mus('mouseup', q); mus('click', q); };
     klikkS(_takFeatScreenPt(T(), _takFeat_(T(), 'n3')));
@@ -88365,7 +88517,7 @@ async function _takRegressionTest210() {
     vis && vis.click();
     check('«Vis snitt» på nedløpet åpner snittet ved n3', 'n3', _takSection && _takSection.on.type === 'DOWNSPOUT' && _takSection.on.id === 'n3' && _takSectionBox, JSON.stringify(_takSection));
     const B = _takSectionBox;
-    const px = B ? ctx.getImageData(B.x, B.y, B.w, B.h).data : [];
+    const px = B ? ctx.getImageData(B.x * _cvDpr, B.y * _cvDpr, B.w * _cvDpr, B.h * _cvDpr).data : [];
     let mørk = 0; for (let i = 0; i < px.length; i += 4) if (px[i] + px[i + 1] + px[i + 2] < 450) mørk++;
     check('Innfeltet er tegnet på hovedlerretet (mørke piksler i boksen)', '> 2 000', mørk > 2000, mørk);
     check('Lista i panelet: tre steder, n3 markert', '3 · n3', document.querySelectorAll('.tak-section-pick').length === 3 && (document.querySelector('.tak-section-pick.on') || {}).dataset?.key === 'n3', document.querySelectorAll('.tak-section-pick').length);
@@ -88726,7 +88878,7 @@ async function _takRegressionTest214() {
   const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly,
                  part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId };
   const tast = key => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
-  const klikkV = (x, y) => { const q = w2s(x, y), r = canvas.getBoundingClientRect(), k = r.width / canvas.width;
+  const klikkV = (x, y) => { const q = w2s(x, y), r = canvas.getBoundingClientRect(), k = r.width / _cvW();
     const c = { clientX: r.left + q.x * k, clientY: r.top + q.y * k, button: 0, bubbles: true, cancelable: true };
     canvas.dispatchEvent(new MouseEvent('mousemove', c)); canvas.dispatchEvent(new MouseEvent('mousedown', c)); canvas.dispatchEvent(new MouseEvent('mouseup', c)); canvas.dispatchEvent(new MouseEvent('click', c)); };
   const panel = () => document.getElementById('sidebar') ? _takWizardHtml(S.ui.activeFloorId) : '';
@@ -88846,7 +88998,7 @@ async function _takRegressionTest214() {
     check('F: `bg` er urørt bortsett fra synligheten', 'likt', (() => { const a = JSON.parse(JSON.stringify(_serializeBgFields(S.bgs[fid]))), b = JSON.parse(bgFør); a.visible = b.visible; return JSON.stringify(a) === JSON.stringify(b); })(), '');
     check('F: georeferansen står', 'geo', _bgIsGeo(S.bgs[fid]), '');
     const a0 = w2s(0, 0), b0 = w2s(2500, 1000);
-    check('F: bygget fyller skjermen', 'over 60 % av bredden, innenfor', b0.x - a0.x > canvas.width * 0.6 && a0.x >= 0 && b0.x <= canvas.width, `${Math.round(a0.x)}–${Math.round(b0.x)} av ${canvas.width}`);
+    check('F: bygget fyller skjermen', 'over 60 % av bredden, innenfor', b0.x - a0.x > _cvW() * 0.6 && a0.x >= 0 && b0.x <= _cvW(), `${Math.round(a0.x)}–${Math.round(b0.x)} av ${_cvW()}`);
     check('F: steget er 3, og verktøylinja med det', 'Steg 3', _takWizardStep(fid) === 3 && bar().includes('Steg 3 av 4') && bar().includes('+ Rennestrekk'), '');
     check('F: steg 2 er ferdig', '✓', _takStepFacts(fid).done[2], '');
     check('F: «Vis kart» står i panelet', 'Vis kart', panel().includes('Vis kart') && panel().includes('tak-vis-kart'), '');
@@ -89215,7 +89367,7 @@ async function _takRegressionTest215() {
                  part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId };
   const eq = (a, b, tol) => a != null && b != null && Math.abs(a - b) < (tol || 1e-9);
   const orig = _takLabel;
-  const klikkV = (x, y) => { const q = w2s(x, y), r = canvas.getBoundingClientRect(), k = r.width / canvas.width;
+  const klikkV = (x, y) => { const q = w2s(x, y), r = canvas.getBoundingClientRect(), k = r.width / _cvW();
     const c = { clientX: r.left + q.x * k, clientY: r.top + q.y * k, button: 0, bubbles: true, cancelable: true };
     canvas.dispatchEvent(new MouseEvent('mousemove', c)); canvas.dispatchEvent(new MouseEvent('mousedown', c)); canvas.dispatchEvent(new MouseEvent('mouseup', c)); };
   const nyTak = (P, type) => { _resetProjectState(); addPart('roof'); const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
@@ -89416,7 +89568,7 @@ async function _takRegressionTest218() {
     const part = S.project.parts[0], fid = S.floors.find(f => f.partId === part.id).id;
     S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null; S.ui.toolMode = 'arrow';
     const nytt = (pts, rt) => { _takBrushClear(); S.tak = { [fid]: _takManual(pts) }; _takSetRoofType(fid, rt || 'pitched'); _takStepOpen[fid] = 3; fitAll(); render(); return S.tak[fid]; };
-    const mus = (type, w, o) => { const s = w2s(w.x, w.y), r = canvas.getBoundingClientRect(), k = r.width / canvas.width;
+    const mus = (type, w, o) => { const s = w2s(w.x, w.y), r = canvas.getBoundingClientRect(), k = r.width / _cvW();
       canvas.dispatchEvent(new MouseEvent(type, { clientX: r.left + s.x * k, clientY: r.top + s.y * k, bubbles: true, cancelable: true, button: 0, buttons: type === 'mousemove' || type === 'mousedown' ? 1 : 0, ...(o || {}) })); };
     const klikk = (w, o) => { mus('mousedown', w, o); mus('mouseup', w, o); mus('click', w, o); };
     const dra = pts => { mus('mousedown', pts[0]); for (const p of pts.slice(1)) mus('mousemove', p); mus('mouseup', pts[pts.length - 1]); mus('click', pts[pts.length - 1]); };
@@ -89625,7 +89777,7 @@ async function _takRegressionTest220() {
     S.ui.activePartId = part.id; S.ui.activeFloorId = fid; S.ui.drawMode = null; S.ui.toolMode = 'arrow';
     const nytt = (pts, rt) => { _takRidgeSel = null; if (_takFeat) _takFeatStop(); S.tak = { [fid]: _takManual(pts) }; _takSetRoofType(fid, rt || 'pitched'); _takStepOpen[fid] = 3; fitAll(); render(); return S.tak[fid]; };
     const nyL = () => { const t = nytt(L); _takSetHeight(fid, 'eave_m', '5,4'); _takSetHeight(fid, 'ridge_m', '8,2'); for (const [id, ty] of Object.entries(typer)) _takSetEdgeType(fid, id, ty); return t; };
-    const mus = (type, w, o, px) => { const s = w2s(w.x, w.y), r = canvas.getBoundingClientRect(), k = r.width / canvas.width;
+    const mus = (type, w, o, px) => { const s = w2s(w.x, w.y), r = canvas.getBoundingClientRect(), k = r.width / _cvW();
       canvas.dispatchEvent(new MouseEvent(type, { clientX: r.left + (s.x + (px ? px[0] : 0)) * k, clientY: r.top + (s.y + (px ? px[1] : 0)) * k, bubbles: true, cancelable: true, button: 0, buttons: type === 'mousemove' || type === 'mousedown' ? 1 : 0, ...(o || {}) })); };
     const klikk = (w, px) => { mus('mousedown', w, null, px); mus('mouseup', w, null, px); mus('click', w, null, px); };
     const kant = (t, id) => t.edges.find(e => e.id === id);
@@ -89664,7 +89816,7 @@ async function _takRegressionTest220() {
     // ── Koblingen vises i tegningen ──
     t = mer();
     const halo = { k1: { x: 700, y: 0 }, k3: { x: 1150, y: 700 }, k4: { x: 900, y: 950 }, k8: { x: 0, y: 450 }, k2: { x: 1400, y: 150 } };
-    const px6 = (id, n) => { render(); const s = w2s(halo[id].x, halo[id].y), d = ctx.getImageData(Math.round(s.x + n[0] * 6), Math.round(s.y + n[1] * 6), 1, 1).data; return d[3] > 100 && d[0] > 180 && d[1] > 130 && d[2] < 100; };   // mønets farge #eab308, halvgjennomsiktig
+    const px6 = (id, n) => { render(); const s = w2s(halo[id].x, halo[id].y), d = ctx.getImageData(Math.round((s.x + n[0] * 6) * _cvDpr), Math.round((s.y + n[1] * 6) * _cvDpr), 1, 1).data; return d[3] > 100 && d[0] > 180 && d[1] > 130 && d[2] < 100; };   // mønets farge #eab308, halvgjennomsiktig
     _takRidgeSelect(fid, 'm1');
     check('Vises: m1 valgt → k1 og k3 lyser', 'gul', px6('k1', [0, 1]) && px6('k3', [0, -1]), '');
     check('Vises: m1 valgt → k4 og k8 lyser ikke', 'ikke gul', !px6('k4', [-1, 0]) && !px6('k8', [1, 0]), '');
@@ -95507,7 +95659,7 @@ function _pdfPreviewRegressionTest() {
     const captureD = fn => {
       const texts = [], boxes = []; const oT = ctx.fillText, oR = ctx.fillRect;
       const toW = (x, y) => { const m = ctx.getTransform(); const sx = m.a * x + m.c * y + m.e, sy = m.b * x + m.d * y + m.f; const sc = S.view.zoom * BASE_SCALE;
-        return { x: Math.round(((sx - canvas.width / 2) / sc + S.view.panX) * 100) / 100, y: Math.round(((sy - canvas.height / 2) / sc + S.view.panY) * 100) / 100 }; };
+        return { x: Math.round(((sx - _cvW() / 2) / sc + S.view.panX) * 100) / 100, y: Math.round(((sy - _cvH() / 2) / sc + S.view.panY) * 100) / 100 }; };
       ctx.fillText = function (s, x, y, ...r) { if (S.ui._pdfMode) { const w = toW(x, y); texts.push(`${s}@${w.x},${w.y}`); } return oT.call(this, s, x, y, ...r); };
       // 226: kjede-/veggmålboksene er 14 px på skjermen, men 1,4 × målskriften i PDF (_dimPdfStyle).
       const boksH = () => { const P = _dimPdfStyle(); return P ? P.fontPx * 1.4 : 14; };
@@ -98652,7 +98804,7 @@ function _renderRoomToImage(room, opts) {
     cableDimSnap: room.cableDimSnap,
     matDimSnap: room.matDimSnap,
     canvasW: canvas.width,
-    canvasH: canvas.height,
+    canvasH: canvas.height, dpr: _cvDpr,   // 223
     pdfScaleMmPerCm: S.ui?._pdfScaleMmPerCm,   // 051
     pdfNumberMode: S.ui?._pdfNumberMode, pdfNumberRoomId: S.ui?._pdfNumberRoomId,   // 196
   };
@@ -98683,11 +98835,12 @@ function _renderRoomToImage(room, opts) {
   // Resize the live canvas to the output resolution (restored afterwards).
   canvas.width = outW;
   canvas.height = outH;
+  _cvDpr = 1;   // 223: PDF-bildet tegnes 1:1 i outW × outH — aldri skjermens dpr (ellers dobbelt så stort / i ett hjørne)
   // Zoom so the world box maps exactly onto the canvas: sc px per world-cm.
   const scOut = outW / worldW;
   S.view.zoom = scOut / BASE_SCALE;
   // panX/panY are WORLD coords (cm) of the point that maps to canvas
-  // center — see w2s(): (wx - panX) * sc + canvas.width/2. So pan to the
+  // center — see w2s(): (wx - panX) * sc + _cvW()/2. So pan to the
   // room's centroid to center the room on canvas.
   S.view.panX = pv ? pv.cx : (rMinX + rMaxX) / 2;   // 155: lagret senter, ellers auto
   S.view.panY = pv ? pv.cy : (rMinY + rMaxY) / 2;
@@ -98790,6 +98943,7 @@ function _renderRoomToImage(room, opts) {
   // on-screen view is untouched.
   canvas.width = saved.canvasW;
   canvas.height = saved.canvasH;
+  _cvDpr = saved.dpr;   // 223
   S.view.zoom = saved.zoom;
   S.view.panX = saved.panX;
   S.view.panY = saved.panY;
@@ -98916,7 +99070,7 @@ function _renderFloorToImage(floor, opts) {
     selectedDimId: S.ui?.selectedDimId, selectedBg: S.ui?.selectedBg,
     showGrid: S.ui?.showGrid, pdfMode: S.ui?._pdfMode, pdfOverview: S.ui?._pdfOverview, pdfMuted: S.ui?._pdfMuted,
     pdfScaleMmPerCm: S.ui?._pdfScaleMmPerCm, theme: S.ui?.theme,
-    canvasW: canvas.width, canvasH: canvas.height,
+    canvasW: canvas.width, canvasH: canvas.height, dpr: _cvDpr,   // 223
   };
   const dpi = opts.dpi || 300;
   const targetWmm = opts.targetWidthMm || 180;
@@ -98927,7 +99081,7 @@ function _renderFloorToImage(floor, opts) {
   const outH = Math.max(1, Math.round(outW * box.aspect));
   try {
     canvas.width = outW;
-    canvas.height = outH;
+    canvas.height = outH; _cvDpr = 1;   // 223: 1:1 som romsidene
     S.view.zoom = (outW / box.worldW) / BASE_SCALE;
     S.view.panX = box.cx;   // 158: lagret senter (floor.pdfView), ellers bbox-midten — fra _pdfFloorBox
     S.view.panY = box.cy;
@@ -98972,7 +99126,7 @@ function _renderFloorToImage(floor, opts) {
       aspect: box.aspect, landscape: box.landscape, view, labels };
   } finally {
     canvas.width = saved.canvasW;
-    canvas.height = saved.canvasH;
+    canvas.height = saved.canvasH; _cvDpr = saved.dpr;   // 223
     S.view.zoom = saved.zoom; S.view.panX = saved.panX; S.view.panY = saved.panY;
     if (S.ui) {
       if (saved.activePartId !== undefined) S.ui.activePartId = saved.activePartId;
