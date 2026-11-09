@@ -4,6 +4,12 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 220 — Prosjektstatus: ny status Grossist (kun prosjektering for grossist, ingen pris fra oss) (09.11.2026, `main`, ikke pushet, **SQL ikke kjørt**)
+
+Kenneth 09.11.2026: «et nytt valg som heter "Grossist" … prosjekter hvor vi kun tegner/prosjekterer for grossistene. De gir pris til elektrikerne selv.» Ny salgsstatus `grossist` («Grossist», lilla `#a855f7`) sist i `SALES_STATUSES`; kan velges i chipen på raden, i masseendringen og i kundekortet, filtreres på (nedtrekket: etter Tapt) og vises som chip. `_filterProjectsList` leser nå statuslista i stedet for en egen kopi. Statusen lagres i Supabase-kolonnene `romtegner_projects.sales_status` / `project_org_status.sales_status`, som begge har en CHECK på de fire gamle verdiene → ny **additiv** migrasjon `supabase-migration-grossist-220.sql` (slår opp begrensningen i `pg_constraint`, legger bare til verdien) — **må kjøres i SQL Editor før Grossist kan lagres**; før det avviser databasen verdien, og `_plStatusErrText` sier nå hvilken fil som må kjøres. Ingen eksisterende status endret; priser og tellere urørt (spørsmål). Feltappen legger Grossist i «Prosjektert» uten feil. Ny `_grossistRegressionTest220` 30/30. Se `docs/220-grossist/RAPPORT.md`.
+
+---
+
 ## 219 — Hindring: enklere meny — Vegg til vegg, Polygon og Mål B×H, uten ferdige navngitte valg (09.11.2026, `main`, ikke pushet)
 
 Kenneth 09.11.2026: «Vi trenger ikke så mange valg her. Ta bort alle navnene.» Menyen «Sett inn hindring» hadde fem typekort (Kjøkkenøy, Innebygd skap, Pipe, Vegg / søyle, Annet) og fire knapper i bunnlinja. Nå: navnefelt (valgfritt, gjelder alle), to store knapper **Vegg til vegg** og **Polygon** i full bredde, og **Mål** med B og H i cm og én knapp **Sett inn** (Enter i feltet gjør det samme); bunnlinja har bare Avbryt. Tomt/0/minus/bokstaver → feltet markeres rødt, ingenting settes inn. Tegneverktøyene er urørt; det skjulte fjerde valget (tomme felt startet rektangel-tegning) er ikke lenger nåbart fra menyen. `label` er nå det brukeren skrev — tomt felt gir `''` og ingen tekst på tegningen (før: «Annet»); `_hindDisplayName(h)` samler de seks visningsstedene, gamle prosjekter med navn vises som før, PDF/panel/advarsel bruker reserveordet «Hindring». Datamodellen uendret (`type` alltid `'annet'` for nye). Typen styrte ingenting i utregningen (målt). Ny `_hindMenuRegressionTest219` 23/23; `_dialogRegressionTest216` 197/197. Se `docs/219-hindring/RAPPORT.md`.

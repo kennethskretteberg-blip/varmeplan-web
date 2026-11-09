@@ -1,0 +1,138 @@
+[
+ {
+  "name": "A1 «Grossist» finnes og står sist",
+  "ok": true
+ },
+ {
+  "name": "A2 fargen er egen (ingen annen salgs-/leveransestatus bruker den)",
+  "ok": true,
+  "info": "#a855f7"
+ },
+ {
+  "name": "A3 de fire gamle statusene er uendret (id, navn, farge, rekkefølge)",
+  "ok": true
+ },
+ {
+  "name": "B1 leverandørlista har Grossist rett etter Tapt, før Ferdige leveranser",
+  "ok": true,
+  "info": "active,,under_arbeid,tilbud_sendt,vunnet,tapt,grossist,ferdig,trash"
+ },
+ {
+  "name": "B2 Visma-varianten beholder Grossist",
+  "ok": true
+ },
+ {
+  "name": "B3 selve <select> har valget «Grossist» etter synkronisering",
+  "ok": true
+ },
+ {
+  "name": "B4 installatør-nedtrekket (faner) er uendret",
+  "ok": true
+ },
+ {
+  "name": "C1 fetch leser grossist fra kolonnen",
+  "ok": true
+ },
+ {
+  "name": "C2 filter «Grossist» viser bare grossist-prosjektene",
+  "ok": true,
+  "info": "g1"
+ },
+ {
+  "name": "C3 «Aktive» tar Grossist med (ikke tapt, ikke ferdig)",
+  "ok": true,
+  "info": "g1,t1,u1,v1"
+ },
+ {
+  "name": "C4 «Alle statuser» tar Grossist med",
+  "ok": true
+ },
+ {
+  "name": "C5 de andre statusfiltrene viser ikke Grossist",
+  "ok": true
+ },
+ {
+  "name": "C6 installatør-fane: Grossist ligger i Prosjektert (ikke Til montering/Ferdig, ikke skjult som tapt)",
+  "ok": true
+ },
+ {
+  "name": "C7 kundekortets filter (samme hjelper) — Grossist i statuslista",
+  "ok": true
+ },
+ {
+  "name": "D1 raden har chip/select med «Grossist» valgt",
+  "ok": true
+ },
+ {
+  "name": "D2 chipen har Grossist-fargen",
+  "ok": true,
+  "info": "rgb(168, 85, 247)"
+ },
+ {
+  "name": "D3 alle fem statusene kan velges i chipen",
+  "ok": true
+ },
+ {
+  "name": "D4 kundekortets prosjektrad viser «Grossist» med fargen",
+  "ok": true
+ },
+ {
+  "name": "D5 dashbord-tellerne tåler Grossist (teller bare i Totalt — spm 3)",
+  "ok": true
+ },
+ {
+  "name": "E1 Under arbeid → Grossist lagres (sales_status, delivery null, lost_reason null, status_changed_at)",
+  "ok": true,
+  "info": {
+   "ok": true
+  }
+ },
+ {
+  "name": "E2 Grossist → Tilbud sendt via chipen",
+  "ok": true,
+  "info": "tilbud_sendt"
+ },
+ {
+  "name": "E3 … og tilbake til Grossist; den ekte nummerdialogen (Visma) åpner ikke for Grossist",
+  "ok": true,
+  "info": "grossist"
+ },
+ {
+  "name": "E4 Tapt → Grossist rydder tapt-årsaken",
+  "ok": true
+ },
+ {
+  "name": "E5 masseendring til Grossist",
+  "ok": true,
+  "info": "Status endret til Grossist for 2 prosjekt(er)"
+ },
+ {
+  "name": "E6 priset PDF (betinget fra under_arbeid) flytter IKKE et Grossist-prosjekt til Tilbud sendt",
+  "ok": true,
+  "info": {
+   "ok": false,
+   "reason": "cond-not-met"
+  }
+ },
+ {
+  "name": "E7 Grossist ber ikke om tilbudsnr./ordrenr. og mangler ingen",
+  "ok": true
+ },
+ {
+  "name": "F1 avvist av CHECK: raden er uendret",
+  "ok": true
+ },
+ {
+  "name": "F2 … og meldingen sier at migrasjonen må kjøres",
+  "ok": true,
+  "info": "Kunne ikke lagre status — databasen kjenner ikke denne statusen ennå (kjør supabase-migration-grossist-220.sql)."
+ },
+ {
+  "name": "F3 … ingen Angre-oppføring står igjen",
+  "ok": true
+ },
+ {
+  "name": "F4 de gamle statusene lagres fortsatt uten migrasjonen",
+  "ok": true
+ }
+]

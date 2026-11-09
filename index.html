@@ -1819,6 +1819,7 @@ body.kunde-maal #minimap-widget{display:none !important}
         <option value="tilbud_sendt">Tilbud sendt</option>
         <option value="vunnet">Vunnet</option>
         <option value="tapt">Tapt</option>
+        <option value="grossist">Grossist</option>
         <option value="ferdig">Ferdige leveranser</option>
         <option value="trash">Papirkurv</option>
       </select>
@@ -3664,6 +3665,12 @@ const SALES_STATUSES = [
   { id:'tilbud_sendt', label:'Tilbud sendt', color:'#3b82f6' },
   { id:'vunnet',       label:'Vunnet',       color:'#22c55e' },
   { id:'tapt',         label:'Tapt',         color:'#ef4444' },
+  // 220 (Kenneth 09.11.2026): «Grossist» — vi tegner/prosjekterer for grossisten, som selv gir pris til
+  // elektrikeren. Ingen pris fra oss. Står sist (spm 1 i docs/220-grossist/SPØRSMÅL.md). Lilla, så den
+  // skiller seg fra grå/blå/grønn/rød over. Databasen må kjenne verdien: supabase-migration-grossist-220.sql
+  // (CHECK på romtegner_projects.sales_status og project_org_status.sales_status) — ellers avvises lagringen
+  // og _plStatusErrText sier fra. Alle filtre leser SALES_STATUSES, så én rad her er nok i JS.
+  { id:'grossist',     label:'Grossist',     color:'#a855f7' },
 ];
 // Akse B: leveranse (kun aktiv nar sales_status='vunnet').
 const DELIVERY_STATUSES = [
@@ -111925,7 +111932,9 @@ function _filterProjectsList(projects, f = {}) {
     out = out.filter(p => p._deletedAt);
   } else {
     out = out.filter(p => !p._deletedAt);
-    const SALES = ['under_arbeid','tilbud_sendt','vunnet','tapt'];
+    // 220: lest fra SALES_STATUSES, ikke en egen kopi — en ny status (Grossist) skal kunne filtreres
+    // på uten at to lister må holdes i takt.
+    const SALES = SALES_STATUSES.map(s => s.id);
     if (status === 'active') {
       out = out.filter(p => {
         const ss = p._salesStatus || 'under_arbeid';
@@ -112527,7 +112536,7 @@ const _PL_STAGES = [
 // Statusnedtrekket: for installatør erstatter fanene «Aktive» (verdien 'stage' = «følg fanen»);
 // «Alle statuser», «Vis tapte» og Papirkurv står igjen. Leverandør: dagens liste, uendret.
 const _PL_STATUS_OPTS_SUPPLIER = [['active','Aktive'],['','Alle statuser'],['under_arbeid','Under arbeid'],
-  ['tilbud_sendt','Tilbud sendt'],['vunnet','Vunnet'],['tapt','Tapt'],['ferdig','Ferdige leveranser'],['trash','Papirkurv']];
+  ['tilbud_sendt','Tilbud sendt'],['vunnet','Vunnet'],['tapt','Tapt'],['grossist','Grossist'],['ferdig','Ferdige leveranser'],['trash','Papirkurv']];
 const _PL_STATUS_OPTS_STAGES = [['stage','Etter fane'],['','Alle statuser'],['tapt','Vis tapte'],['trash','Papirkurv']];
 // 199 (spm 10): to oppfølgingsvalg, BARE for Visma-bedrifter (og bare når kolonnene finnes).
 // Leverandør: hvert valg står rett under statusen det hører til. Installatør: foran Papirkurv.
@@ -112647,6 +112656,10 @@ async function _plUndoStatus(projectId) {
 function _plStatusErrText(r) {
   if (r && r.reason === 'no-table') return 'Kunne ikke lagre status på delt prosjekt — databasen er ikke oppdatert ennå (171).';
   if (r && r.reason === 'no-permission') return 'Kunne ikke endre status — du har ikke tilgang.';
+  // 220: CHECK-begrensningen på sales_status kjenner ikke verdien (migrasjonen for Grossist er ikke kjørt).
+  // Postgres: «new row for relation "…" violates check constraint "…sales…"». Si hva som mangler, ikke bare «feil».
+  if (r && r.reason === 'error' && /violates check constraint/i.test(r.message || '') && /sales/i.test(r.message || ''))
+    return 'Kunne ikke lagre status — databasen kjenner ikke denne statusen ennå (kjør supabase-migration-grossist-220.sql).';
   return 'Kunne ikke endre status.';
 }
 
@@ -113585,7 +113598,8 @@ async function _vismaNoRegressionTest198() {
     const verdier = o => o.map(x => x[0]).join(',');
     t('K8 ingen filtervalg uten Visma', !/uten_/.test(verdier(_plStatusOpts('supplier', false))) && !/uten_/.test(verdier(_plStatusOpts('stages', false))));
     t('K9 Visma-bedrift: valgene står under statusen de hører til (installatør: foran Papirkurv)',
-      verdier(_plStatusOpts('supplier', true)) === 'active,,under_arbeid,tilbud_sendt,uten_tilbudsnr,vunnet,uten_ordrenr,tapt,ferdig,trash'
+      // 220: «grossist» etter tapt (ny salgsstatus, ingen Visma-oppfølging).
+      verdier(_plStatusOpts('supplier', true)) === 'active,,under_arbeid,tilbud_sendt,uten_tilbudsnr,vunnet,uten_ordrenr,tapt,grossist,ferdig,trash'
       && verdier(_plStatusOpts('stages', true)) === 'stage,,tapt,uten_tilbudsnr,uten_ordrenr,trash'
       && _plStatusOpts('supplier', true).some(x => x[1] === 'Tilbud sendt uten tilbudsnr.') && _plStatusOpts('supplier', true).some(x => x[1] === 'Vunnet uten ordrenr.'), verdier(_plStatusOpts('supplier', true)));
     if (selF) {
@@ -113848,6 +113862,161 @@ async function _projectStatusRegressionTest() {
   }
   const pass = results.filter(r => r.ok).length;
   console.log(`_projectStatusRegressionTest: ${pass}/${results.length}`);
+  results.filter(r => !r.ok).forEach(r => console.warn('  ✗', r.name, r.info || ''));
+  return results;
+}
+
+// ─── 220 · Regresjon: ny prosjektstatus «Grossist» ────────────────────────────────────────
+// Kjør i konsollen: await _grossistRegressionTest220()
+// Falsk database (samme mønster som _projectStatusRegressionTest). `checkOk:false` etterligner en
+// database der migrasjonen (supabase-migration-grossist-220.sql) IKKE er kjørt: CHECK-begrensningen
+// avviser 'grossist' med Postgres-meldingen for brudd på en check constraint.
+async function _grossistRegressionTest220() {
+  const results = [];
+  const t = (name, ok, info) => results.push({ name, ok: !!ok, info });
+  const saved = { db: _db, org: _userOrg, user: _currentUser, view: (typeof _viewAsOrg !== 'undefined') ? _viewAsOrg : null,
+    cache: _cachedProjects, dirty: _projectListDirty, mine: _orgStatusMine, others: _orgStatusOthers, dis: _orgStatusDisabled,
+    meta: new Map(_projectOwnerMeta), undo: new Map(_plUndo), toast: window._showToast, visma: window._vismaNoAfterStatus,
+    sel: document.getElementById('dash-filter-status')?.innerHTML, selMode: document.getElementById('dash-filter-status')?.dataset.mode,
+    selVal: document.getElementById('dash-filter-status')?.value, tbody: document.getElementById('pl-tbody')?.innerHTML,
+    stats: document.getElementById('dash-stats')?.innerHTML, pending: _pendingBatchStatusIds };
+  const ME = 'org-cenika';
+  const toasts = [];
+  const mk = (tables, opts = {}) => {
+    const calls = [];
+    const builder = (table) => {
+      const st = { table, op: 'select', filters: [], payload: null };
+      const rows = () => tables[table] || null;
+      const match = r => st.filters.every(([k, v, is]) => is ? (r[k] ?? null) === null : r[k] === v);
+      const exec = async () => {
+        calls.push({ table, op: st.op, payload: st.payload, filters: st.filters.slice() });
+        if (!rows()) return { data: null, error: { code: 'PGRST205', message: `Could not find the table 'public.${table}' in the schema cache` } };
+        if (st.op === 'update') {
+          if (!opts.checkOk && st.payload && st.payload.sales_status === 'grossist')
+            return { data: null, error: { code: '23514', message: `new row for relation "${table}" violates check constraint "${table}_sales_status_check"` } };
+          const hit = rows().filter(match);
+          hit.forEach(r => Object.assign(r, st.payload));
+          return { data: hit.map(r => ({ id: r.id })), error: null };
+        }
+        return { data: rows().filter(match).map(r => ({ ...r })), error: null };
+      };
+      const q = {
+        select() { return q; }, order() { return q; }, range() { return q; },
+        eq(k, v) { st.filters.push([k, v, false]); return q; }, is(k) { st.filters.push([k, null, true]); return q; },
+        update(p) { st.op = 'update'; st.payload = p; return q; },
+        maybeSingle: async () => { const r = await exec(); return r.error ? r : { data: (r.data || [])[0] || null, error: null }; },
+        then(res, rej) { return exec().then(res, rej); },
+      };
+      return q;
+    };
+    return { from: builder, calls };
+  };
+  const mkRows = () => [
+    { id: 'g1', name: 'Grossist-jobb', org_id: ME, user_id: 'u-cenika', sales_status: 'grossist',     delivery_status: null, lost_reason: null, updated_at: '2026-11-01', status_changed_at: '2026-11-01T00:00:00Z' },
+    { id: 'u1', name: 'Vanlig',        org_id: ME, user_id: 'u-cenika', sales_status: 'under_arbeid', delivery_status: null, lost_reason: null, updated_at: '2026-11-01', status_changed_at: '2026-11-01T00:00:00Z' },
+    { id: 't1', name: 'Sendt',         org_id: ME, user_id: 'u-cenika', sales_status: 'tilbud_sendt', delivery_status: null, lost_reason: null, updated_at: '2026-11-01', status_changed_at: '2026-11-01T00:00:00Z' },
+    { id: 'v1', name: 'Vunnet',        org_id: ME, user_id: 'u-cenika', sales_status: 'vunnet',       delivery_status: null, lost_reason: null, updated_at: '2026-11-01', status_changed_at: '2026-11-01T00:00:00Z' },
+    { id: 'x1', name: 'Tapt',          org_id: ME, user_id: 'u-cenika', sales_status: 'tapt',         delivery_status: null, lost_reason: 'pris', updated_at: '2026-11-01', status_changed_at: '2026-11-01T00:00:00Z' },
+  ];
+  try {
+    window._showToast = (msg) => toasts.push(String(msg));
+    window._vismaNoAfterStatus = (pid, st) => { toasts.push('VISMA:' + st); return null; };
+    _viewAsOrg = null;
+    _currentUser = { id: 'u-cenika', app_metadata: {} };
+    _userOrg = { id: ME, name: 'Cenika AS', org_type: 'supplier' };
+    _orgStatusDisabled = false; _orgStatusMine = new Map(); _orgStatusOthers = new Map();
+    _projectOwnerMeta.clear(); _plUndo.clear();
+
+    // A. Lista over statuser
+    const g = SALES_STATUSES.find(s => s.id === 'grossist');
+    t('A1 «Grossist» finnes og står sist', !!g && SALES_STATUSES[SALES_STATUSES.length - 1] === g && g.label === 'Grossist');
+    t('A2 fargen er egen (ingen annen salgs-/leveransestatus bruker den)', !!g && ![...SALES_STATUSES, ...DELIVERY_STATUSES].some(s => s !== g && s.color.toLowerCase() === g.color.toLowerCase()), g && g.color);
+    t('A3 de fire gamle statusene er uendret (id, navn, farge, rekkefølge)',
+      JSON.stringify(SALES_STATUSES.slice(0, 4)) === JSON.stringify([
+        { id:'under_arbeid', label:'Under arbeid', color:'#94a3b8' }, { id:'tilbud_sendt', label:'Tilbud sendt', color:'#3b82f6' },
+        { id:'vunnet', label:'Vunnet', color:'#22c55e' }, { id:'tapt', label:'Tapt', color:'#ef4444' }]));
+
+    // B. Nedtrekket for status (leverandør) — statisk markup og den genererte lista
+    const sel = document.getElementById('dash-filter-status');
+    const supOpts = _plStatusOpts('supplier', false).map(o => o[0]);
+    t('B1 leverandørlista har Grossist rett etter Tapt, før Ferdige leveranser', supOpts.indexOf('grossist') === supOpts.indexOf('tapt') + 1 && supOpts.indexOf('grossist') === supOpts.indexOf('ferdig') - 1, supOpts.join());
+    t('B2 Visma-varianten beholder Grossist', _plStatusOpts('supplier', true).some(o => o[0] === 'grossist'));
+    if (sel) { delete sel.dataset.mode; _plSyncStatusSelect(); }
+    t('B3 selve <select> har valget «Grossist» etter synkronisering', !!sel && [...sel.options].some(o => o.value === 'grossist' && o.textContent === 'Grossist'));
+    t('B4 installatør-nedtrekket (faner) er uendret', JSON.stringify(_plStatusOpts('stages', false)) === JSON.stringify([['stage','Etter fane'],['','Alle statuser'],['tapt','Vis tapte'],['trash','Papirkurv']]));
+
+    // C. Filtrering
+    let rows = mkRows();
+    _db = mk({ romtegner_projects: rows }, { checkOk: true });
+    let list = await _fetchProjectList();
+    const ids = (f) => _filterProjectsList(list, f).map(p => p.id).sort().join();
+    t('C1 fetch leser grossist fra kolonnen', list.find(p => p.id === 'g1')._salesStatus === 'grossist');
+    t('C2 filter «Grossist» viser bare grossist-prosjektene', ids({ status: 'grossist' }) === 'g1', ids({ status: 'grossist' }));
+    t('C3 «Aktive» tar Grossist med (ikke tapt, ikke ferdig)', ids({ status: 'active' }) === 'g1,t1,u1,v1', ids({ status: 'active' }));
+    t('C4 «Alle statuser» tar Grossist med', ids({ status: '' }) === 'g1,t1,u1,v1,x1');
+    t('C5 de andre statusfiltrene viser ikke Grossist', ids({ status: 'under_arbeid' }) === 'u1' && ids({ status: 'tilbud_sendt' }) === 't1' && ids({ status: 'vunnet' }) === 'v1' && ids({ status: 'tapt' }) === 'x1');
+    t('C6 installatør-fane: Grossist ligger i Prosjektert (ikke Til montering/Ferdig, ikke skjult som tapt)', _projectStage({ sales: 'grossist', delivery: null }) === 'prosjektert');
+    t('C7 kundekortets filter (samme hjelper) — Grossist i statuslista', ids({ status: 'grossist', search: 'gross' }) === 'g1');
+
+    // D. Chip i prosjektlista og kundekortet
+    _cachedProjects = list; _projectListDirty = false;
+    if (sel) sel.value = '';
+    await _renderProjectList();
+    const row = [...document.querySelectorAll('#pl-tbody .pl-status-sel')].find(s => s.value === 'grossist');
+    t('D1 raden har chip/select med «Grossist» valgt', !!row && row.options[row.selectedIndex].textContent === 'Grossist');
+    t('D2 chipen har Grossist-fargen', !!row && row.style.color.replace(/\s/g, '') === 'rgb(168,85,247)', row && row.style.color);
+    t('D3 alle fem statusene kan velges i chipen', !!row && [...row.options].map(o => o.value).join() === SALES_STATUSES.map(s => s.id).join());
+    const card = _cardProjectRowHtml(list.find(p => p.id === 'g1'));
+    t('D4 kundekortets prosjektrad viser «Grossist» med fargen', /Grossist/.test(card) && /#a855f7/i.test(card));
+    t('D5 dashbord-tellerne tåler Grossist (teller bare i Totalt — spm 3)', /Totalt/.test(document.getElementById('dash-stats')?.innerHTML || '') && (document.getElementById('dash-stats')?.textContent || '').includes('5'));
+
+    // E. Lagring med migrasjonen kjørt
+    let r = await _applySalesTransition('u1', 'grossist');
+    t('E1 Under arbeid → Grossist lagres (sales_status, delivery null, lost_reason null, status_changed_at)', r && r.ok && rows[1].sales_status === 'grossist' && rows[1].delivery_status === null && rows[1].lost_reason === null && rows[1].status_changed_at !== '2026-11-01T00:00:00Z', r);
+    toasts.length = 0;
+    await _quickSetStatus('g1', 'tilbud_sendt', null);
+    t('E2 Grossist → Tilbud sendt via chipen', rows[0].sales_status === 'tilbud_sendt' && toasts.includes('VISMA:tilbud_sendt'), rows[0].sales_status);
+    await _quickSetStatus('g1', 'grossist', null);
+    t('E3 … og tilbake til Grossist; den ekte nummerdialogen (Visma) åpner ikke for Grossist', rows[0].sales_status === 'grossist' && saved.visma('g1', 'grossist') === null, rows[0].sales_status);
+    r = await _applySalesTransition('x1', 'grossist');
+    t('E4 Tapt → Grossist rydder tapt-årsaken', r && r.ok && rows[4].sales_status === 'grossist' && rows[4].lost_reason === null);
+    _pendingBatchStatusIds = ['t1', 'v1'];
+    await _applyBatchStatus('grossist');
+    t('E5 masseendring til Grossist', rows[2].sales_status === 'grossist' && rows[3].sales_status === 'grossist' && toasts.some(x => /Grossist for 2 prosjekt/.test(x)), toasts.slice(-1)[0]);
+    r = await _setProjectStatus('g1', { sales_status: 'tilbud_sendt' }, { sales_status: 'under_arbeid' });
+    t('E6 priset PDF (betinget fra under_arbeid) flytter IKKE et Grossist-prosjekt til Tilbud sendt', r && !r.ok && r.reason === 'cond-not-met' && rows[0].sales_status === 'grossist', r);
+    t('E7 Grossist ber ikke om tilbudsnr./ordrenr. og mangler ingen', _vismaNoMissing({ id: 'g1', _salesStatus: 'grossist', _vismaNoKnown: true, _vismaOfferNo: '', _vismaOrderNo: '' }) === null);
+
+    // F. Lagring UTEN migrasjonen (databasen avviser verdien)
+    rows = mkRows();
+    _db = mk({ romtegner_projects: rows }, { checkOk: false });
+    _cachedProjects = await _fetchProjectList(); _projectListDirty = false;
+    toasts.length = 0;
+    await _quickSetStatus('u1', 'grossist', null);
+    t('F1 avvist av CHECK: raden er uendret', rows[1].sales_status === 'under_arbeid');
+    t('F2 … og meldingen sier at migrasjonen må kjøres', toasts.some(x => /supabase-migration-grossist-220\.sql/.test(x)), toasts.join(' | '));
+    t('F3 … ingen Angre-oppføring står igjen', !_plUndo.has('u1'));
+    r = await _applySalesTransition('u1', 'tilbud_sendt');
+    t('F4 de gamle statusene lagres fortsatt uten migrasjonen', r && r.ok && rows[1].sales_status === 'tilbud_sendt');
+  } catch (e) {
+    t('UNNTAK ' + e.message, false, e.stack && e.stack.split('\n').slice(0, 3).join(' '));
+  } finally {
+    _db = saved.db; _userOrg = saved.org; _currentUser = saved.user; _viewAsOrg = saved.view;
+    _cachedProjects = saved.cache; _projectListDirty = saved.dirty; _orgStatusMine = saved.mine; _orgStatusOthers = saved.others;
+    _orgStatusDisabled = saved.dis; _pendingBatchStatusIds = saved.pending;
+    _projectOwnerMeta.clear(); saved.meta.forEach((v, k) => _projectOwnerMeta.set(k, v));
+    _plUndo.clear(); saved.undo.forEach((v, k) => _plUndo.set(k, v));
+    window._showToast = saved.toast; window._vismaNoAfterStatus = saved.visma;
+    const sel = document.getElementById('dash-filter-status');
+    if (sel && saved.sel != null) { sel.innerHTML = saved.sel; if (saved.selMode) sel.dataset.mode = saved.selMode; else delete sel.dataset.mode; if (saved.selVal != null) sel.value = saved.selVal; }
+    const tb = document.getElementById('pl-tbody'); if (tb && saved.tbody != null) tb.innerHTML = saved.tbody;
+    const ds = document.getElementById('dash-stats'); if (ds && saved.stats != null) ds.innerHTML = saved.stats;
+    document.getElementById('pl-action-toast')?.remove();
+    document.getElementById('lost-reason-overlay')?.remove();
+    if (typeof closeModal === 'function') try { closeModal(); } catch (e) {}
+  }
+  const pass = results.filter(r => r.ok).length;
+  console.log(`_grossistRegressionTest220: ${pass}/${results.length}`);
   results.filter(r => !r.ok).forEach(r => console.warn('  ✗', r.name, r.info || ''));
   return results;
 }
