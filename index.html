@@ -5576,6 +5576,7 @@ function drawSnapDot() {
 // ─── SCALE BAR ───────────────────────────────────────────────
 function drawScaleBar() {
   if (S.ui?._pdfOverview) return;   // 154: 50 cm-pillen blir en uleselig 1 mm-flekk på plantegningen
+  if (_pdfCap) return;              // 228: i rombildet tegnes målestokken av _pdfDrawScaleBar (papirstørrelse, ledig felt)
   const barW = GRID * S.view.zoom * BASE_SCALE; // px = 50cm at current zoom
   // Don't draw if bar would be tiny or enormous
   if (barW < 20 || barW > _cvW() * 0.4) return;
@@ -46179,6 +46180,133 @@ function _dimPdfStyle() {
            dash: fontPx / 10 };                           // skjerm-px → papir-px for stiplinger og små avstander (10 px skjerm ≙ skriften)
 }
 
+// ═══ 228 · INGEN MÅLTEKST KUTTES AV BILDEKANTEN (Kenneth 10.11.2026) ═══════════════════════════
+// P0402 «Kjøkken»: den loddrette målkjeden sto halvveis utenfor romsidens bilde. Luften rundt
+// rommet regnes i cm (_pdfRoomPadCm) og et lagret utsnitt (room.pdfView, 155) i cm + skala, mens
+// målteksten etter 226 har fast størrelse i mm på PAPIRET — ingenting sjekket at teksten fikk plass.
+// Nå fanges hver tekst mens rombildet tegnes (`_pdfCap`, satt av _renderRoomToImage): fillText er
+// pakket inn så lenge fangsten står på, og alt som tegnes i målfargen (DIM_PDF_COL / DIM_PDF_RED —
+// alle målsteder bruker dem etter 226) merkes som mål (`dim`), med boksen i lerretspiksler,
+// rotasjon medregnet. Etter tegning sjekkes målboksene mot lerretet (_pdfDimFitSolve), og
+// utsnittet flyttes / zoomes ut akkurat nok. Skjermen er urørt: fangsten finnes bare inne i
+// _renderRoomToImage.
+const PDF_DIM_EDGE_MM = 0.5;          // minste luft mellom målboks og bildekant, på papiret
+const PDF_DIM_FIT_MIN_ZOOM = 0.8;     // lagret utsnitt: zoomes aldri ut mer enn 20 % …
+const PDF_DIM_FIT_MAX_SHIFT = 0.2;    // … og flyttes aldri mer enn 20 % av bildebredden; ellers står det urørt + varsel
+let _pdfCap = null;                   // { boxes: [{x0,y0,x1,y1,dim,str}] } mens et rombilde tegnes
+// Bare målene til ROMMET SOM TEGNES teller: render() tegner også naborommenes mål (de ligger på
+// samme etasje), og de skal ikke flytte utsnittet. `cap.rid` settes av drawAllDimAnnotations (per
+// rom) og drawUserDimLines (per mål, via `cap.ownDims`); tekst tegnet utenom dem (f.eks. vegg-
+// etikettene «V1 400 cm», som står inne i rommet) regnes ikke som måltekst her.
+function _pdfCapStart(room) {
+  // Er fillText alt pakket inn av noen andre (regresjonstester gjør det), pakkes DEN inn og settes
+  // tilbake av _pdfCapStop — fangsten skal aldri koble ut en annens.
+  const cap = { boxes: [], roomId: room ? room.id : null, ownDims: new Set((room && room.dims) || []), rid: undefined,
+    own: Object.prototype.hasOwnProperty.call(ctx, "fillText"), prev: ctx.fillText };
+  const norm = c => { const f = ctx.fillStyle; ctx.fillStyle = c; const n = ctx.fillStyle; ctx.fillStyle = f; return n; };
+  const dimCols = new Set([norm(DIM_PDF_COL), norm(DIM_PDF_RED)]);
+  const orig = cap.prev;
+  ctx.fillText = function (str, x, y) {
+    try {
+      const m = this.measureText(str), fpx = parseFloat(this.font) || 10, pad = fpx * 0.3;
+      const l = x - (m.actualBoundingBoxLeft || 0) - pad, r = x + (m.actualBoundingBoxRight || m.width) + pad;
+      const t = y - (m.actualBoundingBoxAscent || fpx / 2) - pad * 0.5, b = y + (m.actualBoundingBoxDescent || fpx / 2) + pad * 0.5;
+      const T = this.getTransform();
+      const xs = [], ys = [];
+      for (const [px, py] of [[l, t], [r, t], [r, b], [l, b]]) { xs.push(T.a * px + T.c * py + T.e); ys.push(T.b * px + T.d * py + T.f); }
+      cap.boxes.push({ x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys),
+        dim: cap.rid === cap.roomId && typeof this.fillStyle === "string" && dimCols.has(this.fillStyle), str: String(str) });
+    } catch (e) {}
+    return orig.apply(this, arguments);
+  };
+  _pdfCap = cap;
+  return cap;
+}
+function _pdfCapStop() {
+  const cap = _pdfCap;
+  if (cap && cap.own) ctx.fillText = cap.prev; else delete ctx.fillText;
+  _pdfCap = null;
+}
+// Hvilke bokser stikker utenfor lerretet W × H (med m px luft)?
+function _pdfDimBoxesOut(boxes, W, H, m) {
+  return boxes.filter(b => b.x0 < m - 0.5 || b.y0 < m - 0.5 || b.x1 > W - m + 0.5 || b.y1 > H - m + 0.5);
+}
+// … og hvilke er KUTTET (delvis synlige), ikke helt utenfor bildet?
+function _pdfDimBoxesCut(boxes, W, H) {
+  return boxes.filter(b => b.x1 > 0 && b.x0 < W && b.y1 > 0 && b.y0 < H && (b.x0 < -0.5 || b.y0 < -0.5 || b.x1 > W + 0.5 || b.y1 > H + 0.5));
+}
+// Finn utsnittet (senter i verdens-cm + px per cm) som får alle boksene innenfor W × H med m px
+// luft, nærmest mulig det gjeldende: først bare flytting; får de ikke plass i gjeldende skala,
+// zoomes det ut akkurat nok. Boksene har fast størrelse i px (papirmål) og et senter som følger
+// verden — spennet er derfor ikke lineært i skalaen, og skalaen finnes ved halvering.
+// Returnerer null når alt har plass fra før.
+function _pdfDimFitSolve(boxes, W, H, m, cx, cy, sc) {
+  if (!boxes.length || !_pdfDimBoxesOut(boxes, W, H, m).length) return null;
+  const B = boxes.map(b => ({ wx: cx + ((b.x0 + b.x1) / 2 - W / 2) / sc, wy: cy + ((b.y0 + b.y1) / 2 - H / 2) / sc, hw: (b.x1 - b.x0) / 2, hh: (b.y1 - b.y0) / 2 }));
+  const span = s => {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const b of B) { x0 = Math.min(x0, b.wx * s - b.hw); x1 = Math.max(x1, b.wx * s + b.hw); y0 = Math.min(y0, b.wy * s - b.hh); y1 = Math.max(y1, b.wy * s + b.hh); }
+    return { x0, x1, y0, y1 };
+  };
+  const fits = s => { const p = span(s); return p.x1 - p.x0 <= W - 2 * m && p.y1 - p.y0 <= H - 2 * m; };
+  let s = sc;
+  if (!fits(s)) {
+    let lo = sc / 64, hi = sc;
+    if (!fits(lo)) return null;                              // boksene alene er større enn bildet — ingenting å hente
+    for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+    s = lo;
+  }
+  const p = span(s);
+  const clamp = (v, a, b) => a > b ? (a + b) / 2 : Math.min(b, Math.max(a, v));
+  // senter·s må ligge i [x1 − W/2 + m, x0 + W/2 − m] for at alt skal være innenfor
+  const ncx = clamp(cx * s, p.x1 - W / 2 + m, p.x0 + W / 2 - m) / s;
+  const ncy = clamp(cy * s, p.y1 - H / 2 + m, p.y0 + H / 2 - m) / s;
+  return { cx: ncx, cy: ncy, sc: s };
+}
+// Målestokken («50 cm») i rombildet: samme papirstørrelse som målene (226-regelen), og plassert i
+// det første hjørnet/kantfeltet der den verken ligger nær en tekst (1,5 mm luft) eller over noe
+// annet som er tegnet (pikslene er tomme). Finnes det ikke noe ledig felt, tegnes den ikke — den
+// skal aldri overlappe en målkjede. Kalles av _renderRoomToImage ETTER at utsnittet er endelig.
+function _pdfDrawScaleBar(cap) {
+  const P = _dimPdfStyle();
+  if (!P) return null;
+  const W = _cvW(), H = _cvH();
+  ctx.save();
+  ctx.font = `${P.fontPx}px ${CANVAS_NUM_FONT}`;
+  const mg = 2 * P.pxPerMm, luft = 1.5 * P.pxPerMm, bh = P.fontPx * 1.4 + P.tickHalf * 2 + P.fontPx * 0.6;
+  // 50 cm som på skjermen; er utsnittet så trangt at den ikke får et ledig felt, prøves 20 og 10 cm.
+  let at = null, barW = 0, bw = 0, str = "", lenCm = 0;
+  for (const cm of [GRID, 20, 10]) {
+    barW = cm * S.view.zoom * BASE_SCALE;
+    if (barW < 20 || barW > W * 0.4) continue;               // samme grenser som skjermens målestokk
+    str = cm + " cm"; lenCm = cm;
+    bw = Math.max(barW, ctx.measureText(str).width) + P.fontPx;
+    const kand = [[mg, H - mg - bh], [W - mg - bw, H - mg - bh], [mg, mg], [W - mg - bw, mg], [(W - bw) / 2, H - mg - bh], [(W - bw) / 2, mg]];
+    const fri = ([x, y]) => !cap.boxes.some(b => b.x0 < x + bw + luft && b.x1 > x - luft && b.y0 < y + bh + luft && b.y1 > y - luft);
+    const tomt = ([x, y]) => {
+      try {
+        const d = ctx.getImageData(Math.floor(x), Math.floor(y), Math.ceil(bw), Math.ceil(bh)).data;
+        for (let i = 3; i < d.length; i += 4) if (d[i] > 8) return false;
+        return true;
+      } catch (e) { return true; }
+    };
+    at = kand.filter(fri).find(tomt) || null;
+    if (at) break;
+  }
+  if (!at) { ctx.restore(); return null; }
+  const [x, y] = at, cxm = x + bw / 2, lineY = y + bh - P.fontPx * 0.3 - P.tickHalf;
+  ctx.strokeStyle = P.col; ctx.lineWidth = P.line; ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(cxm - barW / 2, lineY); ctx.lineTo(cxm + barW / 2, lineY);
+  ctx.moveTo(cxm - barW / 2, lineY - P.tickHalf); ctx.lineTo(cxm - barW / 2, lineY + P.tickHalf);
+  ctx.moveTo(cxm + barW / 2, lineY - P.tickHalf); ctx.lineTo(cxm + barW / 2, lineY + P.tickHalf);
+  ctx.stroke();
+  ctx.fillStyle = P.col; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(str, cxm, lineY - P.tickHalf - P.fontPx * 0.7);
+  ctx.restore();
+  return { x, y, w: bw, h: bh, fontPx: P.fontPx, barW, cm: lenCm };
+}
+
 function _labelScaleName(v) {
   const t = LABEL_PDF_SCALES.find(x => Math.abs(x.v - v) < 0.001);
   return t ? t.navn : _labelScaleNum(v);
@@ -61305,6 +61433,7 @@ function drawAllDimAnnotations() {
   const _skjulProdukt = _presentProduktMaalSkjult();
   for (const room of S.rooms) {
     if (!_roomOnActiveFloor(room)) continue;
+    if (_pdfCap) _pdfCap.rid = room.id;   // 228: hvilket rom måltekstene som tegnes nå, hører til
     if (room.dimSnap && room.walls && room.points) _drawDimAnnotationsForRoom(room);
     else if (room.walls && room.points && _presentDimsOn(room)) _drawDimAnnotationsForRoom(room, { bareVegger: true });
     if (_skjulProdukt) continue;
@@ -61312,6 +61441,7 @@ function drawAllDimAnnotations() {
     if (room.cableDimSnap && room.points) _drawCableDimChainForRoom(room);
     if (room.matDimSnap && room.points) _drawMatDimChainForRoom(room);
   }
+  if (_pdfCap) _pdfCap.rid = undefined;   // 228
 }
 
 // ─── 164 · FELLES KANTMODELL OG OPPSETT FOR PRODUKT-KJEDENE (folie / kabel / matte) ─────────
@@ -62484,6 +62614,7 @@ function drawUserDimLines() {
   const FONT=P?P.fontPx:11;
   ctx.save();
   for (const dim of _dims) {
+    if (_pdfCap) _pdfCap.rid = _pdfCap.ownDims.has(dim) ? _pdfCap.roomId : undefined;   // 228: bare rommets egne mål teller
     const isSel=dim.id===S.ui.selectedDimId;
     // 217: mål på en hindring legges inne i hindringen (egen plassering, egen tegning).
     if (dim.auto==='hindring') { const L=_hindDimLayout(dim); if (L) { if (L.draw) _drawHindDim(L,isSel); continue; } }
@@ -62542,6 +62673,7 @@ function drawUserDimLines() {
     ctx.fillText(len+' cm',0,P?-FONT*0.2:-2);
     ctx.restore();
   }
+  if (_pdfCap) _pdfCap.rid = undefined;   // 228
   ctx.restore();
 }
 
@@ -93978,6 +94110,7 @@ function _expPreviewLive(cfg) {
       <span id="exp-pv-hjelp">${hjelp}</span>
       <span id="exp-pv-zoom" style="font-weight:600;color:var(--text)"></span>
     </div>
+    <div id="exp-pv-note" style="display:none;font-size:12px;color:var(--warn);margin:-2px 0 8px"></div>
     ${cfg.tegnbar ? `<canvas id="exp-pv-canvas" style="max-width:100%;border-radius:8px;border:1px solid var(--border);cursor:${ro ? 'default' : 'grab'};touch-action:none;display:block;margin:0 auto;background:#fff"></canvas>`
                   : `<div style="color:var(--dim);font-size:13px;padding:40px 0">Rommet har ingen tegning (kalkyle uten polygon).</div>`}
     <div style="margin-top:12px;text-align:left;font-size:12px;color:var(--text);max-width:500px;margin-left:auto;margin-right:auto">${cfg.info}</div>${cfg.nav || ''}
@@ -94040,6 +94173,16 @@ function _pdfPrevDraw() {
   p.cv.style.width = cssW + 'px';
   p.cv.style.height = Math.round(v.outH / dpr) + 'px';
   p.cur = { cx: v.panX, cy: v.panY, scale: v.scale };
+  // 228: `req` er utsnittet som er LAGRET (det brukeren ba om); `cur` er det som faktisk ble tegnet
+  // (kan være justert så målene får plass). Hjul og dra regner fra `req`.
+  p.req = v.req ? { cx: v.req.cx, cy: v.req.cy, scale: v.req.scale } : { cx: v.panX, cy: v.panY, scale: v.scale };
+  const note = document.getElementById('exp-pv-note');
+  if (note) {
+    const f = p.res.dimFit;
+    const txt = !f ? '' : (f.adjusted && f.saved) ? 'Utsnittet ble justert så målene får plass'
+      : (!f.adjusted && f.cut) ? (f.cut === 1 ? '1 mål står delvis utenfor utsnittet' : f.cut + ' mål står delvis utenfor utsnittet') + ' — zoom ut eller flytt' : '';
+    note.textContent = txt; note.style.display = txt ? 'block' : 'none';
+  }
   p.autoW = v.worldW * v.scale;                       // auto-utsnittets bredde i cm (konstant)
   const z = document.getElementById('exp-pv-zoom');
   if (z) z.textContent = _labelScaleNum(v.scale) + '×';
@@ -94120,6 +94263,7 @@ function _pdfPrevSetView(cx, cy, scale) {
   if (p.kind === 'floor') _pdfFloorViewSet(_pdfPrevFloor(), v);
   else { const room = _pdfPrevRoom(); if (!room) return; room.pdfView = v; }
   p.cur = { cx: v.cx, cy: v.cy, scale: v.scale };
+  p.req = { cx: v.cx, cy: v.cy, scale: v.scale };   // 228
   _pdfPrevSchedule();
 }
 function _pdfPrevWheel(e) {
@@ -94127,8 +94271,9 @@ function _pdfPrevWheel(e) {
   if (_pdfPrevLocked() || !_pdfPrev.res) return;
   const p = _pdfPrev, pt = _pdfPrevPt(e), v = p.res.view;
   const f = e.deltaY > 0 ? 1 / 1.1 : 1.1;
-  const ns = Math.min(PDF_VIEW_SCALE_MAX, Math.max(PDF_VIEW_SCALE_MIN, p.cur.scale * f));
-  if (Math.abs(ns - p.cur.scale) < 1e-9) return;
+  const base = (p.req || p.cur).scale;               // 228: fra det lagrede utsnittet, ikke det justerte
+  const ns = Math.min(PDF_VIEW_SCALE_MAX, Math.max(PDF_VIEW_SCALE_MIN, base * f));
+  if (Math.abs(ns - base) < 1e-9) return;
   const w = _pdfPrevS2W(pt.x, pt.y);                 // verdenspunktet under pekeren står stille
   const sc2 = v.outW * ns / p.autoW;
   _pdfPrevUndoOnce();
@@ -94151,7 +94296,8 @@ function _pdfPrevDown(e) {
     const base = hit.obj.labelPos || c;
     p.drag = { kind: 'label', hit, seed: c, start: pt, moved: false, off: { x: w.x - base.x, y: w.y - base.y } };
   } else {
-    p.drag = { kind: 'pan', start: pt, cx0: p.cur.cx, cy0: p.cur.cy, moved: false };
+    const r0 = p.req || p.cur;                         // 228: dra regnes fra det lagrede utsnittet
+    p.drag = { kind: 'pan', start: pt, cx0: r0.cx, cy0: r0.cy, scale0: r0.scale, moved: false };
   }
   p.cv.style.cursor = 'grabbing';
 }
@@ -94171,8 +94317,8 @@ function _pdfPrevMove(e) {
     if (d.kind === 'label' && !d.hit.obj.labelPos) d.hit.obj.labelPos = { x: d.seed.x, y: d.seed.y };
   }
   if (d.kind === 'pan') {
-    const sc = _pdfPrevSc();
-    _pdfPrevSetView(d.cx0 - (pt.x - d.start.x) / sc, d.cy0 - (pt.y - d.start.y) / sc, p.cur.scale);
+    const sc = p.res.view.outW * d.scale0 / p.autoW;   // 228: px per cm i det LAGREDE utsnittet (= _pdfPrevSc() uten justering)
+    _pdfPrevSetView(d.cx0 - (pt.x - d.start.x) / sc, d.cy0 - (pt.y - d.start.y) / sc, d.scale0);
   } else {
     const w = _pdfPrevS2W(pt.x, pt.y);
     d.hit.obj.labelPos = { x: w.x - d.off.x, y: w.y - d.off.y };
@@ -95909,7 +96055,9 @@ function _pdfPreviewRegressionTest() {
     const pt = (() => { const { r, kx, ky } = k(); return { x: (r.width * 0.1) * kx, y: (r.height * 0.1) * ky }; })();
     const wFor = _pdfPrevS2W(pt.x, pt.y);
     wheel(0.1, 0.1, -100); _pdfPrevDraw();
-    const wEtter = _pdfPrevS2W(pt.x, pt.y);
+    // 228: punktet brukeren SER under pekeren (tegnet utsnitt) skal ligge under pekeren i det LAGREDE
+    // utsnittet etterpå. Det tegnede kan være justert så målene får plass (da er de to ulike).
+    const wEtter = (() => { const q = room.pdfView, v = _pdfPrev.res.view, s = v.outW * q.scale / _pdfPrev.autoW; return { x: (pt.x - v.outW / 2) / s + q.cx, y: (pt.y - v.outH / 2) / s + q.cy }; })();
     check('B2: hjul ved 10 %/10 % → punktet under pekeren står stille', 'samme verdenspunkt', near(wFor.x, wEtter.x, 0.5) && near(wFor.y, wEtter.y, 0.5), [wFor, wEtter]);
     check('B2: …og senteret flyttet mot øvre venstre', 'cx < 250, cy < 200', room.pdfView.cx < 250 && room.pdfView.cy < 200, room.pdfView);
     _pdfPrev.undoTaken = false; clearTimeout(_pdfPrev.wheelTimer);
@@ -99207,6 +99355,116 @@ async function _pdfNumberModeRegressionTest() {
   return { ok: allOk, results };
 }
 
+// 228: regresjon — ingen måltekst utenfor rombildet (små/store rom, L-form, med og uten pdfView,
+// Normal og Ekstra stor), lagret utsnitt justeres bare når endringen er liten, målestokken har
+// målenes papirstørrelse og ligger aldri over en tekst.
+function _pdfDimFitRegressionTest228() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const saved = { rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats, matPaths: S.matPaths,
+    hindrings: S.hindrings, stairs: S.stairs, floors: S.floors, project: S.project, counters: { ...S.counters }, floatingDims: S.floatingDims,
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedRoomId: S.ui.selectedRoomId, selectedDimId: S.ui.selectedDimId,
+    prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(), profile: (typeof _currentProfile !== 'undefined') ? _currentProfile : undefined,
+    autoSave: window._performAutoSave, sched: window._scheduleAutoSave, toast: window._showToast,
+    undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
+    dlg: (document.getElementById('export-dialog') || { style: {} }).style.display };
+  try {
+    window._performAutoSave = () => Promise.resolve(); window._scheduleAutoSave = () => {}; window._showToast = () => {};
+    const FOLIE = { id: 996805, category_id: 1, active: true, name: 'FlexFoil B=60cm', width_mm: 590, netto_width_mm: 590, watt_per_lm: 36, watt_per_m2: 60, voltage: 230, min_gap_mm: 10, min_wall_margin_mm: 25 };
+    const CAB = { id: 996801, category_id: 9700, active: true, product_family: 'Test 10T', name: 'Test 10T 600W 60m', voltage: 230, cable_length_m: 60, watt_per_m: 10, total_effect_w: 600, min_wall_margin_mm: 50 };
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push({ id: 1, name: 'Folie', module_type: 'foil' }, { id: 9700, module_type: 'cable', name: 'TESTKABEL' });
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(FOLIE, CAB);
+    const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+    const mk = (id, navn, pts) => ({ id, floorId: null, partId: null, name: navn, points: pts, walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [], annotOffsets: {}, dimSnap: true });
+    const A = mk(992801, 'Lite', rect(0, 0, 150, 120));
+    const B = mk(992802, 'Kjøkken', rect(1000, 0, 300, 300));
+    const C = mk(992803, 'Stort', rect(2000, 0, 900, 700));
+    const D = mk(992804, 'L-form', [{ x: 4000, y: 0 }, { x: 4500, y: 0 }, { x: 4500, y: 250 }, { x: 4250, y: 250 }, { x: 4250, y: 400 }, { x: 4000, y: 400 }]);
+    S.rooms = [A, B, C, D]; S.floors = []; S.stairs = []; S.mats = []; S.matPaths = []; S.foilFree = []; S.floatingDims = [];
+    S.ui.activeFloorId = null; S.ui.activePartId = null;
+    S.project = { name: 'MÅL-I-BILDET-228', parts: [], revision: 0 };
+    let sid = 992900;
+    const strip = (r, pos, start, len) => ({ id: sid++, roomId: r.id, productId: FOLIE.id, direction: 'v', pos_cm: pos, start_cm: start, length_cm: len });
+    S.strips = [strip(A, 2.5, 2.5, 115), strip(A, 62.5, 2.5, 115),
+      strip(B, 1002.5, 2.5, 294.6), strip(B, 1238.5, 2.9, 294), ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => strip(C, 2002.5 + i * 61, 2.5, 695))];
+    S.cables = [{ id: 992950, roomId: D.id, productId: CAB.id, direction: 'v', spacing_cm: 20, startCorner: 'bl', totalLength_cm: 6000,
+      runs: [0, 1, 2, 3, 4, 5].map(i => ({ pos_cm: 4030 + i * 20, segments: [{ start_cm: 20, end_cm: 380 }] })), connections: [] }];
+    S.hindrings = [{ id: 992960, type: 'annet', label: 'ØY', roomId: B.id, floorId: null, points: rect(1100, 110, 100, 80), clearance: 'wall' }];
+    if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    S.ui.selectedRoomId = B.id; try { autoDimHindrings(); } catch (e) {} S.ui.selectedRoomId = null; S.ui.selectedDimId = null;
+    const tegn = (room, o) => _renderRoomToImage(room, { focusRoom: true, targetWidthMm: _pdfRoomImgLayout(room).imgW2, noUrl: true, ...(o || {}) });
+    const ute = r => r.texts.filter(t => t.dim && (t.x0 < -0.5 || t.y0 < -0.5 || t.x1 > r.w + 0.5 || t.y1 > r.h + 0.5));
+    const bbox = room => { const xs = room.points.map(p => p.x), ys = room.points.map(p => p.y); return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; };
+    // A · solveren alene
+    check('A1: alt innenfor → null', null, _pdfDimFitSolve([{ x0: 10, y0: 10, x1: 30, y1: 20 }], 100, 100, 2, 0, 0, 1) === null, '');
+    const s1 = _pdfDimFitSolve([{ x0: -10, y0: 40, x1: 10, y1: 60 }], 100, 100, 2, 0, 0, 1);
+    check('A2: én boks 10 px utenfor venstre kant → flyttes 12 px, samme skala', '-12 @ 1', s1 && Math.abs(s1.cx + 12) < 1e-6 && s1.sc === 1 && Math.abs(s1.cy) < 1e-6, s1);
+    const s2 = _pdfDimFitSolve([{ x0: -40, y0: 40, x1: -20, y1: 60 }, { x0: 120, y0: 40, x1: 140, y1: 60 }], 100, 100, 2, 0, 0, 1);
+    check('A3: to bokser som ikke får plass → zoomes ut', 'sc < 1', s2 && s2.sc < 1 && s2.sc > 0.4, s2);
+    // B · hele settet: ingen måltekst utenfor bildet
+    for (const sk of [1, 1.5]) {
+      _currentProfile = { prefs: { pdfLabelScale: sk } };
+      for (const room of [A, B, C, D]) {
+        const bb = bbox(room), autoW = (bb.x1 - bb.x0) + 2 * _pdfRoomPadCm(room), mx = (bb.x0 + bb.x1) / 2, my = (bb.y0 + bb.y1) / 2;
+        const views = [['auto', null], ['pdfView 1,2× skjøvet', { cx: mx + autoW * 0.05, cy: my - autoW * 0.04, scale: 1.2 }], ['pdfView 0,8×', { cx: mx, cy: my, scale: 0.8 }]];
+        for (const [vn, pv] of views) {
+          if (pv) room.pdfView = pv; else delete room.pdfView;
+          const r = tegn(room), u = ute(r), nd = r.texts.filter(t => t.dim).length;
+          const tag = `B: «${room.name}» ${vn}, skala ${sk}`;
+          if (r.dimFit && !r.dimFit.adjusted) check(tag + ': for stor endring → utsnittet står, kutt er meldt', '> 0 meldt', r.dimFit.cut > 0 && r.view.scale === pv.scale, r.dimFit);
+          else check(tag + ': ingen måltekst utenfor bildet', '0 av > 0', nd > 0 && u.length === 0, nd + ' mål, utenfor: ' + u.map(t => t.str).join(' | '));
+          check(tag + ': bildestørrelsen er som uten justering', 'lik', r.w === tegn(room, { noDimFit: true }).w && Math.abs(r.h / r.w - _pdfRoomAspect(room)) < 0.002, [r.w, r.h]);
+          if (r.scaleBar) { const b = r.scaleBar;
+            check(tag + ': målestokken ligger ikke over en tekst', 'fri', !r.texts.some(t => t.x0 < b.x + b.w && t.x1 > b.x && t.y0 < b.y + b.h && t.y1 > b.y), b); }
+          delete room.pdfView;
+        }
+      }
+    }
+    _currentProfile = null;
+    // C · Kjøkken: lagret utsnitt som skjærer venstre kant
+    const autoB = tegn(B);
+    check('C1: auto på et rektangel er urørt (bredde = rom + 2 × luft)', 300 + 2 * _pdfRoomPadCm(B), autoB.view.worldW === 300 + 2 * _pdfRoomPadCm(B) && autoB.dimFit === null, [autoB.view.worldW, autoB.dimFit]);
+    B.pdfView = { cx: 1135.5, cy: 150, scale: 1.6 };
+    const syk = tegn(B, { noDimFit: true }), frisk = tegn(B);
+    check('C2: VAKSINE — uten justering står måltekst utenfor', '> 0', ute(syk).length > 0, ute(syk).length);
+    check('C2: med justering: ingen utenfor, meldt som justert lagret utsnitt', 'adjusted + saved', ute(frisk).length === 0 && frisk.dimFit && frisk.dimFit.adjusted && frisk.dimFit.saved, frisk.dimFit);
+    check('C2: zoomet ut høyst 20 %', '≥ 1,28×', frisk.view.scale >= 1.6 * PDF_DIM_FIT_MIN_ZOOM - 1e-9 && frisk.view.scale <= 1.6, frisk.view.scale);
+    check('C2: det lagrede utsnittet er ikke skrevet over', '1.6', B.pdfView.scale === 1.6 && B.pdfView.cx === 1135.5 && frisk.view.req.scale === 1.6, B.pdfView);
+    B.pdfView = { cx: 1080, cy: 80, scale: 3 };
+    const det = tegn(B);
+    check('C3: detaljutsnitt (3×) står urørt', (300 + 2 * _pdfRoomPadCm(B)) / 3, det.view.worldW === (300 + 2 * _pdfRoomPadCm(B)) / 3 && det.view.panX === 1080 && !(det.dimFit && det.dimFit.adjusted), [det.view.worldW, det.dimFit]);
+    delete B.pdfView;
+    // D · målestokken
+    const k = autoB.w / _pdfRoomImgLayout(B).imgW2;
+    check('D1: målestokken finnes og har målenes papirstørrelse (2,0 mm)', (DIM_PDF_MM * k).toFixed(2), autoB.scaleBar && Math.abs(autoB.scaleBar.fontPx - DIM_PDF_MM * k) < 0.01 && autoB.scaleBar.cm === 50, autoB.scaleBar);
+    check('D2: fangsten er av utenfor rombildet (skjermen tegner som før)', null, _pdfCap === null && !Object.prototype.hasOwnProperty.call(ctx, 'fillText'), _pdfCap);
+    // E · fangsten kobler ikke ut en annens innpakking av fillText (165-testen pakker den inn selv)
+    let sett = 0; const oT = ctx.fillText;
+    ctx.fillText = function () { sett++; return oT.apply(this, arguments); };
+    try { tegn(B); } finally { const mitt = Object.prototype.hasOwnProperty.call(ctx, 'fillText'); delete ctx.fillText;
+      check('E1: en ytre innpakking av fillText ser tekstene og står igjen etterpå', '> 0, står', sett > 0 && mitt, [sett, mitt]); }
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree, cables: saved.cables, mats: saved.mats, matPaths: saved.matPaths,
+      hindrings: saved.hindrings, stairs: saved.stairs, floors: saved.floors, project: saved.project, floatingDims: saved.floatingDims });
+    Object.assign(S.counters, saved.counters);
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId; S.ui.selectedRoomId = saved.selectedRoomId; S.ui.selectedDimId = saved.selectedDimId;
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push(...saved.cats);
+    if (saved.profile !== undefined) _currentProfile = saved.profile;
+    window._performAutoSave = saved.autoSave; window._scheduleAutoSave = saved.sched; window._showToast = saved.toast;
+    if (saved.undoLen != null) _undoStack.length = saved.undoLen;
+    if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_pdfDimFitRegressionTest228: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
+  return { ok: allOk, results };
+}
+
 function _renderRoomToImage(room, opts) {
   opts = opts || {};
   // Strategy: render to the main canvas with a temporary view that fits
@@ -99254,9 +99512,9 @@ function _renderRoomToImage(room, opts) {
   // padding) is mapped to fill the whole canvas, so the room fills the page.
   // 155: brukerens utsnitt (pdfView) — skala deler bredde OG høyde, så aspektet er auto-utsnittets.
   const pv = _pdfViewOf(room);
-  const pvScale = pv ? pv.scale : 1;
-  const worldW = (rW + 2 * padCm) / pvScale;   // cm spanning canvas width
-  const worldH = (rH + 2 * padCm) / pvScale;   // cm spanning canvas height
+  let pvScale = pv ? pv.scale : 1;             // 228: let — utsnittet kan bli justert så målene får plass
+  let worldW = (rW + 2 * padCm) / pvScale;     // cm spanning canvas width
+  let worldH = (rH + 2 * padCm) / pvScale;     // cm spanning canvas height
   const aspect = worldH / worldW;      // out height / out width
   const dpi = opts.dpi || 300;
   const targetWmm = opts.targetWidthMm || 180; // A4 printable width (mm)
@@ -99330,8 +99588,51 @@ function _renderRoomToImage(room, opts) {
                    || (S.matPaths || []).some(mp => mp.roomId === room.id);   // 157: frihånds-/kapittelmatter også
   // Render to the (resized) main canvas with the temporary view. The world
   // box already maps 1:1 onto the canvas, so the whole canvas IS the room.
-  if (typeof markDirty === 'function') markDirty();
-  if (typeof render === 'function') render();
+  // 228: tegn med tekstfangst, sjekk målboksene mot bildekanten, juster utsnittet og tegn på nytt.
+  // Auto-utsnitt: flytt/zoom ut til ALT får plass (rommet selv teller med, så det blir stående).
+  // Lagret utsnitt (pdfView): samme, men bare når endringen er liten (≤ 20 % zoom, ≤ 20 % av
+  // bildebredden i flytting) — da meldes `dimFit.adjusted`, og forhåndsvisningen sier fra. Krever
+  // det mer, har brukeren zoomet inn på en detalj med vilje: utsnittet står, og `dimFit.cut` teller
+  // måltekstene som står delvis utenfor (varsel i forhåndsvisningen). Aspekt og bildestørrelse er
+  // uendret i alle tilfeller, så sideoppsettet påvirkes ikke.
+  const _drawOnce = () => {
+    const c = _pdfCapStart(room);
+    try { if (typeof markDirty === 'function') markDirty(); if (typeof render === 'function') render(); } finally { _pdfCapStop(); }
+    return c;
+  };
+  const _setView = (cx, cy, sc) => {
+    S.view.zoom = sc / BASE_SCALE; S.view.panX = cx; S.view.panY = cy;
+    worldW = outW / sc; worldH = worldW * aspect; pvScale = (rW + 2 * padCm) / worldW;
+    if (S.ui) S.ui._pdfScaleMmPerCm = targetWmm / worldW;
+  };
+  const _req = { cx: S.view.panX, cy: S.view.panY, sc: scOut, w: worldW, h: worldH };
+  const _edgePx = PDF_DIM_EDGE_MM * outW / targetWmm;
+  let cap = _drawOnce(), dimFit = null;
+  if (!opts.noDimFit) {
+    const dimsOf = c => c.boxes.filter(b => b.dim);
+    for (let it = 0; it < 4; it++) {
+      const dims = dimsOf(cap);
+      if (!_pdfDimBoxesOut(dims, outW, outH, _edgePx).length) break;
+      const a = w2s(rMinX, rMinY), b = w2s(rMaxX, rMaxY);
+      const set = pv ? dims : [...dims, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }];
+      const sol = _pdfDimFitSolve(set, outW, outH, _edgePx, S.view.panX, S.view.panY, outW / worldW);
+      const stor = sol && pv && (sol.sc / _req.sc < PDF_DIM_FIT_MIN_ZOOM
+        || Math.abs(sol.cx - _req.cx) * _req.sc > PDF_DIM_FIT_MAX_SHIFT * outW
+        || Math.abs(sol.cy - _req.cy) * _req.sc > PDF_DIM_FIT_MAX_SHIFT * outW);
+      if (!sol || stor) {
+        if (it > 0) { _setView(_req.cx, _req.cy, _req.sc); pvScale = pv ? pv.scale : 1; worldW = _req.w; worldH = _req.h; cap = _drawOnce(); }
+        const cut = _pdfDimBoxesCut(dimsOf(cap), outW, outH).length;
+        dimFit = cut ? { adjusted: false, cut } : null;
+        break;
+      }
+      _setView(sol.cx, sol.cy, sol.sc);
+      cap = _drawOnce();
+      dimFit = { adjusted: true, saved: !!pv, cut: 0 };
+    }
+    if (dimFit && dimFit.adjusted) dimFit.cut = _pdfDimBoxesCut(dimsOf(cap), outW, outH).length;
+  }
+  // 228: målestokken i papirstørrelse, i et ledig felt — etter at utsnittet er endelig.
+  const scaleBar = _pdfDrawScaleBar(cap);
   // STEG 2 (Kenneth 24.08.2026): påstand i utviklingsmodus — «samme grep som fanget seks ting i
   // etasje-runden» (_onActiveFloor over). render() har akkurat kalt _rebuildActiveFloorRoomIds();
   // er IKKE rommet vi ba om å tegne i settet, er activePartId/activeFloorId satt inkonsistent med
@@ -99369,7 +99670,11 @@ function _renderRoomToImage(room, opts) {
     cable: Object.assign({}, _cableLabelBounds), matRect: Object.assign({}, _matRectLabelBounds),
     mat: Object.assign({}, _matLabelBounds), strip: Object.assign({}, _stripLabelBounds),
   } : null;
-  const view = { zoom: S.view.zoom, panX: S.view.panX, panY: S.view.panY, outW, outH, worldW, worldH, scale: pvScale };
+  // 228: `req` = utsnittet som var bedt om (lagret pdfView) — forhåndsvisningen regner hjul og dra
+  // fra det, ikke fra det justerte, ellers kunne man aldri zoome seg forbi justeringen.
+  const view = { zoom: S.view.zoom, panX: S.view.panX, panY: S.view.panY, outW, outH, worldW, worldH, scale: pvScale,
+    req: pv ? { cx: pv.cx, cy: pv.cy, scale: pv.scale } : null };
+  const texts = cap.boxes;
   // 196: sirklene slik de ble tegnet i DETTE bildet (lerretspiksler) — for tester og forhåndsvisning.
   const numbers = opts.numberMode ? _pdfNumberDrawn.slice() : null;
 
@@ -99402,7 +99707,8 @@ function _renderRoomToImage(room, opts) {
   room.matDimSnap = saved.matDimSnap;
   if (typeof markDirty === 'function') markDirty();
   if (typeof render === 'function') render();
-  return { url: dataURL, fmt: _enc ? _enc.fmt : null, comp: _enc ? _enc.comp : undefined, w: outW, h: outH, aspect, view, labels, numbers };   // 155: view + labels · 196: numbers · 226: fmt/comp
+  return { url: dataURL, fmt: _enc ? _enc.fmt : null, comp: _enc ? _enc.comp : undefined, w: outW, h: outH, aspect, view, labels, numbers,
+    dimFit, scaleBar, texts };   // 228: justering av utsnittet, målestokkens plass, alle tekstbokser (dim = måltekst)   // 155: view + labels · 196: numbers · 226: fmt/comp
 }
 
 // ═══ 226 · BILDEFORMAT I PDF-EN ═══════════════════════════════════════════════════════════════

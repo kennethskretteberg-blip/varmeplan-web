@@ -1,0 +1,53 @@
+@@@ FINN
+           dash: fontPx / 10 };                           // skjerm-px → papir-px for stiplinger og små avstander (10 px skjerm ≙ skriften)
+}
+@@@ SETT
+           dash: fontPx / 10 };                           // skjerm-px → papir-px for stiplinger og små avstander (10 px skjerm ≙ skriften)
+}
+
+// ═══ 228 · INGEN MÅLTEKST KUTTES AV BILDEKANTEN (Kenneth 10.11.2026) ═══════════════════════════
+// P0402 «Kjøkken»: den loddrette målkjeden sto halvveis utenfor romsidens bilde. Luften rundt
+// rommet regnes i cm (_pdfRoomPadCm) og et lagret utsnitt (room.pdfView, 155) i cm + skala, mens
+// målteksten etter 226 har fast størrelse i mm på PAPIRET — ingenting sjekket at teksten fikk plass.
+// Nå fanges hver tekst mens rombildet tegnes (`_pdfCap`, satt av _renderRoomToImage): fillText er
+// pakket inn så lenge fangsten står på, og alt som tegnes i målfargen (DIM_PDF_COL / DIM_PDF_RED —
+// alle målsteder bruker dem etter 226) merkes som mål (`dim`), med boksen i lerretspiksler,
+// rotasjon medregnet. Etter tegning sjekkes målboksene mot lerretet (_pdfDimFitSolve), og
+// utsnittet flyttes / zoomes ut akkurat nok. Skjermen er urørt: fangsten finnes bare inne i
+// _renderRoomToImage.
+const PDF_DIM_EDGE_MM = 0.5;          // minste luft mellom målboks og bildekant, på papiret
+const PDF_DIM_FIT_MIN_ZOOM = 0.8;     // lagret utsnitt: zoomes aldri ut mer enn 20 % …
+const PDF_DIM_FIT_MAX_SHIFT = 0.2;    // … og flyttes aldri mer enn 20 % av bildebredden; ellers står det urørt + varsel
+let _pdfCap = null;                   // { boxes: [{x0,y0,x1,y1,dim,str}] } mens et rombilde tegnes
+function _pdfCapStart() {
+  const cap = { boxes: [] };
+  const norm = c => { const f = ctx.fillStyle; ctx.fillStyle = c; const n = ctx.fillStyle; ctx.fillStyle = f; return n; };
+  const dimCols = new Set([norm(DIM_PDF_COL), norm(DIM_PDF_RED)]);
+  const orig = CanvasRenderingContext2D.prototype.fillText;
+  ctx.fillText = function (str, x, y) {
+    try {
+      const m = this.measureText(str), fpx = parseFloat(this.font) || 10, pad = fpx * 0.3;
+      const l = x - (m.actualBoundingBoxLeft || 0) - pad, r = x + (m.actualBoundingBoxRight || m.width) + pad;
+      const t = y - (m.actualBoundingBoxAscent || fpx / 2) - pad * 0.5, b = y + (m.actualBoundingBoxDescent || fpx / 2) + pad * 0.5;
+      const T = this.getTransform();
+      const xs = [], ys = [];
+      for (const [px, py] of [[l, t], [r, t], [r, b], [l, b]]) { xs.push(T.a * px + T.c * py + T.e); ys.push(T.b * px + T.d * py + T.f); }
+      cap.boxes.push({ x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys),
+        dim: typeof this.fillStyle === "string" && dimCols.has(this.fillStyle), str: String(str) });
+    } catch (e) {}
+    return orig.apply(this, arguments);
+  };
+  _pdfCap = cap;
+  return cap;
+}
+function _pdfCapStop() { delete ctx.fillText; _pdfCap = null; }
+// Hvilke bokser stikker utenfor lerretet W × H (med m px luft)?
+function _pdfDimBoxesOut(boxes, W, H, m) {
+  return boxes.filter(b => b.x0 < m - 0.5 || b.y0 < m - 0.5 || b.x1 > W - m + 0.5 || b.y1 > H - m + 0.5);
+}
+// … og hvilke er KUTTET (delvis synlige), ikke helt utenfor bildet?
+function _pdfDimBoxesCut(boxes, W, H) {
+  return boxes.filter(b => b.x1 > 0 && b.x0 < W && b.y1 > 0 && b.y0 < H && (b.x0 < -0.5 || b.y0 < -0.5 || b.x1 > W + 0.5 || b.y1 > H + 0.5));
+}
+// 228-FORTSETT
+@@@ SLUTT

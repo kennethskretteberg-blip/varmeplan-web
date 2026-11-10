@@ -1,0 +1,65 @@
+@@@ FINN
+function _pdfCapStart() {
+  const cap = { boxes: [] };
+@@@ SETT
+// Bare målene til ROMMET SOM TEGNES teller: render() tegner også naborommenes mål (de ligger på
+// samme etasje), og de skal ikke flytte utsnittet. `cap.rid` settes av drawAllDimAnnotations (per
+// rom) og drawUserDimLines (per mål, via `cap.ownDims`); tekst tegnet utenom dem (f.eks. vegg-
+// etikettene «V1 400 cm», som står inne i rommet) regnes ikke som måltekst her.
+function _pdfCapStart(room) {
+  const cap = { boxes: [], roomId: room ? room.id : null, ownDims: new Set((room && room.dims) || []), rid: undefined };
+@@@ SLUTT
+@@@ FINN
+        dim: typeof this.fillStyle === "string" && dimCols.has(this.fillStyle), str: String(str) });
+@@@ SETT
+        dim: cap.rid === cap.roomId && typeof this.fillStyle === "string" && dimCols.has(this.fillStyle), str: String(str) });
+@@@ SLUTT
+@@@ FINN
+    const c = _pdfCapStart();
+@@@ SETT
+    const c = _pdfCapStart(room);
+@@@ SLUTT
+@@@ FINN
+  for (const room of S.rooms) {
+    if (!_roomOnActiveFloor(room)) continue;
+    if (room.dimSnap && room.walls && room.points) _drawDimAnnotationsForRoom(room);
+@@@ SETT
+  for (const room of S.rooms) {
+    if (!_roomOnActiveFloor(room)) continue;
+    if (_pdfCap) _pdfCap.rid = room.id;   // 228: hvilket rom måltekstene som tegnes nå, hører til
+    if (room.dimSnap && room.walls && room.points) _drawDimAnnotationsForRoom(room);
+@@@ SLUTT
+@@@ FINN
+    if (room.matDimSnap && room.points) _drawMatDimChainForRoom(room);
+  }
+}
+@@@ SETT
+    if (room.matDimSnap && room.points) _drawMatDimChainForRoom(room);
+  }
+  if (_pdfCap) _pdfCap.rid = undefined;   // 228
+}
+@@@ SLUTT
+@@@ FINN
+  for (const dim of _dims) {
+    const isSel=dim.id===S.ui.selectedDimId;
+    // 217: mål på en hindring legges inne i hindringen (egen plassering, egen tegning).
+@@@ SETT
+  for (const dim of _dims) {
+    if (_pdfCap) _pdfCap.rid = _pdfCap.ownDims.has(dim) ? _pdfCap.roomId : undefined;   // 228: bare rommets egne mål teller
+    const isSel=dim.id===S.ui.selectedDimId;
+    // 217: mål på en hindring legges inne i hindringen (egen plassering, egen tegning).
+@@@ SLUTT
+@@@ FINN
+    ctx.fillText(len+' cm',0,P?-FONT*0.2:-2);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+@@@ SETT
+    ctx.fillText(len+' cm',0,P?-FONT*0.2:-2);
+    ctx.restore();
+  }
+  if (_pdfCap) _pdfCap.rid = undefined;   // 228
+  ctx.restore();
+}
+@@@ SLUTT

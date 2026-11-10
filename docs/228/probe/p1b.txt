@@ -1,0 +1,76 @@
+@@@ FINN
+// 228-FORTSETT
+@@@ SETT
+// Finn utsnittet (senter i verdens-cm + px per cm) som får alle boksene innenfor W × H med m px
+// luft, nærmest mulig det gjeldende: først bare flytting; får de ikke plass i gjeldende skala,
+// zoomes det ut akkurat nok. Boksene har fast størrelse i px (papirmål) og et senter som følger
+// verden — spennet er derfor ikke lineært i skalaen, og skalaen finnes ved halvering.
+// Returnerer null når alt har plass fra før.
+function _pdfDimFitSolve(boxes, W, H, m, cx, cy, sc) {
+  if (!boxes.length || !_pdfDimBoxesOut(boxes, W, H, m).length) return null;
+  const B = boxes.map(b => ({ wx: cx + ((b.x0 + b.x1) / 2 - W / 2) / sc, wy: cy + ((b.y0 + b.y1) / 2 - H / 2) / sc, hw: (b.x1 - b.x0) / 2, hh: (b.y1 - b.y0) / 2 }));
+  const span = s => {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const b of B) { x0 = Math.min(x0, b.wx * s - b.hw); x1 = Math.max(x1, b.wx * s + b.hw); y0 = Math.min(y0, b.wy * s - b.hh); y1 = Math.max(y1, b.wy * s + b.hh); }
+    return { x0, x1, y0, y1 };
+  };
+  const fits = s => { const p = span(s); return p.x1 - p.x0 <= W - 2 * m && p.y1 - p.y0 <= H - 2 * m; };
+  let s = sc;
+  if (!fits(s)) {
+    let lo = sc / 64, hi = sc;
+    if (!fits(lo)) return null;                              // boksene alene er større enn bildet — ingenting å hente
+    for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+    s = lo;
+  }
+  const p = span(s);
+  const clamp = (v, a, b) => a > b ? (a + b) / 2 : Math.min(b, Math.max(a, v));
+  // senter·s må ligge i [x1 − W/2 + m, x0 + W/2 − m] for at alt skal være innenfor
+  const ncx = clamp(cx * s, p.x1 - W / 2 + m, p.x0 + W / 2 - m) / s;
+  const ncy = clamp(cy * s, p.y1 - H / 2 + m, p.y0 + H / 2 - m) / s;
+  return { cx: ncx, cy: ncy, sc: s };
+}
+// Målestokken («50 cm») i rombildet: samme papirstørrelse som målene (226-regelen), og plassert i
+// det første hjørnet/kantfeltet der den verken ligger nær en tekst (1,5 mm luft) eller over noe
+// annet som er tegnet (pikslene er tomme). Finnes det ikke noe ledig felt, tegnes den ikke — den
+// skal aldri overlappe en målkjede. Kalles av _renderRoomToImage ETTER at utsnittet er endelig.
+function _pdfDrawScaleBar(cap) {
+  const P = _dimPdfStyle();
+  if (!P) return null;
+  const W = _cvW(), H = _cvH();
+  const barW = GRID * S.view.zoom * BASE_SCALE;
+  if (barW < 20 || barW > W * 0.4) return null;              // samme grenser som skjermens målestokk
+  ctx.save();
+  ctx.font = `${P.fontPx}px ${CANVAS_NUM_FONT}`;
+  const str = "50 cm", tw = ctx.measureText(str).width;
+  const bw = Math.max(barW, tw) + P.fontPx, bh = P.fontPx * 1.4 + P.tickHalf * 2 + P.fontPx * 0.6;
+  const mg = 2 * P.pxPerMm, luft = 1.5 * P.pxPerMm;
+  const kand = [[mg, H - mg - bh], [W - mg - bw, H - mg - bh], [mg, mg], [W - mg - bw, mg], [(W - bw) / 2, H - mg - bh], [(W - bw) / 2, mg]];
+  const fri = ([x, y]) => !cap.boxes.some(b => b.x0 < x + bw + luft && b.x1 > x - luft && b.y0 < y + bh + luft && b.y1 > y - luft);
+  const tomt = ([x, y]) => {
+    try {
+      const d = ctx.getImageData(Math.floor(x), Math.floor(y), Math.ceil(bw), Math.ceil(bh)).data;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 8) return false;
+      return true;
+    } catch (e) { return true; }
+  };
+  const at = kand.filter(fri).find(tomt) || null;
+  if (!at) { ctx.restore(); return null; }
+  const [x, y] = at, cxm = x + bw / 2, lineY = y + bh - P.fontPx * 0.3 - P.tickHalf;
+  ctx.strokeStyle = P.col; ctx.lineWidth = P.line; ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(cxm - barW / 2, lineY); ctx.lineTo(cxm + barW / 2, lineY);
+  ctx.moveTo(cxm - barW / 2, lineY - P.tickHalf); ctx.lineTo(cxm - barW / 2, lineY + P.tickHalf);
+  ctx.moveTo(cxm + barW / 2, lineY - P.tickHalf); ctx.lineTo(cxm + barW / 2, lineY + P.tickHalf);
+  ctx.stroke();
+  ctx.fillStyle = P.col; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  CanvasRenderingContext2D.prototype.fillText.call(ctx, str, cxm, lineY - P.tickHalf - P.fontPx * 0.7);
+  ctx.restore();
+  return { x, y, w: bw, h: bh, fontPx: P.fontPx, barW };
+}
+@@@ SLUTT
+@@@ FINN
+  if (S.ui?._pdfOverview) return;   // 154: 50 cm-pillen blir en uleselig 1 mm-flekk på plantegningen
+@@@ SETT
+  if (S.ui?._pdfOverview) return;   // 154: 50 cm-pillen blir en uleselig 1 mm-flekk på plantegningen
+  if (_pdfCap) return;              // 228: i rombildet tegnes målestokken av _pdfDrawScaleBar (papirstørrelse, ledig felt)
+@@@ SLUTT

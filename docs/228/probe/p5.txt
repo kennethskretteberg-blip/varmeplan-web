@@ -1,0 +1,49 @@
+@@@ FINN
+  const barW = GRID * S.view.zoom * BASE_SCALE;
+  if (barW < 20 || barW > W * 0.4) return null;              // samme grenser som skjermens målestokk
+  ctx.save();
+  ctx.font = `${P.fontPx}px ${CANVAS_NUM_FONT}`;
+  const str = "50 cm", tw = ctx.measureText(str).width;
+  const bw = Math.max(barW, tw) + P.fontPx, bh = P.fontPx * 1.4 + P.tickHalf * 2 + P.fontPx * 0.6;
+  const mg = 2 * P.pxPerMm, luft = 1.5 * P.pxPerMm;
+  const kand = [[mg, H - mg - bh], [W - mg - bw, H - mg - bh], [mg, mg], [W - mg - bw, mg], [(W - bw) / 2, H - mg - bh], [(W - bw) / 2, mg]];
+  const fri = ([x, y]) => !cap.boxes.some(b => b.x0 < x + bw + luft && b.x1 > x - luft && b.y0 < y + bh + luft && b.y1 > y - luft);
+  const tomt = ([x, y]) => {
+    try {
+      const d = ctx.getImageData(Math.floor(x), Math.floor(y), Math.ceil(bw), Math.ceil(bh)).data;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 8) return false;
+      return true;
+    } catch (e) { return true; }
+  };
+  const at = kand.filter(fri).find(tomt) || null;
+  if (!at) { ctx.restore(); return null; }
+@@@ SETT
+  ctx.save();
+  ctx.font = `${P.fontPx}px ${CANVAS_NUM_FONT}`;
+  const mg = 2 * P.pxPerMm, luft = 1.5 * P.pxPerMm, bh = P.fontPx * 1.4 + P.tickHalf * 2 + P.fontPx * 0.6;
+  // 50 cm som på skjermen; er utsnittet så trangt at den ikke får et ledig felt, prøves 20 og 10 cm.
+  let at = null, barW = 0, bw = 0, str = "", lenCm = 0;
+  for (const cm of [GRID, 20, 10]) {
+    barW = cm * S.view.zoom * BASE_SCALE;
+    if (barW < 20 || barW > W * 0.4) continue;               // samme grenser som skjermens målestokk
+    str = cm + " cm"; lenCm = cm;
+    bw = Math.max(barW, ctx.measureText(str).width) + P.fontPx;
+    const kand = [[mg, H - mg - bh], [W - mg - bw, H - mg - bh], [mg, mg], [W - mg - bw, mg], [(W - bw) / 2, H - mg - bh], [(W - bw) / 2, mg]];
+    const fri = ([x, y]) => !cap.boxes.some(b => b.x0 < x + bw + luft && b.x1 > x - luft && b.y0 < y + bh + luft && b.y1 > y - luft);
+    const tomt = ([x, y]) => {
+      try {
+        const d = ctx.getImageData(Math.floor(x), Math.floor(y), Math.ceil(bw), Math.ceil(bh)).data;
+        for (let i = 3; i < d.length; i += 4) if (d[i] > 8) return false;
+        return true;
+      } catch (e) { return true; }
+    };
+    at = kand.filter(fri).find(tomt) || null;
+    if (at) break;
+  }
+  if (!at) { ctx.restore(); return null; }
+@@@ SLUTT
+@@@ FINN
+  return { x, y, w: bw, h: bh, fontPx: P.fontPx, barW };
+@@@ SETT
+  return { x, y, w: bw, h: bh, fontPx: P.fontPx, barW, cm: lenCm };
+@@@ SLUTT

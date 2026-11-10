@@ -1,0 +1,64 @@
+@@@ FINN
+        if (it > 0) { _setView(_req.cx, _req.cy, _req.sc); pvScale = pv ? pv.scale : 1; cap = _drawOnce(); }
+@@@ SETT
+        if (it > 0) { _setView(_req.cx, _req.cy, _req.sc); pvScale = pv ? pv.scale : 1; worldW = _req.w; worldH = _req.h; cap = _drawOnce(); }
+@@@ SLUTT
+@@@ FINN
+  const _req = { cx: S.view.panX, cy: S.view.panY, sc: scOut };
+@@@ SETT
+  const _req = { cx: S.view.panX, cy: S.view.panY, sc: scOut, w: worldW, h: worldH };
+@@@ SLUTT
+@@@ FINN
+      <span id="exp-pv-zoom" style="font-weight:600;color:var(--text)"></span>
+    </div>
+@@@ SETT
+      <span id="exp-pv-zoom" style="font-weight:600;color:var(--text)"></span>
+    </div>
+    <div id="exp-pv-note" style="display:none;font-size:12px;color:var(--warn);margin:-2px 0 8px"></div>
+@@@ SLUTT
+@@@ FINN
+  p.cur = { cx: v.panX, cy: v.panY, scale: v.scale };
+  p.autoW = v.worldW * v.scale;                       // auto-utsnittets bredde i cm (konstant)
+@@@ SETT
+  p.cur = { cx: v.panX, cy: v.panY, scale: v.scale };
+  // 228: `req` er utsnittet som er LAGRET (det brukeren ba om); `cur` er det som faktisk ble tegnet
+  // (kan være justert så målene får plass). Hjul og dra regner fra `req`.
+  p.req = v.req ? { cx: v.req.cx, cy: v.req.cy, scale: v.req.scale } : { cx: v.panX, cy: v.panY, scale: v.scale };
+  const note = document.getElementById('exp-pv-note');
+  if (note) {
+    const f = p.res.dimFit;
+    const txt = !f ? '' : (f.adjusted && f.saved) ? 'Utsnittet ble justert så målene får plass'
+      : (!f.adjusted && f.cut) ? (f.cut === 1 ? '1 mål står delvis utenfor utsnittet' : f.cut + ' mål står delvis utenfor utsnittet') + ' — zoom ut eller flytt' : '';
+    note.textContent = txt; note.style.display = txt ? 'block' : 'none';
+  }
+  p.autoW = v.worldW * v.scale;                       // auto-utsnittets bredde i cm (konstant)
+@@@ SLUTT
+@@@ FINN
+  p.cur = { cx: v.cx, cy: v.cy, scale: v.scale };
+  _pdfPrevSchedule();
+@@@ SETT
+  p.cur = { cx: v.cx, cy: v.cy, scale: v.scale };
+  p.req = { cx: v.cx, cy: v.cy, scale: v.scale };   // 228
+  _pdfPrevSchedule();
+@@@ SLUTT
+@@@ FINN
+  const ns = Math.min(PDF_VIEW_SCALE_MAX, Math.max(PDF_VIEW_SCALE_MIN, p.cur.scale * f));
+  if (Math.abs(ns - p.cur.scale) < 1e-9) return;
+@@@ SETT
+  const base = (p.req || p.cur).scale;               // 228: fra det lagrede utsnittet, ikke det justerte
+  const ns = Math.min(PDF_VIEW_SCALE_MAX, Math.max(PDF_VIEW_SCALE_MIN, base * f));
+  if (Math.abs(ns - base) < 1e-9) return;
+@@@ SLUTT
+@@@ FINN
+    p.drag = { kind: 'pan', start: pt, cx0: p.cur.cx, cy0: p.cur.cy, moved: false };
+@@@ SETT
+    const r0 = p.req || p.cur;                         // 228: dra regnes fra det lagrede utsnittet
+    p.drag = { kind: 'pan', start: pt, cx0: r0.cx, cy0: r0.cy, scale0: r0.scale, moved: false };
+@@@ SLUTT
+@@@ FINN
+    const sc = _pdfPrevSc();
+    _pdfPrevSetView(d.cx0 - (pt.x - d.start.x) / sc, d.cy0 - (pt.y - d.start.y) / sc, p.cur.scale);
+@@@ SETT
+    const sc = p.res.view.outW * d.scale0 / p.autoW;   // 228: px per cm i det LAGREDE utsnittet (= _pdfPrevSc() uten justering)
+    _pdfPrevSetView(d.cx0 - (pt.x - d.start.x) / sc, d.cy0 - (pt.y - d.start.y) / sc, d.scale0);
+@@@ SLUTT

@@ -1,0 +1,10 @@
+@@@ FINN
+- **Sist gjort:** 227 Sammenslåing
+@@@ SETT
+- **Sist gjort:** 228 PDF: mål som kuttes i kanten av rombildet (`main`, committet `HASH228`, ikke pushet): `_renderRoomToImage` fanger måltekstene mens den tegner og flytter/zoomer utsnittet ut akkurat nok til at rommets egne mål får plass. Auto-utsnitt alltid; lagret `pdfView` bare når endringen er høyst 20 % (da varsel i forhåndsvisningen), ellers står utsnittet og forhåndsvisningen melder kuttede mål. Målestokken i målenes papirstørrelse (2,0 mm) i et ledig hjørne. Årsaken i P0402 «Kjøkken» er sannsynligvis et lagret utsnitt fra før 226 – ikke bekreftet, prosjektet er ikke åpnet (ingen innlogging). Ny `_pdfDimFitRegressionTest228` 83/83; suiten 97 tester, samme sju røde som HEAD. Se `docs/228/RAPPORT.md`. Før det: 227 Sammenslåing
+@@@ SLUTT
+@@@ FINN
+- **Neste steg:** Løpet serie-223-design er ferdig
+@@@ SETT
+- **Neste steg:** Kenneth lager PDF av P0402 og ser på side 3 (Kjøkken), og svarer på `docs/228/SPØRSMÅL.md` (20 %-grensen for lagret utsnitt; skjule halvt kuttede mål; målestokk 20/10 cm; hjørneplassering; har Kjøkken et lagret utsnitt; zoom-tallet). Løpet serie-223-design er ferdig
+@@@ SLUTT

@@ -1,0 +1,15 @@
+@@@ FINN
+---
+
+## 225 — Flater, farger og ryddigere verktøylinje
+@@@ SETT
+---
+
+## 228 — PDF: mål som kuttes i kanten av rombildet (10.11.2026, `HASH228`, `main`, ikke pushet)
+
+Kenneth 10.11.2026 (P0402 «Kjøkken», side 3): den loddrette målkjeden var kuttet av bildekanten, og målestokken overlappet nederste kjede. **Årsak:** utsnittet regnes i cm (luft `_pdfRoomPadCm`, eller lagret `room.pdfView`), målteksten etter 226 i mm på papiret, og ingenting sjekket at teksten fikk plass. Auto-utsnittet kutter ikke i et 3 × 3 m rom (målt, også Ekstra stor); et lagret utsnitt gjør det. P0402 er ikke åpnet (ingen innlogging), så at Kjøkken har et lagret utsnitt er sannsynlig, ikke bekreftet. **Endret:** `_renderRoomToImage` fanger hver tekstboks mens den tegner (`_pdfCap`, blokken «228 · INGEN MÅLTEKST KUTTES AV BILDEKANTEN»); rommets egne mål sjekkes mot lerretet, og utsnittet flyttes/zoomes ut akkurat nok (`_pdfDimFitSolve`) før det tegnes på nytt. Auto: alltid. Lagret utsnitt: bare når endringen er høyst 20 % zoom og 20 % av bildebredden – forhåndsvisningen viser «Utsnittet ble justert så målene får plass», det lagrede skrives ikke over. Krever det mer (detaljutsnitt), står utsnittet urørt og forhåndsvisningen sier hvor mange mål som står delvis utenfor. Målestokken tegnes i målenes papirstørrelse (2,0 mm) i første ledige hjørne/kantfelt, 20 eller 10 cm når 50 ikke får plass, og utelates når ingenting er ledig (`_pdfDrawScaleBar`). Forhåndsvisningen regner hjul og dra fra det lagrede utsnittet. Bildestørrelse, aspekt og sideantall uendret; skjermen urørt. **Tester:** ny `_pdfDimFitRegressionTest228` 83/83; suiten 97 tester, 90 grønne, samme sju røde som HEAD; `_pdfPreviewRegressionTest` B2 måler nå mot det lagrede utsnittet. **Ikke rettet:** veggetiketter delvis skjult bak produktetiketter; frittstående mål og naborommenes mål kan fortsatt kuttes; plantegningen per etasje urørt. Før/etter i `docs/228/`. Se `docs/228/RAPPORT.md` og `docs/228/SPØRSMÅL.md`.
+
+---
+
+## 225 — Flater, farger og ryddigere verktøylinje
+@@@ SLUTT

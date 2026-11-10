@@ -1,0 +1,54 @@
+@@@ FINN
+function _renderRoomToImage(room, opts) {
+@@@ SETT
+// 228: regresjon — ingen måltekst utenfor rombildet (små/store rom, L-form, med og uten pdfView,
+// Normal og Ekstra stor), lagret utsnitt justeres bare når endringen er liten, målestokken har
+// målenes papirstørrelse og ligger aldri over en tekst.
+function _pdfDimFitRegressionTest228() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const saved = { rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats, matPaths: S.matPaths,
+    hindrings: S.hindrings, stairs: S.stairs, floors: S.floors, project: S.project, counters: { ...S.counters }, floatingDims: S.floatingDims,
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedRoomId: S.ui.selectedRoomId, selectedDimId: S.ui.selectedDimId,
+    prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(), profile: (typeof _currentProfile !== 'undefined') ? _currentProfile : undefined,
+    autoSave: window._performAutoSave, sched: window._scheduleAutoSave, toast: window._showToast,
+    undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
+    dlg: (document.getElementById('export-dialog') || { style: {} }).style.display };
+  try {
+    window._performAutoSave = () => Promise.resolve(); window._scheduleAutoSave = () => {}; window._showToast = () => {};
+    const FOLIE = { id: 996805, category_id: 1, active: true, name: 'FlexFoil B=60cm', width_mm: 590, netto_width_mm: 590, watt_per_lm: 36, watt_per_m2: 60, voltage: 230, min_gap_mm: 10, min_wall_margin_mm: 25 };
+    const CAB = { id: 996801, category_id: 9700, active: true, product_family: 'Test 10T', name: 'Test 10T 600W 60m', voltage: 230, cable_length_m: 60, watt_per_m: 10, total_effect_w: 600, min_wall_margin_mm: 50 };
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push({ id: 1, name: 'Folie', module_type: 'foil' }, { id: 9700, module_type: 'cable', name: 'TESTKABEL' });
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(FOLIE, CAB);
+    const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+    const mk = (id, navn, pts) => ({ id, floorId: null, partId: null, name: navn, points: pts, walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [], annotOffsets: {}, dimSnap: true });
+    const A = mk(992801, 'Lite', rect(0, 0, 150, 120));
+    const B = mk(992802, 'Kjøkken', rect(1000, 0, 300, 300));
+    const C = mk(992803, 'Stort', rect(2000, 0, 900, 700));
+    const D = mk(992804, 'L-form', [{ x: 4000, y: 0 }, { x: 4500, y: 0 }, { x: 4500, y: 250 }, { x: 4250, y: 250 }, { x: 4250, y: 400 }, { x: 4000, y: 400 }]);
+    S.rooms = [A, B, C, D]; S.floors = []; S.stairs = []; S.mats = []; S.matPaths = []; S.foilFree = []; S.floatingDims = [];
+    S.ui.activeFloorId = null; S.ui.activePartId = null;
+    S.project = { name: 'MÅL-I-BILDET-228', parts: [], revision: 0 };
+    let sid = 992900;
+    const strip = (r, pos, start, len) => ({ id: sid++, roomId: r.id, productId: FOLIE.id, direction: 'v', pos_cm: pos, start_cm: start, length_cm: len });
+    S.strips = [strip(A, 2.5, 2.5, 115), strip(A, 62.5, 2.5, 115),
+      strip(B, 1002.5, 2.5, 294.6), strip(B, 1238.5, 2.9, 294), ...[0, 1, 2, 3, 4, 5, 6, 7].map(i => strip(C, 2002.5 + i * 61, 2.5, 695))];
+    S.cables = [{ id: 992950, roomId: D.id, productId: CAB.id, direction: 'v', spacing_cm: 20, startCorner: 'bl', totalLength_cm: 6000,
+      runs: [0, 1, 2, 3, 4, 5].map(i => ({ pos_cm: 4030 + i * 20, segments: [{ start_cm: 20, end_cm: 380 }] })), connections: [] }];
+    S.hindrings = [{ id: 992960, type: 'annet', label: 'ØY', roomId: B.id, floorId: null, points: rect(1100, 110, 100, 80), clearance: 'wall' }];
+    if (typeof _rebuildActiveFloorRoomIds === 'function') _rebuildActiveFloorRoomIds();
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    S.ui.selectedRoomId = B.id; try { autoDimHindrings(); } catch (e) {} S.ui.selectedRoomId = null; S.ui.selectedDimId = null;
+    // 228-TEST-FORTSETT
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    // 228-TEST-RYDD
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_pdfDimFitRegressionTest228: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
+  return { ok: allOk, results };
+}
+
+function _renderRoomToImage(room, opts) {
+@@@ SLUTT

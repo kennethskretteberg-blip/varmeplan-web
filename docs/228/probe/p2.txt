@@ -1,0 +1,76 @@
+@@@ FINN
+  const pvScale = pv ? pv.scale : 1;
+  const worldW = (rW + 2 * padCm) / pvScale;   // cm spanning canvas width
+  const worldH = (rH + 2 * padCm) / pvScale;   // cm spanning canvas height
+@@@ SETT
+  let pvScale = pv ? pv.scale : 1;             // 228: let — utsnittet kan bli justert så målene får plass
+  let worldW = (rW + 2 * padCm) / pvScale;     // cm spanning canvas width
+  let worldH = (rH + 2 * padCm) / pvScale;     // cm spanning canvas height
+@@@ SLUTT
+@@@ FINN
+  if (typeof markDirty === 'function') markDirty();
+  if (typeof render === 'function') render();
+  // STEG 2 (Kenneth 24.08.2026): påstand i utviklingsmodus
+@@@ SETT
+  // 228: tegn med tekstfangst, sjekk målboksene mot bildekanten, juster utsnittet og tegn på nytt.
+  // Auto-utsnitt: flytt/zoom ut til ALT får plass (rommet selv teller med, så det blir stående).
+  // Lagret utsnitt (pdfView): samme, men bare når endringen er liten (≤ 20 % zoom, ≤ 20 % av
+  // bildebredden i flytting) — da meldes `dimFit.adjusted`, og forhåndsvisningen sier fra. Krever
+  // det mer, har brukeren zoomet inn på en detalj med vilje: utsnittet står, og `dimFit.cut` teller
+  // måltekstene som står delvis utenfor (varsel i forhåndsvisningen). Aspekt og bildestørrelse er
+  // uendret i alle tilfeller, så sideoppsettet påvirkes ikke.
+  const _drawOnce = () => {
+    const c = _pdfCapStart();
+    try { if (typeof markDirty === 'function') markDirty(); if (typeof render === 'function') render(); } finally { _pdfCapStop(); }
+    return c;
+  };
+  const _setView = (cx, cy, sc) => {
+    S.view.zoom = sc / BASE_SCALE; S.view.panX = cx; S.view.panY = cy;
+    worldW = outW / sc; worldH = worldW * aspect; pvScale = (rW + 2 * padCm) / worldW;
+    if (S.ui) S.ui._pdfScaleMmPerCm = targetWmm / worldW;
+  };
+  const _req = { cx: S.view.panX, cy: S.view.panY, sc: scOut };
+  const _edgePx = PDF_DIM_EDGE_MM * outW / targetWmm;
+  let cap = _drawOnce(), dimFit = null;
+  if (!opts.noDimFit) {
+    const dimsOf = c => c.boxes.filter(b => b.dim);
+    for (let it = 0; it < 4; it++) {
+      const dims = dimsOf(cap);
+      if (!_pdfDimBoxesOut(dims, outW, outH, _edgePx).length) break;
+      const a = w2s(rMinX, rMinY), b = w2s(rMaxX, rMaxY);
+      const set = pv ? dims : [...dims, { x0: a.x, y0: a.y, x1: b.x, y1: b.y }];
+      const sol = _pdfDimFitSolve(set, outW, outH, _edgePx, S.view.panX, S.view.panY, outW / worldW);
+      const stor = sol && pv && (sol.sc / _req.sc < PDF_DIM_FIT_MIN_ZOOM
+        || Math.abs(sol.cx - _req.cx) * _req.sc > PDF_DIM_FIT_MAX_SHIFT * outW
+        || Math.abs(sol.cy - _req.cy) * _req.sc > PDF_DIM_FIT_MAX_SHIFT * outW);
+      if (!sol || stor) {
+        if (it > 0) { _setView(_req.cx, _req.cy, _req.sc); pvScale = pv ? pv.scale : 1; cap = _drawOnce(); }
+        const cut = _pdfDimBoxesCut(dimsOf(cap), outW, outH).length;
+        dimFit = cut ? { adjusted: false, cut } : null;
+        break;
+      }
+      _setView(sol.cx, sol.cy, sol.sc);
+      cap = _drawOnce();
+      dimFit = { adjusted: true, saved: !!pv, cut: 0 };
+    }
+    if (dimFit && dimFit.adjusted) dimFit.cut = _pdfDimBoxesCut(dimsOf(cap), outW, outH).length;
+  }
+  // 228: målestokken i papirstørrelse, i et ledig felt — etter at utsnittet er endelig.
+  const scaleBar = _pdfDrawScaleBar(cap);
+  // STEG 2 (Kenneth 24.08.2026): påstand i utviklingsmodus
+@@@ SLUTT
+@@@ FINN
+  const view = { zoom: S.view.zoom, panX: S.view.panX, panY: S.view.panY, outW, outH, worldW, worldH, scale: pvScale };
+@@@ SETT
+  // 228: `req` = utsnittet som var bedt om (lagret pdfView) — forhåndsvisningen regner hjul og dra
+  // fra det, ikke fra det justerte, ellers kunne man aldri zoome seg forbi justeringen.
+  const view = { zoom: S.view.zoom, panX: S.view.panX, panY: S.view.panY, outW, outH, worldW, worldH, scale: pvScale,
+    req: pv ? { cx: pv.cx, cy: pv.cy, scale: pv.scale } : null };
+  const texts = cap.boxes;
+@@@ SLUTT
+@@@ FINN
+  return { url: dataURL, fmt: _enc ? _enc.fmt : null, comp: _enc ? _enc.comp : undefined, w: outW, h: outH, aspect, view, labels, numbers };
+@@@ SETT
+  return { url: dataURL, fmt: _enc ? _enc.fmt : null, comp: _enc ? _enc.comp : undefined, w: outW, h: outH, aspect, view, labels, numbers,
+    dimFit, scaleBar, texts };   // 228: justering av utsnittet, målestokkens plass, alle tekstbokser (dim = måltekst)
+@@@ SLUTT

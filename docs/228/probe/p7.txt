@@ -1,0 +1,50 @@
+@@@ FINN
+function _pdfCapStart(room) {
+  const cap = { boxes: [], roomId: room ? room.id : null, ownDims: new Set((room && room.dims) || []), rid: undefined };
+@@@ SETT
+function _pdfCapStart(room) {
+  // Er fillText alt pakket inn av noen andre (regresjonstester gjør det), pakkes DEN inn og settes
+  // tilbake av _pdfCapStop — fangsten skal aldri koble ut en annens.
+  const cap = { boxes: [], roomId: room ? room.id : null, ownDims: new Set((room && room.dims) || []), rid: undefined,
+    own: Object.prototype.hasOwnProperty.call(ctx, "fillText"), prev: ctx.fillText };
+@@@ SLUTT
+@@@ FINN
+  const orig = CanvasRenderingContext2D.prototype.fillText;
+  ctx.fillText = function (str, x, y) {
+@@@ SETT
+  const orig = cap.prev;
+  ctx.fillText = function (str, x, y) {
+@@@ SLUTT
+@@@ FINN
+function _pdfCapStop() { delete ctx.fillText; _pdfCap = null; }
+@@@ SETT
+function _pdfCapStop() {
+  const cap = _pdfCap;
+  if (cap && cap.own) ctx.fillText = cap.prev; else delete ctx.fillText;
+  _pdfCap = null;
+}
+@@@ SLUTT
+@@@ FINN
+  CanvasRenderingContext2D.prototype.fillText.call(ctx, str, cxm, lineY - P.tickHalf - P.fontPx * 0.7);
+@@@ SETT
+  ctx.fillText(str, cxm, lineY - P.tickHalf - P.fontPx * 0.7);
+@@@ SLUTT
+@@@ FINN
+    const wEtter = _pdfPrevS2W(pt.x, pt.y);
+    check('B2: hjul ved 10 %/10 % → punktet under pekeren står stille', 'samme verdenspunkt', near(wFor.x, wEtter.x, 0.5) && near(wFor.y, wEtter.y, 0.5), [wFor, wEtter]);
+@@@ SETT
+    // 228: punktet brukeren SER under pekeren (tegnet utsnitt) skal ligge under pekeren i det LAGREDE
+    // utsnittet etterpå. Det tegnede kan være justert så målene får plass (da er de to ulike).
+    const wEtter = (() => { const q = room.pdfView, v = _pdfPrev.res.view, s = v.outW * q.scale / _pdfPrev.autoW; return { x: (pt.x - v.outW / 2) / s + q.cx, y: (pt.y - v.outH / 2) / s + q.cy }; })();
+    check('B2: hjul ved 10 %/10 % → punktet under pekeren står stille', 'samme verdenspunkt', near(wFor.x, wEtter.x, 0.5) && near(wFor.y, wEtter.y, 0.5), [wFor, wEtter]);
+@@@ SLUTT
+@@@ FINN
+    check('D2: skjermen har fortsatt sin egen målestokk (ingen fangst utenfor rombildet)', null, _pdfCap === null && !Object.prototype.hasOwnProperty.call(ctx, 'fillText'), _pdfCap);
+@@@ SETT
+    check('D2: fangsten er av utenfor rombildet (skjermen tegner som før)', null, _pdfCap === null && !Object.prototype.hasOwnProperty.call(ctx, 'fillText'), _pdfCap);
+    // E · fangsten kobler ikke ut en annens innpakking av fillText (165-testen pakker den inn selv)
+    let sett = 0; const oT = ctx.fillText;
+    ctx.fillText = function () { sett++; return oT.apply(this, arguments); };
+    try { tegn(B); } finally { const mitt = Object.prototype.hasOwnProperty.call(ctx, 'fillText'); delete ctx.fillText;
+      check('E1: en ytre innpakking av fillText ser tekstene og står igjen etterpå', '> 0, står', sett > 0 && mitt, [sett, mitt]); }
+@@@ SLUTT

@@ -1,0 +1,27 @@
+{
+ "_dimChainEdgeRegressionTest": {
+  "pass": 28,
+  "total": 28,
+  "fail": []
+ },
+ "_hindDimRegressionTest217": {
+  "pass": 24,
+  "total": 24,
+  "fail": []
+ },
+ "_pdfPreviewRegressionTest": {
+  "pass": 96,
+  "total": 96,
+  "fail": []
+ },
+ "_pdfNumberModeRegressionTest": {
+  "pass": 59,
+  "total": 59,
+  "fail": []
+ },
+ "_pdfDimFitRegressionTest228": {
+  "pass": 83,
+  "total": 83,
+  "fail": []
+ }
+}
