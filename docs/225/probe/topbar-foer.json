@@ -1,0 +1,80 @@
+{
+ "1280": {
+  "clientWidth": 1280,
+  "scrollWidth": 1306,
+  "ruller": true,
+  "innhold": 1306,
+  "hoyder": [
+   44
+  ],
+  "tekst": [
+   "12px",
+   "16px",
+   "15px"
+  ],
+  "ikonKvadrat": false,
+  "valgt": [
+   {
+    "t": "Lerret",
+    "bg": "rgb(234, 236, 241)",
+    "fg": "rgb(8, 145, 178)"
+   },
+   {
+    "t": "Raster",
+    "bg": "rgb(234, 236, 241)",
+    "fg": "rgb(8, 145, 178)"
+   },
+   {
+    "t": "Bygg",
+    "bg": "rgb(234, 236, 241)",
+    "fg": "rgb(8, 145, 178)"
+   },
+   {
+    "t": "90°",
+    "bg": "rgb(234, 236, 241)",
+    "fg": "rgb(8, 145, 178)"
+   }
+  ],
+  "antall": 21,
+  "tekster": "Lerret | Liste | Flytt | ↔ Flytt | ↩ Angre | Raster | Snap | 90° | 45° | ? | Lagre prosjekt (Ctrl+S) | Versjonshistorikk | Åpne prosjekt | Eksporter PDF | Materialliste (Excel) | Send til montør | Be kunde om mål — del tegningen uten innlogging | ▶ Presentasjon | − | ⊞ | +"
+ },
+ "1400": {
+  "clientWidth": 1400,
+  "scrollWidth": 1400,
+  "ruller": false,
+  "innhold": 1306,
+  "hoyder": [
+   44
+  ],
+  "tekst": [
+   "12px",
+   "16px",
+   "15px"
+  ],
+  "ikonKvadrat": false,
+  "valgt": [
+   {
+    "t": "Lerret",
+    "bg": "rgb(234, 236, 241)",
+    "fg": "rgb(8, 145, 178)"
+   },
+   {
+    "t": "Raster",
+    "bg": "rgb(234, 236, 241)",
+    "fg": "rgb(8, 145, 178)"
+   },
+   {
+    "t": "Bygg",
+    "bg": "rgb(234, 236, 241)",
+    "fg": "rgb(8, 145, 178)"
+   },
+   {
+    "t": "90°",
+    "bg": "rgb(234, 236, 241)",
+    "fg": "rgb(8, 145, 178)"
+   }
+  ],
+  "antall": 21,
+  "tekster": "Lerret | Liste | Flytt | ↔ Flytt | ↩ Angre | Raster | Snap | 90° | 45° | ? | Lagre prosjekt (Ctrl+S) | Versjonshistorikk | Åpne prosjekt | Eksporter PDF | Materialliste (Excel) | Send til montør | Be kunde om mål — del tegningen uten innlogging | ▶ Presentasjon | − | ⊞ | +"
+ }
+}

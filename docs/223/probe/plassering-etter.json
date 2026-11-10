@@ -1,0 +1,76 @@
+{
+ "dsf1": {
+  "dpr": 1,
+  "backing": [
+   1215,
+   814
+  ],
+  "hash": {
+   "alt": "a0c34548",
+   "kabelHindring": "b51ff85e",
+   "folieMaal": "a6e7a7aa",
+   "matte": "667bdff0",
+   "trapp": "8723be8a",
+   "tak": "ee425d3f"
+  },
+  "w2s": {
+   "origo": [
+    -232.5,
+    -718
+   ],
+   "rom32": [
+    967.5,
+    -493
+   ],
+   "matte": [
+    -7.5,
+    332
+   ],
+   "trapp": [
+    607.5,
+    407
+   ],
+   "takHjorne": [
+    1357.5,
+    707
+   ]
+  }
+ },
+ "dsf2": {
+  "dpr": 2,
+  "backing": [
+   2430,
+   1628
+  ],
+  "hash": {
+   "alt": "2b441c35",
+   "kabelHindring": "6783586b",
+   "folieMaal": "653c70b9",
+   "matte": "279c0f39",
+   "trapp": "654b02ae",
+   "tak": "b1c3ee8c"
+  },
+  "w2s": {
+   "origo": [
+    -232.5,
+    -718
+   ],
+   "rom32": [
+    967.5,
+    -493
+   ],
+   "matte": [
+    -7.5,
+    332
+   ],
+   "trapp": [
+    607.5,
+    407
+   ],
+   "takHjorne": [
+    1357.5,
+    707
+   ]
+  }
+ }
+}

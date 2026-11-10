@@ -1,0 +1,22 @@
+{
+ "_canvasRegressionTest223": {
+  "pass": 24,
+  "total": 24,
+  "fail": []
+ },
+ "_designRegressionTest224": {
+  "pass": 22,
+  "total": 22,
+  "fail": []
+ },
+ "_designRegressionTest225": {
+  "pass": 27,
+  "total": 27,
+  "fail": []
+ },
+ "_takRegressionTest220": {
+  "pass": 44,
+  "total": 44,
+  "fail": []
+ }
+}

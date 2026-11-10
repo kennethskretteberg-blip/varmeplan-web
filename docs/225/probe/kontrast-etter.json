@@ -1,0 +1,78 @@
+{
+ "light": {
+  "tokens": {
+   "--bg": "rgb(245, 247, 250)",
+   "--surface": "rgb(255, 255, 255)",
+   "--surface2": "rgb(242, 244, 247)",
+   "--border": "rgb(227, 232, 239)",
+   "--border-strong": "rgb(203, 211, 224)",
+   "--text": "rgb(15, 23, 41)",
+   "--muted": "rgb(69, 80, 107)",
+   "--dim": "rgb(93, 108, 135)",
+   "--accent": "rgb(8, 145, 178)",
+   "--on-accent": "rgb(255, 255, 255)",
+   "--accent-soft": "rgb(230, 245, 249)",
+   "--warn": "rgb(154, 107, 8)",
+   "--success": "rgb(30, 122, 77)",
+   "--danger": "rgb(194, 52, 31)",
+   "--info": "rgb(37, 99, 235)",
+   "--canvas-bg": "rgb(251, 252, 253)"
+  },
+  "kontrast": {
+   "--text på --surface": 17.87,
+   "--text på --bg": 16.65,
+   "--muted på --surface": 8.04,
+   "--muted på --bg": 7.49,
+   "--muted på --surface2": 7.29,
+   "--dim på --surface": 5.3,
+   "--dim på --bg": 4.94,
+   "--dim på --surface2": 4.81,
+   "--on-accent på --accent": 3.68,
+   "--accent på --surface": 3.68,
+   "--warn på --surface": 4.69,
+   "--success på --surface": 5.32,
+   "--danger på --surface": 5.52,
+   "--info på --surface": 5.17,
+   "--text på --canvas-bg": 17.4,
+   "--dim på --canvas-bg": 5.16
+  }
+ },
+ "dark": {
+  "tokens": {
+   "--bg": "rgb(13, 14, 16)",
+   "--surface": "rgb(20, 21, 23)",
+   "--surface2": "rgb(27, 29, 33)",
+   "--border": "rgb(37, 40, 48)",
+   "--border-strong": "rgb(53, 58, 70)",
+   "--text": "rgb(238, 240, 244)",
+   "--muted": "rgb(144, 151, 168)",
+   "--dim": "rgb(123, 132, 154)",
+   "--accent": "rgb(34, 211, 238)",
+   "--on-accent": "rgb(13, 14, 16)",
+   "--accent-soft": "rgba(34, 211, 238, 0.12)",
+   "--warn": "rgb(255, 140, 71)",
+   "--success": "rgb(40, 180, 110)",
+   "--danger": "rgb(229, 72, 77)",
+   "--info": "rgb(59, 130, 246)",
+   "--canvas-bg": "rgb(13, 14, 16)"
+  },
+  "kontrast": {
+   "--text på --surface": 16.01,
+   "--text på --bg": 16.93,
+   "--muted på --surface": 6.25,
+   "--muted på --bg": 6.6,
+   "--muted på --surface2": 5.77,
+   "--dim på --surface": 4.88,
+   "--dim på --bg": 5.16,
+   "--dim på --surface2": 4.51,
+   "--on-accent på --accent": 10.69,
+   "--accent på --surface": 10.11,
+   "--warn på --surface": 7.91,
+   "--success på --surface": 6.82,
+   "--danger på --surface": 4.67,
+   "--info på --surface": 4.97,
+   "--text på --canvas-bg": 16.93,
+   "--dim på --canvas-bg": 5.16
+  }
+ }
+}

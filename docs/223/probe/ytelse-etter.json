@@ -1,0 +1,82 @@
+{
+ "dsf1": {
+  "dpr": 1,
+  "backing": [
+   1215,
+   814
+  ],
+  "rom": 64,
+  "strips": 202,
+  "kabler": 22,
+  "oversikt_grid": {
+   "median": 27.8,
+   "p90": 29.1,
+   "snitt": 27.96
+  },
+  "oversikt_uten": {
+   "median": 27.5,
+   "p90": 28.2,
+   "snitt": 27.72
+  },
+  "normal_grid": {
+   "median": 3.7,
+   "p90": 4.2,
+   "snitt": 3.84
+  },
+  "normal_uten": {
+   "median": 3.5,
+   "p90": 3.7,
+   "snitt": 3.53
+  },
+  "tett_grid": {
+   "median": 2.7,
+   "p90": 3.2,
+   "snitt": 2.83
+  },
+  "tett_uten": {
+   "median": 2.5,
+   "p90": 2.8,
+   "snitt": 2.58
+  }
+ },
+ "dsf2": {
+  "dpr": 2,
+  "backing": [
+   2430,
+   1628
+  ],
+  "rom": 64,
+  "strips": 202,
+  "kabler": 22,
+  "oversikt_grid": {
+   "median": 27.7,
+   "p90": 28.6,
+   "snitt": 27.9
+  },
+  "oversikt_uten": {
+   "median": 27.2,
+   "p90": 27.6,
+   "snitt": 27.32
+  },
+  "normal_grid": {
+   "median": 3.6,
+   "p90": 4.1,
+   "snitt": 3.69
+  },
+  "normal_uten": {
+   "median": 3.6,
+   "p90": 3.8,
+   "snitt": 3.67
+  },
+  "tett_grid": {
+   "median": 2.7,
+   "p90": 3.1,
+   "snitt": 2.86
+  },
+  "tett_uten": {
+   "median": 2.6,
+   "p90": 3.1,
+   "snitt": 2.78
+  }
+ }
+}

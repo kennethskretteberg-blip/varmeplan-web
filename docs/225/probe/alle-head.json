@@ -1,0 +1,466 @@
+{
+ "_canvasRegressionTest223": {
+  "pass": 24,
+  "total": 24,
+  "fail": []
+ },
+ "_matZoneRegressionTest": {
+  "pass": 17,
+  "total": 17,
+  "fail": []
+ },
+ "_matChapterRegressionTest": {
+  "pass": 25,
+  "total": 25,
+  "fail": []
+ },
+ "_matCrossFillRegressionTest": {
+  "pass": 32,
+  "total": 32,
+  "fail": []
+ },
+ "_matRotationRegressionTest": {
+  "pass": 39,
+  "total": 39,
+  "fail": []
+ },
+ "_matRegressionTest": {
+  "pass": 2,
+  "total": 2,
+  "fail": []
+ },
+ "_matFreeRegressionTest": {
+  "pass": 65,
+  "total": 65,
+  "fail": []
+ },
+ "_matRunAdjustRegressionTest": {
+  "pass": 0,
+  "total": 0,
+  "fail": []
+ },
+ "_matPathEqualizeRegressionTest": {
+  "pass": 0,
+  "total": 0,
+  "fail": []
+ },
+ "_matArrangementRegressionTest": {
+  "pass": 0,
+  "total": 0,
+  "fail": []
+ },
+ "_matPathClickRegressionTest": {
+  "pass": 0,
+  "total": 0,
+  "fail": []
+ },
+ "_roomMoveRegressionTest": {
+  "pass": 42,
+  "total": 42,
+  "fail": []
+ },
+ "_listKalkyleClearRegressionTest": {
+  "pass": 32,
+  "total": 32,
+  "fail": []
+ },
+ "_prosjektlaasRegressionTest": {
+  "pass": 66,
+  "total": 67,
+  "fail": [
+   "E: egen lås sier «Deg (annet vindu)» ⇒ 10px;padding:1px 7px;font-size:12px;font-weight:600\">🔒 Kenneth</span>"
+  ]
+ },
+ "_nyttProsjektRegressionTest": {
+  "pass": 25,
+  "total": 25,
+  "fail": []
+ },
+ "_kundeforslagRegressionTest": {
+  "pass": 270,
+  "total": 271,
+  "fail": [
+   "L/138: piltast i et felt bytter IKKE rom ⇒ 2"
+  ]
+ },
+ "_planRegressionTest": {
+  "pass": 87,
+  "total": 87,
+  "fail": []
+ },
+ "_geoRegressionTest": {
+  "pass": 24,
+  "total": 24,
+  "fail": []
+ },
+ "_geoPickRegressionTest201": {
+  "pass": 34,
+  "total": 34,
+  "fail": []
+ },
+ "_geoTileRegressionTest194": {
+  "unntak": "eval: {\"exceptionId\":1,\"text\":\"Uncaught (in promise) TypeError: Cannot read properties of undefined (reading 'push')\",\"lineNumber\":29540,\"columnNumber\":13,\"scriptId\":\"6\",\"stackTrace\":{\"callFrames\":[{\""
+ },
+ "_geoScaleRegressionTest": {
+  "unntak": "eval: {\"exceptionId\":1,\"text\":\"Uncaught (in promise) TypeError: Cannot read properties of undefined (reading 'push')\",\"lineNumber\":29612,\"columnNumber\":13,\"scriptId\":\"6\",\"stackTrace\":{\"callFrames\":[{\""
+ },
+ "_geoCenterRegressionTest": {
+  "unntak": "eval: {\"exceptionId\":1,\"text\":\"Uncaught (in promise) TypeError: Cannot read properties of undefined (reading 'push')\",\"lineNumber\":29624,\"columnNumber\":56,\"scriptId\":\"6\",\"stackTrace\":{\"callFrames\":[{\""
+ },
+ "_geoOneStepRegressionTest": {
+  "unntak": "eval: {\"exceptionId\":1,\"text\":\"Uncaught (in promise) TypeError: Cannot read properties of undefined (reading 'push')\",\"lineNumber\":29762,\"columnNumber\":13,\"scriptId\":\"6\",\"stackTrace\":{\"callFrames\":[{\""
+ },
+ "_geoAddrRegressionTest": {
+  "unntak": "eval: {\"exceptionId\":1,\"text\":\"Uncaught (in promise) TypeError: Cannot read properties of undefined (reading 'push')\",\"lineNumber\":29932,\"columnNumber\":13,\"scriptId\":\"6\",\"stackTrace\":{\"callFrames\":[{\""
+ },
+ "_listevisningRegressionTest": {
+  "pass": 54,
+  "total": 54,
+  "fail": []
+ },
+ "_foilRegressionTest": {
+  "pass": 9,
+  "total": 9,
+  "fail": []
+ },
+ "_cableGeometryRegressionTest": {
+  "pass": 167,
+  "total": 167,
+  "fail": []
+ },
+ "_cableSkewRegressionTest": {
+  "pass": 16,
+  "total": 16,
+  "fail": []
+ },
+ "_soneRegressionTest": {
+  "pass": 40,
+  "total": 40,
+  "fail": []
+ },
+ "_ccWarnRegressionTest": {
+  "pass": 20,
+  "total": 20,
+  "fail": []
+ },
+ "_cableZoneRegressionTest": {
+  "pass": 33,
+  "total": 33,
+  "fail": []
+ },
+ "_reserveCableRegressionTest": {
+  "pass": 64,
+  "total": 64,
+  "fail": []
+ },
+ "_flateeffektRegressionTest": {
+  "pass": 9,
+  "total": 9,
+  "fail": []
+ },
+ "_computedStampRegressionTest": {
+  "pass": 19,
+  "total": 19,
+  "fail": []
+ },
+ "_prefsRegressionTest": {
+  "pass": 47,
+  "total": 47,
+  "fail": []
+ },
+ "_profileNameRegressionTest": {
+  "pass": 15,
+  "total": 15,
+  "fail": []
+ },
+ "_gapRegressionTest": {
+  "pass": 11,
+  "total": 11,
+  "fail": []
+ },
+ "_stairRegressionTest": {
+  "pass": 45,
+  "total": 45,
+  "fail": []
+ },
+ "_stairManualSetRegressionTest": {
+  "pass": 42,
+  "total": 42,
+  "fail": []
+ },
+ "_stairZoneRegressionTest102": {
+  "pass": 106,
+  "total": 106,
+  "fail": []
+ },
+ "_stairBuilderMoveRegressionTest110": {
+  "pass": 59,
+  "total": 59,
+  "fail": []
+ },
+ "_stairReposRiserRegressionTest191": {
+  "pass": 15,
+  "total": 15,
+  "fail": []
+ },
+ "_stairBuilderHeightRegressionTest193": {
+  "pass": 31,
+  "total": 31,
+  "fail": []
+ },
+ "_stairBuilderTextRegressionTest202": {
+  "pass": 24,
+  "total": 24,
+  "fail": []
+ },
+ "_stairSideBandRegressionTest203": {
+  "pass": 8,
+  "total": 8,
+  "fail": []
+ },
+ "_stairLandingCCRegressionTest192": {
+  "pass": 40,
+  "total": 40,
+  "fail": []
+ },
+ "_stairSideRegressionTest": {
+  "pass": 25,
+  "total": 25,
+  "fail": []
+ },
+ "_stairHorseshoeRegressionTest": {
+  "pass": 274,
+  "total": 274,
+  "fail": []
+ },
+ "_matDimChainRegressionTest": {
+  "pass": 35,
+  "total": 35,
+  "fail": []
+ },
+ "_dimChainEdgeRegressionTest": {
+  "pass": 28,
+  "total": 28,
+  "fail": []
+ },
+ "_hindDimRegressionTest217": {
+  "pass": 24,
+  "total": 24,
+  "fail": []
+ },
+ "_edgeMailRegressionTest": {
+  "pass": 14,
+  "total": 14,
+  "fail": []
+ },
+ "_kundelenkeRegressionTest": {
+  "pass": 330,
+  "total": 330,
+  "fail": []
+ },
+ "_bgFloorRegressionTest": {
+  "pass": 31,
+  "total": 31,
+  "fail": []
+ },
+ "_dialogRegressionTest216": {
+  "pass": 197,
+  "total": 197,
+  "fail": []
+ },
+ "_hindW2WRegressionTest218": {
+  "pass": 22,
+  "total": 22,
+  "fail": []
+ },
+ "_hindMenuRegressionTest219": {
+  "pass": 23,
+  "total": 23,
+  "fail": []
+ },
+ "_designRegressionTest224": {
+  "pass": 22,
+  "total": 22,
+  "fail": []
+ },
+ "_takRegressionTest212": {
+  "pass": 70,
+  "total": 70,
+  "fail": []
+ },
+ "_takRegressionTest204": {
+  "pass": 64,
+  "total": 64,
+  "fail": []
+ },
+ "_takRegressionTest205": {
+  "pass": 63,
+  "total": 63,
+  "fail": []
+ },
+ "_takRegressionTest206": {
+  "pass": 59,
+  "total": 59,
+  "fail": []
+ },
+ "_takRegressionTest207": {
+  "pass": 39,
+  "total": 39,
+  "fail": []
+ },
+ "_takRegressionTest213": {
+  "pass": 22,
+  "total": 22,
+  "fail": []
+ },
+ "_takRegressionTest208": {
+  "pass": 37,
+  "total": 37,
+  "fail": []
+ },
+ "_takRegressionTest209": {
+  "pass": 48,
+  "total": 48,
+  "fail": []
+ },
+ "_takRegressionTest210": {
+  "pass": 49,
+  "total": 49,
+  "fail": []
+ },
+ "_takRegressionTest211": {
+  "pass": 64,
+  "total": 64,
+  "fail": []
+ },
+ "_takRegressionTest214": {
+  "pass": 74,
+  "total": 74,
+  "fail": []
+ },
+ "_takRegressionTest216": {
+  "pass": 58,
+  "total": 58,
+  "fail": []
+ },
+ "_takRegressionTest217": {
+  "pass": 26,
+  "total": 26,
+  "fail": []
+ },
+ "_takRegressionTest215": {
+  "pass": 65,
+  "total": 65,
+  "fail": []
+ },
+ "_takRegressionTest218": {
+  "pass": 37,
+  "total": 37,
+  "fail": []
+ },
+ "_takRegressionTest221": {
+  "pass": 11,
+  "total": 11,
+  "fail": []
+ },
+ "_takRegressionTest220": {
+  "pass": 44,
+  "total": 44,
+  "fail": []
+ },
+ "_pdfSavePickerRegressionTest195": {
+  "pass": 43,
+  "total": 43,
+  "fail": []
+ },
+ "_cableOverviewRegressionTest": {
+  "pass": 33,
+  "total": 33,
+  "fail": []
+ },
+ "_foilResistanceRegressionTest": {
+  "pass": 52,
+  "total": 52,
+  "fail": []
+ },
+ "_foilEffectRegressionTest": {
+  "pass": 32,
+  "total": 32,
+  "fail": []
+ },
+ "_pdfPreviewRegressionTest": {
+  "pass": 96,
+  "total": 96,
+  "fail": []
+ },
+ "_pdfNumberModeRegressionTest": {
+  "pass": 59,
+  "total": 59,
+  "fail": []
+ },
+ "_velkommenRegressionTest": {
+  "pass": 23,
+  "total": 23,
+  "fail": []
+ },
+ "_pwaRegressionTest": {
+  "pass": 13,
+  "total": 13,
+  "fail": []
+ },
+ "_orgNrRegressionTest": {
+  "pass": 22,
+  "total": 22,
+  "fail": []
+ },
+ "_portalDesignRegressionTest": {
+  "pass": 15,
+  "total": 15,
+  "fail": []
+ },
+ "_kundesoknadRegressionTest": {
+  "pass": 30,
+  "total": 30,
+  "fail": []
+ },
+ "_delMedElektrikerRegressionTest": {
+  "pass": 17,
+  "total": 17,
+  "fail": []
+ },
+ "_accessoryFoilQtyRegressionTest": {
+  "pass": 105,
+  "total": 105,
+  "fail": []
+ },
+ "_gbao10RegressionTest": {
+  "pass": 18,
+  "total": 18,
+  "fail": []
+ },
+ "_appEmbedRegressionTest": {
+  "pass": 30,
+  "total": 30,
+  "fail": []
+ },
+ "_moduleAllowedRegressionTest": {
+  "pass": 39,
+  "total": 39,
+  "fail": []
+ },
+ "_vismaNoRegressionTest198": {
+  "pass": 119,
+  "total": 119,
+  "fail": []
+ },
+ "_projectStatusRegressionTest": {
+  "pass": 36,
+  "total": 36,
+  "fail": []
+ },
+ "_grossistRegressionTest220": {
+  "pass": 30,
+  "total": 30,
+  "fail": []
+ }
+}

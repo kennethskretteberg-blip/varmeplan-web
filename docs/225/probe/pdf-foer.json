@@ -1,0 +1,29 @@
+{
+ "rom": {
+  "31": {
+   "w": 2126,
+   "h": 1822
+  },
+  "32": {
+   "w": 2126,
+   "h": 1822
+  }
+ },
+ "temaFoer": "dark",
+ "etasje": {
+  "w": 2126,
+  "h": 462
+ },
+ "temaEtter": "dark",
+ "lysKlasse": false,
+ "sha": {
+  "31": "e0c7e26c41c3bb14",
+  "32": "d25ce7649642868f",
+  "etasje": "3421ae7ca132d636"
+ },
+ "pdf": {
+  "sider": 7,
+  "bytes": 772772,
+  "sha": "9fd28a19c6de7795"
+ }
+}
