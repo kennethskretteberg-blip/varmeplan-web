@@ -1,6 +1,6 @@
 # 228 – PDF: mål som kuttes i kanten av rombildet
 
-10.11.2026 · `main` · committet, ikke pushet · commit: se `docs/endringslogg.md`
+10.11.2026 · `main` · committet, ikke pushet · commit `09d5c7b`
 
 ## Årsaken
 
