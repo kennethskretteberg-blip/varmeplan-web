@@ -48517,9 +48517,10 @@ function _drawStairGeoDims(c, dims, P, o) {
     if (d.side === 'left') { a = P(d.a.x - off, d.a.y); b = P(d.b.x - off, d.b.y); }
     else { const y = (d.atY != null ? d.atY : Math.max(d.a.y, d.b.y)) + off; a = P(d.a.x, y); b = P(d.b.x, y); }
     const ea = P(d.a.x, d.a.y), eb = P(d.b.x, d.b.y);
-    c.globalAlpha = 0.35;
+    c.globalAlpha = o.extAlpha != null ? o.extAlpha : 0.35;   // 230: PDF = heldekkende (226-regelen)
+    if (o.extWidth) c.lineWidth = o.extWidth;
     c.beginPath(); c.moveTo(ea.x, ea.y); c.lineTo(a.x, a.y); c.moveTo(eb.x, eb.y); c.lineTo(b.x, b.y); c.stroke();
-    c.globalAlpha = 1;
+    c.globalAlpha = 1; c.lineWidth = o.lineWidth || 0.8;
     c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
     c.beginPath();
     if (d.side === 'left') { c.moveTo(a.x - t, a.y); c.lineTo(a.x + t, a.y); c.moveTo(b.x - t, b.y); c.lineTo(b.x + t, b.y); }
@@ -48527,15 +48528,90 @@ function _drawStairGeoDims(c, dims, P, o) {
     c.stroke();
     const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
     if (Math.hypot(b.x - a.x, b.y - a.y) < (o.minSpanPx || 8)) continue;   // for trangt for et tall
+    const tg = o.textGap || 2;
     if (d.side === 'left') {
-      c.save(); c.translate(mx - 2, my); c.rotate(-Math.PI / 2);
+      c.save(); c.translate(mx - tg, my); c.rotate(-Math.PI / 2);
       c.textAlign = 'center'; c.textBaseline = 'bottom'; c.fillText(d.label, 0, 0);
       c.restore();
     } else {
-      c.textAlign = 'center'; c.textBaseline = 'top'; c.fillText(d.label, mx, my + 2);
+      c.textAlign = 'center'; c.textBaseline = 'top'; c.fillText(d.label, mx, my + tg);
     }
   }
   c.restore();
+}
+
+// ═══ 230 · TRAPP I PDF — ÉN PLANTEGNING, HØY OPPLØSNING, FELLES MÅLESTOKK (Kenneth 10.11.2026) ═══
+// Før: planen delt i opptil tre bånd (150 dpi, 1,4 Mpx), sidevisningen i sin egen målestokk og
+// detaljutsnitt per trinn/repos. Nå: ÉN plantegning av hele trappa og ÉN sidevisning, begge i
+// STAIR_PDF_DPI på den trykte størrelsen og i SAMME målestokk (mm på papir per cm i verden).
+// Tegnerne (_stairDrawToCanvas, _stairDrawToCanvasHs, _stairDrawSideToCanvas) har fått en
+// utskriftsmodus `opts.print = { mmPerCm, dpi, rot, measure }`:
+//   · lerretet = innholdet × målestokken + luft regnet i mm på PAPIRET (ikke cm i verden)
+//   · mål følger 226-regelen (samme konstanter som _dimPdfStyle: 2,0 mm × pdfLabelScale, 0,2 / 0,15 mm
+//     streker, mørk grå, hvit boks bak tallet); trinnummer og «Repos 1» 2,2 mm som rometikettene
+//   · rot = ±1: planen tegnes en kvart omdreining rotert (lang trapp på liggende side, trinn 1 til
+//     venstre som i sidevisningen) — teksten står likevel vannrett (se _stairPrintCtx)
+//   · measure: returner bare { wMm, hMm } — brukt av _stairPdfLayout til å finne målestokken
+// Uten opts.print tegner de nøyaktig som før (forhåndsvisningen i eksportdialogen, testene).
+const STAIR_PDF_DPI = 300;                 // på trykt størrelse
+const STAIR_PDF_MAX_SIDE_PX = 8000;        // lengste side nettleseren får tegne (dpi senkes heller)
+const STAIR_PDF_LABEL_MM = 2.2;            // trinnummer / «Repos 1» / «Nederste trinn» (× pdfLabelScale)
+const STAIR_PDF_SCALES = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200];   // «vanlige» 1:N
+const STAIR_PDF_SCALE_KEEP = 0.66;         // rund til vanlig verdi bare når tegningen beholder minst 66 % av størrelsen
+const STAIR_PDF_TITLE_MM = 8, STAIR_PDF_PLAN_FOOT_MM = 13;        // «Trapp: …» over planen · tegnforklaring + målestokk under
+const STAIR_PDF_SIDE_HEAD_MM = 4.5, STAIR_PDF_SIDE_FOOT_MM = 9.5; // «Sidevisning» · målestokk under
+function _stairPdfStyle(print) {
+  const dpi = print.dpi || STAIR_PDF_DPI, k = dpi / 25.4, sk = _userPrefs().pdfLabelScale || 1;
+  return { dpi, pxPerMm: k, pxPerCm: print.mmPerCm * k, mmPerCm: print.mmPerCm, sk, rot: print.rot || 0, measure: !!print.measure,
+    mm: v => v * k,                        // mm på papiret → px
+    cm: v => v / print.mmPerCm,            // mm på papiret → cm i verden (for luft og målavstander)
+    K: dpi / 150,                          // de gamle px-tallene gjaldt 150 dpi — samme fysiske størrelse nå
+    fontPx: DIM_PDF_MM * sk * k, labelPx: STAIR_PDF_LABEL_MM * sk * k,
+    line: DIM_PDF_LINE_MM * k, ext: DIM_PDF_EXT_MM * k, tickHalf: DIM_PDF_TICK_MM * k / 2,
+    col: DIM_PDF_COL, bg: DIM_PDF_BG };
+}
+// Felles stil for _drawStairGeoDims i utskriftsmodus (plan, hestesko og side).
+function _stairPdfGeoDimOpts(PR) {
+  return { baseCm: PR.cm(5), levelCm: PR.cm(5), color: PR.col, font: PR.fontPx + `px ${CANVAS_UI_FONT}`, tick: PR.tickHalf,
+    lineWidth: PR.line, extAlpha: 1, extWidth: PR.ext, textGap: PR.mm(0.5), minSpanPx: PR.fontPx };
+}
+// Pakker inn fillText på ETT utskriftslerret: (1) tekst står alltid vannrett, også når lerretet er
+// rotert (justeringen regnes om, så teksten blir liggende på samme side av ankerpunktet); (2) alt
+// som tegnes i målfargen får hvit boks bak (226: «hvit boks bak tekst» — samme kjennetegn som 228
+// bruker for å finne måltekst); (3) hver tekst noteres i c._texts (lerretspiksler) for testene.
+function _stairPrintCtx(c, PR) {
+  const orig = c.fillText;
+  const norm = col => { const f = c.fillStyle; c.fillStyle = col; const n = c.fillStyle; c.fillStyle = f; return n; };
+  const dimCol = norm(PR.col);
+  const AX = { left: 1, start: 1, center: 0, right: -1, end: -1 }, AY = { top: 1, hanging: 1, middle: 0, bottom: -1, alphabetic: -1, ideographic: -1 };
+  c._texts = [];
+  c.fillText = function (str, x, y) {
+    const T0 = this.getTransform();
+    // Bare et ROTERT lerret rettes opp (samlet rotasjon i kvarte omdreininger). På et urotert lerret står
+    // tekst som tegneren selv har lagt langs en loddrett målkjede, fortsatt loddrett, som før.
+    // c._vertical: teksten skal stå loddrett, lest nedenfra og opp.
+    const q = PR.rot ? Math.round(Math.atan2(T0.b, T0.a) / (Math.PI / 2)) + (c._vertical ? 1 : 0) : 0;
+    const isDim = typeof this.fillStyle === "string" && this.fillStyle === dimCol;
+    this.save();
+    if (q !== 0) {
+      const ang = q * Math.PI / 2, cs = Math.round(Math.cos(ang)), sn = Math.round(Math.sin(ang));
+      const ax = AX[this.textAlign] != null ? AX[this.textAlign] : 1, ay = AY[this.textBaseline] != null ? AY[this.textBaseline] : -1;
+      const sx = ax * cs - ay * sn, sy = ax * sn + ay * cs;        // hvilken vei tekstboksen ligger fra ankeret, på arket
+      this.translate(x, y); this.rotate(-ang); x = 0; y = 0;
+      this.textAlign = sx > 0 ? "left" : sx < 0 ? "right" : "center";
+      this.textBaseline = sy > 0 ? "top" : sy < 0 ? "bottom" : "middle";
+    }
+    const m = this.measureText(str), fpx = +((/([\d.]+)px/.exec(this.font) || [])[1]) || 10, pad = isDim ? fpx * 0.12 : 0;   // «bold 24px …» → 24
+    const l = x - (m.actualBoundingBoxLeft || 0) - pad, r = x + (m.actualBoundingBoxRight != null ? m.actualBoundingBoxRight : m.width) + pad;
+    const t = y - (m.actualBoundingBoxAscent != null ? m.actualBoundingBoxAscent : fpx / 2) - pad, b = y + (m.actualBoundingBoxDescent != null ? m.actualBoundingBoxDescent : fpx / 2) + pad;
+    if (isDim) { const f = this.fillStyle; this.fillStyle = PR.bg; this.fillRect(l, t, r - l, b - t); this.fillStyle = f; }
+    const T = this.getTransform(), xs = [], ys = [];
+    for (const [px, py] of [[l, t], [r, t], [r, b], [l, b]]) { xs.push(T.a * px + T.c * py + T.e); ys.push(T.b * px + T.d * py + T.f); }
+    c._texts.push({ str: String(str), dim: isDim, fontPx: fpx, upright: Math.abs(T.b) < 1e-6 && T.a > 0,
+      x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) });
+    orig.call(this, str, x, y);
+    this.restore();
+  };
 }
 // Skjerm-stil for trappens geometrimål (delt av plan og side).
 function _stairGeoDimScreenOpts() {
@@ -48690,12 +48766,12 @@ function _stairHsPaint(c, stair, P, o) {
   if (o.dims && stair.runs && stair.runs.length) {
     let maxX = -Infinity, minX = Infinity;
     for (let si = rFrom; si <= rTo; si++) { const sf = surfs[si]; if (sf) { maxX = Math.max(maxX, sf.x_cm + sf.w_cm); minX = Math.min(minX, sf.x_cm); } }
-    const gapCm = o.dimGapCm || 4, t = 3;
-    c.strokeStyle = o.dimColor; c.fillStyle = o.dimColor; c.lineWidth = 0.8; c.font = o.dimFontPx + `px ${CANVAS_UI_FONT}`;
+    const gapCm = o.dimGapCm || 4, t = o.dimTick || 3;   // 230: o.dimTick / dimLineW / dimTextGap — papirmål i PDF
+    c.strokeStyle = o.dimColor; c.fillStyle = o.dimColor; c.lineWidth = o.dimLineW || 0.8; c.font = o.dimFontPx + `px ${CANVAS_UI_FONT}`;
     const vtick = (x, y0, y1, label) => {
       const a = P(x, y0), b = P(x, y1);
       c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.moveTo(a.x - t, a.y); c.lineTo(a.x + t, a.y); c.moveTo(b.x - t, b.y); c.lineTo(b.x + t, b.y); c.stroke();
-      if (Math.abs(b.y - a.y) >= (o.minLabelPx || 7)) { c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(label, a.x + 4, (a.y + b.y) / 2); if (x > minX) chainW = Math.max(chainW, c.measureText(label).width); }
+      if (Math.abs(b.y - a.y) >= (o.minLabelPx || 7)) { c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(label, a.x + (o.dimTextGap || 4), (a.y + b.y) / 2); if (x > minX) chainW = Math.max(chainW, c.measureText(label).width); }
     };
     let chainW = 0;   // 177b: bredeste tall i dybdekjeden — tabellens høyre kant står ved den
     const R = _stairDimRound;
@@ -48870,11 +48946,11 @@ function _stairHsArmChainLabels(items) {
 function _stairHsDrawArmChain(c, stair, range, P, o, ssOf) {
   const items = _stairHsArmChain(stair, range, ssOf);
   if (!items.length) return null;
-  const R = _stairDimRound, t = 3, yC = -(o.dimGapCm || 4);
+  const R = _stairDimRound, t = o.dimTick || 3, yC = -(o.dimGapCm || 4);
   const xs = [];
   for (const it of items) for (const x of [it.from, it.to]) if (!xs.some(v => Math.abs(v - x) < 1e-6)) xs.push(x);
   c.save();
-  c.strokeStyle = o.dimColor; c.fillStyle = o.dimColor; c.lineWidth = 0.8; c.setLineDash([]); c.font = o.dimFontPx + `px ${CANVAS_UI_FONT}`;
+  c.strokeStyle = o.dimColor; c.fillStyle = o.dimColor; c.lineWidth = o.dimLineW || 0.8; c.setLineDash([]); c.font = o.dimFontPx + `px ${CANVAS_UI_FONT}`;
   const a = P(Math.min(...xs), yC), b = P(Math.max(...xs), yC);
   c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y);
   for (const x of xs) { const q = P(x, yC); c.moveTo(q.x, q.y - t); c.lineTo(q.x, q.y + t); }
@@ -48892,7 +48968,7 @@ function _stairHsDrawArmChain(c, stair, range, P, o, ssOf) {
     const tryPlace = (it, against) => {
       const w = c.measureText(it.label).width;
       const pa = P(it.from, yC), pb = P(it.to, yC), c0 = it.kind === 'pair' ? P(it.mid, yC).x : (pa.x + pb.x) / 2;
-      const lo = Math.min(pa.x, pb.x), hi = Math.max(pa.x, pb.x), yb = pa.y - 2;
+      const lo = Math.min(pa.x, pb.x), hi = Math.max(pa.x, pb.x), yb = pa.y - (o.dimChainGap || 2);
       const fits = cx => { const bx = { l: cx - w / 2 - gapPx, r: cx + w / 2 + gapPx, t: yb - fh, b: yb };
         return against.some(p => p.l < bx.r && bx.l < p.r && p.t < bx.b && bx.t < p.b) ? null : bx; };
       let bx = fits(c0), cx = c0;
@@ -49010,7 +49086,7 @@ function _stairHsDrawTable(c, rows, sz, x, y, o) {
   c.save();
   c.setLineDash([]); c.globalAlpha = 1;
   c.fillStyle = o.tableBg || 'rgba(255,255,255,0.85)'; c.fillRect(x, y, sz.w, sz.h);
-  c.strokeStyle = o.dimColor; c.lineWidth = 0.8; c.globalAlpha = 0.5; c.strokeRect(x, y, sz.w, sz.h);
+  c.strokeStyle = o.dimColor; c.lineWidth = o.dimLineW || 0.8; c.globalAlpha = 0.5; c.strokeRect(x, y, sz.w, sz.h);
   const hy = y + sz.pad + sz.rowH;
   c.beginPath(); c.moveTo(x, hy); c.lineTo(x + sz.w, hy); c.stroke();
   c.globalAlpha = 1; c.fillStyle = o.dimColor; c.textBaseline = 'middle';
@@ -49133,9 +49209,13 @@ function _stairDrawToCanvasHs(stair, opts) {
     minX = Math.min(minX, sf.x_cm); maxX = Math.max(maxX, sf.x_cm + sf.w_cm);
     minY = Math.min(minY, sf.shape === 'u' ? 0 : sf.y_cm); maxY = Math.max(maxY, sf.y_cm + sf.d_cm);
   }
-  const padL = opts.geoDims ? 30 : 18, padR = 24, padB = opts.geoDims ? 26 : 6;
+  // 230: utskriftsmodus (opts.print) — fast målestokk, luft i mm på papiret, mål etter 226-regelen.
+  const PR = opts.print ? _stairPdfStyle(opts.print) : null;
+  const padL = PR ? PR.cm(opts.geoDims ? 11 + 4 * PR.sk : 4 + 8 * PR.sk) : (opts.geoDims ? 30 : 18);
+  const padR = PR ? PR.cm(4 + 7 * PR.sk) : 24, padB = PR ? PR.cm(opts.geoDims ? 6 + 4 * PR.sk : 2) : (opts.geoDims ? 26 : 6);
+  const padT0 = PR ? PR.cm(3) : 10, gapCm = PR ? PR.cm(2.5) : 4;
   const PRINT_W_IN = 7.09, PRINT_MAX_H_IN = 10.51, TARGET_DPI = 150, MAX_PIXELS = 1400000;
-  const mm2px = mm => (mm / 25.4) * TARGET_DPI;
+  const mm2px = mm => PR ? PR.mm(mm) : (mm / 25.4) * TARGET_DPI;
   // 186: CC-kjeden for hesteskotrinnene står over bakkanten (padT), måltabellen under trappa (padB).
   // Begge måles i px og avhenger av målestokken, som avhenger av padT/padB — derfor tre runder.
   // Den lagrede plasseringen (tableOffset_cm) brukes når tabellen får plass på arket: målestokken blir
@@ -49144,10 +49224,11 @@ function _stairDrawToCanvasHs(stair, opts) {
   const rows = _stairHsTableRows(stair, range);
   const meas = document.createElement('canvas').getContext('2d');
   const hasChain = surfs.some((sf, i) => i >= range[0] && i <= range[1] && sf && sf.shape === 'u');
-  const fontsAt = p => ({ fontPx: Math.max(mm2px(3), Math.round(p * 3)), dimFontPx: Math.max(mm2px(2.4), Math.round(p * 2.4)) });
-  const belowPx = p => opts.geoDims ? 9 * p + 2 + Math.max(10, Math.round(p * 3)) + 6 : Math.max(4 * p, 6);
+  const fontsAt = p => PR ? { fontPx: PR.labelPx, dimFontPx: PR.fontPx } : ({ fontPx: Math.max(mm2px(3), Math.round(p * 3)), dimFontPx: Math.max(mm2px(2.4), Math.round(p * 2.4)) });
+  const belowPx = p => PR ? PR.mm(opts.geoDims ? 6 + 3 * PR.sk : 2) : opts.geoDims ? 9 * p + 2 + Math.max(10, Math.round(p * 3)) + 6 : Math.max(4 * p, 6);
   const fit = (pl, pr, pt, pb) => {
     const tw = (maxX - minX) + pl + pr, th = (maxY - minY) + pt + pb;
+    if (PR) return { px: PR.pxPerCm, W: Math.round(tw * PR.pxPerCm), H: Math.round(th * PR.pxPerCm), totalW_cm: tw, totalH_cm: th, padL: pl, padR: pr, padT: pt, padB: pb };
     const pw = opts.rotated ? th : tw, ph = opts.rotated ? tw : th;
     let p = (Math.min(PRINT_W_IN, PRINT_MAX_H_IN * (pw / ph)) * TARGET_DPI) / pw;
     let w = Math.round(tw * p), h = Math.round(th * p);
@@ -49155,11 +49236,11 @@ function _stairDrawToCanvasHs(stair, opts) {
     return { px: p, W: w, H: h, totalW_cm: tw, totalH_cm: th, padL: pl, padR: pr, padT: pt, padB: pb };
   };
   const layout = anchor => {
-    let L = fit(padL, padR, 10, padB);
+    let L = fit(padL, padR, padT0, padB);
     for (let pass = 0; pass < 3; pass++) {
       const f = fontsAt(L.px);
-      let pt = 10, pb = padB, pl = padL, pr = padR;
-      if (hasChain) pt = Math.max(pt, (4 * L.px + 2 + (f.dimFontPx + 1) + 4) / L.px);   // 187: én rad tall («2 + 2», ingen stabling)
+      let pt = padT0, pb = padB, pl = padL, pr = padR;
+      if (hasChain) pt = Math.max(pt, (gapCm * L.px + (PR ? PR.tickHalf + PR.mm(0.4) : 2) + (f.dimFontPx + 1) + 4) / L.px);   // 187: én rad tall («2 + 2», ingen stabling)
       if (rows.length) {
         const sz = _stairHsTableSize(meas, rows, f.dimFontPx);
         if (anchor) {
@@ -49177,23 +49258,29 @@ function _stairDrawToCanvasHs(stair, opts) {
     const Lc = layout(anchor);
     const sz = _stairHsTableSize(meas, rows, fontsAt(Lc.px).dimFontPx);
     const tb = { l: anchor.x, r: anchor.x + sz.w / Lc.px, t: anchor.y, b: anchor.y + sz.h / Lc.px };
-    const core = { l: minX - (opts.geoDims ? 26 : 8), r: maxX + 14, t: minY - (hasChain ? 8 : 2), b: maxY + (opts.geoDims ? 14 : 2) };
+    const core = PR ? { l: minX - padL * 0.85, r: maxX + padR * 0.6, t: minY - PR.cm(hasChain ? 6 : 1), b: maxY + PR.cm(opts.geoDims ? 9 : 1) }
+      : { l: minX - (opts.geoDims ? 26 : 8), r: maxX + 14, t: minY - (hasChain ? 8 : 2), b: maxY + (opts.geoDims ? 14 : 2) };
     const over = tb.l < core.r && core.l < tb.r && tb.t < core.b && core.t < tb.b;
-    if (!over && Lc.px >= 0.85 * Lo.px) { Lo = Lc; useOff = true; }
+    // 230: i utskriftsmodus er målestokken gitt — «høyst 15 % mindre» blir «arket høyst 15 % større».
+    if (!over && (PR ? (Lc.W * 0.85 <= Lo.W && Lc.H * 0.85 <= Lo.H) : Lc.px >= 0.85 * Lo.px)) { Lo = Lc; useOff = true; }
   }
   const { px, W, H } = Lo, padT = Lo.padT, padLx = Lo.padL;
+  if (PR && PR.measure) return { wMm: W / PR.pxPerMm, hMm: H / PR.pxPerMm };
   const cv = document.createElement('canvas');
   cv.width = Math.max(W, 160); cv.height = Math.max(H, 100);
   const c = cv.getContext('2d');
   c.fillStyle = '#ffffff'; c.fillRect(0, 0, cv.width, cv.height);
+  if (PR) _stairPrintCtx(c, PR);
   const tx = x => (padLx + x - minX) * px, ty = y => (padT + y - minY) * px;
-  const paintRes = _stairHsPaint(c, stair, (x, y) => ({ x: tx(x), y: ty(y) }), {
-    range, pxPerCm: px, minLeftPx: 2, tableBg: '#ffffff', useTableOffset: useOff, tableBelowPx: belowPx(px), lineW: Math.max(1.5, px * 0.3), fontPx: Math.max(mm2px(3), Math.round(px * 3)), markerR: Math.max(3, px * 0.5),
-    cableColor: '#e06030', surfFill: 'rgba(180,180,180,0.30)', surfStroke: '#888', surfLineW: 1, labelColor: '#666',
-    dims: true, dimColor: '#2090e0', dimFontPx: Math.max(mm2px(2.4), Math.round(px * 2.4)), dimGapCm: 4,
-  });
+  const K = PR ? PR.K : 1;
+  const paintRes = _stairHsPaint(c, stair, (x, y) => ({ x: tx(x), y: ty(y) }), Object.assign({
+    range, pxPerCm: px, minLeftPx: 2 * K, tableBg: '#ffffff', useTableOffset: useOff, tableBelowPx: belowPx(px), lineW: Math.max(1.5 * K, px * 0.3), fontPx: Math.max(mm2px(3), Math.round(px * 3)), markerR: Math.max(3 * K, px * 0.5),
+    cableColor: '#e06030', surfFill: 'rgba(180,180,180,0.30)', surfStroke: '#888', surfLineW: K, labelColor: '#666',
+    dims: true, dimColor: '#2090e0', dimFontPx: Math.max(mm2px(2.4), Math.round(px * 2.4)), dimGapCm: gapCm,
+  }, PR ? { fontPx: PR.labelPx, dimColor: PR.col, dimFontPx: PR.fontPx, dimLineW: PR.line, dimTick: PR.tickHalf, dimTextGap: PR.mm(0.6),
+    dimChainGap: PR.tickHalf + PR.mm(0.4), minLabelPx: PR.fontPx * 0.9 } : null));
   if (opts.geoDims) {
-    _drawStairGeoDims(c, _stairGeometryDims(stair, 'plan', range), (x, y) => ({ x: tx(x), y: ty(y) }),
+    _drawStairGeoDims(c, _stairGeometryDims(stair, 'plan', range), (x, y) => ({ x: tx(x), y: ty(y) }), PR ? _stairPdfGeoDimOpts(PR) :
       { baseCm: 9, levelCm: 13, color: '#555555', font: Math.max(10, Math.round(px * 3)) + 'px sans-serif', tick: Math.max(2, px * 0.6) });
   }
   cv._hsLayout = { px, useTableOffset: useOff, tableBox: paintRes && paintRes.tableBox, chainBox: paintRes && paintRes.chainBox };   // 186: for testene
@@ -57347,6 +57434,130 @@ function _stairSideBandRegressionTest203() {
 // Trinn + repos (120, brukbar 110) + trinn; taket 10 → 6 → 15 gir N = ceil(110 / tak) + 1 (Regel 3/7) i tilstandene
 // (a) uten forslag, (b) valgt forslag, (c) manuelt sett, (d) låst avstand, (e) soner; Forslag bruker taket; angre; panelet.
 // Syntetisk katalog som _stairSideRegressionTest. Rører ikke lagring: S.stairs, katalog og angrestabel settes tilbake.
+// 230: trappesiden i PDF — ÉN plan per trapp (ingen bånd), plan og sidevisning i SAMME målestokk og
+// naturlig størrelse, minst 300 dpi, mål etter 226-regelen (2,0 mm), ingen detaljutsnitt, og alt
+// billedtekstene sa står i tabellen «Kabel per flate». Fire trapper: kort, lang (forhold 9 — tre bånd
+// før), med repos, hestesko.
+async function _stairPdfRegressionTest230() {
+  const saved = { stairs: S.stairs, sel: S.ui.selectedStairId, prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
+    nextStair: S.counters.nextStairId, project: S.project, autosave: window._performAutoSave, toast: window._showToast,
+    modal: window.showAccessoriesModal, branding: window._pdfBranding, jsPDF: window.jspdf && window.jspdf.jsPDF, undoLen: _undoStack.length };
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  try {
+    window._performAutoSave = () => Promise.resolve(); window._showToast = () => {};
+    window.showAccessoriesModal = () => Promise.resolve({ items: [] }); window._pdfBranding = () => Promise.resolve(null);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push({ id: 9800, module_type: 'cable', name: 'TESTKABEL' });
+    HEATING_PRODUCTS.length = 0;
+    [20, 30, 40.1, 49.7, 60, 70, 78.7, 89.1, 98, 106.9, 128.2, 139.9].forEach((L, i) => HEATING_PRODUCTS.push({ id: 98000 + i, category_id: 9800, active: true,
+      product_family: 'InSnow 30T', name: `InSnow 30T ${Math.round(L * 30)}W ${L}m`, cable_length_m: L, watt_per_m: 30, voltage: 230 }));
+    S.project = { name: 'TEST 230', parts: [], revision: 0, lastExportedAt: null, createdAt: 0 };
+    const T = (n, w) => ({ type: 'steps', stepCount: n, stepDepth_cm: 30, stepHeight_cm: 17, width_cm: w });
+    const L = (d, w) => ({ type: 'landing', depth_cm: d, width_cm: w });
+    const ferdig = st => { S.stairs = [st]; S.ui.selectedStairId = null; if (!(st.runs && st.runs.length)) _regenerateStairCable(st); return st; };
+    const rett = (w, segs, dir) => { S.counters.nextStairId = 998230; return ferdig(_createStairObj({ name: 'T230', width_cm: w, step_depth_cm: 30, step_height_cm: 17,
+      buildDirection: dir || 'bottom', edgeMargin_cm: 5, stepCC_cm: 10, landingCC_cm: 10, riserOffset_cm: 2, noseOffset_cm: 2, x_cm: 0, y_cm: 0, segments: segs })); };
+    const HS = { topW_cm: 470, topD_cm: 70, count: 1, front_cm: 46, stepHeight_cm: 17 };
+    const cases = [
+      ['kort', () => rett(100, [T(8, 100)])],
+      ['lang', () => rett(100, [T(30, 100)])],
+      ['repos', () => rett(150, [T(4, 150), L(120, 150), T(6, 150)])],
+      ['lang ovenfra', () => rett(100, [T(30, 100)], 'top')],
+      ['hestesko', () => { S.counters.nextStairId = 998230; return ferdig(_createStairObj({ name: 'T230', design: 'horseshoe', horseshoe: HS,
+        segments: _stairHsSegments(_stairHsParams({ horseshoe: HS })), riserOffset_cm: 3, noseOffset_cm: 3, edgeMargin_cm: 5, edgeMarginMin_cm: 5,
+        stepCC_cm: 10, landingCC_cm: 10, x_cm: 100, y_cm: 200 })); }],
+    ];
+    // Én eksport med bare denne trappa: alle addImage- og text-kall noteres.
+    const eksport = async (st, ekstra) => {
+      const img = [], tekst = []; let sider = null, liggende = null;
+      window.jspdf.jsPDF = function (...a) {
+        const d = new saved.jsPDF(...a);
+        const ai = d.addImage.bind(d); d.addImage = function (u, f, x, y, w, h, al, comp, ...r) { img.push({ fmt: f, x, y, w, h, comp, side: d.internal.getCurrentPageInfo().pageNumber }); return ai(u, f, x, y, w, h, al, comp, ...r); };
+        const t0 = d.text.bind(d); d.text = function (t, ...r) { tekst.push(Array.isArray(t) ? t.join(' ') : String(t)); return t0(t, ...r); };
+        d.save = function () { sider = d.internal.getNumberOfPages(); const ps = d.internal.pageSize; liggende = ps.getWidth() > ps.getHeight(); return d; };
+        return d;
+      };
+      try { await exportPDF(Object.assign({ cover: false, summary: false, floorplan: false, rooms: [], stairs: [st.id], roomTable: false, stairTable: false,
+        materialList: false, resistance: false, cableTable: false, pricing: false, discount: 0, showDGDB: false, docs: false, signature: false, freeText: '' }, ekstra || {})); }
+      finally { window.jspdf.jsPDF = saved.jsPDF; }
+      return { img, tekst, sider, liggende };
+    };
+    const near = (a, b, tol) => Math.abs(a - b) <= (tol || 0.3);
+    for (const [navn, bygg] of cases) {
+      const st = bygg(), surfs = st.surfaces;
+      const lay = _stairPdfLayout(st), sp = _renderStairPdfImages(st);
+      if (!lay || !sp) { check(navn + ': oppsett', 'finnes', false, 'null'); continue; }
+      const aw = (lay.landscape ? 297 : 210) - 30, ah = (lay.landscape ? 210 : 297) - 30, k = lay.dpi / 25.4;
+      // — oppløsning og størrelse —
+      check(navn + ': minst 300 dpi', '≥ 300', lay.dpi >= 300, lay.dpi);
+      check(navn + ': lengste side høyst 8000 px', '≤ 8000', Math.max(sp.plan.wPx, sp.plan.hPx, sp.side.wPx, sp.side.hPx) <= STAIR_PDF_MAX_SIDE_PX, sp.plan.wPx + '×' + sp.plan.hPx);
+      check(navn + ': bildets px = mm × dpi', 'likt', near(sp.plan.wPx, lay.plan.wMm * k, 1) && near(sp.plan.hPx, lay.plan.hMm * k, 1) && near(sp.side.wPx, lay.side.wMm * k, 1), [sp.plan.wPx, lay.plan.wMm * k]);
+      check(navn + ': planen får plass på sin side', 'ja', lay.plan.wMm <= aw + 0.01 && lay.plan.hMm <= ah - STAIR_PDF_TITLE_MM - STAIR_PDF_PLAN_FOOT_MM + 0.01, lay.plan.wMm + '×' + lay.plan.hMm);
+      check(navn + ': sidevisningen får plass på sin side', 'ja', lay.side.wMm <= aw + 0.01 && lay.side.hMm <= ah - STAIR_PDF_SIDE_HEAD_MM - STAIR_PDF_SIDE_FOOT_MM + 0.01, lay.side.wMm + '×' + lay.side.hMm);
+      // — felles målestokk: arket vokser med (utstrekning i cm) × (endring i mm/cm), likt for plan og side —
+      const voks = (kind, rot) => { const a = _stairPdfMeasure(st, kind, lay.mmPerCm, rot), b = _stairPdfMeasure(st, kind, lay.mmPerCm * 2, rot); return [(b.wMm - a.wMm) / lay.mmPerCm, (b.hMm - a.hMm) / lay.mmPerCm]; };
+      const pb = _stairPlanBounds(st), dyp = surfs.reduce((s, f) => s + f.d_cm, 0);
+      const vp = voks('plan', lay.rot), vs = voks('side', 0);
+      const planCm = lay.rot ? [pb.h, pb.w] : [pb.w, pb.h];
+      // Hesteskoen: måltabellen står 1 cm (verden) under målene, så høyden vokser med 117 cm for en 116 cm dyp trapp;
+      // og arket måles der i hele piksler (± 0,5 px ≈ 0,1 cm i bredden).
+      const hsTol = _stairIsHorseshoe(st) ? 1.5 : 0.01, hsTolW = _stairIsHorseshoe(st) ? 0.3 : 0.01;
+      check(navn + ': planen er tegnet i 1:' + lay.N, planCm.join('×') + ' cm', near(vp[0], planCm[0], hsTolW) && near(vp[1], planCm[1], hsTol), vp.map(v => Math.round(v * 10) / 10).join('×'));
+      check(navn + ': sidevisningen er tegnet i samme 1:' + lay.N, dyp + ' cm lang, ' + _stairSideTotalHeightCm(st) + ' høy', near(vs[0], dyp, 0.01) && near(vs[1], _stairSideTotalHeightCm(st), 0.01), vs.map(v => Math.round(v * 10) / 10).join('×'));
+      check(navn + ': målestokken er den største felles som får plass (avrundet ned)', '1:N ≥ 1:' + lay.nExact.toFixed(1), lay.N >= lay.nExact - 1e-6 && near(10 / lay.nExact, Math.min(lay.maxPlan, lay.maxSide), 1e-6), lay.N);
+      check(navn + ': vanlig verdi når tegningen beholder ≥ 66 %', 'vanlig eller hel', STAIR_PDF_SCALES.includes(lay.N) ? lay.nExact / lay.N >= STAIR_PDF_SCALE_KEEP : lay.N === Math.ceil(lay.nExact - 1e-6), lay.N + ' av ' + lay.nExact.toFixed(2));
+      // — mål etter 226-regelen —
+      const alle = sp.plan.texts.concat(sp.side.texts), maal = alle.filter(t => t.dim);
+      const mm = [...new Set(maal.map(t => Math.round(t.fontPx / k * 100) / 100))];
+      check(navn + ': måltekst 2,0 mm på papiret (kjeden over hesteskoarmen kan krympe til 60 %)', '2.0', maal.length > 3 && mm.every(v => v <= DIM_PDF_MM + 0.01 && v >= DIM_PDF_MM * 0.6 - 0.01) && mm.includes(2), mm.join(','));
+      const ute = (im, ts) => ts.filter(t => t.x0 < -0.5 || t.y0 < -0.5 || t.x1 > im.wPx + 0.5 || t.y1 > im.hPx + 0.5).map(t => t.str);
+      check(navn + ': ingen tekst kuttes av bildekanten', 'ingen', !ute(sp.plan, sp.plan.texts).length && !ute(sp.side, sp.side.texts).length, ute(sp.plan, sp.plan.texts).concat(ute(sp.side, sp.side.texts)).join(' | '));
+      if (lay.rot) check(navn + ': rotert plan — all tekst står vannrett unntatt «Nederste trinn»', 'bare den', sp.plan.texts.filter(t => !t.upright).map(t => t.str).join(',') === 'Nederste trinn', sp.plan.texts.filter(t => !t.upright).map(t => t.str).join(','));
+      check(navn + ': trinnummerne står i planen', surfs.length + ' flater', surfs.every((f, i) => f.type === 'landing' || sp.plan.texts.some(t => !t.dim && (t.str === String(f.stepIdx + 1) || t.str.startsWith('Trinn ')))), sp.plan.texts.filter(t => !t.dim).length);
+      // — PDF-en: to bilder (plan + side), naturlig størrelse, Flate, målestokken under hver, ingen utsnitt —
+      const pdf = await eksport(st);
+      check(navn + ': PDF-en har ÉN plan og ÉN sidevisning (ingen bånd, ingen detaljutsnitt)', '2 bilder', pdf.img.length === 2, pdf.img.length);
+      check(navn + ': bildene står i naturlig størrelse', 'mm = px / dpi', pdf.img.length === 2 && near(pdf.img[0].w, sp.plan.wMm, 0.01) && near(pdf.img[0].h, sp.plan.hMm, 0.01) && near(pdf.img[1].w, sp.side.wMm, 0.01) && near(pdf.img[1].h, sp.side.hMm, 0.01), pdf.img.map(i => i.w.toFixed(1) + '×' + i.h.toFixed(1)).join(' / '));
+      check(navn + ': PNG med Flate', 'PNG/FAST', pdf.img.every(i => i.fmt === 'PNG' && i.comp === 'FAST'), pdf.img.map(i => i.fmt + '/' + i.comp).join(','));
+      check(navn + ': bildene ligger innenfor siden', 'ja', pdf.img.every(i => i.x >= 15 - 0.01 && i.x + i.w <= aw + 15 + 0.01 && i.y + i.h <= ah + 15 + 0.01), JSON.stringify(pdf.img.map(i => [i.x, i.y, i.w, i.h].map(v => Math.round(v)))));
+      check(navn + ': «' + lay.label + '» under begge tegningene', 2, pdf.tekst.filter(t => t === lay.label).length === 2, pdf.tekst.filter(t => t.startsWith('Målestokk')).join(' | '));
+      check(navn + ': siden er ' + (lay.landscape ? 'liggende' : 'stående'), lay.landscape, pdf.liggende === lay.landscape, pdf.liggende);
+      const iL = pdf.tekst.indexOf('Start kabel'), iS = pdf.tekst.indexOf('Sidevisning'), iT = pdf.tekst.indexOf('Kabel per flate');
+      check(navn + ': tegnforklaringen rett under planen, før sidevisningen', 'Start kabel < Sidevisning < Kabel per flate', iL >= 0 && iL < iS && iS < iT, [iL, iS, iT].join(','));
+      // — billedtekstene: samme grupper og samme tall som utsnittene hadde, nå i tabellen —
+      const gamle = _renderStairDetailInsets(st), rader = _stairDetailRows(st);
+      check(navn + ': tabellen har én rad per tidligere utsnitt', gamle.length, rader.length === gamle.length && rader.length > 0, rader.length);
+      check(navn + ': radene sier det billedtekstene sa', 'likt', rader.every((r, i) => r.label === gamle[i].title && r.caption === gamle[i].caption), rader.map(r => r.caption).join(' | '));
+      const etter = pdf.tekst.slice(iT + 1);
+      check(navn + ': hver rad står i PDF-en (flate, strenger, CC, kabelmeter)', 'alle', rader.every(r => r.cells.every(c => etter.includes(c))), rader.map(r => r.cells.join(' · ')).join(' | '));
+      check(navn + ': utsnittenes titler/billedtekster skrives ikke lenger som bildetekst', 'ingen', !gamle.some(g => pdf.tekst.includes(g.caption)), gamle.filter(g => pdf.tekst.includes(g.caption)).length);
+    }
+    // Uten sidevisning (haken av i eksportdialogen): bare planen, og den får bestemme målestokken alene.
+    {
+      const st = cases[1][1](), begge = _stairPdfLayout(st), alene = _stairPdfLayout(st, { side: false });
+      const pdf = await eksport(st, { stairSide: [] });
+      check('uten sidevisning: ett bilde, ingen «Sidevisning»', '1', pdf.img.length === 1 && !pdf.tekst.includes('Sidevisning') && pdf.tekst.includes('Kabel per flate'), pdf.img.length);
+      check('uten sidevisning: planen alene er aldri mindre', '≤ 1:' + begge.N, alene.N <= begge.N && alene.side === null, alene.N);
+    }
+    // De gamle tegneveiene (forhåndsvisningen i eksportdialogen) er urørt: samme bilde med og uten 230-koden i veien.
+    {
+      const st = cases[0][1](), a = _renderStairToImage(st), cv = _stairDrawToCanvas(st, { geoDims: true });
+      check('forhåndsvisningen bruker fortsatt den gamle tegnemåten (150 dpi, tak 1,4 Mpx)', '≤ 1,4 Mpx', cv.width * cv.height <= 1400000 * 1.01 && a === cv.toDataURL('image/png') && !cv.getContext('2d')._texts, cv.width + '×' + cv.height);
+    }
+  } catch (e) {
+    check('testen kastet', 'ingen feil', false, String(e && e.stack || e));
+  } finally {
+    S.stairs = saved.stairs; S.ui.selectedStairId = saved.sel; S.counters.nextStairId = saved.nextStair; S.project = saved.project;
+    HEATING_PRODUCTS.length = 0; saved.prods.forEach(p => HEATING_PRODUCTS.push(p));
+    PRODUCT_CATEGORIES.length = 0; saved.cats.forEach(p => PRODUCT_CATEGORIES.push(p));
+    window._performAutoSave = saved.autosave; window._showToast = saved.toast; window.showAccessoriesModal = saved.modal; window._pdfBranding = saved.branding;
+    if (window.jspdf && saved.jsPDF) window.jspdf.jsPDF = saved.jsPDF;
+    _undoStack.length = Math.min(_undoStack.length, saved.undoLen);
+    if (typeof markDirty === 'function') markDirty(); if (typeof render === 'function') render();
+  }
+  return { ok: results.every(r => r.ok), results };
+}
+
 function _stairLandingCCRegressionTest192() {
   const saved = { stairs: S.stairs, sel: S.ui.selectedStairId, zone: S.ui.selectedStairZone, prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
     nextStair: S.counters.nextStairId, undoLen: _undoStack.length, autosave: window._performAutoSave };
@@ -97398,9 +97609,14 @@ async function exportPDF(opts, lev) {
     // «fit»-formel kan løse. Bekreftet med Kenneth: denne trappens SIDE blir nå selv liggende når
     // minst ett av båndene faktisk ble rotert, slik at det roterte bildet kan fylle en side formet
     // som det selv. _stairImages regnes derfor ut FØR sideskiftet, ikke inni try-blokken som før.
-    let _stairImages = [];
-    try { _stairImages = _renderStairPrintImages(stair); } catch(e) { _stairImages = []; }
-    const _stairLandscape = _stairImages.some(img => img.rotated);
+    // 230 (Kenneth 10.11.2026): ÉN plantegning av hele trappa (ingen bånd) og ÉN sidevisning, i felles
+    // målestokk og 300 dpi — se «230 · TRAPP I PDF». Oppsettet (_stairPdfLayout) velger stående/liggende
+    // side og om planen roteres, etter hva som gir størst felles målestokk. Kommentarene under om bånd
+    // og «fyll høyden» beskriver veien hit; bildene settes nå inn i NATURLIG størrelse (mm = cm × målestokk).
+    const _withSide230 = !Array.isArray(opts.stairSide) || opts.stairSide.includes(stair.id);
+    let _sp = null;
+    try { _sp = _renderStairPdfImages(stair, { side: _withSide230 }); } catch(e) { _sp = null; }
+    const _stairLandscape = !!(_sp && _sp.layout.landscape);
     const pageW_s = _stairLandscape ? 297 : 210;
     const pageH_s = _stairLandscape ? 210 : 297;
     const pw_s = pageW_s - 2 * M;
@@ -97443,18 +97659,21 @@ async function exportPDF(opts, lev) {
       // SISTE bildet får plass trukket fra så linja aldri skyves alene over på neste side: 6 mm linje
       // + 4 + 2 mm luft etter bildet (y += drawH + 4; y += 2) = 12 mm. Målt: 6 mm holdt ikke —
       // lufta spiste reservasjonen og linja sto alene på side 3 likevel.
-      const _legendMm = (stair.runs && stair.runs.length > 0) ? 12 : 0;
-      for (let ii = 0; ii < _stairImages.length; ii++) {
-        const img = _stairImages[ii];
-        _checkPageS(40);
-        const availH = (pageH_s - M) - y - 2 - (ii === _stairImages.length - 1 ? _legendMm : 0); // 2mm sikkerhetsluft — _checkPageS(40) har avgjort endelig y
-        let drawW = availH * img.aspect, drawH = availH;
-        if (drawW > pw_s) { drawW = pw_s; drawH = pw_s / img.aspect; }
-        doc.addImage(img.dataUrl, 'PNG', M + (pw_s - drawW) / 2, y, drawW, drawH);
-        y += drawH + 4;
+      // 230: plassen under (tegnforklaring + målestokk) er holdt av i _stairPdfLayout (STAIR_PDF_PLAN_FOOT_MM).
+      // 'FAST' = Flate — uten den legger jsPDF PNG-pikslene rå i PDF-en (226).
+      if (_sp && _sp.plan) {
+        const p = _sp.plan;
+        doc.addImage(p.dataUrl, 'PNG', M + (pw_s - p.wMm) / 2, y, p.wMm, p.hMm, undefined, 'FAST');
+        y += p.hMm + 5;
       }
-      y += 2;
     } catch(e) { y += 4; }
+    // 230: målestokken står på samme linje som tegnforklaringen, høyrestilt.
+    if (_sp) {
+      _checkPageS(6);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(80, 90, 110);
+      doc.text(_sp.layout.label, pageW_s - M, y, { align: 'right' });
+      if (!(stair.runs && stair.runs.length > 0)) y += 6;
+    }
 
     // FEIL 3 (spec-trapp-utskrift-feil.md, 11.09.2026): tegnforklaring for start-/sluttprikkene
     // som nå tegnes inn i selve bildet over (_stairDrawToCanvas) — én linje, ikke en forklaringsboks.
@@ -97474,9 +97693,8 @@ async function exportPDF(opts, lev) {
     // 085 (Kenneth 15.10.2026): sidevisningen ETTER planen, FØR detaljutsnittene — med trappens egne
     // mål (opptrinn/inntrinn/totaler). Valgfri per trapp i eksportdialogen (på som standard); kallere
     // uten stairSide-opsjon (gamle standard-opts) får den med.
-    if (!Array.isArray(opts.stairSide) || opts.stairSide.includes(stair.id)) {
-      let _sideImgs = [];
-      try { _sideImgs = _renderStairSidePrintImages(stair); } catch(e) { _sideImgs = []; }
+    if (_sp && _sp.side) {
+      const _sideImgs = [_sp.side];   // 230: ett bilde, samme målestokk som planen
       if (_sideImgs.length) {
         // 098 (Kenneth: «Sidevisning» sto alene på side 3, tegningen kom på side 4): overskriften
         // følger tegningen. Plassen sjekkes for HELE blokken (overskrift 4,5 mm + bilde + luft) FØR
@@ -97484,17 +97702,19 @@ async function exportPDF(opts, lev) {
         // alltid får rom på en fersk side. Før: sjekken var min(bildehøyde, 60) + 10 — stemte
         // bildet ikke i resten, kom sideskiftet ETTER overskriften.
         const _maxSideH = pageH_s - 2 * M - 8.5;
-        const _fit = img => { let w = pw_s, h = pw_s / img.aspect; if (h > _maxSideH) { w = _maxSideH * img.aspect; h = _maxSideH; } return { w, h }; };
-        _checkPageS(4.5 + _fit(_sideImgs[0]).h + 4);
+        const _fit = img => ({ w: img.wMm, h: img.hMm });   // 230: naturlig størrelse — plassen er sikret av _stairPdfLayout
+        _checkPageS(STAIR_PDF_SIDE_HEAD_MM + _fit(_sideImgs[0]).h + STAIR_PDF_SIDE_FOOT_MM);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(20, 60, 130);
         doc.text('Sidevisning', M, y); y += 4.5;
         for (const img of _sideImgs) {
           const f = _fit(img);
           _checkPageS(f.h + 4);
-          doc.addImage(img.dataUrl, 'PNG', M + (pw_s - f.w) / 2, y, f.w, f.h);
-          y += f.h + 4;
+          doc.addImage(img.dataUrl, 'PNG', M + (pw_s - f.w) / 2, y, f.w, f.h, undefined, 'FAST');
+          y += f.h + 3.5;
         }
-        y += 2;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(80, 90, 110);
+        doc.text(_sp.layout.label, pageW_s - M, y, { align: 'right' });
+        y += 6;
       }
     }
 
@@ -97502,22 +97722,32 @@ async function exportPDF(opts, lev) {
     // DISTINKT flate (ett per trinn-type + ett per repos, se _stairDetailGroups) — etter trappens
     // egen tegning, før materiallista (som kommer mye lenger ned i dokumentet, se opts.materialList).
     // Innsettene er alltid nesten kvadratiske uansett trappens egen form — urørt av liggende/stående.
+    // 230 (Kenneth 10.11.2026): detaljutsnittene er TATT UT («forstyrrende»). Det billedtekstene sa —
+    // strenger, CC og kabelmeter per trinn-type / per repos — står her som en enkel teksttabell, med
+    // samme gruppering og samme regning (_stairDetailRows), så ingenting er tapt.
     try {
-      const _insets = _renderStairDetailInsets(stair);
-      const maxImgH3 = pageH_s - 2 * M;
-      for (const ins of _insets) {
-        let drawW = pw_s, drawH = pw_s / ins.aspect;
-        if (drawH > maxImgH3) { const s = maxImgH3 / drawH; drawH = maxImgH3; drawW = pw_s * s; }
-        _checkPageS(drawH + 14);
+      const _dRows = _stairDetailRows(stair);
+      if (_dRows.length) {
+        const _colX = [M, M + 62, M + 84, M + 106];
+        _checkPageS(4.5 + 4.5 + Math.min(_dRows.length, 3) * 4 + 3);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(20, 60, 130);
-        doc.text(ins.title, M, y); y += 4.5;
-        doc.addImage(ins.dataUrl, 'PNG', M + (pw_s - drawW) / 2, y, drawW, drawH);
-        y += drawH + 3;
-        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(80, 90, 110);
-        doc.text(ins.caption, M, y);
-        y += 5.5;
+        doc.text('Kabel per flate', M, y); y += 4.5;
+        const _dHead = () => {
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(60, 70, 90);
+          _STAIR_DETAIL_TABLE_HEAD.forEach((h, k) => doc.text(h, _colX[k], y));
+          doc.setDrawColor(215, 220, 230); doc.setLineWidth(0.2); doc.line(M, y + 1.2, M + 150, y + 1.2);
+          y += 4.5;
+        };
+        _dHead();
+        for (const r of _dRows) {
+          if (y + 4 > pageH_s - M) { _addPageS(); _dHead(); }
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(40, 50, 70);
+          r.cells.forEach((t, k) => doc.text(String(t), _colX[k], y));
+          y += 4;
+        }
+        y += 3;
       }
-    } catch(e) { /* et utsnitt skal aldri kunne knekke resten av PDF-en */ }
+    } catch(e) { /* tabellen skal aldri kunne knekke resten av PDF-en */ }
     // STEG 1 (Kenneth 19.08.2026, Regel 17): sammendragslinjen «Trinn: X | Bredde: Y | CC trinn: Z
     // | N løp per trinn» talte kun FØRSTE trinn-serie — en trapp kan ha trinn → repos → trinn med
     // ulik bredde, og linja ga da ett tall som utga seg for å gjelde hele trappa. Fjernet, ikke
@@ -99942,8 +100172,19 @@ function _stairDrawToCanvas(stair, opts) {
   const PRINT_W_IN = 7.09, PRINT_MAX_H_IN = 10.51, TARGET_DPI = 150, MAX_PIXELS = 1400000, padCm = 4;
   // 085: trappens egne mål (opts.geoDims) ligger til VENSTRE og UNDER — de trenger egen plass der
   // (to nivåer à 12 cm + tall), ikke bare de 4 cm kabelmålene over/til høyre klarer seg med.
-  const padL = opts.geoDims ? 26 : padCm, padB = opts.geoDims ? 26 : padCm;
-  const totalW_cm = sW + padL + padCm, totalH_cm = sH + padCm + padB;
+  let padL = opts.geoDims ? 26 : padCm, padB = opts.geoDims ? 26 : padCm, padT = padCm, padR = padCm;
+  // 230: utskriftsmodus (opts.print, se «230 · TRAPP I PDF») — lufta regnes i mm på papiret, fordi
+  // målteksten har fast størrelse der: venstre to målnivåer, høyre kabelmålenes dybdekjede, over
+  // kabelmålenes to bredderader, under breddemålet; «Nederste trinn» på den siden trinn 1 vender ut.
+  const PR = opts.print ? _stairPdfStyle(opts.print) : null;
+  const K = PR ? PR.K : 1;
+  if (PR) {
+    const bottomUp0 = (stair.buildDirection || 'bottom') !== 'top', lblMm = 4 * PR.sk + 1;
+    padL = PR.cm(opts.geoDims ? 11 + 4 * PR.sk : 2); padR = PR.cm(3 + 7 * PR.sk);
+    padT = PR.cm(Math.max(PR.rot ? 3 + 10 * PR.sk : 2 + 7 * PR.sk, bottomUp0 ? 0 : lblMm));
+    padB = PR.cm(Math.max(opts.geoDims ? (PR.rot ? 7 + 5 * PR.sk : 6 + 4 * PR.sk) : 2, bottomUp0 ? lblMm : 0));
+  }
+  const totalW_cm = sW + padL + padR, totalH_cm = sH + padT + padB;
   const printW_cm = opts.rotated ? totalH_cm : totalW_cm;
   const printH_cm = opts.rotated ? totalW_cm : totalH_cm;
   const printAspect = printW_cm / printH_cm;
@@ -99955,14 +100196,26 @@ function _stairDrawToCanvas(stair, opts) {
     pxPerCm *= s; offW = Math.round(totalW_cm * pxPerCm); offH = Math.round(totalH_cm * pxPerCm);
   }
   offW = Math.max(offW, 160); offH = Math.max(offH, 100);
+  if (PR) {   // 230: gitt målestokk — ingen tilpasning og ingen pikselgrense her (dpi velges av _stairPdfLayout)
+    pxPerCm = PR.pxPerCm;
+    if (PR.measure) { const w = totalW_cm * PR.mmPerCm, h = totalH_cm * PR.mmPerCm; return PR.rot ? { wMm: h, hMm: w } : { wMm: w, hMm: h }; }
+    offW = Math.round(totalW_cm * pxPerCm); offH = Math.round(totalH_cm * pxPerCm);
+  }
 
-  offCanvas.width = offW; offCanvas.height = offH;
+  const _rot = PR ? PR.rot : 0;
+  offCanvas.width = _rot ? offH : offW; offCanvas.height = _rot ? offW : offH;
   const c = offCanvas.getContext('2d');
   c.fillStyle = '#ffffff';
-  c.fillRect(0, 0, offW, offH);
+  c.fillRect(0, 0, offCanvas.width, offCanvas.height);
+  if (PR) {
+    // rot +1: med klokka (verdens «ned» blir venstre på arket), −1: mot klokka — trinn 1 havner til venstre.
+    if (_rot > 0) { c.translate(offH, 0); c.rotate(Math.PI / 2); }
+    else if (_rot < 0) { c.translate(0, offW); c.rotate(-Math.PI / 2); }
+    _stairPrintCtx(c, PR);
+  }
 
   const scale = pxPerCm;
-  const ox = padL * scale, oy = padCm * scale;
+  const ox = padL * scale, oy = padT * scale;
   const tx = wx => ox + (wx - minX) * scale;
   const ty = wy => oy + (wy - minY) * scale;
 
@@ -99973,7 +100226,7 @@ function _stairDrawToCanvas(stair, opts) {
   // kalleren tegner nær den antatte printW_in-bredden, som _renderStairPrintImages/exportPDF gjør)
   // — 11px ble dermed kun ~1,9mm på papiret. mm2px gir en ekte MINSTE teksthøyde i millimeter,
   // ikke piksler; skalerer likevel OPP med tegningens egen scale (som før) når det er plass til det.
-  const mm2px = (mm) => (mm / 25.4) * TARGET_DPI;
+  const mm2px = (mm) => PR ? PR.mm(mm) : (mm / 25.4) * TARGET_DPI;
 
   // Draw surfaces (kun båndets eget intervall)
   let _lNum = 0;
@@ -99985,10 +100238,10 @@ function _stairDrawToCanvas(stair, opts) {
     const w = sf.w_cm * scale, h = sf.d_cm * scale;
     c.fillStyle = sf.type === 'landing' ? 'rgba(160,175,195,0.35)' : 'rgba(180,180,180,0.30)';
     c.fillRect(x1, y1, w, h);
-    c.strokeStyle = '#888'; c.lineWidth = 1;
+    c.strokeStyle = '#888'; c.lineWidth = K;
     c.strokeRect(x1, y1, w, h);
-    // Label
-    c.fillStyle = '#666'; c.font = Math.max(mm2px(3.5), Math.round(scale * 3)) + `px ${CANVAS_UI_FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    // Label — 230: i PDF fast 2,2 mm på papiret (krymper bare når trinnet er grunnere enn skriften)
+    c.fillStyle = '#666'; c.font = (PR ? Math.max(PR.mm(1.2), Math.min(PR.labelPx, h * 0.6)) : Math.max(mm2px(3.5), Math.round(scale * 3))) + `px ${CANVAS_UI_FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
     const lbl = sf.type === 'landing' ? 'Repos ' + _lNum : '' + ((sf.stepIdx != null ? sf.stepIdx : sf.index) + 1);
     c.fillText(lbl, x1 + w/2, y1 + h/2);
   }
@@ -100006,9 +100259,14 @@ function _stairDrawToCanvas(stair, opts) {
     const bottomUp = (stair.buildDirection || 'bottom') !== 'top';
     const outwardY = bottomUp ? (sf0.y_cm + sf0.d_cm) : sf0.y_cm;
     c.fillStyle = '#c04030';
-    c.font = 'bold ' + Math.max(mm2px(3), Math.round(scale * 2.6)) + `px ${CANVAS_UI_FONT}`;
+    c.font = 'bold ' + (PR ? PR.labelPx : Math.max(mm2px(3), Math.round(scale * 2.6))) + `px ${CANVAS_UI_FONT}`;
     c.textAlign = 'center'; c.textBaseline = bottomUp ? 'top' : 'bottom';
-    c.fillText('↓ Nederste trinn', tx(sf0.x_cm + surfW0 / 2), ty(outwardY) + (bottomUp ? 3 : -3));
+    // 230: rotert plan — teksten står loddrett i stripa mellom trinn 1 og breddemålet (vannrett ville den
+    // krevd 20 mm ekstra luft langs trappas lengde, og det er lengden som bestemmer målestokken).
+    const _lblOff = PR ? PR.mm(0.8) : 3;
+    if (_rot) c._vertical = true;
+    c.fillText(_rot ? 'Nederste trinn' : '↓ Nederste trinn', tx(sf0.x_cm + surfW0 / 2), ty(outwardY) + (bottomUp ? _lblOff : -_lblOff));
+    c._vertical = false;
   }
 
   // Draw cable runs
@@ -100016,7 +100274,8 @@ function _stairDrawToCanvas(stair, opts) {
     const hasMulti = (stair.cables || []).length > 1;
     // 106: fargen leses fra kabelen selv (_stairCableColorAt) — den lokale lista her hadde bare
     // tre farger og ga feil farge så snart en sone hadde to kabler.
-    c.lineWidth = Math.max(1.5, scale * 0.3); c.lineCap = 'round';
+    const cableW = Math.max(1.5 * K, scale * 0.3);
+    c.lineWidth = cableW; c.lineCap = 'round';
     const runsBySurf = {};
     for (const r of stair.runs) { if (!runsBySurf[r.surfaceIdx]) runsBySurf[r.surfaceIdx] = []; runsBySurf[r.surfaceIdx].push(r); }
     // Regel 9: inngangsside følger motorens paritetskjede (stair.connections[].exitRight) — se
@@ -100052,8 +100311,8 @@ function _stairDrawToCanvas(stair, opts) {
           for (let sgi = 0; sgi < segs.length - 1; sgi++) {
             const jp = { x: tx(sf.x_cm + segs[sgi].end_cm), y: ty(sf.y_cm + run.pos_cm) };
             c.save(); c.fillStyle = '#111';
-            c.beginPath(); c.arc(jp.x, jp.y, Math.max(2.5, scale * 0.5), 0, Math.PI * 2); c.fill();
-            c.strokeStyle = '#fff'; c.lineWidth = 0.8; c.stroke();
+            c.beginPath(); c.arc(jp.x, jp.y, Math.max(2.5 * K, scale * 0.5), 0, Math.PI * 2); c.fill();
+            c.strokeStyle = '#fff'; c.lineWidth = 0.8 * K; c.stroke();
             c.restore();
           }
         }
@@ -100084,7 +100343,7 @@ function _stairDrawToCanvas(stair, opts) {
     // krysser en båndgrense tegnes ikke i noen av dem — samme prinsipp som et papirark som "fortsetter
     // på neste ark": et lite, forventet brudd i tegningen der arket faktisk deles).
     if (stair.connections) {
-      c.setLineDash([4,4]);
+      c.setLineDash([4 * K, 4 * K]);
       for (const conn of stair.connections) {
         if (conn.fromSurf < rFrom || conn.fromSurf > rTo || conn.toSurf < rFrom || conn.toSurf > rTo) continue;
         const fromSurf = surfs[conn.fromSurf], toSurf = surfs[conn.toSurf];
@@ -100123,8 +100382,8 @@ function _stairDrawToCanvas(stair, opts) {
     for (const u of (stair.uncoveredRuns || [])) {
       if (u.surfaceIdx < rFrom || u.surfaceIdx > rTo) continue;   // kun dette båndets flater
       const sf = surfs[u.surfaceIdx]; if (!sf) continue;
-      c.save(); c.strokeStyle = '#ef4444'; c.setLineDash([Math.max(2, scale * 0.6), Math.max(2, scale * 0.45)]);
-      c.lineWidth = Math.max(1.2, scale * 0.25);
+      c.save(); c.strokeStyle = '#ef4444'; c.setLineDash([Math.max(2 * K, scale * 0.6), Math.max(2 * K, scale * 0.45)]);
+      c.lineWidth = Math.max(1.2 * K, scale * 0.25);
       c.beginPath();
       c.moveTo(tx(sf.x_cm + u.start_cm), ty(sf.y_cm + u.pos_cm));
       c.lineTo(tx(sf.x_cm + u.end_cm),   ty(sf.y_cm + u.pos_cm));
@@ -100147,8 +100406,8 @@ function _stairDrawToCanvas(stair, opts) {
       const endpoints = {};
       for (const ci of Object.keys(_eps)) endpoints[ci] = { start: _pt(_eps[ci].start), end: _pt(_eps[ci].end) };
       const nCablesEp = Math.max(1, (stair.cables || []).length);
-      c.font = 'bold ' + Math.max(9, Math.round(scale * 2.2)) + `px ${CANVAS_UI_FONT}`;
-      const markerR = Math.max(3, scale * 0.5);
+      c.font = 'bold ' + (PR ? PR.labelPx * 0.9 : Math.max(9, Math.round(scale * 2.2))) + `px ${CANVAS_UI_FONT}`;
+      const markerR = Math.max(3 * K, scale * 0.5);
       for (let ci = 0; ci < nCablesEp; ci++) {
         const ep = endpoints[ci];
         if (!ep) continue;
@@ -100180,8 +100439,12 @@ function _stairDrawToCanvas(stair, opts) {
   // dimensjoneres (det ville vært ulesbart selv på en kort trapp).
   if (stair.runs && stair.runs.length > 0) {
     // 102: målene leses PER FLATE (sonens, der den finnes) — se _stairSurfSettings.
-    c.strokeStyle = '#2090e0'; c.fillStyle = '#2090e0';
-    c.font = Math.max(9, Math.round(scale * 2.4)) + `px ${CANVAS_UI_FONT}`; c.lineWidth = 0.8; c.setLineDash([]);
+    // 230: i PDF følger kabelmålene 226-regelen (mørk grå, 2,0 mm, hvit boks) — blått bare utenfor utskriftsmodus.
+    const dimCol = PR ? PR.col : '#2090e0';
+    c.strokeStyle = dimCol; c.fillStyle = dimCol;
+    c.font = (PR ? PR.fontPx : Math.max(9, Math.round(scale * 2.4))) + `px ${CANVAS_UI_FONT}`; c.lineWidth = PR ? PR.line : 0.8; c.setLineDash([]);
+    const tk = PR ? PR.tickHalf : 2;                                               // endemerke, halv lengde
+    const gapH = PR ? tk + PR.mm(0.2) : 2, gapV = PR ? tk + PR.mm(0.4) : 3;        // luft strek → tall
 
     const runsBySurfDim = {};
     for (const r of stair.runs) { (runsBySurfDim[r.surfaceIdx] = runsBySurfDim[r.surfaceIdx] || []).push(r); }
@@ -100193,19 +100456,25 @@ function _stairDrawToCanvas(stair, opts) {
     // men grensetilfeller (svært mange løp per trinn) kan fortsatt kollidere.
     const MIN_LABEL_PX = 7;
 
-    const tick = (ax, ay, bx, by, label, horiz) => {
+    // 230: plass til tallet LANGS en loddrett kjede. Urotert står tallet på tvers (trenger skrifthøyden);
+    // i rotert plan står det langs (trenger tallets bredde). Utenfor utskriftsmodus: 7 px som før.
+    const fitsV = (spanPx, label) => PR ? spanPx >= (_rot ? c.measureText(label).width + PR.fontPx * 0.3 : PR.fontPx * 0.95) : spanPx >= MIN_LABEL_PX;
+    // frac: hvor langs målet tallet står (0,5 = midt på). PDF-en setter totalbredden på 0,25, så den hvite
+    // boksen ikke dekker trinnummeret midt på nabotrinnet.
+    const tick = (ax, ay, bx, by, label, horiz, noLabel, frac) => {
+      const fr = frac != null ? frac : 0.5;
       const pa = { x: tx(ax), y: ty(ay) }, pb = { x: tx(bx), y: ty(by) };
       c.beginPath(); c.moveTo(pa.x, pa.y); c.lineTo(pb.x, pb.y); c.stroke();
       if (horiz) {
-        c.beginPath(); c.moveTo(pa.x, pa.y - 2); c.lineTo(pa.x, pa.y + 2); c.stroke();
-        c.beginPath(); c.moveTo(pb.x, pb.y - 2); c.lineTo(pb.x, pb.y + 2); c.stroke();
+        c.beginPath(); c.moveTo(pa.x, pa.y - tk); c.lineTo(pa.x, pa.y + tk); c.stroke();
+        c.beginPath(); c.moveTo(pb.x, pb.y - tk); c.lineTo(pb.x, pb.y + tk); c.stroke();
         c.textAlign = 'center'; c.textBaseline = 'bottom';
-        if (Math.abs(pb.x - pa.x) >= MIN_LABEL_PX) c.fillText(label, (pa.x + pb.x) / 2, pa.y - 2);
+        if (!noLabel && Math.abs(pb.x - pa.x) >= MIN_LABEL_PX * K) c.fillText(label, pa.x + (pb.x - pa.x) * fr, pa.y - gapH);
       } else {
-        c.beginPath(); c.moveTo(pa.x - 2, pa.y); c.lineTo(pa.x + 2, pa.y); c.stroke();
-        c.beginPath(); c.moveTo(pb.x - 2, pb.y); c.lineTo(pb.x + 2, pb.y); c.stroke();
+        c.beginPath(); c.moveTo(pa.x - tk, pa.y); c.lineTo(pa.x + tk, pa.y); c.stroke();
+        c.beginPath(); c.moveTo(pb.x - tk, pb.y); c.lineTo(pb.x + tk, pb.y); c.stroke();
         c.textAlign = 'left'; c.textBaseline = 'middle';
-        if (Math.abs(pb.y - pa.y) >= MIN_LABEL_PX) c.fillText(label, pa.x + 3, (pa.y + pb.y) / 2);
+        if (!noLabel && fitsV(Math.abs(pb.y - pa.y), label)) c.fillText(label, pa.x + gapV, (pa.y + pb.y) / 2);
       }
     };
 
@@ -100233,26 +100502,36 @@ function _stairDrawToCanvas(stair, opts) {
 
       // Bredde-mål (sidemargin) kun på første dimensjonerte flate i BÅNDET, over selve tegningen.
       if (si === firstDimSurf) {
-        const dimYw = surf.y_cm - 2 / scale; // 2px opp, uttrykt i world-cm for tx/ty
+        const dimYw = surf.y_cm - (PR ? PR.mm(1.2) : 2) / scale; // 2px opp (PDF: 1,2 mm), uttrykt i world-cm for tx/ty
         const edgeTxt = _stairDimRound(edgeM) + '';
         tick(surf.x_cm, dimYw, surf.x_cm + edgeM, dimYw, edgeTxt, true);
         tick(surf.x_cm + surfW - edgeM, dimYw, surf.x_cm + surfW, dimYw, edgeTxt, true);
         // DEL A (spec-trapp-detaljutsnitt.md, 11.09.2026): totalbredde i egen målelinje lenger unna
         // flaten enn marginmålet — samme parallell som _drawSurfWidthDims på skjermen, så «120» og
         // «5 · ... · 5» leses samtidig på utskrift også, ikke bare på skjerm.
-        const dimYwTotal = surf.y_cm - 7 / scale;
-        tick(surf.x_cm, dimYwTotal, surf.x_cm + surfW, dimYwTotal, _stairDimRound(surfW) + '', true);
+        // 230: i PDF står totalraden klar av marginradens tall (skrifthøyden; i rotert plan tallets bredde).
+        const dimYwTotal = surf.y_cm - (PR ? PR.mm(1.2) + gapH + (_rot ? c.measureText(edgeTxt).width : PR.fontPx) + PR.mm(1.2) : 7) / scale;
+        tick(surf.x_cm, dimYwTotal, surf.x_cm + surfW, dimYwTotal, _stairDimRound(surfW) + '', true, false, PR ? 0.25 : 0.5);
       }
 
       // Dybde-mål (riser/nese-avstand + CC) til høyre for flaten.
-      const dimXd = surf.x_cm + surfW + 3 / scale;
+      const dimXd = surf.x_cm + surfW + (PR ? PR.mm(1.5) : 3) / scale;
       // 102: dybdemålet er flatens EGET (repos: landingMargin_cm, trinn: sonens opptrinnsavstand)
       // — et repos fikk før SIDE-marginen tegnet inn som dybdemål.
       const topOff = _ssDim.depthStart_cm;
       tick(dimXd, surf.y_cm, dimXd, surf.y_cm + topOff, _stairDimRound(topOff) + '', false);
-      for (let ri = 0; ri < surfRuns.length - 1; ri++) {
-        const cc = _stairDimRound(surfRuns[ri + 1].pos_cm - surfRuns[ri].pos_cm);
-        tick(dimXd, surf.y_cm + surfRuns[ri].pos_cm, dimXd, surf.y_cm + surfRuns[ri + 1].pos_cm, cc + '', false);
+      // 230: får ikke hvert CC-tall plass (liten målestokk i PDF), står de som ETT tall ved CC-strekket:
+      // «3 × 10» (like) eller «3 × 9.5–10» (ulike) — samme grep som hesteskoens kjede (187).
+      const ccs = [];
+      for (let ri = 0; ri < surfRuns.length - 1; ri++) ccs.push(_stairDimRound(surfRuns[ri + 1].pos_cm - surfRuns[ri].pos_cm));
+      const ccAllFit = !PR || ccs.every((cc, ri) => fitsV((surfRuns[ri + 1].pos_cm - surfRuns[ri].pos_cm) * scale, cc + ''));
+      for (let ri = 0; ri < ccs.length; ri++) tick(dimXd, surf.y_cm + surfRuns[ri].pos_cm, dimXd, surf.y_cm + surfRuns[ri + 1].pos_cm, ccs[ri] + '', false, !ccAllFit);
+      if (!ccAllFit) {
+        const lo = Math.min(...ccs), hi = Math.max(...ccs), grp = ccs.length + ' × ' + (lo === hi ? lo : lo + '–' + hi);
+        const y0 = surf.y_cm + surfRuns[0].pos_cm, y1 = surf.y_cm + surfRuns[surfRuns.length - 1].pos_cm;
+        // Tallet står utenfor kjeden (til høyre; under i rotert plan) og får stikke ut over CC-strekket —
+        // naboene (opptrinn-/neseavstanden) er da uansett for smale til å ha egne tall.
+        if (ccs.length) { c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(grp, tx(dimXd) + gapV, ty((y0 + y1) / 2)); }
       }
       const lastPos = surfRuns[surfRuns.length - 1].pos_cm;
       const botDist = _stairDimRound(surf.d_cm - lastPos);
@@ -100264,7 +100543,7 @@ function _stairDrawToCanvas(stair, opts) {
   // eksport-forhåndsvisningen (opts.geoDims), ikke for detaljutsnittene (én flate, ville bare
   // gjentatt kabelmålenes bredde).
   if (opts.geoDims) {
-    _drawStairGeoDims(c, _stairGeometryDims(stair, 'plan', [rFrom, rTo]), (x, y) => ({ x: tx(x), y: ty(y) }),
+    _drawStairGeoDims(c, _stairGeometryDims(stair, 'plan', [rFrom, rTo]), (x, y) => ({ x: tx(x), y: ty(y) }), PR ? _stairPdfGeoDimOpts(PR) :
       { baseCm: 9, levelCm: 13, color: '#555555', font: Math.max(10, Math.round(scale * 3)) + 'px sans-serif', tick: Math.max(2, scale * 0.6) });
   }
 
@@ -100303,19 +100582,26 @@ function _stairDrawSideToCanvas(stair, opts) {
   const sW = xTo - xFrom, sH = ground - yMin;
 
   const PRINT_W_IN = 7.09, PRINT_MAX_H_IN = 10.51, TARGET_DPI = 150, MAX_PIXELS = 1400000, padCm = 4;
-  const padL = 26, padB = 26;
-  const totalW_cm = sW + padL + padCm, totalH_cm = sH + padCm + padB;
+  let padL = 26, padB = 26, padT = padCm, padR = padCm;
+  // 230: utskriftsmodus — luft i mm på papiret (to målnivåer til venstre og under), se «230 · TRAPP I PDF».
+  const PR = opts.print ? _stairPdfStyle(opts.print) : null;
+  const K = PR ? PR.K : 1;
+  if (PR) { padL = PR.cm(11 + 4 * PR.sk); padB = PR.cm(11 + 4 * PR.sk); padT = PR.cm(2); padR = PR.cm(2); }
+  if (PR && PR.measure) return { wMm: (sW + padL + padR) * PR.mmPerCm, hMm: (sH + padT + padB) * PR.mmPerCm };
+  const totalW_cm = sW + padL + padR, totalH_cm = sH + padT + padB;
   const printW_in = Math.min(PRINT_W_IN, PRINT_MAX_H_IN * (totalW_cm / totalH_cm));
   let pxPerCm = (printW_in * TARGET_DPI) / totalW_cm;
   let offW = Math.round(totalW_cm * pxPerCm), offH = Math.round(totalH_cm * pxPerCm);
   if (offW * offH > MAX_PIXELS) { const s = Math.sqrt(MAX_PIXELS / (offW * offH)); pxPerCm *= s; offW = Math.round(totalW_cm * pxPerCm); offH = Math.round(totalH_cm * pxPerCm); }
   offW = Math.max(offW, 160); offH = Math.max(offH, 100);
+  if (PR) { pxPerCm = PR.pxPerCm; offW = Math.round(totalW_cm * pxPerCm); offH = Math.round(totalH_cm * pxPerCm); }   // 230: gitt målestokk
   offCanvas.width = offW; offCanvas.height = offH;
   const c = offCanvas.getContext('2d');
   c.fillStyle = '#ffffff'; c.fillRect(0, 0, offW, offH);
+  if (PR) _stairPrintCtx(c, PR);
   const scale = pxPerCm;
   const tx = x => padL * scale + (x - xFrom) * scale;
-  const ty = y => padCm * scale + (y - yMin) * scale;
+  const ty = y => padT * scale + (y - yMin) * scale;
 
   // Profil for båndet: trinnflater + opptrinn, lukket langs bakken.
   const pts = [];
@@ -100330,10 +100616,11 @@ function _stairDrawSideToCanvas(stair, opts) {
   pts.forEach((p, i) => { const px = tx(p.x), py = ty(p.y); if (i === 0) c.moveTo(px, py); else c.lineTo(px, py); });
   c.closePath();
   c.fillStyle = 'rgba(180,180,180,0.25)'; c.fill();
-  c.strokeStyle = '#666666'; c.lineWidth = Math.max(1, scale * 0.25); c.stroke();
+  c.strokeStyle = '#666666'; c.lineWidth = Math.max(K, scale * 0.25); c.stroke();
 
   // Trinnummer/Repos-etikett på hver flate (samme tekst som planen).
-  c.fillStyle = '#777777'; c.font = Math.max(9, Math.round(scale * 2.4)) + `px ${CANVAS_UI_FONT}`;
+  const lblPx = PR ? PR.labelPx : Math.max(9, Math.round(scale * 2.4));
+  c.fillStyle = '#777777'; c.font = lblPx + `px ${CANVAS_UI_FONT}`;
   c.textAlign = 'center'; c.textBaseline = 'top';
   let landingNum = 0;
   for (let i = 0; i <= rTo; i++) {
@@ -100341,14 +100628,17 @@ function _stairDrawSideToCanvas(stair, opts) {
     if (i < rFrom) continue;
     const sc = coords[i];
     const label = surfs[i].type === 'landing' ? 'Repos ' + landingNum : '' + ((surfs[i].stepIdx != null ? surfs[i].stepIdx : surfs[i].index) + 1);
-    if (sc.depth * scale > 12) c.fillText(label, tx(sc.xStart + sc.depth / 2), ty(sc.yTop) + 3);
+    // 230: i PDF krymper skriften til trinnets inntrinn når tallet ellers ikke får plass (aldri under 1,2 mm).
+    if (PR) { c.font = lblPx + `px ${CANVAS_UI_FONT}`; const w = c.measureText(label).width, room = sc.depth * scale * 0.9;
+      if (w > room) c.font = Math.max(PR.mm(1.2), lblPx * room / w) + `px ${CANVAS_UI_FONT}`; }
+    if (sc.depth * scale > 12 * K) c.fillText(label, tx(sc.xStart + sc.depth / 2), ty(sc.yTop) + 3 * K);
   }
 
   // Kabel (Regel 9: streng-posisjon fra motoren) + opptrinn-forbindelser + start/slutt.
   // 106: fargen leses fra kabelen selv (_stairCableColorAt), se kommentaren i _stairDrawToCanvas.
   const hasMulti = (stair.cables || []).length > 1;
   if (stair.runs && stair.runs.length) {
-    c.lineCap = 'round'; c.lineWidth = Math.max(1.5, scale * 0.5);
+    c.lineCap = 'round'; c.lineWidth = Math.max(1.5 * K, scale * 0.5);
     const runsBySurf = {};
     for (const r of stair.runs) (runsBySurf[r.surfaceIdx] = runsBySurf[r.surfaceIdx] || []).push(r);
     for (const [si, surfRuns] of Object.entries(runsBySurf)) {
@@ -100369,7 +100659,7 @@ function _stairDrawSideToCanvas(stair, opts) {
         }
       }
     }
-    c.setLineDash([Math.max(2, scale * 0.6), Math.max(2, scale * 0.6)]);
+    c.setLineDash([Math.max(2 * K, scale * 0.6), Math.max(2 * K, scale * 0.6)]);
     for (let i = rFrom; i < Math.min(rTo, coords.length - 2) + 1; i++) {
       const conn = (stair.connections || []).find(k => k.fromSurf === i);
       if (!conn || i + 1 > rTo) continue;
@@ -100389,7 +100679,7 @@ function _stairDrawSideToCanvas(stair, opts) {
     // 098: felles kilde (_stairCableEndpoints) og speilet x (_stairSideX) — før lå prikken på
     // xStart + pos_cm, altså i opptrinnsenden for start og forkanten for slutt.
     const endpoints = _stairCableEndpoints(stair);
-    const markerR = Math.max(3, scale * 0.5);
+    const markerR = Math.max(3 * K, scale * 0.5);
     for (let ci = 0; ci < Math.max(1, (stair.cables || []).length); ci++) {
       const ep = endpoints[ci]; if (!ep) continue;
       if (ep.start.si >= rFrom && ep.start.si <= rTo) { const sc = coords[ep.start.si]; c.fillStyle = '#22cc44'; c.beginPath(); c.arc(tx(_stairSideX(stair, sc, ep.start.pos_cm)), ty(sc.yTop), markerR, 0, Math.PI * 2); c.fill(); }
@@ -100397,7 +100687,7 @@ function _stairDrawSideToCanvas(stair, opts) {
     }
   }
 
-  _drawStairGeoDims(c, _stairGeometryDims(stair, 'side', [rFrom, rTo]), (x, y) => ({ x: tx(x), y: ty(y) }),
+  _drawStairGeoDims(c, _stairGeometryDims(stair, 'side', [rFrom, rTo]), (x, y) => ({ x: tx(x), y: ty(y) }), PR ? _stairPdfGeoDimOpts(PR) :
     { baseCm: 9, levelCm: 13, color: '#555555', font: Math.max(10, Math.round(scale * 3)) + 'px sans-serif', tick: Math.max(2, scale * 0.6) });
   return offCanvas;
 }
@@ -100581,6 +100871,94 @@ function _stairDetailGroups(stair) {
 // gjenbruke _stairDrawToCanvas med surfaceRange begrenset til gruppens EGEN representant-flate — en
 // enkelt flate er nesten kvadratisk, så oppløsningsvalget i _stairDrawToCanvas (som allerede følger
 // motivets eget format, se kommentaren der) gir automatisk høy piksel-tetthet uten noen ny tegnekode.
+// 230: detaljutsnittene er TATT UT av PDF-en (Kenneth 10.11.2026: «forstyrrende»). Det billedtekstene
+// sa — antall strenger, CC og kabelmeter per trinn / på repos — står nå som teksttabellen «Kabel per
+// flate» etter sidevisningen (exportPDF), bygget av _stairDetailRows under. Samme gruppering
+// (_stairDetailGroups) og samme regning som billedteksten, så ingenting er tapt.
+// _renderStairDetailInsets har ingen kallere igjen i appen; den står til Kenneth har sett resultatet.
+function _stairDetailRows(stair) {
+  const surfs = stair.surfaces || [];
+  return _stairDetailGroups(stair).map(g => {
+    const surf = surfs[g.repIdx], isLanding = g.type === 'landing';
+    const surfRuns = (stair.runs || []).filter(r => r.surfaceIdx === g.repIdx).sort((a, b) => a.pos_cm - b.pos_cm);
+    const N = surfRuns.length;
+    const surfW = surf.w_cm || stair.width_cm || 120;
+    const runLen = surfW - 2 * _stairSurfSettings(stair, g.repIdx).edgeMargin_cm;   // 102: sonens margin
+    // 176: på en hesteskoflate er strengene ulikt lange — summen leses fra rutingen (Regel 9).
+    const lenM = surf.shape === 'u'
+      ? _stairDimRound(surfRuns.reduce((s, r) => s + r.segments.reduce((a, g2) => a + (g2.end_cm - g2.start_cm), 0), 0) / 100)
+      : _stairDimRound(N * Math.max(runLen, 0) / 100);
+    const ccTxt = surfRuns.length > 1 ? _stairDimRound(surfRuns[1].pos_cm - surfRuns[0].pos_cm) + ' cm' : null;
+    const strandTxt = N === 1 ? '1 streng' : N + ' strenger';
+    const caption = strandTxt + (ccTxt ? ' · CC ' + ccTxt : '') + ' · ' + lenM + ' m kabel ' + (isLanding ? 'på repos' : 'per trinn');
+    return { label: g.label, isLanding, repIdx: g.repIdx, N, ccTxt, lenM, caption,
+      cells: [g.label, String(N), ccTxt || '—', lenM + (isLanding ? ' på repos' : ' per trinn')] };
+  });
+}
+const _STAIR_DETAIL_TABLE_HEAD = ['Flate', 'Strenger', 'CC', 'Kabel (m)'];
+
+// 230: trappesidens oppsett — side (stående/liggende), om planen roteres, og den FELLES målestokken.
+// For hver kombinasjon måles hvor stor plan og sidevisning kan bli på sin side (measure-modus i
+// tegnerne, halvering — arkstørrelsen vokser jevnt med målestokken), og den minste av de to gjelder
+// begge. Målestokken rundes NED til nærmeste vanlige verdi (STAIR_PDF_SCALES) når tegningen da
+// beholder minst STAIR_PDF_SCALE_KEEP av størrelsen, ellers til nærmeste hele 1:N. Kombinasjonen med
+// størst AVRUNDET målestokk vinner; ved likt den der plan og sidevisning får plass på samme side,
+// deretter stående og urotert (slik trappa står på skjermen). En hesteskotrapp roteres aldri.
+//   → { landscape, rot, N, mmPerCm, dpi, maxPlan, maxSide, limitedBy: 'plan'|'side', plan:{wMm,hMm}, side:{wMm,hMm}|null }
+function _stairPdfMeasure(stair, kind, mmPerCm, rot) {
+  const print = { mmPerCm, rot: rot || 0, measure: true };
+  return kind === 'side' ? _stairDrawSideToCanvas(stair, { print }) : _stairDrawToCanvas(stair, { geoDims: true, print });
+}
+function _stairPdfMaxScale(stair, kind, rot, availW, availH) {
+  const fits = s => { const m = _stairPdfMeasure(stair, kind, s, rot); return m.wMm <= availW && m.hMm <= availH; };
+  let lo = 0.002, hi = 20;   // 1:5000 … 1:0,5
+  if (!fits(lo)) return 0;
+  if (fits(hi)) return hi;
+  for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+  return lo;
+}
+function _stairPdfLayout(stair, o) {
+  o = o || {};
+  const surfs = stair.surfaces || [];
+  if (!surfs.length) return null;
+  const withSide = o.side !== false, M = 15;
+  const bottomUp = (stair.buildDirection || 'bottom') !== 'top';
+  const rots = _stairIsHorseshoe(stair) ? [0] : [0, bottomUp ? 1 : -1];
+  const roundN = nExact => {
+    const n = STAIR_PDF_SCALES.find(v => v >= nExact - 1e-6);
+    return (!n || nExact / n < STAIR_PDF_SCALE_KEEP) ? Math.max(1, Math.ceil(nExact - 1e-6)) : n;
+  };
+  let best = null;
+  for (const landscape of [false, true]) {
+    const aw = (landscape ? 297 : 210) - 2 * M, ah = (landscape ? 210 : 297) - 2 * M;
+    const maxSide = withSide ? _stairPdfMaxScale(stair, 'side', 0, aw, ah - STAIR_PDF_SIDE_HEAD_MM - STAIR_PDF_SIDE_FOOT_MM) : Infinity;
+    for (const rot of rots) {
+      const maxPlan = _stairPdfMaxScale(stair, 'plan', rot, aw, ah - STAIR_PDF_TITLE_MM - STAIR_PDF_PLAN_FOOT_MM);
+      const s = Math.min(maxPlan, maxSide);
+      if (!(s > 0)) continue;
+      const N = roundN(10 / s), pm = _stairPdfMeasure(stair, 'plan', 10 / N, rot), sm = withSide ? _stairPdfMeasure(stair, 'side', 10 / N, 0) : null;
+      const onePage = !sm || STAIR_PDF_TITLE_MM + pm.hMm + STAIR_PDF_PLAN_FOOT_MM + STAIR_PDF_SIDE_HEAD_MM + sm.hMm + STAIR_PDF_SIDE_FOOT_MM <= ah;
+      if (!best || N < best.N || (N === best.N && onePage && !best.onePage)) best = { landscape, rot, max: s, maxPlan, maxSide, N, onePage, plan: pm, side: sm };
+    }
+  }
+  if (!best) return null;
+  const nExact = 10 / best.max, N = best.N, mmPerCm = 10 / N, plan = best.plan, side = best.side;
+  const longest = Math.max(plan.wMm, plan.hMm, side ? side.wMm : 0, side ? side.hMm : 0);
+  const dpi = Math.min(STAIR_PDF_DPI, Math.floor(STAIR_PDF_MAX_SIDE_PX * 25.4 / longest));
+  return { landscape: best.landscape, rot: best.rot, N, nExact, mmPerCm, dpi, maxPlan: best.maxPlan, maxSide: best.maxSide, onePage: best.onePage,
+    limitedBy: best.maxSide < best.maxPlan ? 'side' : 'plan', plan, side, label: 'Målestokk 1:' + N + ' (A4)' };
+}
+// 230: de to bildene til trappesiden — ÉN plan (hele trappa, ingen bånd) og ÉN sidevisning, PNG.
+//   → { layout, plan: { dataUrl, wMm, hMm, wPx, hPx, texts }, side: { … }|null } | null (trapp uten flater)
+function _renderStairPdfImages(stair, o) {
+  const lay = _stairPdfLayout(stair, o);
+  if (!lay) return null;
+  const pack = cv => ({ dataUrl: cv.toDataURL('image/png'), wPx: cv.width, hPx: cv.height,
+    wMm: cv.width * 25.4 / lay.dpi, hMm: cv.height * 25.4 / lay.dpi, texts: cv.getContext('2d')._texts || [] });
+  const plan = pack(_stairDrawToCanvas(stair, { geoDims: true, print: { mmPerCm: lay.mmPerCm, dpi: lay.dpi, rot: lay.rot } }));
+  const side = lay.side ? pack(_stairDrawSideToCanvas(stair, { print: { mmPerCm: lay.mmPerCm, dpi: lay.dpi } })) : null;
+  return { layout: lay, plan, side };
+}
 function _renderStairDetailInsets(stair) {
   const surfs = stair.surfaces || [];
   const groups = _stairDetailGroups(stair);

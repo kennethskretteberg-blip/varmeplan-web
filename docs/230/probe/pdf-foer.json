@@ -1,0 +1,538 @@
+[
+ {
+  "sider": 3,
+  "ms": 106,
+  "img": [
+   {
+    "side": 1,
+    "w": 267,
+    "h": 128.5,
+    "url": 46726
+   },
+   {
+    "side": 2,
+    "w": 253.1,
+    "h": 171.5,
+    "url": 42310
+   },
+   {
+    "side": 3,
+    "w": 267,
+    "h": 93.9,
+    "url": 37474
+   }
+  ],
+  "tekst": [
+   [
+    1,
+    "Trapp: Kort rett trapp (8 trinn)"
+   ],
+   [
+    1,
+    "Start kabel"
+   ],
+   [
+    1,
+    "Slutt kabel"
+   ],
+   [
+    2,
+    "Sidevisning"
+   ],
+   [
+    3,
+    "Trinn 1–8 (typisk)"
+   ],
+   [
+    3,
+    "4 strenger · CC 8.7 cm · 3.6 m kabel per trinn"
+   ],
+   [
+    3,
+    "K1"
+   ],
+   [
+    3,
+    "0 W"
+   ],
+   [
+    3,
+    "—"
+   ],
+   [
+    3,
+    "Avstand opptrinn: 2 cm   |   Avstand nese: 2 cm   |   Avstand sider: 5 cm"
+   ],
+   [
+    3,
+    "4 strenger/trinn   |   CC 8.7 cm   |   90 cm/streng   |   360 cm/trinn   |   —"
+   ],
+   [
+    3,
+    "Trinn: 28.8 m   |   Repos: —   |   Lagt: 30.3 m   |   Kabellengde: —"
+   ],
+   [
+    3,
+    "Totalt: 30.3 m   |   0 W"
+   ],
+   [
+    3,
+    "Samlet kabel: 0.0 m"
+   ],
+   [
+    1,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    1,
+    "Side 1 av 3"
+   ],
+   [
+    2,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    2,
+    "Side 2 av 3"
+   ],
+   [
+    3,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    3,
+    "Side 3 av 3"
+   ]
+  ],
+  "lay": null,
+  "px": null,
+  "gml": {
+   "plan": 1,
+   "side": 1,
+   "utsnitt": 1
+  },
+  "flater": 8,
+  "kabel_m": 30.27,
+  "heap": 116,
+  "navn": "kort",
+  "bytes": 6848946
+ },
+ {
+  "sider": 4,
+  "ms": 134,
+  "img": [
+   {
+    "side": 1,
+    "w": 267,
+    "h": 57.7,
+    "url": 39610
+   },
+   {
+    "side": 1,
+    "w": 234.7,
+    "h": 108.3,
+    "url": 37978
+   },
+   {
+    "side": 2,
+    "w": 267,
+    "h": 105.1,
+    "url": 40070
+   },
+   {
+    "side": 3,
+    "w": 267,
+    "h": 159.8,
+    "url": 47726
+   },
+   {
+    "side": 4,
+    "w": 267,
+    "h": 93.9,
+    "url": 37474
+   }
+  ],
+  "tekst": [
+   [
+    1,
+    "Trapp: Lang rett trapp (30 trinn)"
+   ],
+   [
+    2,
+    "Start kabel"
+   ],
+   [
+    2,
+    "Slutt kabel"
+   ],
+   [
+    3,
+    "Sidevisning"
+   ],
+   [
+    4,
+    "Trinn 1–30 (typisk)"
+   ],
+   [
+    4,
+    "4 strenger · CC 8.7 cm · 3.6 m kabel per trinn"
+   ],
+   [
+    4,
+    "K1"
+   ],
+   [
+    4,
+    "0 W"
+   ],
+   [
+    4,
+    "—"
+   ],
+   [
+    4,
+    "Avstand opptrinn: 2 cm   |   Avstand nese: 2 cm   |   Avstand sider: 5 cm"
+   ],
+   [
+    4,
+    "4 strenger/trinn   |   CC 8.7 cm   |   90 cm/streng   |   360 cm/trinn   |   —"
+   ],
+   [
+    4,
+    "Trinn: 108 m   |   Repos: —   |   Lagt: 114.1 m   |   Kabellengde: —"
+   ],
+   [
+    4,
+    "Totalt: 114.1 m   |   0 W"
+   ],
+   [
+    4,
+    "Samlet kabel: 0.0 m"
+   ],
+   [
+    1,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    1,
+    "Side 1 av 4"
+   ],
+   [
+    2,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    2,
+    "Side 2 av 4"
+   ],
+   [
+    3,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    3,
+    "Side 3 av 4"
+   ],
+   [
+    4,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    4,
+    "Side 4 av 4"
+   ]
+  ],
+  "lay": null,
+  "px": null,
+  "gml": {
+   "plan": 3,
+   "side": 1,
+   "utsnitt": 1
+  },
+  "flater": 30,
+  "kabel_m": 114.09,
+  "heap": 92,
+  "navn": "lang",
+  "bytes": 9166032
+ },
+ {
+  "sider": 5,
+  "ms": 94,
+  "img": [
+   {
+    "side": 1,
+    "w": 267,
+    "h": 106.6,
+    "url": 51074
+   },
+   {
+    "side": 2,
+    "w": 267,
+    "h": 138.8,
+    "url": 35122
+   },
+   {
+    "side": 3,
+    "w": 267,
+    "h": 64.2,
+    "url": 25342
+   },
+   {
+    "side": 4,
+    "w": 222.2,
+    "h": 180,
+    "url": 66530
+   }
+  ],
+  "tekst": [
+   [
+    1,
+    "Trapp: Trapp med repos (4 + R120 + 6)"
+   ],
+   [
+    1,
+    "Start kabel"
+   ],
+   [
+    1,
+    "Slutt kabel"
+   ],
+   [
+    2,
+    "Sidevisning"
+   ],
+   [
+    3,
+    "Trinn 1–10 (typisk)"
+   ],
+   [
+    3,
+    "4 strenger · CC 8.7 cm · 5.6 m kabel per trinn"
+   ],
+   [
+    4,
+    "Repos 1"
+   ],
+   [
+    4,
+    "12 strenger · CC 10 cm · 16.8 m kabel på repos"
+   ],
+   [
+    5,
+    "K1"
+   ],
+   [
+    5,
+    "0 W"
+   ],
+   [
+    5,
+    "—"
+   ],
+   [
+    5,
+    "Avstand opptrinn: 2 cm   |   Avstand nese: 2 cm   |   Avstand sider: 5 cm"
+   ],
+   [
+    5,
+    "Trinn 1–4 (bredde 150 cm): 4 strenger/trinn   |   CC 8.7 cm   |   140 cm/streng   |   560 cm/trinn   |   —"
+   ],
+   [
+    5,
+    "Trinn 5–10 (bredde 150 cm): 4 strenger/trinn   |   CC 8.7 cm   |   140 cm/streng   |   560 cm/trinn   |   —"
+   ],
+   [
+    5,
+    "Trinn: 56 m   |   Repos: 16.8 m   |   Lagt: 75 m   |   Kabellengde: —"
+   ],
+   [
+    5,
+    "Totalt: 75.0 m   |   0 W"
+   ],
+   [
+    5,
+    "Samlet kabel: 0.0 m"
+   ],
+   [
+    1,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    1,
+    "Side 1 av 5"
+   ],
+   [
+    2,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    2,
+    "Side 2 av 5"
+   ],
+   [
+    3,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    3,
+    "Side 3 av 5"
+   ],
+   [
+    4,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    4,
+    "Side 4 av 5"
+   ],
+   [
+    5,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    5,
+    "Side 5 av 5"
+   ]
+  ],
+  "lay": null,
+  "px": null,
+  "gml": {
+   "plan": 1,
+   "side": 1,
+   "utsnitt": 2
+  },
+  "flater": 11,
+  "kabel_m": 74.96,
+  "heap": 86,
+  "navn": "repos",
+  "bytes": 8932433
+ },
+ {
+  "sider": 2,
+  "ms": 76,
+  "img": [
+   {
+    "side": 1,
+    "w": 180,
+    "h": 58,
+    "url": 57274
+   },
+   {
+    "side": 1,
+    "w": 180,
+    "h": 99.8,
+    "url": 32334
+   },
+   {
+    "side": 1,
+    "w": 180,
+    "h": 50.6,
+    "url": 35886
+   },
+   {
+    "side": 2,
+    "w": 180,
+    "h": 39.8,
+    "url": 39590
+   }
+  ],
+  "tekst": [
+   [
+    1,
+    "Trapp: Hesteskotrapp"
+   ],
+   [
+    1,
+    "Start kabel"
+   ],
+   [
+    1,
+    "Slutt kabel"
+   ],
+   [
+    1,
+    "Sidevisning"
+   ],
+   [
+    1,
+    "Trinn 2"
+   ],
+   [
+    1,
+    "5 strenger · CC 10 cm · 34.6 m kabel per trinn"
+   ],
+   [
+    2,
+    "Trinn 1"
+   ],
+   [
+    2,
+    "8 strenger · CC 9.1 cm · 36.8 m kabel per trinn"
+   ],
+   [
+    2,
+    "K1"
+   ],
+   [
+    2,
+    "0 W"
+   ],
+   [
+    2,
+    "—"
+   ],
+   [
+    2,
+    "Avstand opptrinn: 3 cm   |   Avstand nese: 3 cm   |   Avstand sider: 5 cm"
+   ],
+   [
+    2,
+    "Trinn 2 (bredde 562 cm): 5 strenger/trinn   |   CC 10 cm   |   612–772 cm/streng (snitt 692 cm)   |   3460 cm/trinn   |   —"
+   ],
+   [
+    2,
+    "Trinn 1 (bredde 470 cm): 8 strenger/trinn   |   CC 9.1 cm   |   460 cm/streng   |   3680 cm/trinn   |   —"
+   ],
+   [
+    2,
+    "Trinn: 71.4 m   |   Repos: —   |   Lagt: 71.7 m   |   Kabellengde: —"
+   ],
+   [
+    2,
+    "Totalt: 71.7 m   |   0 W"
+   ],
+   [
+    2,
+    "Samlet kabel: 0.0 m"
+   ],
+   [
+    1,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    1,
+    "Side 1 av 2"
+   ],
+   [
+    2,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    2,
+    "Side 2 av 2"
+   ]
+  ],
+  "lay": null,
+  "px": null,
+  "gml": {
+   "plan": 1,
+   "side": 1,
+   "utsnitt": 2
+  },
+  "flater": 2,
+  "kabel_m": 71.67,
+  "heap": 72,
+  "navn": "hestesko",
+  "bytes": 6253610
+ }
+]

@@ -1,0 +1,706 @@
+[
+ {
+  "sider": 2,
+  "ms": 327,
+  "img": [
+   {
+    "side": 1,
+    "w": 91.7,
+    "h": 179,
+    "url": 164650
+   },
+   {
+    "side": 2,
+    "w": 177,
+    "h": 119,
+    "url": 123150
+   }
+  ],
+  "tekst": [
+   [
+    1,
+    "Trapp: Kort rett trapp (8 trinn)"
+   ],
+   [
+    1,
+    "Målestokk 1:15 (A4)"
+   ],
+   [
+    1,
+    "Start kabel"
+   ],
+   [
+    1,
+    "Slutt kabel"
+   ],
+   [
+    2,
+    "Sidevisning"
+   ],
+   [
+    2,
+    "Målestokk 1:15 (A4)"
+   ],
+   [
+    2,
+    "Kabel per flate"
+   ],
+   [
+    2,
+    "Flate"
+   ],
+   [
+    2,
+    "Strenger"
+   ],
+   [
+    2,
+    "CC"
+   ],
+   [
+    2,
+    "Kabel (m)"
+   ],
+   [
+    2,
+    "Trinn 1–8 (typisk)"
+   ],
+   [
+    2,
+    "4"
+   ],
+   [
+    2,
+    "8.7 cm"
+   ],
+   [
+    2,
+    "3.6 per trinn"
+   ],
+   [
+    2,
+    "K1"
+   ],
+   [
+    2,
+    "0 W"
+   ],
+   [
+    2,
+    "—"
+   ],
+   [
+    2,
+    "Avstand opptrinn: 2 cm   |   Avstand nese: 2 cm   |   Avstand sider: 5 cm"
+   ],
+   [
+    2,
+    "4 strenger/trinn   |   CC 8.7 cm   |   90 cm/streng   |   360 cm/trinn   |   —"
+   ],
+   [
+    2,
+    "Trinn: 28.8 m   |   Repos: —   |   Lagt: 30.3 m   |   Kabellengde: —"
+   ],
+   [
+    2,
+    "Totalt: 30.3 m   |   0 W"
+   ],
+   [
+    2,
+    "Samlet kabel: 0.0 m"
+   ],
+   [
+    1,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    1,
+    "Side 1 av 2"
+   ],
+   [
+    2,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    2,
+    "Side 2 av 2"
+   ]
+  ],
+  "lay": {
+   "landscape": false,
+   "rot": 0,
+   "N": 15,
+   "nExact": 14.723926380584574,
+   "mmPerCm": 0.6666666666666666,
+   "dpi": 300,
+   "maxPlan": 0.9458333333209246,
+   "maxSide": 0.6791666666566814,
+   "onePage": false,
+   "limitedBy": "side",
+   "plan": {
+    "wMm": 91.66666666666666,
+    "hMm": 179
+   },
+   "side": {
+    "wMm": 177,
+    "hMm": 119
+   },
+   "label": "Målestokk 1:15 (A4)"
+  },
+  "px": {
+   "plan": "1083x2114",
+   "side": "2091x1406",
+   "skriftMm": [
+    2
+   ]
+  },
+  "gml": null,
+  "flater": 8,
+  "kabel_m": 30.27,
+  "heap": 97,
+  "navn": "kort",
+  "bytes": 146629
+ },
+ {
+  "sider": 3,
+  "ms": 399,
+  "img": [
+   {
+    "side": 1,
+    "w": 250,
+    "h": 50,
+    "url": 159570
+   },
+   {
+    "side": 2,
+    "w": 242,
+    "h": 148.8,
+    "url": 222990
+   }
+  ],
+  "tekst": [
+   [
+    1,
+    "Trapp: Lang rett trapp (30 trinn)"
+   ],
+   [
+    1,
+    "Målestokk 1:40 (A4)"
+   ],
+   [
+    1,
+    "Start kabel"
+   ],
+   [
+    1,
+    "Slutt kabel"
+   ],
+   [
+    2,
+    "Sidevisning"
+   ],
+   [
+    2,
+    "Målestokk 1:40 (A4)"
+   ],
+   [
+    2,
+    "Kabel per flate"
+   ],
+   [
+    2,
+    "Flate"
+   ],
+   [
+    2,
+    "Strenger"
+   ],
+   [
+    2,
+    "CC"
+   ],
+   [
+    2,
+    "Kabel (m)"
+   ],
+   [
+    2,
+    "Trinn 1–30 (typisk)"
+   ],
+   [
+    2,
+    "4"
+   ],
+   [
+    2,
+    "8.7 cm"
+   ],
+   [
+    2,
+    "3.6 per trinn"
+   ],
+   [
+    3,
+    "K1"
+   ],
+   [
+    3,
+    "0 W"
+   ],
+   [
+    3,
+    "—"
+   ],
+   [
+    3,
+    "Avstand opptrinn: 2 cm   |   Avstand nese: 2 cm   |   Avstand sider: 5 cm"
+   ],
+   [
+    3,
+    "4 strenger/trinn   |   CC 8.7 cm   |   90 cm/streng   |   360 cm/trinn   |   —"
+   ],
+   [
+    3,
+    "Trinn: 108 m   |   Repos: —   |   Lagt: 114.1 m   |   Kabellengde: —"
+   ],
+   [
+    3,
+    "Totalt: 114.1 m   |   0 W"
+   ],
+   [
+    3,
+    "Samlet kabel: 0.0 m"
+   ],
+   [
+    1,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    1,
+    "Side 1 av 3"
+   ],
+   [
+    2,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    2,
+    "Side 2 av 3"
+   ],
+   [
+    3,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    3,
+    "Side 3 av 3"
+   ]
+  ],
+  "lay": {
+   "landscape": true,
+   "rot": 1,
+   "N": 40,
+   "nExact": 37.190082646638544,
+   "mmPerCm": 0.25,
+   "dpi": 300,
+   "maxPlan": 0.26888888887435314,
+   "maxSide": 0.27777777776983015,
+   "onePage": false,
+   "limitedBy": "plan",
+   "plan": {
+    "wMm": 250,
+    "hMm": 50
+   },
+   "side": {
+    "wMm": 242,
+    "hMm": 148.75
+   },
+   "label": "Målestokk 1:40 (A4)"
+  },
+  "px": {
+   "plan": "2953x591",
+   "side": "2858x1757",
+   "skriftMm": [
+    2
+   ]
+  },
+  "gml": null,
+  "flater": 30,
+  "kabel_m": 114.09,
+  "heap": 177,
+  "navn": "lang",
+  "bytes": 206801
+ },
+ {
+  "sider": 3,
+  "ms": 426,
+  "img": [
+   {
+    "side": 1,
+    "w": 235,
+    "h": 100,
+    "url": 205042
+   },
+   {
+    "side": 2,
+    "w": 227,
+    "h": 119,
+    "url": 156882
+   }
+  ],
+  "tekst": [
+   [
+    1,
+    "Trapp: Trapp med repos (4 + R120 + 6)"
+   ],
+   [
+    1,
+    "Målestokk 1:20 (A4)"
+   ],
+   [
+    1,
+    "Start kabel"
+   ],
+   [
+    1,
+    "Slutt kabel"
+   ],
+   [
+    2,
+    "Sidevisning"
+   ],
+   [
+    2,
+    "Målestokk 1:20 (A4)"
+   ],
+   [
+    2,
+    "Kabel per flate"
+   ],
+   [
+    2,
+    "Flate"
+   ],
+   [
+    2,
+    "Strenger"
+   ],
+   [
+    2,
+    "CC"
+   ],
+   [
+    2,
+    "Kabel (m)"
+   ],
+   [
+    2,
+    "Trinn 1–10 (typisk)"
+   ],
+   [
+    2,
+    "4"
+   ],
+   [
+    2,
+    "8.7 cm"
+   ],
+   [
+    2,
+    "5.6 per trinn"
+   ],
+   [
+    2,
+    "Repos 1"
+   ],
+   [
+    2,
+    "12"
+   ],
+   [
+    2,
+    "10 cm"
+   ],
+   [
+    2,
+    "16.8 på repos"
+   ],
+   [
+    3,
+    "K1"
+   ],
+   [
+    3,
+    "0 W"
+   ],
+   [
+    3,
+    "—"
+   ],
+   [
+    3,
+    "Avstand opptrinn: 2 cm   |   Avstand nese: 2 cm   |   Avstand sider: 5 cm"
+   ],
+   [
+    3,
+    "Trinn 1–4 (bredde 150 cm): 4 strenger/trinn   |   CC 8.7 cm   |   140 cm/streng   |   560 cm/trinn   |   —"
+   ],
+   [
+    3,
+    "Trinn 5–10 (bredde 150 cm): 4 strenger/trinn   |   CC 8.7 cm   |   140 cm/streng   |   560 cm/trinn   |   —"
+   ],
+   [
+    3,
+    "Trinn: 56 m   |   Repos: 16.8 m   |   Lagt: 75 m   |   Kabellengde: —"
+   ],
+   [
+    3,
+    "Totalt: 75.0 m   |   0 W"
+   ],
+   [
+    3,
+    "Samlet kabel: 0.0 m"
+   ],
+   [
+    1,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    1,
+    "Side 1 av 3"
+   ],
+   [
+    2,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    2,
+    "Side 2 av 3"
+   ],
+   [
+    3,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    3,
+    "Side 3 av 3"
+   ]
+  ],
+  "lay": {
+   "landscape": true,
+   "rot": 1,
+   "N": 20,
+   "nExact": 17.355371901212745,
+   "mmPerCm": 0.5,
+   "dpi": 300,
+   "maxPlan": 0.5761904761776513,
+   "maxSide": 0.5952380952237981,
+   "onePage": false,
+   "limitedBy": "plan",
+   "plan": {
+    "wMm": 235,
+    "hMm": 100
+   },
+   "side": {
+    "wMm": 227,
+    "hMm": 119
+   },
+   "label": "Målestokk 1:20 (A4)"
+  },
+  "px": {
+   "plan": "2776x1181",
+   "side": "2681x1406",
+   "skriftMm": [
+    2
+   ]
+  },
+  "gml": null,
+  "flater": 11,
+  "kabel_m": 74.96,
+  "heap": 157,
+  "navn": "repos",
+  "bytes": 225561
+ },
+ {
+  "sider": 2,
+  "ms": 212,
+  "img": [
+   {
+    "side": 1,
+    "w": 250.8,
+    "h": 72.8,
+    "url": 169538
+   },
+   {
+    "side": 1,
+    "w": 63.4,
+    "h": 37.4,
+    "url": 24186
+   }
+  ],
+  "tekst": [
+   [
+    1,
+    "Trapp: Hesteskotrapp"
+   ],
+   [
+    1,
+    "Målestokk 1:25 (A4)"
+   ],
+   [
+    1,
+    "Start kabel"
+   ],
+   [
+    1,
+    "Slutt kabel"
+   ],
+   [
+    1,
+    "Sidevisning"
+   ],
+   [
+    1,
+    "Målestokk 1:25 (A4)"
+   ],
+   [
+    1,
+    "Kabel per flate"
+   ],
+   [
+    1,
+    "Flate"
+   ],
+   [
+    1,
+    "Strenger"
+   ],
+   [
+    1,
+    "CC"
+   ],
+   [
+    1,
+    "Kabel (m)"
+   ],
+   [
+    1,
+    "Trinn 2"
+   ],
+   [
+    1,
+    "5"
+   ],
+   [
+    1,
+    "10 cm"
+   ],
+   [
+    1,
+    "34.6 per trinn"
+   ],
+   [
+    1,
+    "Trinn 1"
+   ],
+   [
+    1,
+    "8"
+   ],
+   [
+    1,
+    "9.1 cm"
+   ],
+   [
+    1,
+    "36.8 per trinn"
+   ],
+   [
+    2,
+    "K1"
+   ],
+   [
+    2,
+    "0 W"
+   ],
+   [
+    2,
+    "—"
+   ],
+   [
+    2,
+    "Avstand opptrinn: 3 cm   |   Avstand nese: 3 cm   |   Avstand sider: 5 cm"
+   ],
+   [
+    2,
+    "Trinn 2 (bredde 562 cm): 5 strenger/trinn   |   CC 10 cm   |   612–772 cm/streng (snitt 692 cm)   |   3460 cm/trinn   |   —"
+   ],
+   [
+    2,
+    "Trinn 1 (bredde 470 cm): 8 strenger/trinn   |   CC 9.1 cm   |   460 cm/streng   |   3680 cm/trinn   |   —"
+   ],
+   [
+    2,
+    "Trinn: 71.4 m   |   Repos: —   |   Lagt: 71.7 m   |   Kabellengde: —"
+   ],
+   [
+    2,
+    "Totalt: 71.7 m   |   0 W"
+   ],
+   [
+    2,
+    "Samlet kabel: 0.0 m"
+   ],
+   [
+    1,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    1,
+    "Side 1 av 2"
+   ],
+   [
+    2,
+    "Trapp 230 · rev. 1"
+   ],
+   [
+    2,
+    "Side 2 av 2"
+   ]
+  ],
+  "lay": {
+   "landscape": true,
+   "rot": 0,
+   "N": 25,
+   "nExact": 23.31985687200166,
+   "mmPerCm": 0.4,
+   "dpi": 300,
+   "maxPlan": 0.42881909845708455,
+   "maxSide": 2.1551724137755146,
+   "onePage": true,
+   "limitedBy": "plan",
+   "plan": {
+    "wMm": 250.78266666666667,
+    "hMm": 72.81333333333333
+   },
+   "side": {
+    "wMm": 63.400000000000006,
+    "hMm": 37.4
+   },
+   "label": "Målestokk 1:25 (A4)"
+  },
+  "px": {
+   "plan": "2962x860",
+   "side": "749x442",
+   "skriftMm": [
+    2
+   ]
+  },
+  "gml": null,
+  "flater": 2,
+  "kabel_m": 71.67,
+  "heap": 97,
+  "navn": "hestesko",
+  "bytes": 109132
+ }
+]
