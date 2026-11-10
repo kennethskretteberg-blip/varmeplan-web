@@ -1,6 +1,6 @@
 # 230 – Trapp i PDF: én hel plantegning i høy oppløsning, samme målestokk som sidevisningen
 
-10.11.2026 · `main` · commit `HASH230` · ikke pushet · bare `index.html` er endret i appen
+10.11.2026 · `main` · commit `cead1dc` · ikke pushet · bare `index.html` er endret i appen
 
 ## Hva som er endret
 
