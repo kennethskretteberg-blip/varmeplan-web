@@ -5957,11 +5957,13 @@ function _foilPower(items) {
     if (!p) continue;
     let r = byProd.get(p.id);
     if (!r) {
-      r = { product: p, lenM: 0, W: 0,
+      // 232: widthM = foliebredden slik «Oppvarmet areal» regner den (_stripNettoCm), areaM2 = bredde × lengde.
+      r = { product: p, lenM: 0, W: 0, areaM2: 0, widthM: (p.netto_width_mm || p.width_mm || 0) / 1000,
             wPerM: p.watt_per_lm ? p.watt_per_lm : ((p.netto_width_mm || p.width_mm) / 1000) * 60 };
       byProd.set(p.id, r);
     }
     r.lenM += s.length_cm / 100;
+    r.areaM2 += r.widthM * s.length_cm / 100;
     r.W += w;
   }
   // 148: samme bredde-rekkefølge som produktradene (_foilRowCmp); rader her har ett produkt hver.
@@ -5982,7 +5984,29 @@ function _roomFoilResistance(room) {
   const { P, rows } = _foilPower(items);
   if (!(P > 0)) return null;
   const lenM = rows.reduce((a, r) => a + r.lenM, 0);
-  return { rows, P, lenM, ..._foilLimitsFromP(P) };
+  // 232: areaM2 = arealet dekket med folie (Σ bredde × tegnet lengde) — tabellsidens kolonne.
+  const areaM2 = rows.reduce((a, r) => a + r.areaM2, 0);
+  return { rows, P, lenM, areaM2, ..._foilLimitsFromP(P) };
+}
+// 232: rommet som brukes som «Eksempel på utregning» på tabellsiden — folierommet med flest ULIKE
+// foliebredder (viser parallellkoblingen best); ved likhet det første i PDF-rekkefølgen.
+// `resRooms` er lista fra `_foilResistanceRooms`. Tom liste → null.
+// 232: forklaringen nederst i utregningsblokken (PDF-eksempelet og forhåndsvisningen leser samme tekst).
+const FOIL_RES_EXPL_BLOCK = 'Foliebreddene kobles parallelt. Jo mer folie, jo lavere motstand. Grensene tar høyde for '+ 'nettspenning mellom 220 og 240 V (P = U \u00d7 U / R).';
+// Forklaringslinjene under tittelen på tabellsiden (PDF og forhåndsvisning leser samme tekst).
+const FOIL_RES_EXPL_232 = [
+  // «²» står med vilje FØR første «×»: jsPDF måler «×» 0,12 mm for smalt (7 pt), og _pdfSuperscriptPatch plasserer
+  // den hevede toeren etter målt bredde — etter tre «×» havnet den oppå tegnet bak (målt 11.11.2026).
+  'Effekt = ca. 60 W/m² folieareal (regnet som tegnet lengde × W per løpemeter). Folieareal = foliebredde × tegnet lengde.',
+  'Nedre grense = 48 400 / effekt (220 V), nominell = 52 900 / effekt (230 V), øvre grense = 57 600 / effekt (240 V).',
+];
+function _foilResistanceExample(resRooms) {
+  let best = null, bestN = 0;
+  for (const e of (resRooms || [])) {
+    const n = new Set(e.res.rows.map(r => r.widthM)).size;
+    if (n > bestN) { best = e; bestN = n; }
+  }
+  return best;
 }
 // Etasjerekkefølgen i PDF-en (se kommentaren i exportPDF ved floorSummaries): første tall i navnet.
 const _floorLevelNum = (floor) => {
@@ -94666,6 +94690,29 @@ function _pdfCoverMetaRows(nextRev, prevDateStr) {
 // Materialliste/Dokumentasjon/Signaturside). HTML-representasjon fra ekte prosjektdata
 // sa man ser hva seksjonen inneholder for man haker den av.
 let _expFloorplanIdx = 0;   // 154: hvilken etasje forhåndsvisningen av plantegningen står på
+// 232: forhåndsvisningen av «Motstandsmåling – varmefolie» — samme rader, samme forklaring og samme
+// eksempel-rom som PDF-siden (_foilResistanceRooms / _foilResistanceExample / FOIL_RES_EXPL_232).
+function _expResistanceHtml(rooms) {
+  const E = _esc;
+  const rr = _foilResistanceRooms(rooms);
+  const td = (t, st) => `<td style="padding:5px 8px;text-align:right${st || ''}">${t}</td>`;
+  const th = (t, st) => `<th style="text-align:right;padding:0 8px 4px${st || ''}">${t}</th>`;
+  const rowsHtml = rr.map(({ room, res }) => `<tr style="border-top:1px solid var(--border)">${td(E(room.name || 'Rom'), ';text-align:left;padding-left:0')}${td(_fmtNo(res.areaM2, 2))}${td(_fmtNo(res.P, 1))}${td(_fmtNo(res.rLow, 1))}${td(_fmtNo(res.rNom, 1), ';color:var(--muted)')}${td(_fmtNo(res.rHigh, 1))}</tr>`).join('');
+  let h = `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase">${th('Rom', ';text-align:left;padding-left:0')}${th('Folieareal (m²)')}${th('Effekt (W)')}${th('Nedre Ω')}${th('Nominell Ω')}${th('Øvre Ω')}</tr></thead><tbody>${rowsHtml}</tbody></table><div style="margin-top:10px;font-size:11px;color:var(--dim);line-height:1.5">${E(FOIL_RES_EXPL_232[0])}<br>${E(FOIL_RES_EXPL_232[1])}</div>`;
+  const ex = _foilResistanceExample(rr);
+  if (ex) {
+    const r = ex.res, P1 = _fmtNo(r.P, 1);
+    const prod = r.rows.map(x => `<tr>${td(E(x.product.name || 'Folie'), ';text-align:left;padding-left:0')}${td(_fmtNo(x.wPerM, Number.isInteger(x.wPerM) ? 0 : 1) + ' W/m ×')}${td(_fmtNo(x.lenM, 2) + ' m =')}${td(_fmtNo(x.W, 1) + ' W')}</tr>`).join('');
+    const lim = [['Øvre grense', 240, FOIL_R_U2.high, r.rHigh, 1], ['Nominell', 230, FOIL_R_U2.nom, r.rNom, 0], ['Nedre grense', 220, FOIL_R_U2.low, r.rLow, 1]]
+      .map(([lbl, u, u2, v, b]) => `<tr style="${b ? 'font-weight:700;background:var(--surface2)' : ''}">${td(lbl + ' (' + u + ' V)', ';text-align:left')}${td(u + '² / ' + P1)}${td('= ' + _fmtNo(u2, 0) + ' / ' + P1)}${td('= ' + _fmtNo(v, 1) + ' Ω')}</tr>`).join('');
+    h += `<div id="exp-res-example" style="margin-top:18px;border-top:1px solid var(--border);padding-top:12px"><div style="font-weight:700;font-size:13px;margin-bottom:6px">Eksempel på utregning – ${E(ex.room.name || 'Rom')}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>${prod}<tr style="border-top:1px solid var(--border);font-weight:700">${td('Installert effekt', ';text-align:left;padding-left:0')}${td('')}${td('')}${td(P1 + ' W')}</tr></tbody></table>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px"><tbody>${lim}</tbody></table>
+      <div style="margin-top:8px;font-size:12px;font-weight:700">Mål motstanden på tilkoblingen før gulvet dekkes. Målt verdi skal ligge mellom ${_fmtNo(r.rLow, 1)} og ${_fmtNo(r.rHigh, 1)} Ω.</div>
+      <div style="margin-top:4px;font-size:11px;color:var(--dim)">${E(FOIL_RES_EXPL_BLOCK)}</div></div>`;
+  }
+  return h;
+}
 function _expPreviewSection(kind) {
   const area = document.getElementById('exp-preview-area');
   if (!area) return;
@@ -94766,9 +94813,10 @@ function _expPreviewSection(kind) {
     const sumHtml = `<tr style="border-top:2px solid var(--border);font-weight:700">${td('Sum', ';padding-left:0')}${td(ct.count + (ct.count === 1 ? ' kabel' : ' kabler'))}${td(_fmtNo(ct.lengthM, 1) + ' m', ';text-align:right')}${td(_fmtNo(ct.effectW, 0) + ' W', ';text-align:right')}${td('')}${td('')}</tr>`;
     html = box('Varmekabler – oversikt', `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:0 8px 4px 0">Rom</th><th style="text-align:left;padding:0 8px 4px">Produkt</th><th style="text-align:right;padding:0 8px 4px">Lengde</th><th style="text-align:right;padding:0 8px 4px">Effekt</th><th style="text-align:right;padding:0 8px 4px">CC cm</th><th style="padding:0 8px 4px"></th></tr></thead><tbody>${rowsHtml}${sumHtml}</tbody></table><div style="margin-top:10px;font-size:11px;color:var(--dim)">Én rad per kabel, innendørs. PDF-siden har også etasje, netto m², El.nr og W/m².</div>`);
   } else if (kind === 'resistance') {
-    // 145: samme tall som PDF-tabellen (_foilResistanceRooms / _fmtNo).
-    const rowsHtml = _foilResistanceRooms(rooms).map(({ room, res }) => `<tr style="border-top:1px solid var(--border)"><td style="padding:5px 8px 5px 0">${E(room.name || 'Rom')}</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.P, 1)} W</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.rLow, 1)}</td><td style="padding:5px 8px;text-align:right;color:var(--muted)">${_fmtNo(res.rNom, 1)}</td><td style="padding:5px 8px;text-align:right">${_fmtNo(res.rHigh, 1)}</td></tr>`).join('');
-    html = box('Motstandsmåling – varmefolie', `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="color:var(--muted);font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:0 8px 4px 0">Rom</th><th style="text-align:right;padding:0 8px 4px">Effekt</th><th style="text-align:right;padding:0 8px 4px">Nedre Ω</th><th style="text-align:right;padding:0 8px 4px">Nominell Ω</th><th style="text-align:right;padding:0 8px 4px">Øvre Ω</th></tr></thead><tbody>${rowsHtml}</tbody></table><div style="margin-top:10px;font-size:11px;color:var(--dim)">Effekt = tegnet lengde × W/m. Grenser: 48 400 / P (220 V) og 57 600 / P (240 V).</div>`);
+    // 145: samme tall som PDF-tabellen (_foilResistanceRooms / _fmtNo). 232: folieareal + eksempelet.
+    // margin:auto (ikke bare flex-sentrering): innholdet er høyere enn feltet når eksempelet er med, og
+    // sentrert overløp kan ikke rulles til toppen — med auto-marg står det øverst og ruller.
+    html = `<div style="margin:auto;width:100%;padding:12px 0">${box('Motstandsmåling – varmefolie', _expResistanceHtml(rooms))}</div>`;
   } else if (kind === 'floorplan') {
     // 154: én etasje om gangen, ‹ › blar når det er flere. 158: levende lerret (hjul = zoom,
     // dra = flytt, labels kan dras) — samme komponent som rommene, se _expPreviewFloor.
@@ -95481,17 +95529,31 @@ async function _foilResistanceRegressionTest() {
     { // 180: tabellsiden har samme tittel — tell blokkene på sidene UTENOM tabellsiden.
       const tSide = (på.pages.find(x => x.t === 'Oversikt for elektriker') || {}).page;
       const blokker = på.pages.filter(x => x.t === 'Motstandsmåling \u2013 varmefolie' && x.page !== tSide).length;
-      check('PDF: blokk «Motstandsmåling – varmefolie» på hvert av de tre folierommene', 3, blokker === 3, blokker);
+      // 232: blokken står ikke lenger under hvert rom (før: 3).
+      check('PDF 232: ingen blokk «Motstandsmåling – varmefolie» på romsidene', 0, blokker === 0, blokker);
+      check('PDF 232: ingen «Installert effekt» utenfor tabellsiden og eksempelet', 0, på.pages.filter(x => x.t === 'Installert effekt' && x.page < tSide).length === 0, på.pages.filter(x => x.t === 'Installert effekt' && x.page < tSide).length);
     }
     // 180: tabellsiden heter «Motstandsmåling – varmefolie» (som blokken) med undertittelen «Oversikt for elektriker».
     check('PDF: undertittel «Oversikt for elektriker» finnes én gang', 1, antall(på, 'Oversikt for elektriker') === 1, antall(på, 'Oversikt for elektriker'));
     check('180: tabellsiden heter «Motstandsmåling – varmefolie» (tittel rett over undertittelen)', 'ja', (() => { const i = på.pages.findIndex(x => x.t === 'Oversikt for elektriker'); return i > 0 && på.pages[i - 1].t === 'Motstandsmåling \u2013 varmefolie' && på.pages[i - 1].page === på.pages[i].page; })(), 'mangler');
     check('180: ingen «Motstandsmåling —» med lang strek igjen', 0, på.alle.filter(t => t.indexOf('Motstandsmåling \u2014') === 0).length === 0, på.alle.filter(t => t.indexOf('Motstandsmåling \u2014') === 0).length);
-    check('180: tabellside + tre romblokker = fire «Motstandsmåling – varmefolie»', 4, antall(på, 'Motstandsmåling \u2013 varmefolie') === 4, antall(på, 'Motstandsmåling \u2013 varmefolie'));
-    check('PDF: rom b — «Installert effekt» 1066,8 W i blokk og tabell', '≥ 2', antall(på, '1066,8 W') >= 1 && antall(på, '1066,8') >= 1, antall(på, '1066,8 W') + '/' + antall(på, '1066,8'));
-    check('PDF: rom b — formelen «= 57 600 / 1066,8» og «= 48 400 / 1066,8»', 'begge', har(på, '= 57 600 / 1066,8') && har(på, '= 48 400 / 1066,8'), 'se tekst');
-    check('PDF: rom b — «= 54,0 » og «= 45,4 » (Ω i symbol-font)', 'begge', har(på, '= 54,0 ') && har(på, '= 45,4 ') && har(på, 'Ω'), 'se tekst');
-    check('PDF: rom b — «36 W/m», «60 W/m», «7,80 m», «13,10 m»', 'alle', ['36 W/m', '60 W/m', '7,80 m', '13,10 m', '280,8 W', '786,0 W'].every(x => har(på, x)), ['36 W/m', '60 W/m', '7,80 m', '13,10 m', '280,8 W', '786,0 W'].filter(x => !har(på, x)).join(','));
+    // 232: bare tabellsidens tittel igjen (før: tabellside + tre romblokker = 4). Eksempelet har egen overskrift.
+    check('232: «Motstandsmåling – varmefolie» står én gang (tabellsiden)', 1, antall(på, 'Motstandsmåling \u2013 varmefolie') === 1, antall(på, 'Motstandsmåling \u2013 varmefolie'));
+    check('232: «Eksempel på utregning – Rom C» (tre bredder) står én gang', 1, antall(på, 'Eksempel på utregning – Rom C') === 1, på.alle.filter(t => t.indexOf('Eksempel på utregning') === 0).join('|'));
+    // 232: utregningen vises bare for eksempel-rommet (rom c, tre bredder): 29,4 + 72,0 + 90,0 = 191,4 W →
+    // øvre 57 600 / 191,4 = 300,9 · nedre 48 400 / 191,4 = 252,9 (håndregnet). Rom b står bare i tabellen.
+    check('PDF 232: rom c — «Installert effekt» 191,4 W i eksempelet og i tabellen', 'begge', antall(på, '191,4 W') === 1 && antall(på, '191,4') >= 1, antall(på, '191,4 W') + '/' + antall(på, '191,4'));
+    check('PDF 232: rom b sin utregning er borte («1066,8 W»), tabellraden står («1066,8»)', '0/1', antall(på, '1066,8 W') === 0 && antall(på, '1066,8') === 1, antall(på, '1066,8 W') + '/' + antall(på, '1066,8'));
+    check('PDF 232: rom c — formelen «= 57 600 / 191,4» og «= 48 400 / 191,4»', 'begge', har(på, '= ' + _fmtNo(57600, 0) + ' / 191,4') && har(på, '= ' + _fmtNo(48400, 0) + ' / 191,4'), 'se tekst');
+    check('PDF 232: rom c — «= 300,9 » og «= 252,9 » (Ω i symbol-font)', 'begge', har(på, '= 300,9 ') && har(på, '= 252,9 ') && har(på, 'Ω'), 'se tekst');
+    { const forv = ['29,4 W/m', '36 W/m', '60 W/m', '1,00 m', '2,00 m', '1,50 m', '29,4 W', '72,0 W', '90,0 W'];
+      check('PDF 232: rom c — produktlinjene (W/m × m = W)', 'alle', forv.every(x => har(på, x)), forv.filter(x => !har(på, x)).join(',')); }
+    // 232: tabellen viser folieareal (bredde × lengde), ikke lengde: a 0,59 × 5,8 = 3,42 · b 0,59 × 7,8 + 0,99 × 13,1 = 17,57 ·
+    // c 0,59 × 2,0 + 0,99 × 1,5 + 0,49 × 1,0 = 3,16 (håndregnet).
+    // («²» tegnes som hevet 2-tall i en egen tekstbit, så overskriften fanges som «Folieareal (m» + «2» + «)».)
+    check('PDF 232: kolonnen «Folieareal (m²)», ikke «Folie (m)»', 'ja', har(på, 'Folieareal (m') && !har(på, 'Folie (m)'), 'feil overskrift');
+    check('PDF 232: folieareal 3,42 / 17,57 / 3,16 i tabellen', 'alle', ['3,42', '17,57', '3,16'].every(x => har(på, x)), ['3,42', '17,57', '3,16'].filter(x => !har(på, x)).join(','));
+    check('PDF 232: «Nom. motstand» på de tre folierommene, ikke på rom D', 3, antall(på, 'Nom. motstand') === 3, antall(på, 'Nom. motstand'));
     check('PDF: tabellen har 54,0 og 45,4 (rom b) og 49,6', 'alle', ['54,0', '45,4', '49,6'].every(x => antall(på, x) >= 1), ['54,0', '45,4', '49,6'].filter(x => antall(på, x) < 1).join(','));
     // Hver tabellrad skriver nedre/nominell/øvre rett fra samme `_roomFoilResistance`:
     for (const [rid, P] of FASIT) {
@@ -95514,7 +95576,8 @@ async function _foilResistanceRegressionTest() {
     // Valget av: ingen blokk, ingen tabell, og samme side­antall som uten funksjonen (= bare romsidene).
     const norm = (t) => t.replace(/rev\. \d+/, 'rev. N');   // revisjonstelleren øker per eksport
     const av = await kjør(false);
-    check('valget av: ingen blokk og ingen tabell', 0, !av.alle.some(t => t.indexOf('Motstandsmåling') === 0), av.alle.filter(t => t.indexOf('Motstandsmåling') === 0).length);
+    check('valget av: ingen blokk, ingen tabell og ikke noe eksempel', 0, !av.alle.some(t => t.indexOf('Motstandsmåling') === 0 || t.indexOf('Eksempel på utregning') === 0 || t === 'Installert effekt'), av.alle.filter(t => t.indexOf('Motstandsmåling') === 0).length);
+    check('232: valget av → «Nom. motstand» står fortsatt på de tre folierommene', 3, antall(av, 'Nom. motstand') === 3, antall(av, 'Nom. motstand'));
     const udef = await kjør(undefined);
     check('valget ikke oppgitt (eldre kall): ingen blokk', 0, !udef.alle.some(t => t.indexOf('Motstandsmåling') === 0), 'har blokk');
     check('valget av: identisk tekst som uten valg', true, JSON.stringify(av.alle.map(norm)) === JSON.stringify(udef.alle.map(norm)), av.alle.map((t, i) => t === udef.alle[i] ? null : i + ':' + t + '≠' + udef.alle[i]).filter(Boolean).slice(0, 4).join(' | '));
@@ -95560,6 +95623,236 @@ async function _foilResistanceRegressionTest() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_foilResistanceRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return { ok: allOk, results };
+}
+
+// 232 — varmefolie i PDF (Kenneth 11.11.2026): utregningsblokken står ikke lenger under hvert rom;
+// romsiden har feltet «Nom. motstand»; tabellsiden viser «Folieareal (m²)» og ETT eksempel på
+// utregningen for folierommet med flest ulike bredder; valget av → ingen tabellside, ingen eksempel.
+// Fasit er regnet for HÅND (FASIT under). Kjøres fra konsollen: await _foilPdfRegressionTest232().
+async function _foilPdfRegressionTest232() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const saved = {
+    rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats,
+    matPaths: S.matPaths, plates: S.plates, aluboard: S.aluboard, zones: S.zones, hindrings: S.hindrings,
+    stairs: S.stairs, floors: S.floors, project: S.project, counters: { ...S.counters },
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedStairId: S.ui.selectedStairId,
+    prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
+    autoSave: window._performAutoSave, toast: window._showToast, modal: window.showAccessoriesModal,
+    branding: window._pdfBranding, jsPDF: window.jspdf && window.jspdf.jsPDF,
+    undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
+  };
+  const dlg0 = document.getElementById('export-dialog');
+  const dlgSaved = dlg0 ? dlg0.style.display : null;
+  try {
+    // Produktene som i databasen 11.11.2026: bredde (begge felt) = navnet − 1 cm, W/m = 60 × navnet.
+    const mk = (id, b, wlm) => ({ id, category_id: 1, active: true, name: 'FlexFoil B=' + b + 'cm', width_mm: b * 10 - 10,
+      netto_width_mm: b * 10 - 10, watt_per_lm: wlm, watt_per_m2: 60, voltage: 230, min_gap_mm: 10, min_wall_margin_mm: 25 });
+    const F20 = mk(998201, 20, 12), F40 = mk(998202, 40, 24), F60 = mk(998203, 60, 36), F100 = mk(998204, 100, 60);
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(F20, F40, F60, F100);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push({ id: 1, name: 'Varmefolie' });
+    const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+    const mkRoom = (id, navn, pts) => ({ id, floorId: 998001, partId: null, name: navn,
+      points: pts.map(p => ({ ...p })), walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [] });
+    let sid = 998300;
+    const strip = (roomId, p, pos, start, len) => ({ id: ++sid, roomId, productId: p.id, direction: 'v', pos_cm: pos, start_cm: start, length_cm: len });
+    const STUE = 998101, KJOK = 998102, BOD = 998103, KONT = 998104, GANG = 998105;
+    const bygg = (ekstra) => {
+      S.cables = []; S.mats = []; S.matPaths = []; S.plates = []; S.aluboard = []; S.foilFree = [];
+      S.zones = []; S.hindrings = []; S.stairs = [];
+      S.ui.activeFloorId = null; S.ui.activePartId = null; S.ui.selectedStairId = null;
+      S.project = { name: 'FOLIETEST 232', parts: [], revision: 0, lastExportedAt: null, createdAt: Date.now() };
+      S.floors = [{ id: 998001, name: '1. etasje', order: 1 }];
+      // Rekkefølgen er med vilje: tre-bredders-rommene (Kontor, Gang) står ETTER de andre, og Kontor før Gang.
+      S.rooms = [mkRoom(STUE, 'Stue', rect(0, 0, 600, 500)), mkRoom(KJOK, 'Kjøkken', rect(700, 0, 500, 400)),
+        mkRoom(BOD, 'Bod uten folie', rect(1300, 0, 300, 300)), mkRoom(KONT, 'Kontor', rect(0, 600, 500, 400)),
+        mkRoom(GANG, 'Gang', rect(700, 600, 500, 300))];
+      S.strips = [
+        strip(STUE, F100, 50, 20, 450), strip(STUE, F100, 160, 20, 450),                                  // 9,0 m B=100
+        strip(KJOK, F60, 750, 20, 360), strip(KJOK, F100, 830, 20, 300),                                  // 3,6 m B=60 + 3,0 m B=100
+        strip(KONT, F20, 50, 620, 300), strip(KONT, F40, 80, 620, 300), strip(KONT, F100, 130, 620, 300), // 3,0 m av 20, 40 og 100
+        strip(GANG, F20, 750, 620, 200), strip(GANG, F40, 780, 620, 200), strip(GANG, F60, 830, 620, 200), // 2,0 m av 20, 40 og 60
+      ];
+      for (let i = 0; i < (ekstra || 0); i++) {
+        const id = 998150 + i;
+        S.rooms.push(mkRoom(id, 'Ekstra ' + (i + 1), rect(i * 400, 1200, 300, 300)));
+        S.strips.push(strip(id, F60, i * 400 + 50, 1220, 200));
+      }
+      _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache(); _invalidateStripCache();
+    };
+    bygg(0);
+    // HÅNDREGNET — P = Σ W/m × m · areal = Σ (navnet − 1 cm) × m · nominell = 52 900 / P:
+    //   Stue    60 × 9,0 = 540,0 W                        · 0,99 × 9,0 = 8,91 m²                  · 97,96 → 98,0
+    //   Kjøkken 36 × 3,6 + 60 × 3,0 = 309,6 W             · 0,59 × 3,6 + 0,99 × 3,0 = 5,094 → 5,09 · 170,87 → 170,9
+    //   Kontor  12 × 3 + 24 × 3 + 60 × 3 = 288,0 W        · (0,19 + 0,39 + 0,99) × 3 = 4,71        · 183,68 → 183,7
+    //   Gang    12 × 2 + 24 × 2 + 36 × 2 = 144,0 W        · (0,19 + 0,39 + 0,59) × 2 = 2,34        · 367,36 → 367,4
+    const FASIT = [[STUE, 'Stue', 540.0, '8,91', '98,0'], [KJOK, 'Kjøkken', 309.6, '5,09', '170,9'],
+      [KONT, 'Kontor', 288.0, '4,71', '183,7'], [GANG, 'Gang', 144.0, '2,34', '367,4']];
+    for (const [rid, navn, P, areal] of FASIT) {
+      const res = _roomFoilResistance(S.rooms.find(r => r.id === rid));
+      check(navn + ': P håndregnet (uendret formel)', P, res && Math.abs(res.P - P) < 1e-6, res && res.P);
+      check(navn + ': folieareal håndregnet', areal, res && _fmtNo(res.areaM2, 2) === areal, res && res.areaM2);
+      const st = _computeRoomStats(S.rooms.find(r => r.id === rid));
+      check(navn + ': folieareal = «Oppvarmet areal» (samme bredde)', st.stripM2, res && Math.abs(res.areaM2 - st.stripM2) < 1e-9, res && res.areaM2);
+    }
+    // Kontroll: areal × 60 mot effekten. Databasens bredde er 1 cm under navnet, så det går IKKE opp:
+    // per produkt 60 × bredde / W/m = 11,4/12 (−5,0 %) · 23,4/24 (−2,5 %) · 35,4/36 (−1,7 %) · 59,4/60 (−1,0 %).
+    {
+      const rr = _foilResistanceRooms(S.rooms);
+      const avvik = rr.map(e => ({ navn: e.room.name, pst: (e.res.areaM2 * 60 / e.res.P - 1) * 100 }));
+      const verst = avvik.reduce((a, b) => Math.abs(b.pst) > Math.abs(a.pst) ? b : a);
+      check('areal × 60 ≈ effekt: største avvik er Gang, −2,5 % (140,4 mot 144,0 W)', 'Gang −2,50 %',
+        verst.navn === 'Gang' && Math.abs(verst.pst + 2.5) < 1e-6, verst.navn + ' ' + verst.pst.toFixed(2) + ' %');
+      const prod = [F20, F40, F60, F100].map(p => (60 * p.netto_width_mm / 1000 / p.watt_per_lm - 1) * 100);
+      check('per produkt: 60 × bredde ligger 5,0 / 2,5 / 1,7 / 1,0 % under W/m', '-5.00,-2.50,-1.67,-1.00',
+        prod.map(v => v.toFixed(2)).join() === '-5.00,-2.50,-1.67,-1.00', prod.map(v => v.toFixed(2)).join());
+      // Eksempel-rommet: flest ULIKE bredder; ved likhet det første i PDF-rekkefølgen.
+      const ex = _foilResistanceExample(rr);
+      check('eksempel: Kontor (tre bredder, står før Gang som også har tre)', 'Kontor', ex && ex.room.id === KONT, ex && ex.room.name);
+      check('eksempel: uten Kontor → Gang; bare Stue + Kjøkken → Kjøkken (to bredder)', 'Gang / Kjøkken',
+        _foilResistanceExample(rr.filter(e => e.room.id !== KONT)).room.id === GANG && _foilResistanceExample(rr.slice(0, 2)).room.id === KJOK, '-');
+      check('eksempel: ingen folierom → null', null, _foilResistanceExample([]) === null, 'ikke null');
+      // To produkter med SAMME bredde teller som én bredde.
+      const like = [{ room: { id: 1 }, res: { rows: [{ widthM: 0.59 }, { widthM: 0.59 }, { widthM: 0.59 }] } }, { room: { id: 2 }, res: { rows: [{ widthM: 0.19 }, { widthM: 0.99 }] } }];
+      check('eksempel: tre produkter med lik bredde taper mot to ulike bredder', 2, _foilResistanceExample(like).room.id === 2, _foilResistanceExample(like).room.id);
+    }
+
+    // ── PDF ──────────────────────────────────────────────────────────────────────────────────
+    window._performAutoSave = () => Promise.resolve(); window._showToast = () => {};
+    window.showAccessoriesModal = () => Promise.resolve({ items: [] }); window._pdfBranding = () => Promise.resolve(null);
+    const Ekte = saved.jsPDF;
+    let sider = null, tekst = [];
+    window.jspdf.jsPDF = function (...a) {
+      const d = new Ekte(...a);
+      const t0 = d.text.bind(d);
+      d.text = function (txt, x, y, ...r) {
+        const sym = d.getFont().fontName === 'symbol';   // Ω tegnes i symbol-fonten som «W»
+        tekst.push({ t: sym ? 'Ω' : (Array.isArray(txt) ? txt.join(' ') : String(txt)), page: d.internal.getCurrentPageInfo().pageNumber, x, y });
+        return t0(txt, x, y, ...r);
+      };
+      d.save = function () { sider = d.internal.getNumberOfPages(); return d; };
+      return d;
+    };
+    const kjør = async (resistance) => {
+      sider = null; tekst = [];
+      await exportPDF({ cover: false, summary: false, rooms: S.rooms.map(r => r.id), stairs: [], roomTable: false,
+        stairTable: false, materialList: false, resistance, pricing: false, discount: 0, showDGDB: false,
+        docs: false, signature: false, freeText: '' });
+      return { sider, t: tekst.slice() };
+    };
+    const ant = (r, s) => r.t.filter(x => x.t === s).length;
+    const sideMed = (r, s) => (r.t.find(x => x.t === s) || {}).page;
+    const TITTEL = 'Motstandsmåling – varmefolie', EKS = 'Eksempel på utregning – Kontor';
+    const blokkSider = (r) => {   // sidene utregningsblokken står på, fra overskriften til og med forklaringen
+      const a = r.t.findIndex(x => x.t.indexOf('Eksempel på utregning') === 0), b = r.t.findIndex(x => x.t.indexOf('Foliebreddene kobles') === 0);
+      return a < 0 || b < a ? null : { fra: a, sider: [...new Set(r.t.slice(a, b + 1).map(x => x.page))], yTopp: r.t[a].y, yBunn: r.t[b].y };
+    };
+    const på = await kjør(true);
+    const tS = sideMed(på, 'Oversikt for elektriker');
+    check('PDF: fem romsider + tabellsiden', '5 + 1', ant(på, 'Areal, effekt og dekning') === 5 && på.sider === 6 && tS === 6, på.sider + ' / tabell s. ' + tS);
+    const påRom = på.t.filter(x => x.page < tS);
+    check('romsidene: ingen utregningsblokk (tittel, «Installert effekt», «Mål motstanden …»)', 0,
+      !påRom.some(x => x.t === TITTEL || x.t === 'Installert effekt' || x.t.indexOf('Mål motstanden') === 0 || x.t.indexOf('Foliebreddene kobles') === 0 || x.t.indexOf('Eksempel på utregning') === 0),
+      påRom.filter(x => x.t === TITTEL || x.t === 'Installert effekt').length);
+    for (const [rid, navn, P, areal, nom] of FASIT) {
+      const s = (påRom.find(x => x.t.indexOf(navn) >= 0) || {}).page;
+      const side = påRom.filter(x => x.page === s);
+      const lbl = side.filter(x => x.t === 'Nom. motstand'), tot = side.find(x => x.t === 'Total effekt');
+      const vi = side.findIndex(x => x.t === nom + ' ');
+      check(navn + ': «Nom. motstand» ' + nom + ' Ω på romsiden', nom, lbl.length === 1 && vi >= 0 && side[vi + 1] && side[vi + 1].t === 'Ω', lbl.length + ' / ' + vi);
+      check(navn + ': feltet står i første rad, til høyre for «Total effekt»', 'samme y, x større', lbl.length === 1 && tot && lbl[0].y === tot.y && lbl[0].x > tot.x + 20 && vi >= 0 && side[vi].x === lbl[0].x, lbl[0] && tot ? lbl[0].x + ' mot ' + tot.x : '-');
+      check(navn + ': folieareal ' + areal + ' på tabellsiden', areal, på.t.some(x => x.page === tS && x.t === areal), 'mangler');
+    }
+    {
+      const s = (påRom.find(x => x.t.indexOf('Bod uten folie') >= 0) || {}).page;
+      const side = påRom.filter(x => x.page === s);
+      check('rom uten folie: ikke «Nom. motstand», ingen Ω', 0, s > 0 && !side.some(x => x.t === 'Nom. motstand' || x.t === 'Ω') && side.some(x => x.t === 'Total effekt'), s);
+      check('«Nom. motstand» står på fire sider (folierommene)', 4, ant(på, 'Nom. motstand') === 4, ant(på, 'Nom. motstand'));
+    }
+    // «²» tegnes som hevet 2-tall i en egen tekstbit: overskriften fanges som «Folieareal (m» + «2» + «)».
+    { const i = på.t.findIndex(x => x.t === 'Folieareal (m');
+      check('tabellsiden: «Folieareal (m²)», ikke «Folie (m)»', '1 / 0', ant(på, 'Folieareal (m') === 1 && på.t[i + 1].t === '2' && på.t[i + 2].t === ')' && på.t[i].page === tS && ant(på, 'Folie (m)') === 0, ant(på, 'Folieareal (m') + ' / ' + ant(på, 'Folie (m)')); }
+    { const i = på.t.findIndex(x => x.page === tS && x.t === 'Effekt = ca. 60 W/m');
+      check('tabellsiden: forklaringslinja «Effekt = ca. 60 W/m² folieareal …», gammel linje borte', 'ja', i >= 0 && på.t[i + 1].t === '2' && på.t[i + 2].t.indexOf(' folieareal (regnet som tegnet lengde × W per løpemeter). Folieareal = foliebredde × tegnet lengde.') === 0 && ant(på, FOIL_RES_EXPL_232[1]) === 1 && !på.t.some(x => x.t.indexOf('Effekt = tegnet folielengde') === 0), i); }
+    check('tabellsiden: tittelen står én gang i hele PDF-en', 1, ant(på, TITTEL) === 1 && sideMed(på, TITTEL) === tS, ant(på, TITTEL));
+    {
+      const b = blokkSider(på);
+      const iDato = på.t.findIndex(x => x.t === 'Dato:');
+      check('eksempelet: «' + EKS + '» én gang, etter tabellen og «Målt av / Dato»', 1, ant(på, EKS) === 1 && b && iDato >= 0 && b.fra > iDato && b.fra > på.t.findIndex(x => x.t === 'Hva målingen betyr'), ant(på, EKS));
+      check('eksempelet: hele blokken på tabellsiden (plass nok med fire rom)', tS, b && b.sider.length === 1 && b.sider[0] === tS, b && b.sider.join());
+      // Kontor håndregnet: 12 × 3,00 = 36,0 · 24 × 3,00 = 72,0 · 60 × 3,00 = 180,0 · sum 288,0 W →
+      // øvre 57 600 / 288 = 200,0 · nominell 183,7 · nedre 48 400 / 288 = 168,06 → 168,1.
+      const eks = b ? på.t.slice(b.fra).map(x => x.t) : [];
+      const forv = ['12 W/m', '24 W/m', '60 W/m', '3,00 m', '36,0 W', '72,0 W', '180,0 W', 'Installert effekt', '288,0 W',
+        '= ' + _fmtNo(57600, 0) + ' / 288,0', '= ' + _fmtNo(48400, 0) + ' / 288,0', '= 200,0 ', '= 183,7 ', '= 168,1 ',
+        'Mål motstanden på tilkoblingen før gulvet dekkes. Målt verdi skal ligge mellom 168,1 og 200,0 '];
+      check('eksempelet: Kontors tall (produktlinjer, effekt, tre grenser, målesetningen)', 'alle', forv.every(x => eks.includes(x)), forv.filter(x => !eks.includes(x)).join(' | '));
+      check('eksempelet: tre produktlinjer (3,00 m tre ganger)', 3, eks.filter(x => x === '3,00 m').length === 3, eks.filter(x => x === '3,00 m').length);
+    }
+    // Valget av: ingen tabellside og ikke noe eksempel — men feltet på romsidene står.
+    for (const [navn, v] of [['av', false], ['ikke oppgitt', undefined]]) {
+      const av = await kjør(v);
+      check('valget ' + navn + ': ingen tabellside, ikke noe eksempel', '5 sider', av.sider === 5 && !av.t.some(x => x.t === TITTEL || x.t === 'Oversikt for elektriker' || x.t.indexOf('Folieareal') === 0 || x.t === 'Installert effekt' || x.t.indexOf('Eksempel på utregning') === 0), av.sider);
+      check('valget ' + navn + ': «Nom. motstand» står fortsatt på de fire folierommene', 4, ant(av, 'Nom. motstand') === 4, ant(av, 'Nom. motstand'));
+    }
+    // Holdes samlet: med mange folierom fyller tabellen siden, og eksempelet flyttes HELT til neste side.
+    // (Uten _checkPage foran blokken ville den delt seg over sideskiftet eller gått ut av arket.)
+    for (const ekstra of [9, 14]) {
+      bygg(ekstra);
+      const stor = await kjør(true);
+      const tS2 = sideMed(stor, 'Oversikt for elektriker'), b = blokkSider(stor);
+      const flyttet = b && b.sider[0] > tS2;
+      check((4 + ekstra) + ' folierom: eksempelet står samlet på én side, innenfor arket', 'én side, y ≤ 282',
+        b && b.sider.length === 1 && b.yBunn <= 282 && b.yTopp >= 15, b && (b.sider.join() + ' y ' + b.yTopp.toFixed(1) + '–' + b.yBunn.toFixed(1)));
+      check((4 + ekstra) + ' folierom: eksempelet er fortsatt Kontor', 1, ant(stor, EKS) === 1, ant(stor, EKS));
+      if (ekstra === 14) check('18 folierom: eksempelet er flyttet til siden etter tabellen', tS2 + 1, flyttet && b.sider[0] === tS2 + 1 && b.yTopp < 30, b && b.sider.join());
+    }
+    bygg(0);
+
+    // ── Forhåndsvisningen i utskriftsdialogen: samme tall og samme eksempel som PDF-en ─────
+    {
+      const h = _expResistanceHtml(S.rooms);
+      check('forhåndsvisning: «Folieareal (m²)» og de fire arealene', 'alle', h.indexOf('Folieareal (m²)') >= 0 && FASIT.every(f => h.indexOf('>' + f[3] + '<') >= 0), FASIT.filter(f => h.indexOf('>' + f[3] + '<') < 0).map(f => f[1]).join());
+      check('forhåndsvisning: eksempelet er Kontor med 288,0 W og grensene 168,1–200,0', 'ja',
+        h.indexOf(EKS) >= 0 && h.indexOf('288,0 W') >= 0 && h.indexOf('mellom 168,1 og 200,0 Ω') >= 0 && h.indexOf('12 W/m ×') >= 0, 'mangler');
+      check('forhåndsvisning: samme forklaring som PDF-en', 'ja', h.indexOf(_esc(FOIL_RES_EXPL_232[0])) >= 0 && h.indexOf(_esc(FOIL_RES_EXPL_BLOCK)) >= 0, 'mangler');
+      _showExportDialog();
+      const cb = document.getElementById('exp-resistance');
+      check('dialogen: «Motstandsmåling – varmefolie» finnes og er krysset av som standard', 'på', !!cb && cb.checked === true, cb ? cb.checked : 'mangler');
+      _expPreviewSection('resistance');
+      const pa = document.getElementById('exp-preview-area');
+      const ex = document.getElementById('exp-res-example');
+      check('dialogen: klikk på navnet viser tabellen med areal og eksempelet', 'ja', !!pa && /Folieareal \(m²\)/i.test(pa.textContent) && !!ex && ex.textContent.indexOf(EKS) >= 0, pa ? pa.textContent.slice(0, 60) : 'mangler');
+      if (pa) pa.innerHTML = '';
+      // Prosjekt uten folie: valget vises ikke, og forhåndsvisningen har ikke noe eksempel.
+      S.strips = []; _invalidateStripCache();
+      _showExportDialog();
+      check('uten folie: valget vises ikke i dialogen', 'borte', !document.getElementById('exp-resistance'), 'finnes');
+      check('uten folie: ikke noe eksempel i forhåndsvisningen', 'borte', _expResistanceHtml(S.rooms).indexOf('Eksempel på utregning') < 0, 'finnes');
+    }
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree,
+      cables: saved.cables, mats: saved.mats, matPaths: saved.matPaths, plates: saved.plates,
+      aluboard: saved.aluboard, zones: saved.zones, hindrings: saved.hindrings, stairs: saved.stairs,
+      floors: saved.floors, project: saved.project });
+    Object.assign(S.counters, saved.counters);
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId;
+    S.ui.selectedStairId = saved.selectedStairId;
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push(...saved.cats);
+    window._performAutoSave = saved.autoSave; window._showToast = saved.toast;
+    window.showAccessoriesModal = saved.modal; window._pdfBranding = saved.branding;
+    if (window.jspdf) window.jspdf.jsPDF = saved.jsPDF;
+    if (saved.undoLen != null) _undoStack.length = saved.undoLen;
+    const dlg = document.getElementById('export-dialog'); if (dlg) dlg.style.display = dlgSaved == null ? 'none' : dlgSaved;
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_foilPdfRegressionTest232: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
   return { ok: allOk, results };
 }
 
@@ -97137,20 +97430,21 @@ async function exportPDF(opts, lev) {
   } // end if (opts.summary)
   // (Status legend removed \u2014 Status column is gone)
 
-  // ── 145 · Motstandsmåling – varmefolie (romsidens blokk) ──
+  // ── 145 · Motstandsmåling – varmefolie (utregningsblokken) ──
+  // 232 (Kenneth 11.11.2026): blokken står ikke lenger under hvert rom. Den tegnes ÉN gang, som
+  // «Eksempel på utregning – [rom]» på tabellsiden (`tittel`); romsiden har feltet «Nom. motstand».
   // Alle tall kommer ferdig fra `_roomFoilResistance` — her tegnes bare. Høyden regnes før
   // tegning, så blokken holdes samlet (`_checkPage`) i stedet for å brytes midt i utregningen.
-  const _RES_EXPL = 'Foliebreddene kobles parallelt. Jo mer folie, jo lavere motstand. Grensene tar høyde for '
-    + 'nettspenning mellom 220 og 240 V (P = U \u00d7 U / R).';
+  const _RES_EXPL = FOIL_RES_EXPL_BLOCK;
   const _resBlockH = (res) => {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
     const expl = doc.splitTextToSize(_RES_EXPL, pw).length;
     return 5 + res.rows.length * 4 + 6.5 + 3 * 4.4 + 3 + 4.5 + expl * 3.4 + 4;
   };
-  const _drawResistanceBlock = (res) => {
+  const _drawResistanceBlock = (res, tittel) => {
     const xR = M + 135;                       // høyre kant for effekt-/motstandskolonnen
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(20, 60, 130);
-    doc.text('Motstandsmåling \u2013 varmefolie', M, y); y += 5;   // 180: samme navn og strek (–) som tabellsiden
+    doc.text(tittel || 'Motstandsmåling \u2013 varmefolie', M, y); y += 5;   // 180: samme navn og strek (–) som tabellsiden
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(40, 50, 70);
     for (const r of res.rows) {
       doc.text(r.product.name || 'Folie', M, y);
@@ -97379,7 +97673,10 @@ async function exportPDF(opts, lev) {
     doc.setFontSize(9);
     doc.setTextColor(20, 60, 130);
     doc.text('Areal, effekt og dekning', M, y); y += 5;
-    const statCols = [M, M + 42, M + 84, M + 126];
+    // 232: femte felt i første rad (til høyre for «Total effekt») — nominell motstand for rom med
+    // folie. Samme tall som tabellsiden (`_roomFoilResistance`), uavhengig av om tabellsiden er valgt.
+    const statCols = [M, M + 42, M + 84, M + 126, M + 156];
+    const _roomRes = _roomFoilResistance(room);
     const drawStatRow = (labels, values) => {
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(7);
@@ -97389,17 +97686,17 @@ async function exportPDF(opts, lev) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
       doc.setTextColor(20, 60, 130);
-      for (let i = 0; i < values.length; i++) doc.text(values[i], statCols[i], y);
+      for (let i = 0; i < values.length; i++) _pdfTextOhm(doc, values[i], statCols[i], y);   // 232: Ω i symbol-font
       y += 6;
     };
     drawStatRow(
-      ['Brutto areal', 'Netto areal', 'Oppvarmet areal', 'Total effekt'],
+      ['Brutto areal', 'Netto areal', 'Oppvarmet areal', 'Total effekt'].concat(_roomRes ? ['Nom. motstand'] : []),
       [
         stats.bruttoM2.toFixed(2) + ' m\u00b2',
         stats.nettoM2.toFixed(2) + ' m\u00b2',
         heatedM2.toFixed(2) + ' m\u00b2',
         totalW + ' W',
-      ],
+      ].concat(_roomRes ? [_fmtNo(_roomRes.rNom, 1) + ' Ω'] : []),
     );
     drawStatRow(
       ['Flateeffekt', 'Effekt pr brutto', 'Dekning av brutto', 'Dekning av netto'],
@@ -97498,17 +97795,13 @@ async function exportPDF(opts, lev) {
     _line(y); y += 4;
     }
 
-    // 145: Motstandsmåling for rom med folie. Tegningen krympes ikke for denne blokken (Kenneth) —
-    // får den ikke plass, tar `_checkPage` den til neste side. Blokkene under budsjetteres ikke
-    // for den, så de får egne `_checkPage`-vakter når blokken er med (uten blokk: uendret).
-    const _foilRes = opts.resistance ? _roomFoilResistance(room) : null;
-    if (_foilRes) { _checkPage(_resBlockH(_foilRes)); _drawResistanceBlock(_foilRes); _line(y - 2); y += 2; }
+    // 232: utregningsblokken «Motstandsmåling – varmefolie» sto her (145). Den er flyttet til
+    // tabellsiden som ett eksempel; romsiden har «Nom. motstand» i «Areal, effekt og dekning».
 
     // \u2500\u2500 Hindringer + soner (two columns, full width) \u2500\u2500
     const roomHinds = _roomHinds;
     const roomZones = _roomZones;
     if (roomHinds.length || roomZones.length) {
-      if (_foilRes) _checkPage(_hindZoneH);
       const halfW = (pw - 4) / 2;
       const colA = M;
       const colB = M + halfW + 4;
@@ -97546,7 +97839,6 @@ async function exportPDF(opts, lev) {
 
     // \u2500\u2500 Notes from the documentation module \u2500\u2500
     if (_noteLines) {
-      if (_foilRes) _checkPage(_noteH);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(20, 60, 130);
@@ -97570,7 +97862,6 @@ async function exportPDF(opts, lev) {
     // Samme kilde som sidepanelet (`_fryseromAvvik` / `_fryseromMontasjeLinjer`), så skjerm og
     // PDF aldri kan si hver sin ting.
     if (_frysMont.length) {
-      if (_foilRes) _checkPage(_frysH);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(8);
       doc.setTextColor(20, 60, 130);
@@ -98206,8 +98497,10 @@ async function exportPDF(opts, lev) {
 
   // ── 145 · Motstandsmåling – varmefolie (oversikt for elektriker; navnet fra 180) ── (only when selected AND a room has foil)
   // Én tabell over alle folierom (de som er valgt som romsider), til å skrive ut og fylle inn på
-  // byggeplassen. Tallene kommer fra samme `_roomFoilResistance` som romsidenes blokk. Prosjekt
+  // byggeplassen. Tallene kommer fra samme `_roomFoilResistance` som romsidens «Nom. motstand». Prosjekt
   // uten folie, eller valget av: ingen side og ingen tom tabell.
+  // 232: «Folie (m)» → «Folieareal (m²)» (Σ bredde × tegnet lengde), og ETT eksempel på utregningen
+  // nederst (`_drawResistanceBlock` for rommet `_foilResistanceExample` velger).
   const _resRooms = opts.resistance
     ? _foilResistanceRooms(Array.isArray(opts.rooms) ? S.rooms.filter(r => opts.rooms.includes(r.id)) : S.rooms)
     : [];
@@ -98221,12 +98514,16 @@ async function exportPDF(opts, lev) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(90, 100, 120);
     _pdfTextOhm(doc, 'Mål motstanden på tilkoblingen før gulvet dekkes. Skriv målt verdi (Ω) og kryss av når den ligger mellom nedre og øvre grense.', M, y); y += 4;
     doc.setFontSize(7); doc.setTextColor(120, 130, 150);
-    doc.text('Effekt = tegnet folielengde × W per løpemeter. Nedre grense = 48 400 / effekt (220 V), nominell = 52 900 / effekt (230 V), øvre grense = 57 600 / effekt (240 V).', M, y); y += 6;
+    // 232: FlexFoil gir 60 W/m² regnet på nominell bredde (B); databasens bredde er 1 cm smalere,
+    // så areal × 60 ligger 0,7–5 % under effekten. Teksten sier derfor «ca.», og effekten er
+    // fortsatt lengde × W per løpemeter (ingen ny formel).
+    doc.text(FOIL_RES_EXPL_232[0], M, y); y += 3.2;
+    doc.text(FOIL_RES_EXPL_232[1], M, y); y += 6;
 
-    // Kolonner (sum 180 mm): Etasje · Rom · Folie · Effekt · Nedre · Nominell · Øvre · Målt · OK
-    const cw = [22, 40, 16, 18, 16, 17, 16, 22, 13];
+    // Kolonner (sum 180 mm): Etasje · Rom · Folieareal · Effekt · Nedre · Nominell · Øvre · Målt · OK
+    const cw = [22, 36, 22, 18, 16, 17, 16, 20, 13];
     const cx = []; { let a = M; for (const w of cw) { cx.push(a); a += w; } }
-    const heads = ['Etasje', 'Rom', 'Folie (m)', 'Effekt (W)', 'Nedre Ω', 'Nominell Ω', 'Øvre Ω', 'Målt Ω', 'OK'];
+    const heads = ['Etasje', 'Rom', 'Folieareal (m²)', 'Effekt (W)', 'Nedre Ω', 'Nominell Ω', 'Øvre Ω', 'Målt Ω', 'OK'];
     const numCol = [false, false, true, true, true, true, true, false, false];
     const rowH = 8;
     const _resHead = () => {
@@ -98246,8 +98543,8 @@ async function exportPDF(opts, lev) {
       doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(30, 40, 60);
       if (fName !== _prevFloor) { doc.setFont('helvetica', 'bold'); doc.text(String(fName).substring(0, 14), cx[0] + 1, y); doc.setFont('helvetica', 'normal'); }
       _prevFloor = fName;
-      doc.text(String(room.name || 'Rom').substring(0, 26), cx[1] + 1, y);
-      const nums = [_fmtNo(res.lenM, 1), _fmtNo(res.P, 1), _fmtNo(res.rLow, 1), _fmtNo(res.rNom, 1), _fmtNo(res.rHigh, 1)];
+      doc.text(String(room.name || 'Rom').substring(0, 23), cx[1] + 1, y);
+      const nums = [_fmtNo(res.areaM2, 2), _fmtNo(res.P, 1), _fmtNo(res.rLow, 1), _fmtNo(res.rNom, 1), _fmtNo(res.rHigh, 1)];
       nums.forEach((t, k) => {
         const i = k + 2;
         // Grensene (nedre/øvre) uthevet — det er dem elektrikeren måler mot.
@@ -98297,6 +98594,16 @@ async function exportPDF(opts, lev) {
     doc.text('Målt av:', M, y); doc.setDrawColor(120, 130, 150); doc.setLineWidth(0.25); doc.line(M + 17, y + 0.8, M + 105, y + 0.8);
     doc.text('Dato:', M + 115, y); doc.line(M + 128, y + 0.8, M + pw, y + 0.8);
     y += 8;
+
+    // 232: eksempel på utregningen — den samme blokken som før sto under hvert rom, nå én gang og
+    // for et faktisk rom i prosjektet. Holdes samlet: får den ikke plass, går HELE til neste side.
+    const _resEx = _foilResistanceExample(_resRooms);
+    if (_resEx) {
+      const _yFør = y;
+      _checkPage(5 + _resBlockH(_resEx.res));
+      if (y === _yFør) { _line(y - 3); y += 3; }   // skillelinje bare når eksempelet står under bunnfeltet
+      _drawResistanceBlock(_resEx.res, 'Eksempel på utregning – ' + String(_resEx.room.name || 'Rom'));
+    }
     _pageStarted = true;
   } // end if (_resRooms.length)
 

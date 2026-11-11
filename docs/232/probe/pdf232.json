@@ -1,0 +1,2618 @@
+{
+ "med": {
+  "sider": 6,
+  "tekst": [
+   [
+    1,
+    "Stue"
+   ],
+   [
+    1,
+    "1. etasje · 30.0 m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "540 W"
+   ],
+   [
+    1,
+    "18 W/m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "Areal, effekt og dekning"
+   ],
+   [
+    1,
+    "Brutto areal"
+   ],
+   [
+    1,
+    "Netto areal"
+   ],
+   [
+    1,
+    "Oppvarmet areal"
+   ],
+   [
+    1,
+    "Total effekt"
+   ],
+   [
+    1,
+    "Nom. motstand"
+   ],
+   [
+    1,
+    "30.00 m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "30.00 m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "8.91 m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "540 W"
+   ],
+   [
+    1,
+    "98,0 "
+   ],
+   [
+    1,
+    "Ω"
+   ],
+   [
+    1,
+    "Flateeffekt"
+   ],
+   [
+    1,
+    "Effekt pr brutto"
+   ],
+   [
+    1,
+    "Dekning av brutto"
+   ],
+   [
+    1,
+    "Dekning av netto"
+   ],
+   [
+    1,
+    "61 W/m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "18 W/m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "30 %"
+   ],
+   [
+    1,
+    "30 %"
+   ],
+   [
+    1,
+    "Spesifikasjon"
+   ],
+   [
+    1,
+    "Type"
+   ],
+   [
+    1,
+    "Produkt"
+   ],
+   [
+    1,
+    "Antall"
+   ],
+   [
+    1,
+    "Lengde"
+   ],
+   [
+    1,
+    "Effekt"
+   ],
+   [
+    1,
+    "Folie"
+   ],
+   [
+    1,
+    "FlexFoil B=100cm"
+   ],
+   [
+    1,
+    "2 stk"
+   ],
+   [
+    1,
+    "4,5 m"
+   ],
+   [
+    1,
+    "540 W"
+   ],
+   [
+    2,
+    "Kjøkken"
+   ],
+   [
+    2,
+    "1. etasje · 20.0 m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "310 W"
+   ],
+   [
+    2,
+    "16 W/m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "Areal, effekt og dekning"
+   ],
+   [
+    2,
+    "Brutto areal"
+   ],
+   [
+    2,
+    "Netto areal"
+   ],
+   [
+    2,
+    "Oppvarmet areal"
+   ],
+   [
+    2,
+    "Total effekt"
+   ],
+   [
+    2,
+    "Nom. motstand"
+   ],
+   [
+    2,
+    "20.00 m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "20.00 m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "5.09 m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "310 W"
+   ],
+   [
+    2,
+    "170,9 "
+   ],
+   [
+    2,
+    "Ω"
+   ],
+   [
+    2,
+    "Flateeffekt"
+   ],
+   [
+    2,
+    "Effekt pr brutto"
+   ],
+   [
+    2,
+    "Dekning av brutto"
+   ],
+   [
+    2,
+    "Dekning av netto"
+   ],
+   [
+    2,
+    "61 W/m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "16 W/m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "25 %"
+   ],
+   [
+    2,
+    "25 %"
+   ],
+   [
+    2,
+    "Spesifikasjon"
+   ],
+   [
+    2,
+    "Type"
+   ],
+   [
+    2,
+    "Produkt"
+   ],
+   [
+    2,
+    "Antall"
+   ],
+   [
+    2,
+    "Lengde"
+   ],
+   [
+    2,
+    "Effekt"
+   ],
+   [
+    2,
+    "Folie"
+   ],
+   [
+    2,
+    "FlexFoil B=60cm"
+   ],
+   [
+    2,
+    "1 stk"
+   ],
+   [
+    2,
+    "3,6 m"
+   ],
+   [
+    2,
+    "130 W"
+   ],
+   [
+    2,
+    "Folie"
+   ],
+   [
+    2,
+    "FlexFoil B=100cm"
+   ],
+   [
+    2,
+    "1 stk"
+   ],
+   [
+    2,
+    "3,0 m"
+   ],
+   [
+    2,
+    "180 W"
+   ],
+   [
+    3,
+    "Bod uten folie"
+   ],
+   [
+    3,
+    "1. etasje · 9.0 m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "0 W"
+   ],
+   [
+    3,
+    "0 W/m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "Areal, effekt og dekning"
+   ],
+   [
+    3,
+    "Brutto areal"
+   ],
+   [
+    3,
+    "Netto areal"
+   ],
+   [
+    3,
+    "Oppvarmet areal"
+   ],
+   [
+    3,
+    "Total effekt"
+   ],
+   [
+    3,
+    "9.00 m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "9.00 m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "0.00 m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "0 W"
+   ],
+   [
+    3,
+    "Flateeffekt"
+   ],
+   [
+    3,
+    "Effekt pr brutto"
+   ],
+   [
+    3,
+    "Dekning av brutto"
+   ],
+   [
+    3,
+    "Dekning av netto"
+   ],
+   [
+    3,
+    "130 W/m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "0 W/m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "0 %"
+   ],
+   [
+    3,
+    "0 %"
+   ],
+   [
+    3,
+    "Spesifikasjon"
+   ],
+   [
+    3,
+    "Type"
+   ],
+   [
+    3,
+    "Produkt"
+   ],
+   [
+    3,
+    "Antall"
+   ],
+   [
+    3,
+    "Lengde"
+   ],
+   [
+    3,
+    "Effekt"
+   ],
+   [
+    3,
+    "—"
+   ],
+   [
+    3,
+    "Ingen produkter"
+   ],
+   [
+    3,
+    ""
+   ],
+   [
+    3,
+    ""
+   ],
+   [
+    3,
+    ""
+   ],
+   [
+    4,
+    "Kontor"
+   ],
+   [
+    4,
+    "1. etasje · 20.0 m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "288 W"
+   ],
+   [
+    4,
+    "14 W/m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "Areal, effekt og dekning"
+   ],
+   [
+    4,
+    "Brutto areal"
+   ],
+   [
+    4,
+    "Netto areal"
+   ],
+   [
+    4,
+    "Oppvarmet areal"
+   ],
+   [
+    4,
+    "Total effekt"
+   ],
+   [
+    4,
+    "Nom. motstand"
+   ],
+   [
+    4,
+    "20.00 m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "20.00 m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "4.71 m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "288 W"
+   ],
+   [
+    4,
+    "183,7 "
+   ],
+   [
+    4,
+    "Ω"
+   ],
+   [
+    4,
+    "Flateeffekt"
+   ],
+   [
+    4,
+    "Effekt pr brutto"
+   ],
+   [
+    4,
+    "Dekning av brutto"
+   ],
+   [
+    4,
+    "Dekning av netto"
+   ],
+   [
+    4,
+    "61 W/m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "14 W/m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "24 %"
+   ],
+   [
+    4,
+    "24 %"
+   ],
+   [
+    4,
+    "Spesifikasjon"
+   ],
+   [
+    4,
+    "Type"
+   ],
+   [
+    4,
+    "Produkt"
+   ],
+   [
+    4,
+    "Antall"
+   ],
+   [
+    4,
+    "Lengde"
+   ],
+   [
+    4,
+    "Effekt"
+   ],
+   [
+    4,
+    "Folie"
+   ],
+   [
+    4,
+    "FlexFoil B=20cm"
+   ],
+   [
+    4,
+    "1 stk"
+   ],
+   [
+    4,
+    "3,0 m"
+   ],
+   [
+    4,
+    "36 W"
+   ],
+   [
+    4,
+    "Folie"
+   ],
+   [
+    4,
+    "FlexFoil B=40cm"
+   ],
+   [
+    4,
+    "1 stk"
+   ],
+   [
+    4,
+    "3,0 m"
+   ],
+   [
+    4,
+    "72 W"
+   ],
+   [
+    4,
+    "Folie"
+   ],
+   [
+    4,
+    "FlexFoil B=100cm"
+   ],
+   [
+    4,
+    "1 stk"
+   ],
+   [
+    4,
+    "3,0 m"
+   ],
+   [
+    4,
+    "180 W"
+   ],
+   [
+    5,
+    "Gang"
+   ],
+   [
+    5,
+    "1. etasje · 15.0 m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "144 W"
+   ],
+   [
+    5,
+    "10 W/m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "Areal, effekt og dekning"
+   ],
+   [
+    5,
+    "Brutto areal"
+   ],
+   [
+    5,
+    "Netto areal"
+   ],
+   [
+    5,
+    "Oppvarmet areal"
+   ],
+   [
+    5,
+    "Total effekt"
+   ],
+   [
+    5,
+    "Nom. motstand"
+   ],
+   [
+    5,
+    "15.00 m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "15.00 m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "2.34 m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "144 W"
+   ],
+   [
+    5,
+    "367,4 "
+   ],
+   [
+    5,
+    "Ω"
+   ],
+   [
+    5,
+    "Flateeffekt"
+   ],
+   [
+    5,
+    "Effekt pr brutto"
+   ],
+   [
+    5,
+    "Dekning av brutto"
+   ],
+   [
+    5,
+    "Dekning av netto"
+   ],
+   [
+    5,
+    "62 W/m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "10 W/m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "16 %"
+   ],
+   [
+    5,
+    "16 %"
+   ],
+   [
+    5,
+    "Spesifikasjon"
+   ],
+   [
+    5,
+    "Type"
+   ],
+   [
+    5,
+    "Produkt"
+   ],
+   [
+    5,
+    "Antall"
+   ],
+   [
+    5,
+    "Lengde"
+   ],
+   [
+    5,
+    "Effekt"
+   ],
+   [
+    5,
+    "Folie"
+   ],
+   [
+    5,
+    "FlexFoil B=20cm"
+   ],
+   [
+    5,
+    "1 stk"
+   ],
+   [
+    5,
+    "2,0 m"
+   ],
+   [
+    5,
+    "24 W"
+   ],
+   [
+    5,
+    "Folie"
+   ],
+   [
+    5,
+    "FlexFoil B=40cm"
+   ],
+   [
+    5,
+    "1 stk"
+   ],
+   [
+    5,
+    "2,0 m"
+   ],
+   [
+    5,
+    "48 W"
+   ],
+   [
+    5,
+    "Folie"
+   ],
+   [
+    5,
+    "FlexFoil B=60cm"
+   ],
+   [
+    5,
+    "1 stk"
+   ],
+   [
+    5,
+    "2,0 m"
+   ],
+   [
+    5,
+    "72 W"
+   ],
+   [
+    6,
+    "Motstandsmåling – varmefolie"
+   ],
+   [
+    6,
+    "Oversikt for elektriker"
+   ],
+   [
+    6,
+    "Mål motstanden på tilkoblingen før gulvet dekkes. Skriv målt verdi ("
+   ],
+   [
+    6,
+    "Ω"
+   ],
+   [
+    6,
+    ") og kryss av når den ligger mellom nedre og øvre grense."
+   ],
+   [
+    6,
+    "Effekt = ca. 60 W/m"
+   ],
+   [
+    6,
+    "2"
+   ],
+   [
+    6,
+    " folieareal (regnet som tegnet lengde × W per løpemeter). Folieareal = foliebredde × tegnet lengde."
+   ],
+   [
+    6,
+    "Nedre grense = 48 400 / effekt (220 V), nominell = 52 900 / effekt (230 V), øvre grense = 57 600 / effekt (240 V)."
+   ],
+   [
+    6,
+    "Etasje"
+   ],
+   [
+    6,
+    "Rom"
+   ],
+   [
+    6,
+    "Folieareal (m"
+   ],
+   [
+    6,
+    "2"
+   ],
+   [
+    6,
+    ")"
+   ],
+   [
+    6,
+    "Effekt (W)"
+   ],
+   [
+    6,
+    "Nedre "
+   ],
+   [
+    6,
+    "Ω"
+   ],
+   [
+    6,
+    "Nominell "
+   ],
+   [
+    6,
+    "Ω"
+   ],
+   [
+    6,
+    "Øvre "
+   ],
+   [
+    6,
+    "Ω"
+   ],
+   [
+    6,
+    "Målt "
+   ],
+   [
+    6,
+    "Ω"
+   ],
+   [
+    6,
+    "OK"
+   ],
+   [
+    6,
+    "1. etasje"
+   ],
+   [
+    6,
+    "Stue"
+   ],
+   [
+    6,
+    "8,91"
+   ],
+   [
+    6,
+    "540,0"
+   ],
+   [
+    6,
+    "89,6"
+   ],
+   [
+    6,
+    "98,0"
+   ],
+   [
+    6,
+    "106,7"
+   ],
+   [
+    6,
+    "Kjøkken"
+   ],
+   [
+    6,
+    "5,09"
+   ],
+   [
+    6,
+    "309,6"
+   ],
+   [
+    6,
+    "156,3"
+   ],
+   [
+    6,
+    "170,9"
+   ],
+   [
+    6,
+    "186,0"
+   ],
+   [
+    6,
+    "Kontor"
+   ],
+   [
+    6,
+    "4,71"
+   ],
+   [
+    6,
+    "288,0"
+   ],
+   [
+    6,
+    "168,1"
+   ],
+   [
+    6,
+    "183,7"
+   ],
+   [
+    6,
+    "200,0"
+   ],
+   [
+    6,
+    "Gang"
+   ],
+   [
+    6,
+    "2,34"
+   ],
+   [
+    6,
+    "144,0"
+   ],
+   [
+    6,
+    "336,1"
+   ],
+   [
+    6,
+    "367,4"
+   ],
+   [
+    6,
+    "400,0"
+   ],
+   [
+    6,
+    "Hva målingen betyr"
+   ],
+   [
+    6,
+    "Måling"
+   ],
+   [
+    6,
+    "Indikasjon"
+   ],
+   [
+    6,
+    "Handling"
+   ],
+   [
+    6,
+    "Mellom høy og lav"
+   ],
+   [
+    6,
+    "Korrekt"
+   ],
+   [
+    6,
+    "OK, ingen handling"
+   ],
+   [
+    6,
+    "Over høyeste tillatte verdi"
+   ],
+   [
+    6,
+    "Åpen krets"
+   ],
+   [
+    6,
+    "Sjekk alle klemmer. Gjenta krymp med tang eller bytt dårlige klemmer."
+   ],
+   [
+    6,
+    "Ingen motstand"
+   ],
+   [
+    6,
+    "Kortslutning"
+   ],
+   [
+    6,
+    "Kontroller kobling. Sjekk at ingen ledninger er koblet til begge"
+   ],
+   [
+    6,
+    "strømskinner på et element."
+   ],
+   [
+    6,
+    "Kilde: Cenika FlexFoil installasjonsveiledning, beregning av motstand."
+   ],
+   [
+    6,
+    "Målt av:"
+   ],
+   [
+    6,
+    "Dato:"
+   ],
+   [
+    6,
+    "Eksempel på utregning – Kontor"
+   ],
+   [
+    6,
+    "FlexFoil B=20cm"
+   ],
+   [
+    6,
+    "12 W/m"
+   ],
+   [
+    6,
+    "×"
+   ],
+   [
+    6,
+    "3,00 m"
+   ],
+   [
+    6,
+    "="
+   ],
+   [
+    6,
+    "36,0 W"
+   ],
+   [
+    6,
+    "FlexFoil B=40cm"
+   ],
+   [
+    6,
+    "24 W/m"
+   ],
+   [
+    6,
+    "×"
+   ],
+   [
+    6,
+    "3,00 m"
+   ],
+   [
+    6,
+    "="
+   ],
+   [
+    6,
+    "72,0 W"
+   ],
+   [
+    6,
+    "FlexFoil B=100cm"
+   ],
+   [
+    6,
+    "60 W/m"
+   ],
+   [
+    6,
+    "×"
+   ],
+   [
+    6,
+    "3,00 m"
+   ],
+   [
+    6,
+    "="
+   ],
+   [
+    6,
+    "180,0 W"
+   ],
+   [
+    6,
+    "Installert effekt"
+   ],
+   [
+    6,
+    "288,0 W"
+   ],
+   [
+    6,
+    "Øvre grense"
+   ],
+   [
+    6,
+    "(240 V)"
+   ],
+   [
+    6,
+    "240"
+   ],
+   [
+    6,
+    "2"
+   ],
+   [
+    6,
+    " / 288,0"
+   ],
+   [
+    6,
+    "= 57 600 / 288,0"
+   ],
+   [
+    6,
+    "= 200,0 "
+   ],
+   [
+    6,
+    "Ω"
+   ],
+   [
+    6,
+    "Nominell"
+   ],
+   [
+    6,
+    "(230 V)"
+   ],
+   [
+    6,
+    "230"
+   ],
+   [
+    6,
+    "2"
+   ],
+   [
+    6,
+    " / 288,0"
+   ],
+   [
+    6,
+    "= 52 900 / 288,0"
+   ],
+   [
+    6,
+    "= 183,7 "
+   ],
+   [
+    6,
+    "Ω"
+   ],
+   [
+    6,
+    "Nedre grense"
+   ],
+   [
+    6,
+    "(220 V)"
+   ],
+   [
+    6,
+    "220"
+   ],
+   [
+    6,
+    "2"
+   ],
+   [
+    6,
+    " / 288,0"
+   ],
+   [
+    6,
+    "= 48 400 / 288,0"
+   ],
+   [
+    6,
+    "= 168,1 "
+   ],
+   [
+    6,
+    "Ω"
+   ],
+   [
+    6,
+    "Mål motstanden på tilkoblingen før gulvet dekkes. Målt verdi skal ligge mellom 168,1 og 200,0 "
+   ],
+   [
+    6,
+    "Ω"
+   ],
+   [
+    6,
+    "."
+   ],
+   [
+    6,
+    "Foliebreddene kobles parallelt. Jo mer folie, jo lavere motstand. Grensene tar høyde for nettspenning mellom 220 og 240 V (P = U × U / R)."
+   ],
+   [
+    1,
+    "Testprosjekt 232 · rev. 1"
+   ],
+   [
+    1,
+    "Side 1 av 6"
+   ],
+   [
+    2,
+    "Testprosjekt 232 · rev. 1"
+   ],
+   [
+    2,
+    "Side 2 av 6"
+   ],
+   [
+    3,
+    "Testprosjekt 232 · rev. 1"
+   ],
+   [
+    3,
+    "Side 3 av 6"
+   ],
+   [
+    4,
+    "Testprosjekt 232 · rev. 1"
+   ],
+   [
+    4,
+    "Side 4 av 6"
+   ],
+   [
+    5,
+    "Testprosjekt 232 · rev. 1"
+   ],
+   [
+    5,
+    "Side 5 av 6"
+   ],
+   [
+    6,
+    "Testprosjekt 232 · rev. 1"
+   ],
+   [
+    6,
+    "Side 6 av 6"
+   ]
+  ],
+  "eksempel": "Kontor",
+  "rom": [
+   {
+    "navn": "Stue",
+    "areal": 8.91,
+    "P": 540,
+    "areal60": 534.6,
+    "avvikPst": -1.0000000000000009,
+    "rNom": 97.96296296296296
+   },
+   {
+    "navn": "Kjøkken",
+    "areal": 5.093999999999999,
+    "P": 309.6,
+    "areal60": 305.64,
+    "avvikPst": -1.279069767441876,
+    "rNom": 170.86563307493537
+   },
+   {
+    "navn": "Kontor",
+    "areal": 4.71,
+    "P": 288,
+    "areal60": 282.6,
+    "avvikPst": -1.8749999999999933,
+    "rNom": 183.68055555555554
+   },
+   {
+    "navn": "Gang",
+    "areal": 2.34,
+    "P": 144,
+    "areal60": 140.39999999999998,
+    "avvikPst": -2.5000000000000133,
+    "rNom": 367.3611111111111
+   }
+  ],
+  "produkter": [
+   {
+    "navn": "FlexFoil B=20cm",
+    "width_mm": 190,
+    "netto_width_mm": 190,
+    "watt_per_lm": 12,
+    "w60": 11.4,
+    "avvikPst": -4.999999999999993
+   },
+   {
+    "navn": "FlexFoil B=40cm",
+    "width_mm": 390,
+    "netto_width_mm": 390,
+    "watt_per_lm": 24,
+    "w60": 23.4,
+    "avvikPst": -2.500000000000002
+   },
+   {
+    "navn": "FlexFoil B=50cm",
+    "width_mm": 490,
+    "netto_width_mm": 490,
+    "watt_per_lm": 30,
+    "w60": 29.4,
+    "avvikPst": -2.0000000000000018
+   },
+   {
+    "navn": "FlexFoil B=60cm",
+    "width_mm": 590,
+    "netto_width_mm": 590,
+    "watt_per_lm": 36,
+    "w60": 35.4,
+    "avvikPst": -1.6666666666666718
+   },
+   {
+    "navn": "FlexFoil B=80cm",
+    "width_mm": 790,
+    "netto_width_mm": 790,
+    "watt_per_lm": 48,
+    "w60": 47.4,
+    "avvikPst": -1.2500000000000067
+   },
+   {
+    "navn": "FlexFoil B=100cm",
+    "width_mm": 990,
+    "netto_width_mm": 990,
+    "watt_per_lm": 60,
+    "w60": 59.4,
+    "avvikPst": -1.0000000000000009
+   },
+   {
+    "navn": "FlexFoil B=120cm",
+    "width_mm": 1190,
+    "netto_width_mm": 1190,
+    "watt_per_lm": 72,
+    "w60": 71.4,
+    "avvikPst": -0.8333333333333304
+   },
+   {
+    "navn": "FlexFoil B=140cm",
+    "width_mm": 1390,
+    "netto_width_mm": 1390,
+    "watt_per_lm": 84,
+    "w60": 83.4,
+    "avvikPst": -0.7142857142857117
+   }
+  ]
+ },
+ "uten": {
+  "sider": 5,
+  "tekst": [
+   [
+    1,
+    "Stue"
+   ],
+   [
+    1,
+    "1. etasje · 30.0 m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "540 W"
+   ],
+   [
+    1,
+    "18 W/m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "Areal, effekt og dekning"
+   ],
+   [
+    1,
+    "Brutto areal"
+   ],
+   [
+    1,
+    "Netto areal"
+   ],
+   [
+    1,
+    "Oppvarmet areal"
+   ],
+   [
+    1,
+    "Total effekt"
+   ],
+   [
+    1,
+    "Nom. motstand"
+   ],
+   [
+    1,
+    "30.00 m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "30.00 m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "8.91 m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "540 W"
+   ],
+   [
+    1,
+    "98,0 "
+   ],
+   [
+    1,
+    "Ω"
+   ],
+   [
+    1,
+    "Flateeffekt"
+   ],
+   [
+    1,
+    "Effekt pr brutto"
+   ],
+   [
+    1,
+    "Dekning av brutto"
+   ],
+   [
+    1,
+    "Dekning av netto"
+   ],
+   [
+    1,
+    "61 W/m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "18 W/m"
+   ],
+   [
+    1,
+    "2"
+   ],
+   [
+    1,
+    "30 %"
+   ],
+   [
+    1,
+    "30 %"
+   ],
+   [
+    1,
+    "Spesifikasjon"
+   ],
+   [
+    1,
+    "Type"
+   ],
+   [
+    1,
+    "Produkt"
+   ],
+   [
+    1,
+    "Antall"
+   ],
+   [
+    1,
+    "Lengde"
+   ],
+   [
+    1,
+    "Effekt"
+   ],
+   [
+    1,
+    "Folie"
+   ],
+   [
+    1,
+    "FlexFoil B=100cm"
+   ],
+   [
+    1,
+    "2 stk"
+   ],
+   [
+    1,
+    "4,5 m"
+   ],
+   [
+    1,
+    "540 W"
+   ],
+   [
+    2,
+    "Kjøkken"
+   ],
+   [
+    2,
+    "1. etasje · 20.0 m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "310 W"
+   ],
+   [
+    2,
+    "16 W/m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "Areal, effekt og dekning"
+   ],
+   [
+    2,
+    "Brutto areal"
+   ],
+   [
+    2,
+    "Netto areal"
+   ],
+   [
+    2,
+    "Oppvarmet areal"
+   ],
+   [
+    2,
+    "Total effekt"
+   ],
+   [
+    2,
+    "Nom. motstand"
+   ],
+   [
+    2,
+    "20.00 m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "20.00 m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "5.09 m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "310 W"
+   ],
+   [
+    2,
+    "170,9 "
+   ],
+   [
+    2,
+    "Ω"
+   ],
+   [
+    2,
+    "Flateeffekt"
+   ],
+   [
+    2,
+    "Effekt pr brutto"
+   ],
+   [
+    2,
+    "Dekning av brutto"
+   ],
+   [
+    2,
+    "Dekning av netto"
+   ],
+   [
+    2,
+    "61 W/m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "16 W/m"
+   ],
+   [
+    2,
+    "2"
+   ],
+   [
+    2,
+    "25 %"
+   ],
+   [
+    2,
+    "25 %"
+   ],
+   [
+    2,
+    "Spesifikasjon"
+   ],
+   [
+    2,
+    "Type"
+   ],
+   [
+    2,
+    "Produkt"
+   ],
+   [
+    2,
+    "Antall"
+   ],
+   [
+    2,
+    "Lengde"
+   ],
+   [
+    2,
+    "Effekt"
+   ],
+   [
+    2,
+    "Folie"
+   ],
+   [
+    2,
+    "FlexFoil B=60cm"
+   ],
+   [
+    2,
+    "1 stk"
+   ],
+   [
+    2,
+    "3,6 m"
+   ],
+   [
+    2,
+    "130 W"
+   ],
+   [
+    2,
+    "Folie"
+   ],
+   [
+    2,
+    "FlexFoil B=100cm"
+   ],
+   [
+    2,
+    "1 stk"
+   ],
+   [
+    2,
+    "3,0 m"
+   ],
+   [
+    2,
+    "180 W"
+   ],
+   [
+    3,
+    "Bod uten folie"
+   ],
+   [
+    3,
+    "1. etasje · 9.0 m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "0 W"
+   ],
+   [
+    3,
+    "0 W/m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "Areal, effekt og dekning"
+   ],
+   [
+    3,
+    "Brutto areal"
+   ],
+   [
+    3,
+    "Netto areal"
+   ],
+   [
+    3,
+    "Oppvarmet areal"
+   ],
+   [
+    3,
+    "Total effekt"
+   ],
+   [
+    3,
+    "9.00 m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "9.00 m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "0.00 m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "0 W"
+   ],
+   [
+    3,
+    "Flateeffekt"
+   ],
+   [
+    3,
+    "Effekt pr brutto"
+   ],
+   [
+    3,
+    "Dekning av brutto"
+   ],
+   [
+    3,
+    "Dekning av netto"
+   ],
+   [
+    3,
+    "130 W/m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "0 W/m"
+   ],
+   [
+    3,
+    "2"
+   ],
+   [
+    3,
+    "0 %"
+   ],
+   [
+    3,
+    "0 %"
+   ],
+   [
+    3,
+    "Spesifikasjon"
+   ],
+   [
+    3,
+    "Type"
+   ],
+   [
+    3,
+    "Produkt"
+   ],
+   [
+    3,
+    "Antall"
+   ],
+   [
+    3,
+    "Lengde"
+   ],
+   [
+    3,
+    "Effekt"
+   ],
+   [
+    3,
+    "—"
+   ],
+   [
+    3,
+    "Ingen produkter"
+   ],
+   [
+    3,
+    ""
+   ],
+   [
+    3,
+    ""
+   ],
+   [
+    3,
+    ""
+   ],
+   [
+    4,
+    "Kontor"
+   ],
+   [
+    4,
+    "1. etasje · 20.0 m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "288 W"
+   ],
+   [
+    4,
+    "14 W/m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "Areal, effekt og dekning"
+   ],
+   [
+    4,
+    "Brutto areal"
+   ],
+   [
+    4,
+    "Netto areal"
+   ],
+   [
+    4,
+    "Oppvarmet areal"
+   ],
+   [
+    4,
+    "Total effekt"
+   ],
+   [
+    4,
+    "Nom. motstand"
+   ],
+   [
+    4,
+    "20.00 m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "20.00 m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "4.71 m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "288 W"
+   ],
+   [
+    4,
+    "183,7 "
+   ],
+   [
+    4,
+    "Ω"
+   ],
+   [
+    4,
+    "Flateeffekt"
+   ],
+   [
+    4,
+    "Effekt pr brutto"
+   ],
+   [
+    4,
+    "Dekning av brutto"
+   ],
+   [
+    4,
+    "Dekning av netto"
+   ],
+   [
+    4,
+    "61 W/m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "14 W/m"
+   ],
+   [
+    4,
+    "2"
+   ],
+   [
+    4,
+    "24 %"
+   ],
+   [
+    4,
+    "24 %"
+   ],
+   [
+    4,
+    "Spesifikasjon"
+   ],
+   [
+    4,
+    "Type"
+   ],
+   [
+    4,
+    "Produkt"
+   ],
+   [
+    4,
+    "Antall"
+   ],
+   [
+    4,
+    "Lengde"
+   ],
+   [
+    4,
+    "Effekt"
+   ],
+   [
+    4,
+    "Folie"
+   ],
+   [
+    4,
+    "FlexFoil B=20cm"
+   ],
+   [
+    4,
+    "1 stk"
+   ],
+   [
+    4,
+    "3,0 m"
+   ],
+   [
+    4,
+    "36 W"
+   ],
+   [
+    4,
+    "Folie"
+   ],
+   [
+    4,
+    "FlexFoil B=40cm"
+   ],
+   [
+    4,
+    "1 stk"
+   ],
+   [
+    4,
+    "3,0 m"
+   ],
+   [
+    4,
+    "72 W"
+   ],
+   [
+    4,
+    "Folie"
+   ],
+   [
+    4,
+    "FlexFoil B=100cm"
+   ],
+   [
+    4,
+    "1 stk"
+   ],
+   [
+    4,
+    "3,0 m"
+   ],
+   [
+    4,
+    "180 W"
+   ],
+   [
+    5,
+    "Gang"
+   ],
+   [
+    5,
+    "1. etasje · 15.0 m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "144 W"
+   ],
+   [
+    5,
+    "10 W/m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "Areal, effekt og dekning"
+   ],
+   [
+    5,
+    "Brutto areal"
+   ],
+   [
+    5,
+    "Netto areal"
+   ],
+   [
+    5,
+    "Oppvarmet areal"
+   ],
+   [
+    5,
+    "Total effekt"
+   ],
+   [
+    5,
+    "Nom. motstand"
+   ],
+   [
+    5,
+    "15.00 m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "15.00 m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "2.34 m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "144 W"
+   ],
+   [
+    5,
+    "367,4 "
+   ],
+   [
+    5,
+    "Ω"
+   ],
+   [
+    5,
+    "Flateeffekt"
+   ],
+   [
+    5,
+    "Effekt pr brutto"
+   ],
+   [
+    5,
+    "Dekning av brutto"
+   ],
+   [
+    5,
+    "Dekning av netto"
+   ],
+   [
+    5,
+    "62 W/m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "10 W/m"
+   ],
+   [
+    5,
+    "2"
+   ],
+   [
+    5,
+    "16 %"
+   ],
+   [
+    5,
+    "16 %"
+   ],
+   [
+    5,
+    "Spesifikasjon"
+   ],
+   [
+    5,
+    "Type"
+   ],
+   [
+    5,
+    "Produkt"
+   ],
+   [
+    5,
+    "Antall"
+   ],
+   [
+    5,
+    "Lengde"
+   ],
+   [
+    5,
+    "Effekt"
+   ],
+   [
+    5,
+    "Folie"
+   ],
+   [
+    5,
+    "FlexFoil B=20cm"
+   ],
+   [
+    5,
+    "1 stk"
+   ],
+   [
+    5,
+    "2,0 m"
+   ],
+   [
+    5,
+    "24 W"
+   ],
+   [
+    5,
+    "Folie"
+   ],
+   [
+    5,
+    "FlexFoil B=40cm"
+   ],
+   [
+    5,
+    "1 stk"
+   ],
+   [
+    5,
+    "2,0 m"
+   ],
+   [
+    5,
+    "48 W"
+   ],
+   [
+    5,
+    "Folie"
+   ],
+   [
+    5,
+    "FlexFoil B=60cm"
+   ],
+   [
+    5,
+    "1 stk"
+   ],
+   [
+    5,
+    "2,0 m"
+   ],
+   [
+    5,
+    "72 W"
+   ],
+   [
+    1,
+    "Testprosjekt 232 · rev. 1"
+   ],
+   [
+    1,
+    "Side 1 av 5"
+   ],
+   [
+    2,
+    "Testprosjekt 232 · rev. 1"
+   ],
+   [
+    2,
+    "Side 2 av 5"
+   ],
+   [
+    3,
+    "Testprosjekt 232 · rev. 1"
+   ],
+   [
+    3,
+    "Side 3 av 5"
+   ],
+   [
+    4,
+    "Testprosjekt 232 · rev. 1"
+   ],
+   [
+    4,
+    "Side 4 av 5"
+   ],
+   [
+    5,
+    "Testprosjekt 232 · rev. 1"
+   ],
+   [
+    5,
+    "Side 5 av 5"
+   ]
+  ],
+  "eksempel": "Kontor",
+  "rom": [
+   {
+    "navn": "Stue",
+    "areal": 8.91,
+    "P": 540,
+    "areal60": 534.6,
+    "avvikPst": -1.0000000000000009,
+    "rNom": 97.96296296296296
+   },
+   {
+    "navn": "Kjøkken",
+    "areal": 5.093999999999999,
+    "P": 309.6,
+    "areal60": 305.64,
+    "avvikPst": -1.279069767441876,
+    "rNom": 170.86563307493537
+   },
+   {
+    "navn": "Kontor",
+    "areal": 4.71,
+    "P": 288,
+    "areal60": 282.6,
+    "avvikPst": -1.8749999999999933,
+    "rNom": 183.68055555555554
+   },
+   {
+    "navn": "Gang",
+    "areal": 2.34,
+    "P": 144,
+    "areal60": 140.39999999999998,
+    "avvikPst": -2.5000000000000133,
+    "rNom": 367.3611111111111
+   }
+  ],
+  "produkter": [
+   {
+    "navn": "FlexFoil B=20cm",
+    "width_mm": 190,
+    "netto_width_mm": 190,
+    "watt_per_lm": 12,
+    "w60": 11.4,
+    "avvikPst": -4.999999999999993
+   },
+   {
+    "navn": "FlexFoil B=40cm",
+    "width_mm": 390,
+    "netto_width_mm": 390,
+    "watt_per_lm": 24,
+    "w60": 23.4,
+    "avvikPst": -2.500000000000002
+   },
+   {
+    "navn": "FlexFoil B=50cm",
+    "width_mm": 490,
+    "netto_width_mm": 490,
+    "watt_per_lm": 30,
+    "w60": 29.4,
+    "avvikPst": -2.0000000000000018
+   },
+   {
+    "navn": "FlexFoil B=60cm",
+    "width_mm": 590,
+    "netto_width_mm": 590,
+    "watt_per_lm": 36,
+    "w60": 35.4,
+    "avvikPst": -1.6666666666666718
+   },
+   {
+    "navn": "FlexFoil B=80cm",
+    "width_mm": 790,
+    "netto_width_mm": 790,
+    "watt_per_lm": 48,
+    "w60": 47.4,
+    "avvikPst": -1.2500000000000067
+   },
+   {
+    "navn": "FlexFoil B=100cm",
+    "width_mm": 990,
+    "netto_width_mm": 990,
+    "watt_per_lm": 60,
+    "w60": 59.4,
+    "avvikPst": -1.0000000000000009
+   },
+   {
+    "navn": "FlexFoil B=120cm",
+    "width_mm": 1190,
+    "netto_width_mm": 1190,
+    "watt_per_lm": 72,
+    "w60": 71.4,
+    "avvikPst": -0.8333333333333304
+   },
+   {
+    "navn": "FlexFoil B=140cm",
+    "width_mm": 1390,
+    "netto_width_mm": 1390,
+    "watt_per_lm": 84,
+    "w60": 83.4,
+    "avvikPst": -0.7142857142857117
+   }
+  ]
+ }
+}
