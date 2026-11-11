@@ -1,6 +1,6 @@
 # 233 – Fryserom: ingen leverandørreferanser i appen, montasjeblokken ut av PDF-en
 
-11.11.2026 · `main` · commit `HASH233` · ikke pushet
+11.11.2026 · `main` · commit `4c19d59` · ikke pushet
 
 ## Hva som er endret
 
