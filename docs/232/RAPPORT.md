@@ -1,6 +1,6 @@
 # 232 – Varmefolie i PDF: motstandsmålingen på egen side, nominell motstand på romsiden, folieareal i tabellen
 
-11.11.2026 · `main` · commit `HASH232` · ikke pushet · ingen SQL
+11.11.2026 · `main` · commit `ab5cb10` · ikke pushet · ingen SQL
 
 ## Hva som er endret (bare PDF-en og forhåndsvisningen i utskriftsdialogen)
 
