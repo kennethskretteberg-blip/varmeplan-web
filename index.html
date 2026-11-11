@@ -46755,7 +46755,119 @@ function _offsetPolygon(pts, dist) {
   return result.length >= 3 ? result : [];
 }
 
-/** Draw margin zone (randsone) around all walls for a cable */
+// ══ 234 · OPPVARMET FELT FOR KABEL ════════════════════════════════════════════════════════
+// Tegningen viser det tallene bygger på: feltet er alt innenfor halv CC fra et kabelsegment
+// (strenger og U-svinger), klippet mot rommet, hindringer og forbudte soner — samme modell som
+// `_cableCoveredCm2` («Oppvarmet areal»). Før 234 var det lyseblå feltet bare romfyllet innenfor
+// randsonen (kantavstanden), så det sluttet ved de ytterste strengene.
+// Feltet tegnes som en strek med bredde = CC og runde ender langs kabelen (= halv CC ut til alle
+// sider). Resten av rommet får randsonens tone, så det lyse feltet ER det oppvarmede feltet.
+// Reserven er ikke med (ikke tilkoblet, regnes heller ikke). Brukerens soner (S.zones) røres ikke.
+// → null når rommet ikke har tegnet kabel. CC = første kabel med CC, som i `_computeRoomStats`.
+function _cableFieldInfo(room) {
+  if (!room || !room.points || room.points.length < 3) return null;
+  let ccCm = 0; const segs = [], cabs = [];
+  for (const c of _cablesForRoom(room.id)) {
+    if (c.reserve) continue;
+    if (!ccCm && c.spacing_cm) ccCm = c.spacing_cm;
+    const sg = _cableWorldSegments(c);
+    if (sg.length) cabs.push(c);
+    for (const s of sg) segs.push(s);
+  }
+  if (!(ccCm > 0) || !segs.length) return null;
+  const blockers = S.hindrings.filter(h => h.roomId === room.id && h.points && h.points.length >= 3)
+    .concat((S.zones || []).filter(z => z.roomId === room.id && z.type === 'forbidden' && z.points && z.points.length >= 3));
+  return { ccCm, segs, cabs, blockers };
+}
+// Tegner feltet (rest = false) eller rommet UTEN feltet (rest = true) i `g`, heldekkende i g.fillStyle.
+// P(x, y) → punkt i g, pxPerCm = målestokk. `ring` = innsatt polygon: da er «rommet» bare randsonen.
+function _cableFieldPaint(g, room, info, P, pxPerCm, rest, ring) {
+  const poly = pts => {
+    const a = P(pts[0].x, pts[0].y); g.moveTo(a.x, a.y);
+    for (let i = 1; i < pts.length; i++) { const q = P(pts[i].x, pts[i].y); g.lineTo(q.x, q.y); }
+    g.closePath();
+  };
+  g.save();
+  g.beginPath(); poly(room.points);
+  if (ring) poly(ring);
+  g.clip(ring ? 'evenodd' : 'nonzero');
+  g.setLineDash([]);
+  if (rest) { g.beginPath(); poly(room.points); g.fill(); }
+  g.globalCompositeOperation = rest ? 'destination-out' : 'source-over';
+  g.strokeStyle = rest ? '#000' : g.fillStyle;
+  g.lineWidth = info.ccCm * pxPerCm; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath();
+  for (const s of info.segs) { const a = P(s.x1, s.y1), b = P(s.x2, s.y2); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); }
+  g.stroke();
+  g.globalCompositeOperation = rest ? 'source-over' : 'destination-out';
+  for (const b of info.blockers) { g.beginPath(); poly(b.points); g.fill(); }
+  g.restore();
+}
+// Måler det TEGNEDE feltet (samme tegnekode som skjerm og PDF) på et eget lerret: areal i cm², og
+// antall heldekkede piksler som ligger utenfor rommet eller inni en hindring/forbudt sone (skal være 0).
+function _cableFieldMeasure(room, pxPerCm) {
+  const info = _cableFieldInfo(room);
+  if (!info) return null;
+  const k = pxPerCm || 4, pad = 20;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of room.points) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); }
+  const W = Math.ceil((maxX - minX + 2 * pad) * k), H = Math.ceil((maxY - minY + 2 * pad) * k);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  g.fillStyle = '#000';
+  _cableFieldPaint(g, room, info, (x, y) => ({ x: (x - minX + pad) * k, y: (y - minY + pad) * k }), k, false, null);
+  const d = g.getImageData(0, 0, W, H).data;
+  let sum = 0, ute = 0, sperret = 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const al = d[(y * W + x) * 4 + 3];
+    if (!al) continue;
+    sum += al / 255;
+    if (al < 255) continue;
+    const wx = (x + 0.5) / k + minX - pad, wy = (y + 0.5) / k + minY - pad;
+    if (!ptInPoly(wx, wy, room.points)) { ute++; continue; }
+    for (const b of info.blockers) if (ptInPoly(wx, wy, b.points)) { sperret++; break; }
+  }
+  return { areaCm2: sum / (k * k), ute, sperret, ccCm: info.ccCm, segs: info.segs.length };
+}
+// Ett lag for alle kabelrom i bildet: tonen legges på et eget lerret (heldekkende), feltet skjæres ut,
+// og laget legges på tegningen med randsonens gjennomsiktighet. Rom som også har folie/matte/plater
+// beholder den gamle randsonen (ringen langs veggene) — der er «ikke kabel» ikke det samme som «ikke
+// oppvarmet» — men feltet skjæres ut av ringen der det når inn i den.
+let _cableFieldCv = null;
+function _drawCableHeatedLayer() {
+  const jobs = [];
+  for (const room of S.rooms) {
+    if (!_roomIdOnActiveFloor(room.id) || _pdfRoomMuted(room.id)) continue;
+    const info = _cableFieldInfo(room);
+    if (!info) continue;
+    let ring = null;
+    const st = _computeRoomStats(room);
+    if (st.heatedM2 - st.cableAreaM2 > 1e-6) {
+      let m = 0;
+      for (const c of info.cabs) m = Math.max(m, _effectiveMarginCm(c.productId, room.id));
+      ring = m > 0 ? _offsetPolygon(room.points, m) : [];
+      if (ring.length < 3) continue;
+    }
+    jobs.push({ room, info, ring });
+  }
+  if (!jobs.length || !canvas.width || !canvas.height) return;   // skjult app: lerretet er 0 × 0, ingenting å tegne på
+  const cv = _cableFieldCv || (_cableFieldCv = document.createElement('canvas'));
+  if (cv.width !== canvas.width || cv.height !== canvas.height) { cv.width = canvas.width; cv.height = canvas.height; }
+  const g = cv.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
+  g.setTransform(_cvDpr, 0, 0, _cvDpr, 0, 0);
+  g.fillStyle = _lc('rgb(180, 160, 100)', 'rgb(200, 180, 120)');
+  const sc = S.view.zoom * BASE_SCALE;
+  for (const j of jobs) _cableFieldPaint(g, j.room, j.info, w2s, sc, true, j.ring);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = _lc(0.10, 0.08);
+  ctx.drawImage(cv, 0, 0);
+  ctx.restore();
+}
+
+/** Draw margin zone (randsone) around all walls for a cable — 234: bare den stiplede grensen;
+ *  tonen tegnes av _drawCableHeatedLayer (rommet uten det oppvarmede feltet). */
 function _drawCableMarginZone(cable, room) {
   const margin = _effectiveMarginCm(cable.productId, room.id);
   if (margin <= 0) return;
@@ -46766,23 +46878,7 @@ function _drawCableMarginZone(cable, room) {
   const inner = _offsetPolygon(pts, margin);
   if (inner.length < 3) return;
 
-  // Draw margin zone using even-odd fill (ring between room and inset polygon)
   ctx.save();
-  ctx.fillStyle = _lc('rgba(180, 160, 100, 0.10)', 'rgba(200, 180, 120, 0.08)');
-  ctx.beginPath();
-  // Outer path (room boundary)
-  const sp0 = w2s(pts[0].x, pts[0].y);
-  ctx.moveTo(sp0.x, sp0.y);
-  for (let i = 1; i < n; i++) { const sp = w2s(pts[i].x, pts[i].y); ctx.lineTo(sp.x, sp.y); }
-  ctx.closePath();
-  // Inner path (inset boundary, reversed winding)
-  const rev = [...inner].reverse();
-  const ip0 = w2s(rev[0].x, rev[0].y);
-  ctx.moveTo(ip0.x, ip0.y);
-  for (let i = 1; i < rev.length; i++) { const ip = w2s(rev[i].x, rev[i].y); ctx.lineTo(ip.x, ip.y); }
-  ctx.closePath();
-  ctx.fill('evenodd');
-
   // Dashed inner boundary line
   ctx.strokeStyle = _lc('rgba(180, 160, 100, 0.40)', 'rgba(200, 180, 120, 0.30)');
   ctx.setLineDash([4, 4]);
@@ -46934,6 +47030,7 @@ function _drawCableLabelOnly(cable, room) {
 
 function drawCables() {
   _cableLabelBounds = {}; _cableLabelGeom = {};   // rebuild per render (v2)
+  _drawCableHeatedLayer();   // 234: rommet uten det oppvarmede feltet får randsonens tone — under kablene
   for (const cable of S.cables) {
     if (!_roomIdOnActiveFloor(cable.roomId) || _pdfRoomMuted(cable.roomId)) continue;
     const room = S.rooms.find(r => r.id === cable.roomId);
@@ -96005,6 +96102,169 @@ async function _fryseromRegressionTest233() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_fryseromRegressionTest233: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return { ok: allOk, results };
+}
+
+// 234 — tre kabelrom for _cableFieldRegressionTest234 (bruker bare kode som fantes før 234, så de
+// samme rommene kan måles på en eldre versjon). A = Kenneths eksempel 11.11.2026 (270 × 150, 10 m,
+// CC 28,7, ni strenger, 20 cm til ytterste streng, buetoppen 25 cm fra endeveggen, reserve på),
+// B = L-rom med hindring og forbudt sone inntil kabelen, C = halv CC går forbi veggen (marg 5, CC 26).
+function _cableField234Fixture() {
+  const CAT = (PRODUCT_CATEGORIES.find(c => c.module_type === 'cable' && _catAvailableInModule(c, 'indoor')) || {}).id;
+  const CAB = { id: 998340, category_id: CAT, active: true, product_family: 'FELTTEST', name: 'FELTTEST 10T 100W 10m',
+    article_no: 'FT234', el_no: '1234567', watt_per_m: 10, cable_length_m: 10, total_effect_w: 100, voltage: 230,
+    min_spacing_mm: 50, max_spacing_mm: 500 };
+  HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(CAB);
+  S.mats = []; S.matPaths = []; S.strips = []; S.plates = []; S.aluboard = []; S.foilFree = []; S.stairs = [];
+  S.ui.activeFloorId = null; S.ui.activePartId = null; S.ui.selectedStairId = null;
+  S.project = { name: 'FELTTEST 234', parts: [], revision: 0, lastExportedAt: null, createdAt: Date.now() };
+  S.floors = [{ id: 998341, name: '1. etasje', order: 1 }];
+  const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+  const mk = (id, name, PTS, extra) => ({ id, name, floorId: 998341, partId: null, shape: 'poly', wallThicknessCm: 0,
+    points: PTS.map(q => ({ ...q })), walls: compWalls(PTS), dims: [], area: Math.abs(compArea(PTS)), roomType: 'bad', ...extra });
+  const A = 998342, B = 998343, C = 998344;
+  S.rooms = [
+    mk(A, 'A Eksempel', rect(0, 0, 270, 150), { wallMarginCm: 20, reserveCable: true }),
+    mk(B, 'B L-rom', [{ x: 400, y: 0 }, { x: 800, y: 0 }, { x: 800, y: 250 }, { x: 600, y: 250 }, { x: 600, y: 450 }, { x: 400, y: 450 }], {}),
+    mk(C, 'C Forbi veggen', rect(900, 0, 300, 250), {}),
+  ];
+  const hp = rect(580, 60, 80, 70), zp = rect(400, 372, 200, 78);
+  S.hindrings = [{ id: 998345, roomId: B, floorId: 998341, name: 'Sluk', points: hp, walls: compWalls(hp) }];
+  S.zones = [{ id: 998346, roomId: B, type: 'forbidden', purpose: 'annet', name: 'Forbudt', points: zp }];
+  const serp = (id, rid, cc, x0, n, y0, y1) => {
+    const runs = [];
+    for (let i = 0; i < n; i++) runs.push({ pos_cm: x0 + i * cc, segments: [{ start_cm: y0, end_cm: y1 }] });
+    return { id, roomId: rid, productId: CAB.id, direction: 'v', spacing_cm: cc, startCorner: 'tl',
+      totalLength_cm: Math.round(n * (y1 - y0) + (n - 1) * Math.PI * cc / 2), runs, connections: [] };
+  };
+  const rlA = (1000 - 8 * Math.PI * 28.7 / 2) / 9;
+  S.cables = [
+    serp(998347, A, 28.7, 20, 9, 39.35, 39.35 + rlA),
+    serp(998348, B, 20, 415, 9, 20, 360),
+    serp(998349, C, 26, 907, 12, 18, 232),
+  ];
+  _invalidateCableCache();
+  return { A, B, C };
+}
+
+// 234 — det tegnede oppvarmede feltet for kabel = halv CC ut fra kabelen (Kenneth 11.11.2026).
+// Låser: tegnet felt ≈ «Oppvarmet areal» (under 2 %), aldri utenfor rommet eller inni hindring/forbudt
+// sone, reserven ikke med, tallene som før 234 (FASIT målt på 233-koden), samme tegnekode på skjerm og
+// i PDF-bildet. Kjøres: await _cableFieldRegressionTest234().
+async function _cableFieldRegressionTest234() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const FASIT = {   // _computeRoomStats på 233-koden (4c19d59) for de samme tre rommene
+    A: { bruttoM2: 4.05, nettoM2: 4.05, cableAreaM2: 2.920263157894737, totalW: 100, cableWm2: 35, wm2Total: 25, wm2Heated: 34, cableLenM: 10, reserveCount: 1 },
+    B: { bruttoM2: 14, nettoM2: 11.879999999999999, cableAreaM2: 6.792871621621622, totalW: 331, cableWm2: 50, wm2Total: 24, wm2Heated: 49, cableLenM: 33.11, reserveCount: 0 },
+    C: { bruttoM2: 7.5, nettoM2: 7.5, cableAreaM2: 7.311212814645309, totalW: 302, cableWm2: 38, wm2Total: 40, wm2Heated: 41, cableLenM: 30.17, reserveCount: 0 },
+  };
+  const saved = {
+    rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats,
+    matPaths: S.matPaths, plates: S.plates, aluboard: S.aluboard, zones: S.zones, hindrings: S.hindrings,
+    stairs: S.stairs, floors: S.floors, project: S.project, counters: { ...S.counters },
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedStairId: S.ui.selectedStairId,
+    selectedRoomId: S.ui.selectedRoomId, showGrid: S.ui.showGrid, theme: S.ui.theme,
+    view: { ...S.view }, cw: canvas.width, ch: canvas.height, dpr: _cvDpr,
+    prods: HEATING_PRODUCTS.slice(), paint: _cableFieldPaint,
+    undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
+  };
+  try {
+    const ids = _cableField234Fixture();
+    const rom = k => S.rooms.find(r => r.id === ids[k]);
+    // ─── A — tallene er de samme som før 234 ───
+    for (const k of ['A', 'B', 'C']) {
+      const st = _computeRoomStats(rom(k)), f = FASIT[k];
+      const avvik = Object.keys(f).filter(n => Math.abs(st[n] - f[n]) > 1e-9);
+      check(k + ': tallene uendret (areal, effekt, flateeffekt, BTA, dekning)', JSON.stringify(f), avvik.length === 0, avvik.map(n => n + '=' + st[n]).join(', ') || 'like');
+      check(k + ': oppvarmet areal = kabelens areal', st.cableAreaM2, st.heatedM2 === st.cableAreaM2, st.heatedM2);
+    }
+    // ─── B — tegnet felt ≈ «Oppvarmet areal», aldri utenfor rommet eller inni en sperre ───
+    const maalt = {};
+    for (const k of ['A', 'B', 'C']) {
+      const m = _cableFieldMeasure(rom(k), 4), st = _computeRoomStats(rom(k));
+      maalt[k] = m;
+      const pst = (m.areaCm2 / 10000 / st.cableAreaM2 - 1) * 100;
+      // «Oppvarmet areal» regnes på et grovt rutenett (steg = halv CC, minst 5 cm) og bommer selv med
+      // inntil ca. 4 % (målt: B +3,8 % mot 1 cm-rutenett). Derfor to sammenligninger: mot tallet (2 %,
+      // B 5 % — avviket der er tallets, ikke tegningens) og mot samme modell på 1 cm rutenett (0,5 %).
+      const grense = k === 'B' ? 5 : 2;
+      check(k + ': tegnet felt innenfor ' + grense + ' % av «Oppvarmet areal»', st.cableAreaM2.toFixed(3) + ' m² ± ' + grense + ' %', Math.abs(pst) < grense, (m.areaCm2 / 10000).toFixed(3) + ' m² (' + pst.toFixed(2) + ' %)');
+      const info = _cableFieldInfo(rom(k)), h2 = (info.ccCm / 2) ** 2, rp = rom(k).points;
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, fin = 0;
+      for (const p of rp) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); }
+      for (let y = y0 + 0.5; y < y1; y++) for (let x = x0 + 0.5; x < x1; x++) {
+        if (!ptInPoly(x, y, rp) || info.blockers.some(b => ptInPoly(x, y, b.points))) continue;
+        for (const s of info.segs) if (_distSeg2(x, y, s) <= h2) { fin++; break; }
+      }
+      const pstFin = (m.areaCm2 / fin - 1) * 100;
+      check(k + ': tegnet felt = halv CC-modellen på 1 cm rutenett (0,5 %)', (fin / 10000).toFixed(3) + ' m²', Math.abs(pstFin) < 0.5, (m.areaCm2 / 10000).toFixed(3) + ' m² (' + pstFin.toFixed(2) + ' %)');
+      check(k + ': ingen del av feltet utenfor rommet', 0, m.ute === 0, m.ute);
+      check(k + ': ingen del av feltet inni hindring/forbudt sone', 0, m.sperret === 0, m.sperret);
+    }
+    // C: halv CC (13 cm) går forbi veggen (kabelen ligger 5–7 cm fra den) — feltet stopper ved veggen.
+    check('C: feltet fyller rommet til veggen, ikke forbi', '97–100 % av 7,5 m²', maalt.C.areaCm2 >= 0.97 * 75000 && maalt.C.areaCm2 <= 75000 + 1, (maalt.C.areaCm2 / 10000).toFixed(3));
+    // A: feltet er større enn boksen rundt strengene (230 × 110 = 2,53 m²) som var «feltet» før 234.
+    check('A: feltet går ut over boksen rundt de ytterste strengene', '> 2,53 m²', maalt.A.areaCm2 > 25300 * 1.1, (maalt.A.areaCm2 / 10000).toFixed(3));
+    // ─── C — skjermen: piksler i rom A (lyst tema, uten rutenett og etiketter) ───
+    const zonesFoer = JSON.stringify(S.zones);
+    const kall = [];
+    _cableFieldPaint = function (g, room, info, P, k, rest, ring) { kall.push({ id: room.id, k, rest, ring: ring ? ring.length : 0, segs: info.segs.length }); return saved.paint.apply(this, arguments); };
+    for (const c of S.cables) c.labelVisible = false;
+    S.ui.selectedRoomId = null; S.ui.showGrid = false; S.ui.theme = 'light';
+    canvas.width = 800; canvas.height = 600; _cvDpr = 1;
+    S.view.zoom = 2.5 / BASE_SCALE; S.view.panX = 135; S.view.panY = 75;
+    render();
+    const px = (x, y) => { const s = w2s(x, y); return Array.from(ctx.getImageData(Math.round(s.x), Math.round(s.y), 1, 1).data).join(','); };
+    const f1 = px(10, 60), f2 = px(38, 60), u1 = px(2, 60), u2 = px(135, 4);
+    check('skjerm A: 10 cm fra veggen (innenfor halv CC fra ytterste streng) har feltets farge', f2, f1 === f2, f1);
+    check('skjerm A: 2 cm fra veggen (utenfor halv CC) har randsonens farge', u2, u1 === u2 && u1 !== f1, u1);
+    const skjerm = kall.filter(q => q.rest);
+    check('skjerm: ett felt per kabelrom, hele rommet som grunn (ingen ring)', '3 rom, ring 0', skjerm.length === 3 && skjerm.every(q => q.ring === 0), JSON.stringify(skjerm));
+    check('skjerm: målestokken er lerretets', 2.5, skjerm.every(q => Math.abs(q.k - 2.5) < 1e-9), skjerm.map(q => q.k).join(','));
+    check('sonene er ikke endret av tegningen', zonesFoer, JSON.stringify(S.zones) === zonesFoer, JSON.stringify(S.zones));
+    // ─── D — reserven er ikke med ───
+    const hovedA = S.cables.find(c => c.roomId === ids.A && !c.reserve);
+    check('A: rommet har hovedkabel + reserve', 2, S.cables.filter(c => c.roomId === ids.A).length === 2, S.cables.filter(c => c.roomId === ids.A).length);
+    check('A: feltet bygger bare på hovedkabelens segmenter', _cableWorldSegments(hovedA).length, maalt.A.segs === _cableWorldSegments(hovedA).length, maalt.A.segs);
+    rom('A').reserveCable = false; _invalidateCableCache();
+    const utenRes = _cableFieldMeasure(rom('A'), 4);
+    check('A: samme felt med og uten reserve', maalt.A.areaCm2, S.cables.filter(c => c.roomId === ids.A).length === 1 && utenRes.areaCm2 === maalt.A.areaCm2, utenRes.areaCm2);
+    // ─── E — PDF-bildet bruker samme tegnekode ───
+    kall.length = 0;
+    _renderRoomToImage(rom('A'));
+    const pdfKall = kall.filter(q => q.rest && q.id === ids.A);
+    check('PDF: romsidens bilde tegner feltet for rommet', '≥ 1 kall, ring 0', pdfKall.length >= 1 && pdfKall.every(q => q.ring === 0 && q.k > 0), JSON.stringify(pdfKall.slice(0, 2)));
+    // ─── F — rom som også har annen varme beholder ringen langs veggene (feltet skåret ut) ───
+    const ekteStats = _computeRoomStats;
+    try {
+      _computeRoomStats = r => { const s = ekteStats(r); return { ...s, heatedM2: s.heatedM2 + 1 }; };
+      kall.length = 0; render();
+      check('blandet rom: randsonen (ring) som grunn', 'ring ≥ 3 punkter', kall.length === 3 && kall.every(q => q.rest && q.ring >= 3), JSON.stringify(kall));
+    } finally { _computeRoomStats = ekteStats; }
+    // ─── G — rom uten tegnet kabel har ikke noe felt ───
+    S.cables = S.cables.filter(c => c.roomId !== ids.C);
+    check('rom uten kabel: ikke noe felt', null, _cableFieldInfo(rom('C')) === null && _cableFieldMeasure(rom('C'), 4) === null, _cableFieldInfo(rom('C')));
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    _cableFieldPaint = saved.paint;
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree,
+      cables: saved.cables, mats: saved.mats, matPaths: saved.matPaths, plates: saved.plates,
+      aluboard: saved.aluboard, zones: saved.zones, hindrings: saved.hindrings, stairs: saved.stairs,
+      floors: saved.floors, project: saved.project });
+    Object.assign(S.counters, saved.counters);
+    Object.assign(S.view, saved.view);
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId; S.ui.selectedStairId = saved.selectedStairId;
+    S.ui.selectedRoomId = saved.selectedRoomId; S.ui.showGrid = saved.showGrid; S.ui.theme = saved.theme;
+    canvas.width = saved.cw; canvas.height = saved.ch; _cvDpr = saved.dpr;
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    if (saved.undoLen != null) _undoStack.length = saved.undoLen;
+    _invalidateCableCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_cableFieldRegressionTest234: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
   return { ok: allOk, results };
 }
 
