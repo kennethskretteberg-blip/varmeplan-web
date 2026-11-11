@@ -1,0 +1,71 @@
+{
+ "fix": {
+  "produkt": "InSnow 20T 1220W 61.1m",
+  "familie": "InSnow 20T",
+  "avvik": [
+   "Reservekabel er påkrevd for fryserom.",
+   "Bare InFloor 10T anbefales for fryserom. Rommet har InSnow 20T."
+  ],
+  "mont": [
+   "Hovedkabel og reservekabel parallelt, 2,5–5 cm mellomrom.",
+   "Egen kurs, vern og jordfeilvern per kabel.",
+   "Kabel minst 50 mm under isolasjonen i sand/grus — anbefalt innstøpt i betong.",
+   "Føler i rør, i kabeldybde, midt mellom to strenger."
+  ],
+  "blokk": "▼\nFRYSEROM\n⚠\nReservekabel er påkrevd for fryserom.\n⚠\nBare InFloor 10T anbefales for fryserom. Rommet har InSnow 20T.\n• Hovedkabel og reservekabel parallelt, 2,5–5 cm mellomrom.\n• Egen kurs, vern og jordfeilvern per kabel.\n• Kabel minst 50 mm under isolasjonen i sand/grus — anbefalt innstøpt i betong.\n• Føler i rør, i kabeldybde, midt mellom to strenger.",
+  "panel": {
+   "x": 7,
+   "y": 283,
+   "w": 178,
+   "h": 381
+  }
+ },
+ "pdf": {
+  "sider": 1,
+  "tekst": [
+   "Fryselager",
+   "fryserom · 48.0 m",
+   "2",
+   "1222 W",
+   "25 W/m",
+   "2",
+   "Areal, effekt og dekning",
+   "Brutto areal",
+   "Netto areal",
+   "Oppvarmet areal",
+   "Total effekt",
+   "48.00 m",
+   "2",
+   "48.00 m",
+   "2",
+   "24.48 m",
+   "2",
+   "1220 W",
+   "Flateeffekt",
+   "Effekt pr brutto",
+   "Dekning av brutto",
+   "Dekning av netto",
+   "50 W/m",
+   "2",
+   "25 W/m",
+   "2",
+   "51 %",
+   "51 %",
+   "Spesifikasjon",
+   "Type",
+   "Produkt",
+   "Antall",
+   "Lengde",
+   "Effekt",
+   "Kabel",
+   "InSnow 20T 1220W 61.1m",
+   "1 stk",
+   "61,1 m",
+   "1220 W",
+   "Senteravstand (CC): 40,0 cm",
+   "Advarsel: Flateeffekt 50 W/m² er 20 W/m² over taket på 30 W/m² (1 kabel, 1 220 W på 48,0 m²). Ca 490 W for mye — bruk færre eller kortere kabler, eller et rom på minst 80,0 m².",
+   "Testprosjekt 233 · rev. 1",
+   "Side 1 av 1"
+  ]
+ }
+}

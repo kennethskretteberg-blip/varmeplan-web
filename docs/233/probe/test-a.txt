@@ -1,0 +1,149 @@
+
+// 233 — fryserom (Kenneth 11.11.2026): ingen synlig tekst nevner leverandører, dokumenter eller
+// godkjenninger; fryseromsblokken er ute av PDF-en; sidepanelet viser «Fryserom», avvikene uten kilder
+// og de fire tekniske montasjelinjene. Tall og regler (c/c 40, 25 W/m², reserve 5 cm, InFloor 10T) er
+// urørt og låses fortsatt av _reserveCableRegressionTest. Kjøres: await _fryseromRegressionTest233().
+async function _fryseromRegressionTest233() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  // Ordene settes sammen av biter, så testen ikke finner seg selv i kildeskanningen (K).
+  const ORD = [['Thermo', 'pads'], ['BL', '-001'], ['DE', 'VI'], ['Nex', 'ans'], ['VGL', 'UB']].map(b => b.join(''));
+  const RE = new RegExp('(^|[^A-Za-z])(' + ORD.join('|') + ')(?![A-Za-z])');
+  const treff = s => { const m = RE.exec(String(s)); return m ? m[2] : null; };
+  const saved = {
+    rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats,
+    matPaths: S.matPaths, plates: S.plates, aluboard: S.aluboard, zones: S.zones, hindrings: S.hindrings,
+    stairs: S.stairs, floors: S.floors, project: S.project, counters: { ...S.counters },
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedStairId: S.ui.selectedStairId,
+    prods: HEATING_PRODUCTS.slice(),
+    autoSave: window._performAutoSave, toast: window._showToast, modal: window.showAccessoriesModal,
+    branding: window._pdfBranding, jsPDF: window.jspdf && window.jspdf.jsPDF,
+    undoLen: (typeof _undoStack !== 'undefined' && _undoStack) ? _undoStack.length : null,
+  };
+  const dlg0 = document.getElementById('export-dialog');
+  const dlgSaved = dlg0 ? dlg0.style.display : null;
+  try {
+    const _CABCAT = (PRODUCT_CATEGORIES.find(c => c.module_type === 'cable' && _catAvailableInModule(c, 'indoor')) || {}).id;
+    const CAB = { id: 998330, category_id: _CABCAT, active: true, product_family: 'FRYSETEST',
+      name: 'FRYSETEST 10T 1000W 100m', article_no: 'FT100', el_no: '1234567',
+      watt_per_m: 10, cable_length_m: 100, total_effect_w: 1000, voltage: 230, min_spacing_mm: 50, max_spacing_mm: 500 };
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(CAB);
+    const RID = 998331, PTS = [{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 800 }, { x: 0, y: 800 }];
+    S.mats = []; S.matPaths = []; S.strips = []; S.plates = []; S.aluboard = []; S.foilFree = [];
+    S.zones = []; S.hindrings = []; S.stairs = [];
+    S.ui.activeFloorId = null; S.ui.activePartId = null; S.ui.selectedStairId = null;
+    S.project = { name: 'FRYSETEST 233', parts: [], revision: 0, lastExportedAt: null, createdAt: Date.now() };
+    S.floors = [{ id: 998332, name: '1. etasje', order: 1 }];
+    S.rooms = [{ id: RID, name: 'Fryselager', floorId: 998332, partId: null, shape: 'rect', wallThicknessCm: 0,
+      points: PTS.map(p => ({ ...p })), walls: compWalls(PTS), dims: [], area: Math.abs(compArea(PTS)),
+      roomType: 'fryserom', targetWm2: 25, reserveCable: false }];
+    const runs = [];
+    for (let i = 0; i < 13; i++) runs.push({ pos_cm: 40 + i * 40, segments: [{ start_cm: 30, end_cm: 740 }] });
+    S.cables = [{ id: 998333, roomId: RID, productId: CAB.id, direction: 'v', spacing_cm: 40, totalLength_cm: 10000, runs }];
+    _invalidateCableCache();
+    const room = S.rooms[0];
+
+    // ─── A — avvikene: samme regler, ingen kilder ───
+    const av = _fryseromAvvik(RID);
+    const avT = id => (av.find(a => a.id === id) || {}).tekst;
+    check('A: to avvik (reserve av + annet produkt)', 'reserve,produkt', av.map(a => a.id).join(',') === 'reserve,produkt', av.map(a => a.id).join(','));
+    check('A: reserveteksten', 'Reservekabel er påkrevd for fryserom.', avT('reserve') === 'Reservekabel er påkrevd for fryserom.', avT('reserve'));
+    check('A: produktteksten', 'Bare InFloor 10T anbefales for fryserom. Rommet har FRYSETEST.',
+      avT('produkt') === 'Bare InFloor 10T anbefales for fryserom. Rommet har FRYSETEST.', avT('produkt'));
+    check('A: avvikene har ingen parentes med kilde', 'ingen «(»', !av.some(a => /\(/.test(a.tekst)), av.map(a => a.tekst).join(' | '));
+
+    // ─── B — montasjelinjene: de fire tekniske ───
+    const mont = _fryseromMontasjeLinjer();
+    check('B: fire montasjelinjer', 4, mont.length === 4, mont.length);
+    check('B: 2,5–5 cm mellomrom', true, /2,5–5 cm mellomrom/.test(mont[0] || ''), mont[0]);
+    check('B: egen kurs, vern og jordfeilvern', true, /kurs, vern og jordfeilvern/.test(mont[1] || ''), mont[1]);
+    check('B: minst 50 mm under isolasjonen', true, /minst 50 mm under isolasjonen/.test(mont[2] || ''), mont[2]);
+    check('B: føler i rør', true, /Føler i rør/.test(mont[3] || ''), mont[3]);
+    check('B: ingen «Godkjent løsning» og ingen ansvarslinje', 'ingen treff',
+      !/godkjent|ansvar|prosjekterende/i.test(mont.join(' ')), (mont.join(' ').match(/godkjent|ansvar|prosjekterende/ig) || ['(ingen)']).join(','));
+
+    // ─── C — sidepanelet ───
+    const boks = document.createElement('div'); boks.innerHTML = _fryseromNotesHtml(RID);
+    const hdr = boks.querySelector('.sb-detail-section-hdr');
+    const hdrT = hdr ? hdr.textContent.replace('▼', '').trim() : null;
+    const panelT = boks.textContent;
+    check('C: overskriften er «Fryserom»', 'Fryserom', hdrT === 'Fryserom', hdrT);
+    check('C: panelet viser begge avvikene', true, av.every(a => panelT.includes(a.tekst)), av.filter(a => !panelT.includes(a.tekst)).length + ' mangler');
+    check('C: panelet viser de fire montasjelinjene', true, mont.every(l => panelT.includes('• ' + l)), mont.filter(l => !panelT.includes('• ' + l)).length + ' mangler');
+    check('C: panelet har akkurat fire kulepunkter', 4, (panelT.match(/• /g) || []).length === 4, (panelT.match(/• /g) || []).length);
+    const synlig = [panelT, _reserveCheckboxHtml(RID), av.map(a => a.tekst).join(' '), mont.join(' ')];
+    check('C: ingen kildeord i panel, reservevalg, avvik eller montasje', 'ingen treff', !synlig.some(treff), synlig.map(treff).filter(Boolean).join(',') || '(ingen)');
+    room.reserveCable = true; CAB.product_family = FRYSEROM.godkjentFamilie; _invalidateCableCache();
+    check('C: riktig produkt + reserve på gir ingen avvik, men fortsatt hjelpelinjene', '0 avvik, 4 linjer',
+      _fryseromAvvik(RID).length === 0 && (_fryseromNotesHtml(RID).match(/• /g) || []).length === 4,
+      _fryseromAvvik(RID).length + ' avvik, ' + (_fryseromNotesHtml(RID).match(/• /g) || []).length + ' linjer');
+    room.reserveCable = false; CAB.product_family = 'FRYSETEST'; _invalidateCableCache();
+    check('C: tallene er urørt (InFloor 10T, c/c 40, reserve 5 cm)', 'InFloor 10T/40/5',
+      FRYSEROM.godkjentFamilie === 'InFloor 10T' && FRYSEROM.ccStandardCm === 40 && FRYSEROM.reserveOffsetCm === 5 && RESERVE_OFFSET_CM === 5,
+      FRYSEROM.godkjentFamilie + '/' + FRYSEROM.ccStandardCm + '/' + FRYSEROM.reserveOffsetCm);
+
+    // ─── P — PDF-en: ingen fryseromsblokk ───
+    window._performAutoSave = () => Promise.resolve(); window._showToast = () => {};
+    window.showAccessoriesModal = () => Promise.resolve({ items: [] }); window._pdfBranding = () => Promise.resolve(null);
+    const Ekte = saved.jsPDF; let sider = null; const tekst = [];
+    window.jspdf.jsPDF = function (...a) {
+      const d = new Ekte(...a); const t0 = d.text.bind(d);
+      d.text = function (txt, ...r) { tekst.push(Array.isArray(txt) ? txt.join(' ') : String(txt)); return t0(txt, ...r); };
+      d.save = function () { sider = d.internal.getNumberOfPages(); return d; };
+      return d;
+    };
+    await exportPDF({ cover: false, summary: false, floorplan: false, rooms: [RID], stairs: [], roomTable: false, stairTable: false,
+      materialList: false, resistance: false, cableTable: false, pricing: false, discount: 0, showDGDB: false, docs: false, signature: false, freeText: '' });
+    window.jspdf.jsPDF = Ekte;
+    check('P: PDF-en ble laget, én romside', 1, sider === 1, sider);
+    check('P: romsiden er der (tittel + Spesifikasjon)', true, tekst.includes('Fryselager') && tekst.includes('Spesifikasjon'), tekst.slice(0, 3).join(' | '));
+    const blokk = tekst.filter(t => /^Fryserom|godkjent|Ansvar for design|prosjekterende|påkrevd for fryserom|anbefales for fryserom|jordfeilvern|Føler i rør|under isolasjonen|^• |^! /i.test(t));
+    check('P: ingen fryseromsblokk (tittel, avvik eller montasjelinjer)', 'ingen linjer', blokk.length === 0, blokk.join(' | ') || '(ingen)');
+    check('P: ingen kildeord i PDF-teksten', 'ingen treff', !tekst.some(treff), tekst.map(treff).filter(Boolean).join(',') || '(ingen)');
+    const bud = _pdfRoomPageBudget(room);
+    check('P: sidebudsjettet holder ikke av plass til blokken', 'ingen frys-felt', !Object.keys(bud).some(k => /^frys/.test(k)), Object.keys(bud).filter(k => /^frys/.test(k)).join(',') || '(ingen)');
+    const hFrys = _pdfRoomImgLayout(room).availH; room.roomType = 'bathroom';
+    const hBad = _pdfRoomImgLayout(room).availH; room.roomType = 'fryserom';
+    check('P: tegningen får samme plass som i et vanlig rom', +hBad.toFixed(2), Math.abs(hFrys - hBad) < 0.01, +hFrys.toFixed(2));
+
+    // ─── K — kildeskanning: ingen av ordene i noen streng utenfor kommentarer og tester ───
+    // Dekker alt som kan bli synlig (sidepanel, PDF, Excel, presentasjonslenke, e-post): står ordet ikke i
+    // en streng i fila, kan det ikke vises. Kommentarer og regresjonstester er interne og kan nevne kildene.
+    let kilde = null;
+    try { kilde = await (await fetch(location.href.split('#')[0], { cache: 'no-store' })).text(); } catch (e) {}
+    if (!kilde || kilde.indexOf('_fryseromRegressionTest233') < 0) kilde = [...document.scripts].map(s => s.textContent).join('\n');
+    const funn = []; let iTest = false, linjer = 0;
+    for (const l of kilde.split('\n')) {
+      linjer++;
+      if (/^(async )?function _[A-Za-z0-9]*RegressionTest[0-9]*\b/.test(l)) iTest = true;
+      if (iTest) { if (l === '}') iTest = false; continue; }
+      const t = l.trim();
+      if (/^(\/\/|\/\*|\*|<!--)/.test(t)) continue;
+      const i = t.search(/(^|[^:'"`\\])\/\//);
+      const kode = i >= 0 ? t.slice(0, i + 1) : t;
+      if (treff(kode)) funn.push(linjer + ': ' + kode.slice(0, 90));
+    }
+    check('K: kilden ble lest', '> 100 000 linjer', linjer > 100000, linjer);
+    check('K: ingen kildeord i kode utenfor kommentarer og tester', 'ingen linjer', funn.length === 0, funn.slice(0, 5).join(' ‖ ') || '(ingen)');
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree,
+      cables: saved.cables, mats: saved.mats, matPaths: saved.matPaths, plates: saved.plates,
+      aluboard: saved.aluboard, zones: saved.zones, hindrings: saved.hindrings, stairs: saved.stairs,
+      floors: saved.floors, project: saved.project });
+    Object.assign(S.counters, saved.counters);
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId; S.ui.selectedStairId = saved.selectedStairId;
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    window._performAutoSave = saved.autoSave; window._showToast = saved.toast;
+    window.showAccessoriesModal = saved.modal; window._pdfBranding = saved.branding;
+    if (window.jspdf) window.jspdf.jsPDF = saved.jsPDF;
+    if (saved.undoLen != null) _undoStack.length = saved.undoLen;
+    const dlg = document.getElementById('export-dialog'); if (dlg) dlg.style.display = dlgSaved == null ? 'none' : dlgSaved;
+    _invalidateCableCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_fryseromRegressionTest233: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return { ok: allOk, results };
+}
