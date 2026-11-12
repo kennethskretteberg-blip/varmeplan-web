@@ -1,6 +1,6 @@
 # 234 – Kabel: det tegnede oppvarmede feltet går halv CC ut fra kabelen
 
-Commit: `a56a07b` på `main`, ikke pushet.
+Commit: `HASH` på `main`, ikke pushet.
 
 ## Hva det lyseblå feltet var
 Ikke en sone og ikke kabelens boks. Det var **romfyllet** (rommets vanlige lyseblå farge) som sto igjen
