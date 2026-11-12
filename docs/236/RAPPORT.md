@@ -1,6 +1,6 @@
 # 236 – Fryserom: samme oppførsel uansett hvor romtypen settes, og målsetting av kabel som virker
 
-12.11.2026 · `main` · commit `HASH236` · ikke pushet
+12.11.2026 · `main` · commit `19632ae` · ikke pushet
 
 ## Hva som faktisk var feil
 
