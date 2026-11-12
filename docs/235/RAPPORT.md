@@ -9,7 +9,7 @@
    - `de1ee08` Revert «234: kabel — det tegnede oppvarmede feltet …»
 
    Treet var etter dette identisk med 233 (`git diff --stat faa2269 HEAD` tom). `docs/234/` forsvant med reverten og ligger i historikken (`a56a07b`).
-2. **Markeringen er fjernet** (`HASH`): `_drawCableMarginZone` (beige ring i kantavstanden + stiplet linje i grensen) er slettet, og kallet i `drawCables` er borte. Ingenting er satt inn i stedet. Skjerm og PDF bruker samme `drawCables`, så begge er rene. `_offsetPolygon` står – den brukes av leggemotorene.
+2. **Markeringen er fjernet** (`142cd6f`): `_drawCableMarginZone` (beige ring i kantavstanden + stiplet linje i grensen) er slettet, og kallet i `drawCables` er borte. Ingenting er satt inn i stedet. Skjerm og PDF bruker samme `drawCables`, så begge er rene. `_offsetPolygon` står – den brukes av leggemotorene.
 3. Folie og matte hadde ingen slik markering (sjekket: ringfargen og funksjonen fantes bare for kabel).
 
 ## Ikke rørt

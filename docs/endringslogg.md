@@ -4,7 +4,7 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
-## 235 — Kabel: markeringen langs veggene er fjernet, 234 angret (12.11.2026, `HASH`, `main`, ikke pushet)
+## 235 — Kabel: markeringen langs veggene er fjernet, 234 angret (12.11.2026, `142cd6f`, `main`, ikke pushet)
 
 Kenneth 12.11.2026: markeringen langs veggene i kabelrom skal bort helt – målsettingen holder til kontroll; 234 var en misforståelse. **Angret:** 234 med `git revert` (`e9ec967`, `de1ee08`), uten konflikt; `docs/234/` ligger i historikken. **Fjernet:** `_drawCableMarginZone` (beige ring i kantavstanden + stiplet linje) og kallet i `drawCables`; ingenting i stedet, likt på skjerm og i PDF. **Ikke endret:** `_effectiveMarginCm`, leggereglene, målkjeden, tall, reserve, korridor, folie/matte. **Test:** tall (`_computeRoomStats`) og alle strenger bit-like før/etter for tre rom; ny `_cableNoWallMarkRegressionTest235` 19/19 (fasit målt på 233-koden); ingen eksisterende test endret; suiten 101 tester, de 100 gamle som 233, samme sju røde uten innlogging. **Funnet, ikke rettet:** målkjeden tar med reservens strenger og får overlappende korte ledd i PDF-en; «Oppvarmet areal» kan bomme inntil ca. 4 % (fra 234). Rapport: `docs/235/RAPPORT.md`.
 
