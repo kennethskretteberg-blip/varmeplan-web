@@ -46755,47 +46755,9 @@ function _offsetPolygon(pts, dist) {
   return result.length >= 3 ? result : [];
 }
 
-/** Draw margin zone (randsone) around all walls for a cable */
-function _drawCableMarginZone(cable, room) {
-  const margin = _effectiveMarginCm(cable.productId, room.id);
-  if (margin <= 0) return;
-  const pts = room.points;
-  if (!pts || pts.length < 3) return;
-  const n = pts.length;
-
-  const inner = _offsetPolygon(pts, margin);
-  if (inner.length < 3) return;
-
-  // Draw margin zone using even-odd fill (ring between room and inset polygon)
-  ctx.save();
-  ctx.fillStyle = _lc('rgba(180, 160, 100, 0.10)', 'rgba(200, 180, 120, 0.08)');
-  ctx.beginPath();
-  // Outer path (room boundary)
-  const sp0 = w2s(pts[0].x, pts[0].y);
-  ctx.moveTo(sp0.x, sp0.y);
-  for (let i = 1; i < n; i++) { const sp = w2s(pts[i].x, pts[i].y); ctx.lineTo(sp.x, sp.y); }
-  ctx.closePath();
-  // Inner path (inset boundary, reversed winding)
-  const rev = [...inner].reverse();
-  const ip0 = w2s(rev[0].x, rev[0].y);
-  ctx.moveTo(ip0.x, ip0.y);
-  for (let i = 1; i < rev.length; i++) { const ip = w2s(rev[i].x, rev[i].y); ctx.lineTo(ip.x, ip.y); }
-  ctx.closePath();
-  ctx.fill('evenodd');
-
-  // Dashed inner boundary line
-  ctx.strokeStyle = _lc('rgba(180, 160, 100, 0.40)', 'rgba(200, 180, 120, 0.30)');
-  ctx.setLineDash([4, 4]);
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  const dp0 = w2s(inner[0].x, inner[0].y);
-  ctx.moveTo(dp0.x, dp0.y);
-  for (let i = 1; i < inner.length; i++) { const dp = w2s(inner[i].x, inner[i].y); ctx.lineTo(dp.x, dp.y); }
-  ctx.closePath();
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.restore();
-}
+// 235: markeringen langs veggene i kabelrom (beige ring + stiplet linje i kantavstanden,
+// _drawCableMarginZone) er fjernet etter Kenneths beslutning 12.11.2026. Kantavstanden kontrolleres
+// med målsettingen (_drawCableDimChainForRoom og egne mål); leggereglene (_effectiveMarginCm) er urørt.
 
 // Per-cable colour palette for INDOOR multi-cable groups (each cable = one circuit/
 // thermostat). Single cables keep the classic orange (see _cableStroke). Mirrors the
@@ -46945,9 +46907,8 @@ function drawCables() {
     const isSel = S.ui.selectedCableId === cable.id;
     const isHov = !isSel && _hoveredCableId === cable.id;
 
-    // 025: reserven er ikke tilkoblet — ingen randsone (den «eier» ikke flaten), og den tegnes
-    // stiplet og nedtonet så den aldri forveksles med hovedkabelen.
-    if (!cable.reserve) _drawCableMarginZone(cable, room);
+    // 025: reserven er ikke tilkoblet — den tegnes stiplet og nedtonet så den aldri forveksles med
+    // hovedkabelen. (235: ingen markering langs veggene for noen kabel.)
 
     // Draw corridor for multi-cable lead-run (zone 1 only)
     if (cable.zoneBounds?.corridor) {
@@ -96005,6 +95966,149 @@ async function _fryseromRegressionTest233() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_fryseromRegressionTest233: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return { ok: allOk, results };
+}
+
+// 235 — kabel (Kenneth 12.11.2026): INGEN markering langs veggene i kabelrom. Den beige ringen i
+// kantavstanden og den stiplede linja i grensen (_drawCableMarginZone) er fjernet, og 234-laget
+// (oppvarmet felt med halv CC) er angret. Kontrollen skjer med målsettingen. Testen låser at ingenting
+// tegnes i kantavstanden, at målkjeden fortsatt viser vegg → kabel, og at tall og plassering er
+// bit-like med tilstanden etter 233 (fasit målt på 233-koden). Kjøres: await _cableNoWallMarkRegressionTest235().
+function _cable235Fixture() {
+  const _CABCAT = (PRODUCT_CATEGORIES.find(c => c.module_type === 'cable' && _catAvailableInModule(c, 'indoor')) || {}).id;
+  const mkP = (id, len) => ({ id, category_id: _CABCAT, active: true, product_family: 'KANTTEST',
+    name: 'KANTTEST 10T ' + len * 10 + 'W ' + len + 'm', article_no: 'KT' + len, el_no: '1234567',
+    watt_per_m: 10, cable_length_m: len, total_effect_w: len * 10, voltage: 230, min_spacing_mm: 50, max_spacing_mm: 500 });
+  const P10 = mkP(998350, 10), P50 = mkP(998351, 50);
+  HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(P10, P50);
+  const A = 998352, B = 998353, FID = 998354;
+  const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+  const mk = (id, name, PTS, extra) => ({ id, name, floorId: FID, partId: null, shape: 'poly', wallThicknessCm: 0,
+    points: PTS.map(q => ({ ...q })), walls: compWalls(PTS), dims: [], area: Math.abs(compArea(PTS)), roomType: 'bad', ...extra });
+  S.mats = []; S.matPaths = []; S.strips = []; S.plates = []; S.aluboard = []; S.foilFree = [];
+  S.zones = []; S.stairs = [];
+  S.ui.activeFloorId = null; S.ui.activePartId = null; S.ui.selectedStairId = null;
+  S.project = { name: 'KANTTEST 235', parts: [], revision: 0, lastExportedAt: null, createdAt: 0 };
+  S.floors = [{ id: FID, name: '1. etasje', order: 1 }];
+  // A = Kenneths eksempel: 270 × 150 cm, 100 W / 10 m, CC 28,7, 20 cm fra vegg. B = L-rom med hindring, lagt av motoren.
+  S.rooms = [
+    mk(A, 'A Eksempel', rect(0, 0, 270, 150), { wallMarginCm: 20, cableDimSnap: true }),
+    mk(B, 'B L-rom', [{ x: 400, y: 0 }, { x: 800, y: 0 }, { x: 800, y: 250 }, { x: 600, y: 250 }, { x: 600, y: 450 }, { x: 400, y: 450 }], {}),
+  ];
+  const hp = rect(650, 60, 90, 70);
+  S.hindrings = [{ id: 998355, roomId: B, floorId: FID, name: 'Sluk', points: hp, walls: compWalls(hp) }];
+  const cc = 28.7, n = 9, L = 1000, rl = (L - (n - 1) * Math.PI * cc / 2) / n, y0 = 25 + cc / 2;
+  const runs = []; for (let i = 0; i < n; i++) runs.push({ pos_cm: 20 + i * cc, segments: [{ start_cm: y0, end_cm: y0 + rl }] });
+  S.cables = [{ id: 998356, roomId: A, productId: P10.id, direction: 'v', spacing_cm: cc, startCorner: 'tl', totalLength_cm: L, runs, connections: [] }];
+  const g = generateCableLayoutLengthDriven(B, P50.id, 'v', 'tl');
+  if (g && g.runs && g.runs.length) S.cables.push({ id: 998357, roomId: B, productId: P50.id, direction: 'v', spacing_cm: g.spacing_cm,
+    startCorner: 'tl', totalLength_cm: g.totalLength_cm, runs: g.runs, connections: [] });
+  _invalidateCableCache();
+  // Signaturen er alt som skal være bit-likt: tallene per rom, kantavstanden og kabelens plassering.
+  const KEYS = ['bruttoM2', 'nettoM2', 'cableAreaM2', 'heatedM2', 'uncoveredM2', 'totalW', 'wm2Total', 'wm2Heated', 'cableWm2', 'cableW', 'cableLenM', 'cableCcCm'];
+  const sig = {};
+  for (const [k, id, pid] of [['A', A, P10.id], ['B', B, P50.id]]) {
+    const st = _computeRoomStats(S.rooms.find(r => r.id === id)), c = S.cables.find(q => q.roomId === id);
+    sig[k] = { tall: KEYS.map(q => q + '=' + st[q]).join(';'), margin: _effectiveMarginCm(pid, id),
+      kabel: c ? [c.runs.length, c.spacing_cm, c.totalLength_cm, c.runs.map(r => r.pos_cm + ':' + r.segments.map(s => s.start_cm + '-' + s.end_cm).join(',')).join(' ')].join('|') : null };
+  }
+  return { A, B, P10, P50, sig };
+}
+async function _cableNoWallMarkRegressionTest235() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  // Fasit målt på koden etter 233 (faa2269) med samme fixture — se docs/235/RAPPORT.md.
+  const FASIT = {
+    A: { margin: 20,
+      tall: 'bruttoM2=4.05;nettoM2=4.05;cableAreaM2=2.920263157894737;heatedM2=2.920263157894737;uncoveredM2=1.1297368421052627;totalW=100;wm2Total=25;wm2Heated=34;cableWm2=35;cableW=100;cableLenM=10;cableCcCm=28.7',
+      kabel: '9|28.7|1000|' + [20, 48.7, 77.4, 106.1, 134.8, 163.5, 192.2, 220.9, 249.6].map(p => p + ':39.35-110.3883514853213').join(' ') },
+    B: { margin: 5,
+      tall: 'bruttoM2=14;nettoM2=13.37;cableAreaM2=8.03807615230461;heatedM2=8.03807615230461;uncoveredM2=5.331923847695389;totalW=500;wm2Total=36;wm2Heated=62;cableWm2=61;cableW=500;cableLenM=49.998981502848075;cableCcCm=16.33956631747159',
+      kabel: '12|16.33956631747159|4999.898150284807|' + [420.2647705078125, 436.60433682528407, 452.9439031427557, 469.28346946022725, 485.6230357776989, 501.96260209517044,
+        518.302168412642, 534.6417347301136, 550.9813010475852, 567.3208673650568, 583.6604336825284, 600].map(p => p + ':28.434553666548297-421.5654463334517').join(' ') },
+  };
+  const saved = {
+    rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats,
+    matPaths: S.matPaths, plates: S.plates, aluboard: S.aluboard, zones: S.zones, hindrings: S.hindrings,
+    stairs: S.stairs, floors: S.floors, project: S.project, counters: { ...S.counters },
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedStairId: S.ui.selectedStairId,
+    theme: S.ui.theme, view: { ...S.view }, prods: HEATING_PRODUCTS.slice(),
+  };
+  const SPION = ['fill', 'stroke', 'moveTo', 'lineTo', 'fillText'];
+  try {
+    const fx = _cable235Fixture();
+    const roomA = S.rooms.find(r => r.id === fx.A);
+
+    // ─── F — funksjonene er borte ───
+    check('F: ringfunksjonen finnes ikke', 'undefined', typeof _drawCableMarginZone === 'undefined', typeof _drawCableMarginZone);
+    check('F: 234-laget finnes ikke', 'undefined', typeof _drawCableHeatedLayer === 'undefined' && typeof _cableFieldPaint === 'undefined',
+      typeof _drawCableHeatedLayer + '/' + typeof _cableFieldPaint);
+
+    // ─── T — tegningen: ingenting i kantavstanden, i lyst og mørkt tema ───
+    S.view.zoom = 2; S.view.panX = 40; S.view.panY = 40;
+    const m = fx.sig.A.margin;
+    const hj = [[m, m], [270 - m, m], [270 - m, 150 - m], [m, 150 - m]].map(q => w2s(q[0], q[1]));
+    const k0 = w2s(20, 25 + 28.7 / 2);
+    check('T: målestokken skiller hjørnet i kantavstanden fra kabelen', '> 5 px', Math.hypot(hj[0].x - k0.x, hj[0].y - k0.y) > 5, +Math.hypot(hj[0].x - k0.x, hj[0].y - k0.y).toFixed(1));
+    const RING = new RegExp('180, ?160, ?100|200, ?180, ?120');
+    const logg = { evenodd: 0, farge: [], hjorne: 0, strek: 0 };
+    const naer = (x, y) => hj.some(q => Math.hypot(q.x - x, q.y - y) < 0.75);
+    const o = {}; for (const k of SPION) o[k] = ctx[k];
+    ctx.fill = function (...a) { if (a.indexOf('evenodd') >= 0) logg.evenodd++; if (RING.test(String(ctx.fillStyle))) logg.farge.push('fyll ' + ctx.fillStyle); return o.fill.apply(ctx, a); };
+    ctx.stroke = function (...a) { logg.strek++; if (RING.test(String(ctx.strokeStyle))) logg.farge.push('strek ' + ctx.strokeStyle); return o.stroke.apply(ctx, a); };
+    ctx.moveTo = function (x, y) { if (naer(x, y)) logg.hjorne++; return o.moveTo.call(ctx, x, y); };
+    ctx.lineTo = function (x, y) { if (naer(x, y)) logg.hjorne++; return o.lineTo.call(ctx, x, y); };
+    for (const th of ['light', 'dark']) { S.ui.theme = th; drawCables(); }
+    S.ui.theme = 'light';
+    check('T: kablene ble tegnet (begge rom, to temaer)', '> 0 streker', logg.strek > 0, logg.strek);
+    check('T: ingen linje gjennom hjørnene i kantavstanden', 0, logg.hjorne === 0, logg.hjorne);
+    check('T: ingen fyll eller strek i ringens farge', 'ingen', logg.farge.length === 0, logg.farge.slice(0, 4).join(' | ') || '(ingen)');
+    check('T: ingen ring-fyll (evenodd)', 0, logg.evenodd === 0, logg.evenodd);
+
+    // ─── M — målsettingen står: vegg → kabel kan fortsatt vises ───
+    const lay = _cableDimChainLayout(roomA);
+    const lengder = arr => (arr || []).map(c => c.segs.map(s => +(s.to - s.from).toFixed(2)).join(',')).join(' / ');
+    check('M: tverrkjeden: vegg → første streng 20, CC 28,7 og siste streng → vegg 20,4', '20,28.7,28.7,20.4', !!lay && lengder(lay.across) === '20,28.7,28.7,20.4', lay ? lengder(lay.across) : '(ingen kjede)');
+    check('M: langskjeden: vegg → kabelens ytterkant 25', '25,99.74,25.26', !!lay && lengder(lay.along) === '25,99.74,25.26', lay ? lengder(lay.along) : '(ingen kjede)');
+    const tekst = [];
+    ctx.fillText = function (t, ...a) { tekst.push(String(t)); return o.fillText.call(ctx, t, ...a); };
+    _drawCableDimChainForRoom(roomA);
+    check('M: målkjeden tegner «20 cm» (vegg → kabel) og «28.7 cm» (CC)', 'begge', tekst.indexOf('20 cm') >= 0 && tekst.indexOf('28.7 cm') >= 0, tekst.join(' · '));
+
+    // ─── N/P — tall og plassering bit-like med etter 233 ───
+    for (const k of ['A', 'B']) {
+      const f = (FASIT || {})[k] || {}, g = fx.sig[k];
+      check('N: ' + k + ' – areal, effekt og dekning som etter 233', f.tall, g.tall === f.tall, g.tall);
+      check('P: ' + k + ' – kantavstanden (_effectiveMarginCm) som etter 233', f.margin, g.margin === f.margin, g.margin);
+      check('P: ' + k + ' – kabelens strenger ligger som etter 233', f.kabel, g.kabel === f.kabel, g.kabel);
+    }
+    const minVegg = Math.min(...S.cables.filter(c => c.roomId === fx.A).flatMap(c => c.runs.map(r => Math.min(r.pos_cm, 270 - r.pos_cm))));
+    check('P: A – nærmeste streng ligger 20 cm fra veggen', 20, Math.abs(minVegg - 20) < 1e-9, minVegg);
+
+    // ─── K — kilden: ingen kall til ringen eller 234-laget ───
+    let kilde = null;
+    try { kilde = await (await fetch(location.href.split('#')[0], { cache: 'no-store' })).text(); } catch (e) {}
+    if (!kilde || kilde.indexOf('_cableNoWallMarkRegressionTest235') < 0) kilde = [...document.scripts].map(s => s.textContent).join('\n');
+    const antall = biter => kilde.split(biter.join('')).length - 1;
+    check('K: ingen kall til ringfunksjonen', 0, antall(['_drawCable', 'MarginZone(']) === 0, antall(['_drawCable', 'MarginZone(']));
+    check('K: ingen kall til 234-laget', 0, antall(['_drawCable', 'HeatedLayer(']) + antall(['_cableField', 'Paint(']) === 0, antall(['_drawCable', 'HeatedLayer(']) + antall(['_cableField', 'Paint(']));
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    for (const k of SPION) delete ctx[k];
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree,
+      cables: saved.cables, mats: saved.mats, matPaths: saved.matPaths, plates: saved.plates,
+      aluboard: saved.aluboard, zones: saved.zones, hindrings: saved.hindrings, stairs: saved.stairs,
+      floors: saved.floors, project: saved.project });
+    Object.assign(S.counters, saved.counters);
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId; S.ui.selectedStairId = saved.selectedStairId;
+    S.ui.theme = saved.theme; Object.assign(S.view, saved.view);
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    _invalidateCableCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_cableNoWallMarkRegressionTest235: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
   return { ok: allOk, results };
 }
 
