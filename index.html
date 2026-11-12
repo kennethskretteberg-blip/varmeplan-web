@@ -5224,6 +5224,38 @@ function angleSnapAlways(wx, wy, from) {
   return { x:wx, y:wy };
 }
 
+// 236: måleverktøyet (M/D) fester seg til kabelstrenger. Før 236 fulgte målet bare rasteret, så et
+// mål vegg → kabel traff aldri strengen (den ligger sjelden på rasteret) — likt i alle romtyper.
+// `raw` = pekeren i verdens-cm, `p` = punktet etter raster/vinkel. En akseparallell streng flytter
+// bare koordinaten PÅ TVERS av strengen, så et vannrett/loddrett mål forblir det. Gjelder hoved- og
+// reservekabel (avstanden mellom dem kan da måles), alle romtyper. 8 px fang, Shift slår det av.
+function _cableDimSnap(raw, p) {
+  if (S.shiftHeld || !S.cables || !S.cables.length) return null;
+  const tol = 8 / (S.view.zoom * BASE_SCALE);
+  let best = null, bd = tol;
+  const axis = (dir, pos, a0, a1) => {
+    const d = Math.abs((dir === 'v' ? raw.x : raw.y) - pos), al = dir === 'v' ? raw.y : raw.x;
+    if (d < bd && al >= a0 - tol && al <= a1 + tol) { bd = d; best = dir === 'v' ? { x: pos, y: p.y } : { x: p.x, y: pos }; }
+  };
+  for (const c of S.cables) {
+    if (!_roomIdOnActiveFloor(c.roomId)) continue;
+    if (c.runs && c.runs.length) {
+      for (const run of c.runs) for (const sg of (run.segments || [])) axis(c.direction === 'h' ? 'h' : 'v', run.pos_cm, sg.start_cm, sg.end_cm);
+    } else if (c.pathEls && c.pathEls.length) {
+      for (const s of _cableGeoStraights(c)) axis(s.dir, s.p, s.a0, s.a1);
+      for (const el of c.pathEls) {   // skrå kabler: vinkelrett ned på strengen
+        if (!el || el.kind !== 'run' || !el.a || !el.b) continue;
+        const dx = el.b.x - el.a.x, dy = el.b.y - el.a.y, L2 = dx * dx + dy * dy;
+        if (L2 < 1) continue;
+        const t = Math.max(0, Math.min(1, ((raw.x - el.a.x) * dx + (raw.y - el.a.y) * dy) / L2));
+        const q = { x: el.a.x + dx * t, y: el.a.y + dy * t }, d = Math.hypot(raw.x - q.x, raw.y - q.y);
+        if (d < bd) { bd = d; best = q; }
+      }
+    }
+  }
+  return best;
+}
+
 function getSnapRef() {
   const m = S.ui.drawMode, pts = S.drawing.points;
   if ((m==='lshape'||m==='hindring-polygon'||m==='skillevegg') && pts.length>0) return pts[pts.length-1];
@@ -5295,6 +5327,9 @@ function getWorldPos(e) {
     const ref = S.drawing.rectStart;
     if (ref) p = angleSnapAlways(p.x, p.y, ref);
     if (S.snap.grid && !S.shiftHeld) p = gridSnap(p.x, p.y);
+    // 236: målet fester seg til en kabelstreng når pekeren er inntil den (Shift = fritt, som rasteret).
+    const cs = _cableDimSnap(s2w(sx, sy), p);
+    if (cs) return cs;
     return p;
   }
 
@@ -7097,10 +7132,7 @@ function _planKortBekreft(roomId) {
   _undoSuppress++;
   try {
     if (navn) room.name = navn;
-    if (type && type !== room.roomType) {
-      room.roomType = type;
-      if (typeof _roomTypeDefaults === 'function') room.targetWm2 = _roomTypeDefaults(type).targetWm2;
-    }
+    if (type && type !== room.roomType) _applyRoomType(room, type);   // 236: felles kjerne
     // Navngitt av brukeren er like gyldig som navngitt av tegningen — rommet flyttes ut av
     // «Ikke navngitt» og opp i hovedlista.
     if (navn) room._planNamed = true;
@@ -8703,8 +8735,9 @@ function _upcRoomTypeChanged(typeId) {
     return;
   }
   pushUndo();
-  room.roomType = typeId || null;
-  // Set W/m² from room type defaults
+  // 236: samme kjerne som høyreklikk/sidepanel — reservekabel for fryserom og tømt kabelbuffer.
+  _applyRoomType(room, typeId);
+  // Set W/m² from room type defaults («ingen romtype» gir 130 her, som før 236)
   const defaults = _roomTypeDefaults(typeId);
   const newWm2 = (typeId && defaults) ? defaults.targetWm2 : 130;
   room.targetWm2 = newWm2;
@@ -12966,10 +12999,8 @@ function _kundeBrukNyeRom(bareIdx) {
       const rom = createRoom(pts, r.shape, _kundeNyttRomNavn(r.navn),
         flr ? flr.id : S.ui.activeFloorId, true);
       if (!rom) continue;
-      if (r.romtype) {
-        rom.roomType = r.romtype;
-        rom.targetWm2 = _kundeKomfortWm2(r.romtype, r.komfort);
-      }
+      // 236: felles kjerne (låst romtype → rommet kommer inn uten type). Komforten eier W/m² her.
+      if (r.romtype && _applyRoomType(rom, r.romtype)) rom.targetWm2 = _kundeKomfortWm2(r.romtype, r.komfort);
       if (r.modType) rom.listModType = r.modType;
       if (r.kommentar) rom.notat = r.kommentar;
       rom._fraKunde = true;
@@ -62565,35 +62596,80 @@ function _drawCableDimChainForRoom(room) {
 }
 // Tverr: vegg → første streng, CC mellom de to første, CC mellom de to siste, siste streng → vegg
 // (like CC-er i midten sløyfes). Langs: vegg → kabelens ytterkant (U-svingen stikker cc/2 ut) → vegg.
-function _cableDimChainLayout(room) {
-  const cables = _cablesForRoom(room.id);
-  const axisCables = cables.filter(c => c.runs && c.runs.length);
-  if (!axisCables.length || !room.points || room.points.length < 3) return null;
-  const dirs = axisCables.map(c => c.direction);
-  const dir = dirs.filter(d => d === 'v').length >= dirs.filter(d => d === 'h').length ? 'v' : 'h';
-  const dirCables = axisCables.filter(c => c.direction === dir);
-  if (!dirCables.length) return null;
-  const uRadius = (dirCables[0]?.spacing_cm || 10) / 2;
-  const items = [];
-  for (const cable of dirCables) {
-    for (const run of cable.runs) {
-      let sweepMin = Infinity, sweepMax = -Infinity;
-      for (const seg of run.segments) {
-        if (seg.start_cm < sweepMin) sweepMin = seg.start_cm;
-        if (seg.end_cm > sweepMax) sweepMax = seg.end_cm;
-      }
-      items.push({ p0: run.pos_cm, p1: run.pos_cm, a0: sweepMin, a1: sweepMax, cable });
+// 236: de rette strengene i en GEO-kabel. Geo-motoren (070/083 — standardmotoren for alle
+// akseparallelle rom) lagrer hele banen som ÉN punktkjede (`pathEls = [{ kind:'uturn', pts }]`) og
+// har `runs = []`. Kjeden leste bare `runs`, så et auto-lagt kabelrom fikk INGEN målkjede — målt i
+// både fryserom og bad. Her hentes strengene ut av punktkjeden: akseparallelle ledd som er lengre
+// enn ¼ CC (kordene i en U-sving er under 0,07 CC). Returnerer [{ dir, p, a0, a1 }].
+function _cableGeoStraights(cable) {
+  const out = [];
+  const minLen = Math.max(3, (cable.spacing_cm || 10) * 0.25), EPS = 1e-3;
+  for (const el of (cable.pathEls || [])) {
+    const pts = el && el.pts;
+    if (!pts || pts.length < 2) continue;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1];
+      if (!a || !b) continue;
+      const dx = Math.abs(b.x - a.x), dy = Math.abs(b.y - a.y);
+      if (dx < EPS && dy >= minLen) out.push({ dir: 'v', p: (a.x + b.x) / 2, a0: Math.min(a.y, b.y), a1: Math.max(a.y, b.y) });
+      else if (dy < EPS && dx >= minLen) out.push({ dir: 'h', p: (a.y + b.y) / 2, a0: Math.min(a.x, b.x), a1: Math.max(a.x, b.x) });
     }
   }
+  return out;
+}
+// 236: kablene målkjeden bygges av, med strengene sine: [{ cable, dir, items }].
+//  · BARE hovedkabler. Reservekabelen er ikke tilkoblet og ligger RESERVE_OFFSET_CM ved siden av —
+//    med den i kjeden ble «første streng» og «CC» blandet mellom hoved og reserve (funn i 235).
+//  · `runs`-form (håndlagt/eldre motorer) som før; geo-form via `_cableGeoStraights`. Skrå kabler
+//    (`pathEls` med `kind:'run'`) måles fortsatt av `_drawCableSkewDimChain`.
+function _cableDimChainSources(room) {
+  const out = [];
+  for (const cable of _cablesForRoom(room.id)) {
+    if (cable.reserve) continue;
+    if (cable.runs && cable.runs.length) {
+      const items = [];
+      for (const run of cable.runs) {
+        let sweepMin = Infinity, sweepMax = -Infinity;
+        for (const seg of run.segments) {
+          if (seg.start_cm < sweepMin) sweepMin = seg.start_cm;
+          if (seg.end_cm > sweepMax) sweepMax = seg.end_cm;
+        }
+        items.push({ p0: run.pos_cm, p1: run.pos_cm, a0: sweepMin, a1: sweepMax, cable });
+      }
+      out.push({ cable, dir: cable.direction, items });
+    } else if (cable.pathEls && cable.pathEls.length && !cable.pathEls.some(e => e && e.kind === 'run')) {
+      const st = _cableGeoStraights(cable);
+      if (!st.length) continue;
+      const len = d => st.filter(s => s.dir === d).reduce((sum, s) => sum + (s.a1 - s.a0), 0);
+      const dir = len('v') >= len('h') ? 'v' : 'h';
+      out.push({ cable, dir, items: st.filter(s => s.dir === dir).map(s => ({ p0: s.p, p1: s.p, a0: s.a0, a1: s.a1, cable })) });
+    }
+  }
+  return out;
+}
+function _cableDimChainLayout(room) {
+  const axisCables = _cableDimChainSources(room);
+  if (!axisCables.length || !room.points || room.points.length < 3) return null;
+  const dirs = axisCables.map(c => c.dir);
+  const dir = dirs.filter(d => d === 'v').length >= dirs.filter(d => d === 'h').length ? 'v' : 'h';
+  const dirCables = axisCables.filter(c => c.dir === dir);
+  if (!dirCables.length) return null;
+  const uRadius = (dirCables[0].cable.spacing_cm || 10) / 2;
+  const items = [];
+  for (const src of dirCables) items.push(...src.items);
   if (!items.length) return null;
   return _dimChainLayout(room, dir, items, {
     across: (its, edge) => {
       const segs = [];
-      const n = its.length;
-      if (its[0].p0 > edge.lo + 0.1) segs.push({ from: edge.lo, to: its[0].p0 });
-      if (n >= 2) segs.push({ from: its[0].p0, to: its[1].p0 });
-      if (n >= 3) segs.push({ from: its[n - 2].p0, to: its[n - 1].p0 });
-      if (its[n - 1].p0 < edge.hi - 0.1) segs.push({ from: its[n - 1].p0, to: edge.hi });
+      // 236: én posisjon per streng — en streng som er delt av en hindring (to ledd på samme
+      // linje i geo-formen) skal ikke gi et 0-mål i stedet for CC.
+      const ps = [];
+      for (const it of its) if (!ps.length || it.p0 - ps[ps.length - 1] > 0.05) ps.push(it.p0);
+      const n = ps.length;
+      if (ps[0] > edge.lo + 0.1) segs.push({ from: edge.lo, to: ps[0] });
+      if (n >= 2) segs.push({ from: ps[0], to: ps[1] });
+      if (n >= 3) segs.push({ from: ps[n - 2], to: ps[n - 1] });
+      if (ps[n - 1] < edge.hi - 0.1) segs.push({ from: ps[n - 1], to: edge.hi });
       return segs;
     },
     along: (its, near, far) => {
@@ -62615,7 +62691,8 @@ function _drawCableDimChainForRoomInner(room) {
   if (!cables.length) return;
   // Skew/additive cables (rotated rooms) carry pathEls instead of axis runs —
   // dimension them in their own rotated frame.
-  const skewCables = cables.filter(c => c.pathEls && c.pathEls.length && (!c.runs || !c.runs.length));
+  // 236: reservekabelen måles ikke (bare hovedkabelen), heller ikke i skrå rom.
+  const skewCables = cables.filter(c => !c.reserve && c.pathEls && c.pathEls.length && (!c.runs || !c.runs.length));
   if (skewCables.length) _drawCableSkewDimChain(room, skewCables);
   // Axis-aligned cables use the run/direction chain (164: felles kantmodell).
   const layout = _dimLayoutsFor(room, 'cable')[0];
@@ -68111,20 +68188,36 @@ function confirmFixedScale() {
   _listImportIfPending(); // liste-import (hurtig prosj.): fortsett med valgte lag → liste-rom
 }
 
-function setRoomType(roomId, typeId) {
-  const room = S.rooms.find(r => r.id === roomId);
-  if (!room) return;
-  // 170: fryserom er låst for kundebedrifter. Returnerer false så kallere kan stoppe.
-  if (room.roomType !== typeId && _roomTypeLocked(typeId)) { _moduleLockDialog('fryserom'); renderSidebar(); return false; }
-  pushUndo();
-  room.roomType = typeId || null;
+// ═══════════════ 236 · ÉN VEI FOR Å SETTE ROMTYPE ═══════════════
+// Kjernen ALLE steder som setter romtype går gjennom (høyreklikk/sidepanel `setRoomType`,
+// varmepanelet `_upcRoomTypeChanged`, plankortet `_planKortBekreft`, kundeimport, plantegnings-
+// import og de to liste-importene). Ingen UI, ingen angre-post, ingen tegning — det eier kalleren.
+// Før 236 satte de fem siste bare `roomType` + `targetWm2`: et fryserom satt fra varmepanelet fikk
+// ikke reservekabel, og kabelbufferen ble ikke tømt.
+// Returnerer false når romtypen er låst for kundebedriften (170) — da er rommet urørt, og
+// kalleren viser `_moduleLockDialog` (eller hopper over typen i en import).
+// ⚠ Ny kode som setter romtype: kall denne, skriv aldri `room.roomType = …` direkte.
+function _applyRoomType(room, typeId) {
+  if (!room) return false;
+  typeId = typeId || null;
+  if (room.roomType !== typeId && _roomTypeLocked(typeId)) return false;
+  room.roomType = typeId;
   const defaults = _roomTypeDefaults(typeId);
   room.targetWm2 = typeId ? defaults.targetWm2 : null;
   // 025: romtyper med `reserveCable` (fryserom/kjølerom) slår PÅ flagget. Det slås bevisst
   // ALDRI av igjen ved bytte av romtype — brukeren kan ha villet ha reserve uansett; bare
   // avkrysningen i kabelpanelet tar den bort.
   if (typeId && defaults.reserveCable) room.reserveCable = true;
-  _invalidateCableCache();
+  _invalidateCableCache();   // synkroniserer reservekablene og tømmer målkjede-minnet
+  return true;
+}
+function setRoomType(roomId, typeId) {
+  const room = S.rooms.find(r => r.id === roomId);
+  if (!room) return;
+  // 170: fryserom er låst for kundebedrifter. Returnerer false så kallere kan stoppe.
+  if (room.roomType !== typeId && _roomTypeLocked(typeId)) { _moduleLockDialog('fryserom'); renderSidebar(); return false; }
+  pushUndo();
+  _applyRoomType(room, typeId);   // 236
   renderSidebar(); render();
 }
 function setRoomTargetWm2(roomId, val) {
@@ -92515,12 +92608,12 @@ function _pdfCreateListRooms(engineRooms){
     room.area = Math.round(areaM2 * 10000); // m² → cm²
     room.listDraft = false;
     const rt = _pdfGuessRoomType(room.name);
-    room.roomType = rt;
-    room.targetWm2 = _roomTypeDefaults(rt).targetWm2;
+    _applyRoomType(room, rt);   // 236: felles kjerne
     S.rooms.push(room);
     if(typeof _listAutoSuggest === 'function') _listAutoSuggest(room.id);
     n++;
   }
+  _invalidateCableCache();   // 236: rommene ble lagt i S.rooms ETTER at typen ble satt
   renderListModule();
   if(typeof renderSidebar === 'function') renderSidebar();
   if(typeof _scheduleAutoSave === 'function') _scheduleAutoSave();
@@ -92853,7 +92946,7 @@ function _drawCreateRoomsFromReview(rooms, opts){
     const pts = rr.poly.map(p => ({ x: p[0]*100, y: _yTegn*p[1]*100 }));
     const room = createRoom(pts, 'polygon', rr.name||('Rom '+(n+1)), floorId, /*keepPosition*/true);
     if(room){
-      if(rr.type){ room.roomType=rr.type; if(typeof _roomTypeDefaults==='function') room.targetWm2=_roomTypeDefaults(rr.type).targetWm2; }
+      if(rr.type) _applyRoomType(room, rr.type);   // 236: felles kjerne
       // 049: rom uten navn fra tegningen samles i en egen gruppe i romlista. Flagget settes
       // her fordi det er her rommet faktisk blir til.
       if (rr._named === false) room._planNamed = false;
@@ -92946,13 +93039,14 @@ function _pdfCreateListRoomsFromReview(rooms, floorBuild){
     room.name=rr.name||('Rom '+(n+1));
     room.area=Math.round(rr.areaM2*10000); // m² → cm²
     room.listDraft=false;
-    room.roomType=rr.type;
-    room.targetWm2=_roomTypeDefaults(rr.type).targetWm2;
+    // 236: felles kjerne. «Ingen type» ga romtypen «Annet» sin W/m² før — beholdt.
+    if(_applyRoomType(room, rr.type) && !room.roomType) room.targetWm2=_roomTypeDefaults(rr.type).targetWm2;
     if(floorBuild) room._floorBuild=floorBuild; // varme-felt på Varmeplan-siden (steg 3 produktfilter)
     S.rooms.push(room);
     if(typeof _listAutoSuggest==='function') _listAutoSuggest(room.id);
     n++;
   }
+  _invalidateCableCache();   // 236: rommene ble lagt i S.rooms ETTER at typen ble satt
   renderListModule();
   if(typeof renderSidebar==='function') renderSidebar();
   if(typeof _scheduleAutoSave==='function') _scheduleAutoSave();
@@ -96110,6 +96204,218 @@ async function _cableNoWallMarkRegressionTest235() {
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_cableNoWallMarkRegressionTest235: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
   return { ok: allOk, results };
+}
+
+// ═══════════════ 236 · REGRESJON: ÉN VEI FOR ROMTYPE + MÅLKJEDE FOR KABEL I FRYSEROM ═══════════════
+// A: fryserom satt fra hvert sted gir samme rom. B: andre romtyper som før. C: låsen (170) fra alle
+// steder. D: eksisterende rom endres ikke. E–G: målkjeden bygges av hovedkabelen (geo- og runs-form),
+// reserven er ikke med. H: måleverktøyet fester seg til kabelstrengen, likt i fryserom og bad.
+async function _roomTypeRegressionTest236() {
+  const results = [];
+  const check = (name, expected, ok, got) => results.push({ name, ok: !!ok, expected, got });
+  const K = ['rooms', 'cables', 'hindrings', 'floors', 'strips', 'mats', 'matPaths', 'zones', 'project', 'floatingDims', 'stairs'];
+  const saved = {}; for (const k of K) saved[k] = S[k];
+  const sUi = { f: S.ui.activeFloorId, p: S.ui.activePartId, r: S.ui.selectedRoomId, dm: S.ui.drawMode, pdf: S.ui._pdfMode, st: S.ui.selectedStairId };
+  const sCnt = { ...S.counters }, sView = { ...S.view }, sSnap = { ...S.snap }, sShift = S.shiftHeld, undoLen = _undoStack.length;
+  const sDraw = { rectStart: S.drawing.rectStart, dimPending: S.drawing.dimPending };
+  const sOrg = _viewAsOrg, sToast = window._showToast, sAuto = window._scheduleAutoSave, sDlg = window._moduleLockDialog;
+  const sProds = HEATING_PRODUCTS.slice(), sVf = S.varmefolie;
+  const app = document.getElementById('app'), sApp = app ? app.style.display : null;
+  let dialoger = 0;
+  try {
+    window._showToast = () => {}; window._scheduleAutoSave = () => {}; window._moduleLockDialog = () => { dialoger++; };
+    try { await _cblLoadClipper(); } catch (e) {}
+    for (let i = 0; i < 50 && !_cblClipperReady(); i++) await new Promise(r => setTimeout(r, 100));
+    _viewAsOrg = { id: 't236', name: 'Leverandør', org_type: 'supplier', allowed_modules: null };   // ingen lås
+    const CABCAT = (PRODUCT_CATEGORIES.find(c => c.module_type === 'cable' && _catAvailableInModule(c, 'indoor')) || {}).id;
+    const CAB = { id: 998361, category_id: CABCAT, active: true, product_family: 'InFloor 10T', name: 'TEST 10T 1200W 120m', article_no: 'T236',
+      watt_per_m: 10, cable_length_m: 120, total_effect_w: 1200, voltage: 230, min_spacing_mm: 50, max_spacing_mm: 500 };
+    const CAB2 = { ...CAB, id: 998362, name: 'TEST 10T 2000W 200m', cable_length_m: 200, total_effect_w: 2000 };
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(CAB, CAB2);
+    S.varmefolie = Object.assign({}, S.varmefolie, { direction: 'v', dirExplicit: true, startCorner: 'bl', wallMarginCm: null });
+    const RID = 998363, FID = 998364;
+    const PTS = [{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 800 }, { x: 0, y: 800 }];
+    const haandlagt = () => { const runs = [];
+      for (let i = 0; i < 14; i++) runs.push({ pos_cm: 40 + i * 40, segments: [{ start_cm: 40, end_cm: 760 }] });
+      return { id: S.counters.nextCableId++, roomId: RID, productId: CAB.id, direction: 'v', spacing_cm: 40, totalLength_cm: 12000, runs, connections: [] }; };
+    const ny = (medKabel) => {
+      S.mats = []; S.matPaths = []; S.strips = []; S.zones = []; S.hindrings = []; S.stairs = []; S.floatingDims = [];
+      S.project = { name: 'TEST 236', parts: [], revision: 0, lastExportedAt: null, createdAt: Date.now() };
+      S.floors = [{ id: FID, name: '1. etasje', order: 1 }];
+      S.ui.activeFloorId = FID; S.ui.activePartId = null; S.ui.selectedStairId = null; S.ui.selectedRoomId = RID;
+      S.rooms = [{ id: RID, name: 'Rom 236', floorId: FID, partId: null, shape: 'rect', wallThicknessCm: 0,
+        points: PTS.map(p => ({ ...p })), walls: compWalls(PTS), dims: [], annotOffsets: {}, area: Math.abs(compArea(PTS)), roomType: null, targetWm2: null }];
+      S.cables = medKabel ? [haandlagt()] : [];
+      _invalidateCableCache();
+      return S.rooms[0];
+    };
+    const sig = r => [r.roomType, r.targetWm2, !!r.reserveCable].join('|');
+    const pk = (type) => { const a = document.createElement('input'); a.id = '_pk-navn'; a.value = '';
+      const b = document.createElement('input'); b.id = '_pk-type'; b.value = type;
+      document.body.appendChild(a); document.body.appendChild(b);
+      try { _planKortBekreft(RID); } finally { a.remove(); b.remove(); try { _planKortLukk(); } catch (e) {} } };
+    const imp = (type) => { _drawCreateRoomsFromReview([{ poly: [[10, 0], [16, 0], [16, 8], [10, 8]], name: 'Importert', type, calcType: 'none' }], { fitAll: false, yDown: true });
+      return S.rooms[S.rooms.length - 1]; };
+    const VEIER = {
+      'høyreklikk/sidepanel (setRoomType)': t => { setRoomType(RID, t); return S.rooms[0]; },
+      'varmepanelet (_upcRoomTypeChanged)': t => { _upcRoomTypeChanged(t); return S.rooms[0]; },
+      'plankortet (_planKortBekreft)': t => { pk(t); return S.rooms[0]; },
+      'kjernen (_applyRoomType)': t => { _applyRoomType(S.rooms[0], t); return S.rooms[0]; },
+      'plantegningsimport (_drawCreateRoomsFromReview)': t => imp(t),
+    };
+
+    // ─── A — fryserom fra hvert sted gir samme rom ───
+    const W = _roomTypeDefaults('fryserom').targetWm2, FASIT = 'fryserom|' + W + '|true';
+    for (const [navn, fn] of Object.entries(VEIER)) {
+      const erImport = /import/.test(navn);
+      ny(true);
+      const r = fn('fryserom');
+      check('A: ' + navn + ' → romtype, W/m², reserve', FASIT, sig(r) === FASIT, sig(r));
+      if (!erImport) check('A: ' + navn + ' → kabelbufferen er tømt (reserven er lagt)', 1,
+        S.cables.filter(c => c.roomId === RID && c.reserve).length === 1, S.cables.filter(c => c.roomId === RID && c.reserve).length);
+      if (!erImport) check('A: ' + navn + ' → ingen avvik om reservekabel', 'ingen', !_fryseromAvvik(RID).some(a => a.id === 'reserve'), _fryseromAvvik(RID).map(a => a.id).join(','));
+    }
+    for (const fnNavn of ['setRoomType', '_upcRoomTypeChanged', '_planKortBekreft', '_kundeBrukNyeRom', '_pdfCreateListRooms', '_drawCreateRoomsFromReview', '_pdfCreateListRoomsFromReview']) {
+      const src = String(window[fnNavn]);
+      check('A: ' + fnNavn + ' går gjennom _applyRoomType og skriver ikke roomType selv', true,
+        src.includes('_applyRoomType(') && !/\.roomType\s*=[^=]/.test(src.replace(/room\.roomType = null;/g, '')), src.includes('_applyRoomType('));
+    }
+
+    // ─── B — andre romtyper som før ───
+    for (const t of ['bathroom', 'kitchen', 'living', 'other']) {
+      const d = _roomTypeDefaults(t), fasit = t + '|' + d.targetWm2 + '|false';
+      for (const [navn, fn] of Object.entries(VEIER)) {
+        ny(true); const r = fn(t);
+        check('B: ' + t + ' via ' + navn, fasit, sig(r) === fasit && !S.cables.some(c => c.reserve), sig(r));
+      }
+    }
+    ny(true); setRoomType(RID, 'bathroom'); setRoomType(RID, '');
+    check('B: «ingen romtype» fra høyreklikk gir W/m² null (som før)', '|', sig(S.rooms[0]) === '||false', sig(S.rooms[0]));
+    ny(true); _upcRoomTypeChanged('bathroom'); _upcRoomTypeChanged('');
+    check('B: «ingen romtype» fra varmepanelet gir 130 W/m² (som før)', '|130|false', sig(S.rooms[0]) === '|130|false', sig(S.rooms[0]));
+    ny(true); _upcRoomTypeChanged('fryserom'); _upcRoomTypeChanged('bathroom');
+    check('B: reservekabel slås aldri AV ved bytte bort fra fryserom', true, S.rooms[0].reserveCable === true && S.cables.some(c => c.reserve), sig(S.rooms[0]));
+
+    // ─── C — låsen for kundebedrifter (170) fra alle steder ───
+    _viewAsOrg = { id: 'k236', name: 'Kunde AS', org_type: 'installer', allowed_modules: ['indoor', 'list'] };
+    check('C: fryserom er låst for kundebedriften', true, _roomTypeLocked('fryserom') === true, _roomTypeLocked('fryserom'));
+    for (const [navn, fn] of Object.entries(VEIER)) {
+      ny(true); dialoger = 0;
+      const r = fn('fryserom');
+      check('C: låst — ' + navn + ' setter ikke fryserom', '||false', sig(r) === '||false' && !S.cables.some(c => c.reserve), sig(r));
+      if (/setRoomType|_upc|_planKort/.test(navn)) check('C: låst — ' + navn + ' viser låsdialogen', 1, dialoger === 1, dialoger);
+    }
+    ny(true); check('C: låst — kjernen svarer false', false, _applyRoomType(S.rooms[0], 'fryserom') === false, 'true');
+    ny(true); setRoomType(RID, 'bathroom');
+    check('C: låst — andre romtyper virker', 'bathroom', S.rooms[0].roomType === 'bathroom', S.rooms[0].roomType);
+    _viewAsOrg = { id: 't236', name: 'Leverandør', org_type: 'supplier', allowed_modules: null };
+
+    // ─── D — eksisterende rom: fryserom uten reservekabel endres ikke av seg selv ───
+    {
+      const r = ny(true); r.roomType = 'fryserom'; r.targetWm2 = W;   // slik varmepanelet etterlot det før 236
+      _invalidateCableCache(); _syncAllReserveCables(); renderSidebar(); render();
+      check('D: rommet står uten reservekabel etter synk og tegning', false, !r.reserveCable && !S.cables.some(c => c.reserve), sig(r));
+      check('D: sidepanelets avvik vises fortsatt', 'Reservekabel er påkrevd for fryserom.',
+        (_fryseromAvvik(RID).find(a => a.id === 'reserve') || {}).tekst === 'Reservekabel er påkrevd for fryserom.', _fryseromAvvik(RID).map(a => a.tekst).join(' | '));
+    }
+
+    // ─── E — målkjeden i et fryserom med auto-lagt kabel (geo-form) og reservekabel ───
+    const tekster = (room) => { const t = [], ft = ctx.fillText; ctx.fillText = function (s, ...q) { t.push(String(s)); return ft.call(this, s, ...q); };
+      try { _dimLayoutMemo.clear(); _drawCableDimChainForRoom(room); } finally { ctx.fillText = ft; } return t; };
+    const strenger = c => [...new Set(_cableGeoStraights(c).filter(s => s.dir === 'v').map(s => Math.round(s.p * 100) / 100))].sort((a, b) => a - b);
+    const tverr = L => L ? L.across.map(a => a.segs.map(s => [Math.round(s.from * 100) / 100, Math.round(s.to * 100) / 100])) : null;
+    const leggAuto = (type, prod) => { const r = ny(false); setRoomType(RID, type);
+      const c = autoFillCable(RID, prod.id); if (c) { c.id = S.counters.nextCableId++; S.cables.push(c); } _invalidateCableCache(); r.cableDimSnap = true; return r; };
+    let room = leggAuto('fryserom', CAB);
+    let main = S.cables.find(c => c.roomId === RID && !c.reserve), res = S.cables.find(c => c.roomId === RID && c.reserve);
+    check('E: auto-utlegget er geo-form (én punktkjede, ingen runs) med reserve', true,
+      !!main && !!res && !(main.runs || []).length && (main.pathEls || []).length > 0 && !main.pathEls.some(e => e.kind === 'run'), main && Object.keys(main).join(','));
+    if (main && res) {
+      const ps = strenger(main), rs = strenger(res), n = ps.length;
+      let L = _cableDimChainLayout(room);
+      const fasit = [[[0, ps[0]], [ps[0], ps[1]], [ps[n - 2], ps[n - 1]], [ps[n - 1], 600]]];
+      check('E: kjeden finnes (før 236: ingen kjede for geo-form)', true, !!L && L.across.length === 1 && L.along.length === 1, L ? L.across.length : 'null');
+      check('E: tverr = vegg → første HOVEDstreng, CC, CC, siste hovedstreng → vegg', JSON.stringify(fasit), JSON.stringify(tverr(L)) === JSON.stringify(fasit), JSON.stringify(tverr(L)));
+      check('E: første ledd er kantavstanden til hovedkabelen', _frysMarginCm(RID), Math.abs(ps[0] - _frysMarginCm(RID)) < 0.11, ps[0]);
+      check('E: CC i kjeden = kabelens CC', +main.spacing_cm.toFixed(2), Math.abs((ps[1] - ps[0]) - main.spacing_cm) < 0.02, ps[1] - ps[0]);
+      check('E: reservens strenger ligger 5 cm ved siden av og er IKKE et punkt i kjeden', true,
+        Math.abs(Math.abs(rs[0] - ps[0]) - RESERVE_OFFSET_CM) < 0.01 && !tverr(L)[0].some(s => rs.some(q => Math.abs(q - s[0]) < 0.01 || Math.abs(q - s[1]) < 0.01)), rs[0] + ' / ' + ps[0]);
+      check('E: bare hovedkabelen er kilde', '1 hoved', _cableDimChainSources(room).length === 1 && !_cableDimChainSources(room)[0].cable.reserve, _cableDimChainSources(room).length);
+      const al = L.along[0].segs, r2 = main.spacing_cm / 2, st = _cableGeoStraights(main).filter(s => s.dir === 'v');
+      const lo = Math.min(...st.map(s => s.a0)) - r2, hi = Math.max(...st.map(s => s.a1)) + r2;
+      check('E: langs = vegg → kabelens ytterkant (strengende + CC/2) → vegg', [0, +lo.toFixed(1), +hi.toFixed(1), 800].join(','),
+        al.length === 3 && Math.abs(al[0].to - lo) < 0.01 && Math.abs(al[1].to - hi) < 0.01 && al[2].to === 800, al.map(s => s.to.toFixed(1)).join(','));
+      const t1 = tekster(room);
+      check('E: tegnet: sju mål, CC-en to ganger, ikke noe 5 cm-ledd', true,
+        t1.length === 7 && t1.filter(s => s === _dimFmtCmTenths(ps[1] - ps[0])).length === 2 && !t1.includes('5 cm'), t1.join(' · '));
+      S.ui._pdfMode = true; let t2; try { t2 = tekster(room); } finally { S.ui._pdfMode = sUi.pdf; }
+      check('E: PDF-modus tegner de samme målene', t1.join(' · '), t2.join(' · ') === t1.join(' · '), t2.join(' · '));
+      const medRes = JSON.stringify(tverr(L)) + JSON.stringify(L.along[0].segs);
+      room.reserveCable = false; S.cables = S.cables.filter(c => !c.reserve); _invalidateCableCache(); L = _cableDimChainLayout(room);
+      check('E: kjeden er lik med og uten reservekabel', true, JSON.stringify(tverr(L)) + JSON.stringify(L.along[0].segs) === medRes, JSON.stringify(tverr(L)));
+    }
+
+    // ─── F — bad med auto-lagt kabel: samme kjede-regel (kontroll for «andre rom») ───
+    room = leggAuto('bathroom', CAB2); main = S.cables.find(c => c.roomId === RID);
+    if (main) { const ps = strenger(main), n = ps.length, L = _cableDimChainLayout(room);
+      const fasit = [[[0, ps[0]], [ps[0], ps[1]], [ps[n - 2], ps[n - 1]], [ps[n - 1], 600]]];
+      check('F: bad (geo-form) har kjede med vegg → streng og CC', JSON.stringify(fasit), JSON.stringify(tverr(L)) === JSON.stringify(fasit), JSON.stringify(tverr(L)));
+      check('F: bad har ingen reservekabel', 1, S.cables.length === 1, S.cables.length);
+    } else check('F: bad fikk auto-utlegg', true, false, 'null');
+
+    // ─── G — håndlagt kabel (runs-form): reserven er ute av kjeden, uten reserve er alt som før ───
+    {
+      const r = ny(true); r.cableDimSnap = true;
+      const uten = JSON.stringify(tverr(_cableDimChainLayout(r)));
+      check('G: runs-form uten reserve — som før 236', '[[[0,40],[40,80],[520,560],[560,600]]]', uten === '[[[0,40],[40,80],[520,560],[560,600]]]', uten);
+      setRoomType(RID, 'fryserom');
+      const rs = S.cables.find(c => c.reserve);
+      check('G: reserven er lagt 5 cm ved siden av (runs-form)', 45, !!rs && rs.runs[0].pos_cm === 45, rs && rs.runs[0].pos_cm);
+      const med = JSON.stringify(tverr(_cableDimChainLayout(r)));
+      check('G: kjeden er uendret av reserven (før 236: 0→40, 40→45, 555→560 …)', uten, med === uten, med);
+    }
+
+    // ─── H — måleverktøyet fester seg til kabelstrengen, likt i fryserom og bad ───
+    if (app) app.style.display = 'flex'; resizeCanvas();
+    for (const [type, prod] of [['fryserom', CAB], ['bathroom', CAB2]]) {
+      room = leggAuto(type, prod); main = S.cables.find(c => c.roomId === RID && !c.reserve); res = S.cables.find(c => c.roomId === RID && c.reserve);
+      if (!main) { check('H: ' + type + ' fikk auto-utlegg', true, false, 'null'); continue; }
+      const ps = strenger(main);
+      S.view.zoom = 4 / BASE_SCALE; S.view.panX = 100; S.view.panY = 400; S.ui.drawMode = 'dim'; S.drawing.rectStart = null; S.drawing.dimPending = null;
+      S.snap.grid = true; S.shiftHeld = false;
+      const rect = canvas.getBoundingClientRect();
+      const pek = (wx, wy, dpx) => { const s = w2s(wx, wy);
+        return getWorldPos({ clientX: rect.left + (s.x + (dpx || 0)) * rect.width / _cvW(), clientY: rect.top + s.y * rect.height / _cvH() }); };
+      let p = pek(ps[1], 430, 3);
+      check('H: ' + type + ' — 3 px fra andre hovedstreng → målet står PÅ strengen', ps[1], Math.abs(p.x - ps[1]) < 0.01, p.x);
+      check('H: ' + type + ' — langs strengen følger målet rasteret som før', 450, p.y === 450, p.y);
+      p = pek((ps[1] + ps[2]) / 2 + 3, 430, 0);
+      check('H: ' + type + ' — midt mellom to strenger → rasteret (ikke kabelen)', 'raster', p.x % GRID === 0, p.x);
+      S.shiftHeld = true; p = pek(ps[1], 430, 3); S.shiftHeld = false;
+      check('H: ' + type + ' — Shift = fritt mål', 'ikke på strengen', Math.abs(p.x - ps[1]) > 0.5, p.x);
+      S.drawing.rectStart = { x: 0, y: 450 }; p = pek(ps[0], 430, -2); S.drawing.rectStart = null;
+      check('H: ' + type + ' — vegg → første streng måler kantavstanden nøyaktig', +ps[0].toFixed(2), Math.abs(p.x - ps[0]) < 0.01 && p.y === 450, p.x + ',' + p.y);
+      if (res) { const rs = strenger(res); p = pek(rs[0], 430, 0);
+        check('H: fryserom — reservestrengen kan også festes (hoved ↔ reserve = 5 cm kan måles)', +rs[0].toFixed(2), Math.abs(p.x - rs[0]) < 0.01, p.x); }
+    }
+    S.ui.drawMode = sUi.dm;
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: '-', got: String(e && e.stack || e) });
+  } finally {
+    for (const k of K) S[k] = saved[k];
+    Object.assign(S.counters, sCnt); Object.assign(S.view, sView); Object.assign(S.snap, sSnap); S.shiftHeld = sShift;
+    S.drawing.rectStart = sDraw.rectStart; S.drawing.dimPending = sDraw.dimPending; S.varmefolie = sVf;
+    S.ui.activeFloorId = sUi.f; S.ui.activePartId = sUi.p; S.ui.selectedRoomId = sUi.r; S.ui.drawMode = sUi.dm; S.ui._pdfMode = sUi.pdf; S.ui.selectedStairId = sUi.st;
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...sProds);
+    _viewAsOrg = sOrg; window._showToast = sToast; window._scheduleAutoSave = sAuto; window._moduleLockDialog = sDlg;
+    _undoStack.length = Math.min(_undoStack.length, undoLen);
+    if (app && sApp != null) app.style.display = sApp;
+    _invalidateCableCache();
+    try { resizeCanvas(); renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const bad = results.filter(r => !r.ok);
+  console[bad.length ? 'error' : 'log']('[236] _roomTypeRegressionTest236: ' + (results.length - bad.length) + '/' + results.length, bad.length ? bad : 'GRØNN');
+  return { ok: !bad.length, results };
 }
 
 // 147 — folieeffekt: ÉN formel (`_foilItemW`, W per løpemeter fra databladet). Låser at Spesifikasjon/

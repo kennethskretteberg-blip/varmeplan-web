@@ -1,0 +1,156 @@
+{
+ "produkt": "InFloor 10T 1200W 120m",
+ "A": {
+  "rom": "fryserom|25|true",
+  "kabler": "hoved cc 37.33 geo, reserve cc 37.33 geo",
+  "kjede": []
+ },
+ "B": {
+  "rom": "fryserom|25|true",
+  "kabler": "hoved cc 40 runs, reserve cc 40 runs",
+  "kjede": [
+   "40 cm",
+   "5 cm",
+   "5 cm",
+   "35 cm",
+   "20 cm",
+   "760 cm",
+   "20 cm"
+  ]
+ },
+ "maaleverktoy": {
+  "streng": 980,
+  "medRaster": {
+   "x": 1000,
+   "y": 450
+  },
+  "medShift": {
+   "x": 984.496253122398,
+   "y": 430
+  }
+ },
+ "repro": {
+  "produkter": 19,
+  "hoyreklikk": {
+   "produkt": "InFloor 10T 1200W 120m",
+   "feil": null,
+   "roomType": "fryserom",
+   "targetWm2": 25,
+   "reserveCable": true,
+   "kabler": [
+    {
+     "id": 3,
+     "reserve": false,
+     "cc": 37.32666666666667,
+     "dir": "v",
+     "runs": 0,
+     "pathEls": 1,
+     "runEls": 0,
+     "frysM": 20,
+     "pos": [],
+     "forsteRun": null
+    },
+    {
+     "id": 4,
+     "reserve": true,
+     "cc": 37.32666666666667,
+     "dir": "v",
+     "runs": 0,
+     "pathEls": 1,
+     "runEls": 0,
+     "frysM": 20,
+     "pos": [],
+     "forsteRun": null
+    }
+   ],
+   "margin": 20,
+   "kjedeTekst": [],
+   "layout": null,
+   "avvik": []
+  },
+  "varmepanel": {
+   "produkt": "InFloor 10T 1200W 120m",
+   "feil": null,
+   "roomType": "fryserom",
+   "targetWm2": 25,
+   "kabler": [
+    {
+     "id": 3,
+     "reserve": false,
+     "cc": 37.32666666666667,
+     "dir": "v",
+     "runs": 0,
+     "pathEls": 1,
+     "runEls": 0,
+     "frysM": 20,
+     "pos": [],
+     "forsteRun": null
+    }
+   ],
+   "margin": 20,
+   "kjedeTekst": [],
+   "layout": null,
+   "avvik": [
+    "reserve"
+   ]
+  },
+  "varmepanelMedReserve": {
+   "roomType": "fryserom",
+   "targetWm2": 25,
+   "reserveCable": true,
+   "kabler": [
+    {
+     "id": 3,
+     "reserve": false,
+     "cc": 37.32666666666667,
+     "dir": "v",
+     "runs": 0,
+     "pathEls": 1,
+     "runEls": 0,
+     "frysM": 20,
+     "pos": [],
+     "forsteRun": null
+    },
+    {
+     "id": 4,
+     "reserve": true,
+     "cc": 37.32666666666667,
+     "dir": "v",
+     "runs": 0,
+     "pathEls": 1,
+     "runEls": 0,
+     "frysM": 20,
+     "pos": [],
+     "forsteRun": null
+    }
+   ],
+   "margin": 20,
+   "kjedeTekst": [],
+   "layout": null,
+   "avvik": []
+  },
+  "bad": {
+   "produkt": "InFloor 10T 2000W 200m",
+   "feil": null,
+   "roomType": "bathroom",
+   "targetWm2": 130,
+   "kabler": [
+    {
+     "id": 2,
+     "reserve": false,
+     "cc": 24.579166666666666,
+     "dir": "v",
+     "runs": 0,
+     "pathEls": 1,
+     "runEls": 0,
+     "pos": [],
+     "forsteRun": null
+    }
+   ],
+   "margin": 5,
+   "kjedeTekst": [],
+   "layout": null,
+   "avvik": []
+  }
+ }
+}

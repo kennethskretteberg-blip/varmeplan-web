@@ -4,6 +4,12 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
+## 236 — Fryserom: én vei for romtype, og målsetting av kabel som virker (12.11.2026, `HASH236`, `main`, ikke pushet)
+
+Kenneth og Fredrik 12.11.2026. **Feil 1 (målsetting):** auto-lagt kabel (geo-motoren, én punktkjede uten `runs`) fikk ingen målekjede i noen romtype – `_cableDimChainLayout` leste bare `runs`; kabel med strenger + reservekabel fikk hoved og reserve blandet («40 · 5 · 5 · 35 cm»); måleverktøyet fulgte bare rasteret. **Feil 2 (romtype):** varmepanelet (`_upcRoomTypeChanged`), plankortet og importene satte bare `roomType`/`targetWm2` – fryserom uten reservekabel og uten tømt kabelbuffer. **Endret:** ny kjerne `_applyRoomType(room, typeId)` som alle sju stedene går gjennom (reserve PÅ, aldri av; lås 170 → `false`); kjeden bygges av hovedkabelen (`_cableDimChainSources`), geo-formen via `_cableGeoStraights`, reserven ute også i skrå rom; «5 cm» hoved ↔ reserve tegnes ikke; måleverktøyet fester seg til kabelstrenger (`_cableDimSnap`, 8 px, Shift = fritt). Eksisterende fryserom uten reserve endres ikke ved åpning. **Test:** ny `_roomTypeRegressionTest236` 83/83; suiten 102 tester, de 101 gamle som før, samme sju røde uten innlogging. **Funn, ikke rettet:** «20.1 cm» (strengen ligger 20,05 fra veggen); tekstkollisjon i kjeden zoomet ut; låsen gjelder nå også importene uten beskjed; skrå fryserom ikke prøvd. Se `docs/236/RAPPORT.md`.
+
+---
+
 ## 235 — Kabel: markeringen langs veggene er fjernet, 234 angret (12.11.2026, `142cd6f`, `main`, ikke pushet)
 
 Kenneth 12.11.2026: markeringen langs veggene i kabelrom skal bort helt – målsettingen holder til kontroll; 234 var en misforståelse. **Angret:** 234 med `git revert` (`e9ec967`, `de1ee08`), uten konflikt; `docs/234/` ligger i historikken. **Fjernet:** `_drawCableMarginZone` (beige ring i kantavstanden + stiplet linje) og kallet i `drawCables`; ingenting i stedet, likt på skjerm og i PDF. **Ikke endret:** `_effectiveMarginCm`, leggereglene, målkjeden, tall, reserve, korridor, folie/matte. **Test:** tall (`_computeRoomStats`) og alle strenger bit-like før/etter for tre rom; ny `_cableNoWallMarkRegressionTest235` 19/19 (fasit målt på 233-koden); ingen eksisterende test endret; suiten 101 tester, de 100 gamle som 233, samme sju røde uten innlogging. **Funnet, ikke rettet:** målkjeden tar med reservens strenger og får overlappende korte ledd i PDF-en; «Oppvarmet areal» kan bomme inntil ca. 4 % (fra 234). Rapport: `docs/235/RAPPORT.md`.
