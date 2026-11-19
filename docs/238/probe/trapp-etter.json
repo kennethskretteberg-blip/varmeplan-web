@@ -1,0 +1,37 @@
+{
+ "_stairRegressionTest": {
+  "pass": 45,
+  "total": 45,
+  "fail": []
+ },
+ "_stairManualSetRegressionTest": {
+  "pass": 42,
+  "total": 42,
+  "fail": []
+ },
+ "_stairLandingMarginRegressionTest238": {
+  "pass": 57,
+  "total": 57,
+  "fail": []
+ },
+ "_stairZoneRegressionTest102": {
+  "pass": 106,
+  "total": 106,
+  "fail": []
+ },
+ "_stairPdfRegressionTest230": {
+  "pass": 121,
+  "total": 121,
+  "fail": []
+ },
+ "_stairSideRegressionTest": {
+  "pass": 25,
+  "total": 25,
+  "fail": []
+ },
+ "_stairHorseshoeRegressionTest": {
+  "pass": 274,
+  "total": 274,
+  "fail": []
+ }
+}

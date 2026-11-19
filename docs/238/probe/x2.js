@@ -1,0 +1,1 @@
+(() => { const out = []; let e = document.getElementById("stair-settings-panel"); while (e && e !== document.body) { const cs = getComputedStyle(e); out.push((e.id || e.tagName) + " d=" + cs.display + " v=" + cs.visibility + " " + e.getBoundingClientRect().width + "x" + e.getBoundingClientRect().height + " html=" + e.innerHTML.length); e = e.parentElement; } return out; })()

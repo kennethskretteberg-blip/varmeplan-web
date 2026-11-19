@@ -50439,7 +50439,7 @@ function _stairZoneInfo(stair, zoneNo) {
   const wpm = prod?.watt_per_m || 0;
   const eff = _stairSurfSettings(stair, firstTreadSi, ranges);
   // Behovet for SONENS flater — samme kilde som motoren (Regel 9), ikke et nytt regnestykke.
-  const geo = generateStairCable({ ..._stairZoneSubStair(stair, r), edgeMargin_cm: cable ? cable.edgeMargin_cm : eff.edgeMargin_cm, cables: [{ productId: null }] });
+  const geo = generateStairCable({ ..._stairZoneSubStair(stair, r), edgeMargin_cm: cable ? cable.edgeMargin_cm : eff.edgeMargin_cm, landingEdgeMarginSolved_cm: cable && cable.landingEdgeMargin_cm != null ? cable.landingEdgeMargin_cm : null, cables: [{ productId: null }] });
   return {
     zone: zoneNo, zoneIdx: zi, fromSurf: r.fromSurf, toSurf: r.toSurf, cable, result: res,
     settings: _stairZoneSettings(stair, zoneNo), eff,
@@ -50611,7 +50611,11 @@ function _stairResolveMarginForSet(stair, opts) {
   const fit = _stairFitFixedSet(stair, ids);
   if (fit.ok) {
     stair.edgeMargin_cm = fit.edgeMargin_cm;
-    stair.selectedProposal = stair.lastProposal = { ...prop, edgeMargin_cm: fit.edgeMargin_cm };
+    const _np = { ...prop, edgeMargin_cm: fit.edgeMargin_cm };
+    // 238: repos-avstanden følger settet (og forsvinner når valget er slått av).
+    if (fit.landingEdgeMargin_cm != null) _np.landingEdgeMargin_cm = fit.landingEdgeMargin_cm; else delete _np.landingEdgeMargin_cm;
+    _stairSetLmSolved(stair, fit.landingEdgeMargin_cm);
+    stair.selectedProposal = stair.lastProposal = _np;
   } else if (opts && opts.keepOnFail) {
     return;
   } else {
@@ -50635,6 +50639,59 @@ function _setStairLandingMargin(val) {
   _regenerateStairCable(stair);
   _invalidateStairCache();
   _updateStairSettingsPanel(); updateCtxBar(); render();
+}
+
+// ── 238: «Avstand fra sidene – repos» og «Prioriter trinn» ──
+// Tomt felt = samme som trinnene (feltet fjernes fra trappa). Tall = egen avstand på repos, klemt som
+// dagens felt: minst 1 cm, høyst halve smaleste repos minus 1 (_stairMaxEdgeMarginCm på reposene).
+// Har trappa et valgt forslag, løses SAMME kabelsett på nytt (som bryteren «Fyll toppflaten», 184).
+function _stairLandingSurfaces(stair, zoneNo) {
+  const src = zoneNo != null ? _stairZoneSurfaces(stair, zoneNo) : (stair.surfaces || []);
+  return src.filter(f => f.type === 'landing');
+}
+function _stairLmAfterChange(stair) {
+  if (!_stairZoneRanges(stair)) _stairResolveMarginForSet(stair);
+  _regenerateStairCable(stair);
+  _invalidateStairCache();
+  _updateStairSettingsPanel(); updateCtxBar(); render();
+}
+function _setStairLandingEdgeMargin(val) {
+  const stair = S.stairs.find(s => s.id === S.ui.selectedStairId);
+  if (!stair) return;
+  let cm = null;
+  if (String(val == null ? '' : val).trim() !== '') {
+    const n = parseFloat(val);
+    if (!isFinite(n)) return;
+    const tak = _stairMaxEdgeMarginCm(_stairLandingSurfaces(stair), stair.width_cm);
+    cm = Math.round(Math.max(1, Math.min(tak, n)) * 10) / 10;
+  }
+  if ((stair.landingEdgeMargin_cm > 0 ? stair.landingEdgeMargin_cm : null) === cm) { _updateStairSettingsPanel(); return; }
+  pushUndo();
+  if (cm == null) delete stair.landingEdgeMargin_cm; else stair.landingEdgeMargin_cm = cm;
+  _stairLmAfterChange(stair);
+}
+function _setStairPrioritizeSteps(paa) {
+  const stair = S.stairs.find(s => s.id === S.ui.selectedStairId);
+  if (!stair || !!stair.prioritizeSteps === !!paa) return;
+  pushUndo();
+  if (paa) stair.prioritizeSteps = true; else delete stair.prioritizeSteps;
+  _stairLmAfterChange(stair);
+}
+// Sonens eget repos-felt (tomt = som trappa).
+function _setStairZoneLandingEdgeMargin(zoneNo, val) {
+  const stair = S.stairs.find(s => s.id === S.ui.selectedStairId);
+  const tak = _stairMaxEdgeMarginCm(stair ? _stairLandingSurfaces(stair, zoneNo) : [], stair && stair.width_cm);
+  _setStairZoneField(zoneNo, 'landingEdgeMargin_cm', val, n => Math.round(Math.max(1, Math.min(tak, n)) * 10) / 10);
+}
+// Panelteksten som skiller trinn og repos (o: step, stepFloor, landing, landingFloor, residual_cm, hva).
+// Tom streng når ingen av dem er flyttet fra gulvet.
+function _stairLmMsgHtml(o) {
+  const lAdj = Math.abs(o.landing - o.landingFloor) > 0.05, sAdj = Math.abs(o.step - o.stepFloor) > 0.05;
+  if (!lAdj && !sAdj) return '';
+  const rest = Math.abs(o.residual_cm || 0) > 0.05 ? ' — ' + _stairLenTxt(o.residual_cm) + (o.residual_cm > 0 ? ' til overs' : ' for kort') : ' — eksakt';
+  const t = (lAdj ? `Repos: avstand fra sidene justert til ${o.landing.toFixed(1)} cm (din: ${o.landingFloor} cm) så ${o.hva} går opp${rest}. ` : `Repos: ${o.landing.toFixed(1)} cm. `)
+    + (sAdj ? `Trinn: justert til ${o.step.toFixed(1)} cm (din: ${o.stepFloor} cm)` + (lAdj ? ' — repos rakk ikke alene.' : ` så ${o.hva} går opp${rest}.`) : `Trinn: ${o.step.toFixed(1)} cm.`);
+  return `<div class="stair-lm-msg" style="background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.3);border-radius:6px;padding:6px 8px;font-size:12px;color:var(--accent);margin-bottom:8px">${esc(t)}</div>`;
 }
 
 // STEG 2 (Regel 14, valgfri snuing): EGEN innstilling — ikke buildDirection (som kun styrer
@@ -50771,6 +50828,7 @@ function _resetStairToProposal() {
   // verdi her ville brutt Regel 13s eksakte kjede igjen (kabelsettet ble valgt for å treffe DENNE
   // marginen nøyaktig, ikke 5).
   if (p.edgeMargin_cm != null) stair.edgeMargin_cm = p.edgeMargin_cm;
+  _stairSetLmSolved(stair, p.landingEdgeMargin_cm);   // 238
   // 101: gjenopprett også forslagets KABELSETT. Før 101 kunne lista ikke endres manuelt, så dette
   // var alltid et nullgrep; nå er det nettopp det brukeren vil tilbakestille. selectedProposal
   // settes tilbake, så _regenerateStairCable lar forslagets egen margin (over) stå.
@@ -50990,6 +51048,8 @@ function _renderStairSettingsPanel(stairId) {
             : (manFit.status === 'warn' && (manFit.reason || manFit.note) ? _noteBox((manFit.reason || manFit.note) + ' (avstand sider låst)', 'warn') : ''))
       : manFit.note
         ? _noteBox(manFit.note, manFit.noteStatus)
+        : manFit.landingEdgeMargin_cm != null   // 238: trinn og repos hver for seg
+          ? _stairLmMsgHtml({ step: stair.edgeMargin_cm || 0, stepFloor: manFit.lmStepFloor_cm, landing: manFit.landingEdgeMargin_cm, landingFloor: manFit.lmLandingFloor_cm, residual_cm: manFit.residual_cm, hva: 'kabelsettet' })
         : (Math.abs((stair.edgeMargin_cm || 0) - _stairFloorMargin(stair)) > 0.05
           ? `<div style="background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.3);border-radius:6px;padding:6px 8px;font-size:12px;color:var(--accent);margin-bottom:8px">Avstand fra sidene justert til ${(stair.edgeMargin_cm||0).toFixed(1)} cm (din: ${_stairFloorMargin(stair)} cm) så kabelsettet går opp${Math.abs(manFit.residual_cm || 0) > 0.05 ? ' — ' + _stairLenTxt(manFit.residual_cm) + (manFit.residual_cm > 0 ? ' til overs' : ' for kort') : ' — eksakt'}</div>`
           : '');
@@ -51037,6 +51097,8 @@ function _renderStairSettingsPanel(stairId) {
       ? `<div style="background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);border-radius:6px;padding:6px 8px;font-size:12px;color:#ef4444;margin-bottom:8px">⚠ ${esc(info.error)}</div>`
       : (info && info.cable && info.cable.note)
       ? _noteBox(info.cable.note, info.cable.noteStatus)
+      : (info && info.cable && info.cable.landingEdgeMargin_cm != null && solvedMargin != null)   // 238
+        ? _stairLmMsgHtml({ step: solvedMargin, stepFloor: zFloor, landing: info.cable.landingEdgeMargin_cm, landingFloor: (_stairZoneLandingFieldCm(stair, selZone) ?? zFloor), residual_cm: info.cable.marginResidual_cm, hva: 'kabelen' })
       : (solvedMargin != null && Math.abs(solvedMargin - zFloor) > 0.05
         ? `<div style="background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.3);border-radius:6px;padding:6px 8px;font-size:12px;color:var(--accent);margin-bottom:8px">Avstand fra sidene justert til ${solvedMargin.toFixed(1)} cm (din: ${zFloor} cm) så kabelen går opp${info.cable && Math.abs(info.cable.marginResidual_cm || 0) > 0.05 ? ' — ' + _stairLenTxt(info.cable.marginResidual_cm) + (info.cable.marginResidual_cm > 0 ? ' til overs' : ' for kort') : ' — eksakt'}</div>`
         : '');
@@ -51092,6 +51154,7 @@ function _renderStairSettingsPanel(stairId) {
         <div style="display:flex;justify-content:space-between;margin-bottom:2px"><span>Løp per ${info && info.treads === 0 ? 'repos' : 'trinn'}</span><span>${info ? info.runsPerStep : 0}</span></div>
         <div style="display:flex;justify-content:space-between;margin-bottom:2px"><span>CC</span><span>${info ? info.actualCC_cm.toFixed(1) : '0.0'} cm</span></div>
         <div style="display:flex;justify-content:space-between"><span>Avstand sider</span><span>${solvedMargin != null ? solvedMargin.toFixed(1) : '—'} cm</span></div>
+        ${info && info.cable && info.cable.landingEdgeMargin_cm != null ? `<div id="stair-zone-lm-row" style="display:flex;justify-content:space-between"><span>Avstand sider repos</span><span>${info.cable.landingEdgeMargin_cm.toFixed(1)} cm</span></div>` : ''}
       </div>
       <div style="border-top:1px solid var(--brd);padding-top:8px;margin-bottom:8px">
         ${/* 105 (Regel 22): tomt = auto (plassholder viser hva auto landet på), tall = LÅST og
@@ -51104,6 +51167,7 @@ function _renderStairSettingsPanel(stairId) {
           </span>
         </div>
         ${_zLocked != null ? `<button onclick="_setStairZoneEdgeMargin(${selZone}, '')" style="width:100%;margin:-2px 0 6px;padding:3px;border:1px solid var(--brd);border-radius:5px;background:var(--surface2);color:var(--text);font-size:12px;cursor:pointer">↩ Tilbake til auto-avstand</button>` : ''}
+        ${hasLanding ? inheritRow('Avstand sider repos', zs.landingEdgeMargin_cm != null ? zs.landingEdgeMargin_cm : '', (stair.landingEdgeMargin_cm > 0 ? stair.landingEdgeMargin_cm : 'som trinn'), `_setStairZoneLandingEdgeMargin(${selZone}, this.value)`, 1, _stairMaxEdgeMarginCm(_stairLandingSurfaces(stair, selZone), stair.width_cm), 0.5) : ''}
         ${inheritRow('Avstand foran/bak', zs.noseOffset_cm != null ? zs.noseOffset_cm : '', (stair.noseOffset_cm ?? 2), `_setStairZoneFrontBack(${selZone}, this.value)`, 0, _stairMaxFrontBackCm(_stairZoneSurfaces(stair, selZone), stair.step_depth_cm), 0.5)}
         ${info && info.treads > 0 ? inheritRow('Maks CC trinn', zs.stepCC_cm != null ? zs.stepCC_cm : '', (stair.stepCC_cm || stair.cableSpacing_cm || STAIR_DEFAULT_MAX_CC_CM), `_setStairZoneStepCC(${selZone}, this.value)`, 3, _stairMaxCcCm({ ...stair, surfaces: _stairZoneSurfaces(stair, selZone) }, 'tread'), 0.5) : ''}
         ${hasLanding ? inheritRow('Maks CC repos', zs.landingCC_cm != null ? zs.landingCC_cm : '', (stair.landingCC_cm || stair.cableSpacing_cm || STAIR_DEFAULT_MAX_CC_CM), `_setStairZoneLandingCC(${selZone}, this.value)`, 3, _stairMaxCcCm({ ...stair, surfaces: _stairZoneSurfaces(stair, selZone) }, 'landing'), 0.5) : ''}
@@ -51217,6 +51281,19 @@ function _renderStairSettingsPanel(stairId) {
       </div>
       ${/* 185 (svar 184/7): låst avstand over armen på hestesko — rødt og ikke brukt. */''}
       ${_stairLockedOverArm(stair) ? `<div id="stair-edge-margin-err" style="font-size:12px;color:#e5484d;margin:-2px 0 6px;line-height:1.35">Maks ${_stairDimRound(_stairLockMaxCm(stair))} cm, ellers går strengene forbi hjørnet. Låst ${_stairLockedRawCm(stair)} cm brukes ikke.</div>` : ''}
+      ${/* 238: egen avstand fra sidene på repos + «Prioriter trinn». Bare når trappa har både trinn og repos. */''}
+      ${surfs.some(s => s.type === 'landing') && surfs.some(s => s.type !== 'landing') && !_stairHsFillTop(stair) ? (() => {
+        const naa = _stairLmOn(stair) && !_stairZoneRanges(stair) ? _stairLandingMarginNowCm(stair) : null;
+        return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+        <span title="Tomt = samme som trinnene">Avstand fra sidene – repos</span>
+        <span style="display:flex;align-items:center;gap:3px">
+          <input id="stair-landing-edge-margin" type="number" min="1" max="${_stairMaxEdgeMarginCm(_stairLandingSurfaces(stair), stair.width_cm)}" step="0.5" value="${stair.landingEdgeMargin_cm > 0 ? stair.landingEdgeMargin_cm : ''}" placeholder="${_stairFloorMargin(stair)}" title="Tomt = samme som trinnene. Tall = egen avstand på repos. Må kabelsettet gå opp, trekkes repos inn først, og trinnene holdes fylt." style="width:48px;text-align:center;background:var(--surface2);border:1px solid var(--brd);border-radius:4px;color:var(--text);padding:2px;font-size:12px;font-family:'IBM Plex Mono',monospace" onchange="_setStairLandingEdgeMargin(this.value)" onclick="event.stopPropagation()">
+          <span style="font-size:12px;color:var(--dim)">cm</span>
+        </span>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;margin-bottom:5px;cursor:pointer" title="Må kabelsettet gå opp, økes avstanden fra sidene på repos først. Trinnenes avstand står til repos ikke rekker lenger. CC endres ikke." onclick="event.stopPropagation()"><input id="stair-prioritize-steps" type="checkbox" ${stair.prioritizeSteps ? 'checked' : ''} onchange="_setStairPrioritizeSteps(this.checked)"> Prioriter trinn</label>
+      ${naa != null ? `<div id="stair-lm-info" style="font-size:12px;color:var(--dim);margin:-2px 0 6px;line-height:1.35">Trinn ${(stair.edgeMargin_cm || 5).toFixed(1)} cm · repos ${naa.toFixed(1)} cm fra sidene</div>` : ''}`;
+      })() : ''}
       ${surfs.some(s => s.type === 'landing') ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
         <span>Dybdemargin repos</span>
         <span style="display:flex;align-items:center;gap:3px">
@@ -53983,6 +54060,8 @@ function _stairHsTopFillCm(stair) {
 // Flatene som sidemarginen er justeringsvariabel for: alle, eller bare hesteskoflatene i 'fillTop'.
 function _stairAdjSurfaces(stair) {
   const surfs = (stair && stair.surfaces) || [];
+  // 238: i to-fase-løsningen bærer bare ÉN flatetype variabelen (repos i fase 1, trinnene i fase 2).
+  if (stair && stair._lm) return surfs.filter(f => (f.type === 'landing') === (stair._lm === 'landing'));
   return _stairHsFillTop(stair) ? surfs.filter(f => !f.hsTop) : surfs;
 }
 // Taket for hesteskoens margin: armen til den innerste strengen på hvert hesteskotrinn
@@ -54161,6 +54240,91 @@ function _stairZoneSettings(stair, zoneNo) {
   return zs[zoneNo] || zs[String(zoneNo)] || {};
 }
 
+// ══ 238 · EGEN «AVSTAND FRA SIDENE» PÅ REPOS, OG TRINNENE PRIORITERES (Kenneth 19.11.2026) ══
+// «Trinnene skal fylles mest mulig, det er mindre nøye med repos.»
+//   stair.landingEdgeMargin_cm        — brukerens felt (gulvet for repos). Tomt = samme som trinnene.
+//   stair.prioritizeSteps             — «Prioriter trinn». Av som standard.
+//   stair.landingEdgeMarginSolved_cm  — den LØSTE avstanden på repos (skrevet av løserne, aldri av brukeren).
+//   zoneSettings[z].landingEdgeMargin_cm — sonens eget repos-felt (tomt = trappas).
+//   cable.landingEdgeMargin_cm        — sonens løste repos-avstand (skrevet av _stairSolveZones).
+// Begge valg av = ingen av feltene finnes, og alt under er dødt: trappa er bit for bit som før 238.
+//
+// PRIORITET når kabelsettet må gå opp (_stairLmSolve): (1) trinnene står på gulvet, repos øker;
+// (2) rekker ikke repos (strengen ≥ STAIR_MIN_STRING_CM, samme harde grense som ellers), står repos
+// på taket og trinnene justeres som før; (3) går det fortsatt ikke opp: «for kort / for lang» som før.
+// CC røres aldri. En LÅST avstand (trapp 120 / sone 105) løses ikke i det hele tatt — repos får da
+// feltets verdi, eller den låste verdien når feltet er tomt.
+// Mønsteret er det samme som «Fyll toppflaten» (184): noen flater står fast, de andre bærer variabelen.
+function _stairLmOn(stair) {
+  if (!stair || (!(stair.landingEdgeMargin_cm > 0) && !stair.prioritizeSteps)) return false;
+  if (_stairHsFillTop(stair)) return false;
+  const s = stair.surfaces || [];
+  return s.some(f => f.type === 'landing') && s.some(f => f.type !== 'landing');
+}
+// Gulvet for repos: feltet, ellers trinnenes gulv.
+function _stairLandingFloorCm(stair) {
+  return stair.landingEdgeMargin_cm > 0 ? Math.round(stair.landingEdgeMargin_cm * 10) / 10 : _stairFloorMargin(stair);
+}
+// Sonens repos-felt: sonens eget, ellers trappas. null = ikke satt noe sted.
+function _stairZoneLandingFieldCm(stair, zoneNo) {
+  const zs = _stairZoneSettings(stair, zoneNo);
+  if (zs.landingEdgeMargin_cm > 0) return Math.round(zs.landingEdgeMargin_cm * 10) / 10;
+  return stair.landingEdgeMargin_cm > 0 ? Math.round(stair.landingEdgeMargin_cm * 10) / 10 : null;
+}
+// Skriv/fjern den løste repos-avstanden. Feltet finnes ikke på trapper som ikke bruker 238.
+function _stairSetLmSolved(stair, v) {
+  if (v > 0) stair.landingEdgeMarginSolved_cm = Math.round(v * 10) / 10;
+  else if ('landingEdgeMarginSolved_cm' in stair) delete stair.landingEdgeMarginSolved_cm;
+}
+// Den faktiske avstanden på repos akkurat nå (panelet og PDF-en): første repos i trappa, eller i sonen.
+function _stairLandingMarginNowCm(stair, zoneNo) {
+  const surfs = stair.surfaces || [], segs = stair.segments || [];
+  for (let si = 0; si < surfs.length; si++) {
+    if (surfs[si].type !== 'landing') continue;
+    if (zoneNo != null && (segs[surfs[si].segIdx] || {}).zone !== zoneNo) continue;
+    const ss = _stairSurfSettings(stair, si);
+    return ss.landingOwn ? ss.edgeMargin_cm : null;   // null = repos følger trinnene (som før 238)
+  }
+  return null;
+}
+// To-fase-løsningen. `run(variant)` er en av de eksisterende løserne (_stairFitFixedSet1 /
+// _stairSolveExactCableSet1) — de regner som før på ÉN variabel; her velges bare HVILKEN flatetype
+// som bærer den. Resultatet får `edgeMargin_cm` = trinnenes avstand (som alle kallere alt leser) og
+// `landingEdgeMargin_cm` = reposets.
+function _stairLmSolve(stair, run) {
+  const stepFloor = _stairFloorMargin(stair), lf = _stairLandingFloorCm(stair);
+  const tMin = _stairMinSurfInfo((stair.surfaces || []).filter(f => f.type !== 'landing'), stair.width_cm);
+  const base = { ...stair, landingEdgeMarginSolved_cm: null };
+  const p1 = { ...base, _lm: 'landing', _lmStep_cm: stepFloor, edgeMargin_cm: lf, edgeMarginMin_cm: lf, edgeMarginLocked_cm: null };
+  // Varmet bredde / 75 % gjelder TRINNENE når de er prioritert — reposets smale felt er meningen.
+  const stepInfo = (o, m) => {
+    if (!('under75' in o) && !('heatedWidth_cm' in o)) return o;
+    const h = _stairHeated75(tMin.w, m, 'trinnet');
+    return { ...o, under75: h.under75, heatedWidth_cm: h.heated_cm, heatedPct: h.pct, minSurfW_cm: h.minSurfW_cm, heatedFlate: h.flate, wideMargin: false };
+  };
+  const fl = { lmStepFloor_cm: stepFloor, lmLandingFloor_cm: lf };
+  const tag1 = o => (o && o.edgeMargin_cm != null) ? stepInfo({ ...o, landingEdgeMargin_cm: o.edgeMargin_cm, edgeMargin_cm: stepFloor, lmPhase: 1, ...fl }, stepFloor) : o;
+  const deep = (r, tag) => { const o = tag(r); if (o && o.single) o.single = tag(o.single); if (o && o.overAlt) o.overAlt = tag(o.overAlt); return o; };
+  const r1 = run(p1);
+  // Går opp med repos alene — eller er for LANGT (da hjelper det ikke å trekke inn trinnene heller).
+  if ((r1.ok && !r1.noFit) || r1.over) return deep(r1, tag1);
+  // Repos rakk ikke: repos står på taket, trinnene justeres som før.
+  const pr1 = _stairMarginProbe(p1);
+  const capL = Math.max(lf, Math.floor((pr1.maxMarginHard || 0) * 10 + 1e-6) / 10);
+  const r2 = run({ ...base, _lm: 'steps', _lmLanding_cm: capL });
+  const tag2 = o => (o && o.edgeMargin_cm != null) ? { ...o, landingEdgeMargin_cm: capL, lmPhase: 2, ...fl, lmLandingCap_cm: capL } : o;
+  if (r2.ok && !r2.noFit) return deep(r2, tag2);
+  if (r1.ok) return deep(r1, tag1);   // bare «for lange» sett (noFit) — ved gulvet, som før
+  // Går ikke opp: begge på gulvet, og grunnen fra den siste fasen (mangelen med ALT trukket inn).
+  const fail = (!r2.ok && r2.wantMargin_cm != null) ? r2 : r1;
+  return { ...fail, edgeMargin_cm: stepFloor, landingEdgeMargin_cm: lf, lmPhase: 0, ...fl, lmLandingCap_cm: capL,
+    reason: fail === r2 && fail.reason ? fail.reason + ` Repos er alt regnet med største avstand (${capL.toFixed(1)} cm).` : fail.reason };
+}
+// Skal løseren gå to-fase? Ikke når den alt ER en fase, og ikke med låst avstand (120).
+function _stairLmWrap(stair) {
+  return !stair._lm && _stairLmOn(stair) && _stairLockedMargin(stair) == null;
+}
+
 // De EFFEKTIVE målene for én flate: sonens overstyring der den finnes, ellers trappas verdi.
 // Dette er den ene kilden motoren, panelet, tegningen og PDF-en leser — STEG 0.4 fant at bare
 // sidemarginen var per flate fra før (zoneMarginForSurf); maks CC, nese/opptrinn og repos-margin
@@ -54185,6 +54349,21 @@ function _stairSurfSettings(stair, si, zoneRanges) {
     base.edgeMargin_cm = base.edgeMarginFloor_cm = _stairHsTopFillCm(stair);
     base.topFill = true;
   }
+  // 238: repos har egen avstand fra sidene når repos-feltet er brukt eller «Prioriter trinn» er på.
+  // `_lm` settes bare av løseren (_stairLmSolve): "landing" = repos er variabelen, trinnene står fast;
+  // "steps" = trinnene er variabelen, repos står fast på taket. Uten `_lm`: den løste verdien, ellers gulvet.
+  if (_stairLmOn(stair)) {
+    if (isLanding) {
+      base.landingOwn = true;
+      if (stair._lm === 'steps') { base.edgeMargin_cm = stair._lmLanding_cm; base.edgeMarginFloor_cm = _stairLandingFloorCm(stair); }
+      else if (stair._lm !== 'landing') {
+        base.edgeMarginFloor_cm = _stairLandingFloorCm(stair);
+        base.edgeMargin_cm = stair.landingEdgeMarginSolved_cm > 0 ? stair.landingEdgeMarginSolved_cm : base.edgeMarginFloor_cm;
+      }
+    } else if (stair._lm === 'landing') {
+      base.edgeMargin_cm = base.edgeMarginFloor_cm = stair._lmStep_cm;
+    }
+  }
   const ranges = zoneRanges === undefined ? _stairZoneRanges(stair) : zoneRanges;
   if (ranges) {
     const zi = ranges.findIndex(r => si >= r.fromSurf && si <= r.toSurf);
@@ -54192,6 +54371,7 @@ function _stairSurfSettings(stair, si, zoneRanges) {
       const r = ranges[zi];
       base.zone = r.zone; base.zoneIdx = zi;
       const zs = _stairZoneSettings(stair, r.zone);
+      base.landingOwn = false;   // 238: i en sone er det sonens kabel som bærer repos-verdien (under)
       // Sidemarginen er den LØSTE verdien per sone (satt av _stairSolveZones), ikke sonens gulv —
       // gulvet er bare inngangsverdien løsningen aldri går under (084/Regel 12).
       // 106: en sone kan ha FLERE kabler, så indeksen er ikke lenger sonenummeret. Alle kablene i
@@ -54201,6 +54381,13 @@ function _stairSurfSettings(stair, si, zoneRanges) {
       const _locked = _stairZoneLockedMargin(stair, r.zone);   // 105
       if (_locked != null) { base.edgeMarginFloor_cm = _locked; base.edgeMarginLocked = true; }
       else if (zs.edgeMarginMin_cm > 0) base.edgeMarginFloor_cm = zs.edgeMarginMin_cm;
+      // 238: sonens repos — verdien soneløseren skrev på kabelen (_stairSolveZones); gulvet fra sonens
+      // eget repos-felt, ellers trappas.
+      if (isLanding && cable && cable.landingEdgeMargin_cm != null) {
+        base.edgeMargin_cm = cable.landingEdgeMargin_cm; base.landingOwn = true;
+        const _lf = _stairZoneLandingFieldCm(stair, r.zone);
+        if (_lf != null) base.edgeMarginFloor_cm = _lf;
+      }
       if (zs.stepCC_cm > 0) base.stepCC_cm = zs.stepCC_cm;
       if (zs.landingCC_cm > 0) base.landingCC_cm = zs.landingCC_cm;
       // «Avstand foran/bak» er ÉN kontroll som setter både nese og opptrinn, nøyaktig som
@@ -54294,11 +54481,17 @@ function _stairZoneSubStair(stair, range) {
   const zs = _stairZoneSettings(stair, range.zone);
   // 105: en LÅST avstand er både gulv og tak for sonen — løseren skal ikke flytte den.
   const locked = _stairZoneLockedMargin(stair, range.zone);
-  const floor = locked != null ? locked : (zs.edgeMarginMin_cm > 0 ? zs.edgeMarginMin_cm : _stairFloorMargin(stair));
+  // 238: sonens repos-felt (sonens eget, ellers trappas). En sone med BARE repos har ingen trinn å
+  // prioritere — der er repos-feltet rett og slett sonens gulv.
+  const _zSurfs = (stair.surfaces || []).slice(range.fromSurf, range.toSurf + 1);
+  const _zLf = _stairZoneLandingFieldCm(stair, range.zone);
+  const _bareRepos = _zLf != null && _zSurfs.length > 0 && _zSurfs.every(f => f.type === 'landing');
+  const floor = locked != null ? locked : (_bareRepos ? _zLf : (zs.edgeMarginMin_cm > 0 ? zs.edgeMarginMin_cm : _stairFloorMargin(stair)));
   const nose = (zs.noseOffset_cm != null && zs.noseOffset_cm !== '') ? +zs.noseOffset_cm : null;
   return {
     ...stair,
-    surfaces: (stair.surfaces || []).slice(range.fromSurf, range.toSurf + 1),
+    landingEdgeMargin_cm: _zLf, landingEdgeMarginSolved_cm: null,   // 238
+    surfaces: _zSurfs,
     segments: [],            // => ingen soner inne i sonen
     zoneSettings: null,
     zoneError: null,
@@ -55002,7 +55195,10 @@ function _stairSoneGeometryBlocks(stair) {
     const eff = _stairSurfSettings(stair, refSi, zoneRanges);
     const riserOff = Math.round(eff.riserOffset_cm * 10) / 10;
     const noseOff = Math.round(eff.noseOffset_cm * 10) / 10;
-    return { ...cb, edgeMargin_cm, riserOffset_cm: riserOff, noseOffset_cm: noseOff, groups, varies: groups.length > 1 };
+    // 238: reposets egen avstand (null = følger trinnene) — bare når kabelen faktisk ligger på et repos.
+    const _lmCm = _stairLandingMarginNowCm(stair, cableObj && cableObj.zone != null ? cableObj.zone : null);
+    return { ...cb, edgeMargin_cm, riserOffset_cm: riserOff, noseOffset_cm: noseOff, groups, varies: groups.length > 1,
+      ...(_lmCm != null ? { landingEdgeMargin_cm: Math.round(_lmCm * 10) / 10 } : {}) };
   });
 }
 
@@ -55126,6 +55322,9 @@ function _stairSolveZones(stair) {
       fromSurf: r.fromSurf, toSurf: r.toSurf,
       productId: pid,
       edgeMargin_cm: solved.ok ? solved.edgeMargin_cm : floor,
+      // 238: sonens repos-avstand — løst (repos tar monnet først), ellers repos-gulvet. Bare når sonen
+      // bruker egen repos-avstand; ellers finnes ikke feltet, og repos følger edgeMargin_cm som før.
+      ...(_stairLmOn(subStair) ? { landingEdgeMargin_cm: solved.ok && solved.landingEdgeMargin_cm != null ? solved.landingEdgeMargin_cm : _stairLandingFloorCm(subStair) } : {}),
       // Sonens farge, og en lysere nyanse for kabel 2, 3 … i samme sone — så montøren ser både
       // HVILKEN sone og HVILKEN kabel i sonen, uten å telle. (Valget er notert i SPØRSMÅL.)
       color: _stairZoneCableColor(zi, k),
@@ -55329,7 +55528,8 @@ function _stairMinSurfInfo(surfs, width) {
 function _stairLayoutHeated75(stair) {
   const surfs = _stairAdjSurfaces(stair);
   if (!surfs || !surfs.length) return null;
-  const mi = _stairMinSurfInfo(surfs, stair.width_cm);
+  // 238: med egen avstand på repos gjelder varselet TRINNENE — reposets smalere felt er valgt.
+  const mi = _stairMinSurfInfo(_stairLmOn(stair) ? surfs.filter(f => f.type !== 'landing') : surfs, stair.width_cm);
   return _stairHeated75(mi.w, stair.edgeMargin_cm || 0, mi.flate);
 }
 
@@ -55341,6 +55541,9 @@ function _stairLayoutHeated75(stair) {
 // millimeter (Regel 15). Dette er den ene kilden — ikke en kopi per kallested.
 //   needed(m) = needed(gulv) - 2*totalStrands*(m - gulv)   =>   m = gulv + (needed(gulv) - sum) / (2*totalStrands)
 function _stairMarginProbe(stair) {
+  // 238: kalt direkte på en trapp med egen repos-avstand (ikke via _stairLmSolve): «ved gulvet» betyr
+  // BEGGE gulv — en tidligere løst repos-avstand skal ikke følge med inn i målingen.
+  if (_stairLmWrap(stair) && stair.landingEdgeMarginSolved_cm) stair = { ...stair, landingEdgeMarginSolved_cm: null };
   const floorMargin = _stairFloorMargin(stair);
   // cables:[{productId:null}] => ubegrenset kapasitet i _stairAllocateCables, altså hele, uklippet
   // ruten (samme prinsipp som matte-auto sin idealLenCm-probe).
@@ -55349,7 +55552,9 @@ function _stairMarginProbe(stair) {
   // og bare hesteskoflatene teller for taket. Valg 1 (og rette trapper): alle strenger, alle flater.
   const fillTop = _stairHsFillTop(stair);
   const adjSurfs = _stairAdjSurfaces(stair);
-  const totalStrands = fillTop ? probe.runs.filter(r => !((stair.surfaces || [])[r.surfaceIdx] || {}).hsTop).length : probe.runs.length;
+  const _lm = stair._lm || null;   // 238: bare strengene på flatene som bærer variabelen blir kortere
+  const totalStrands = _lm ? probe.runs.filter(r => (((stair.surfaces || [])[r.surfaceIdx] || {}).type === 'landing') === (_lm === 'landing')).length
+    : fillTop ? probe.runs.filter(r => !((stair.surfaces || [])[r.surfaceIdx] || {}).hsTop).length : probe.runs.length;
   const neededAtFloor_cm = probe.totalCableLength_cm;
   const _msi = _stairMinSurfInfo(adjSurfs, stair.width_cm);   // 190: også hva slags flate (repos/trinn)
   const minSurfW = _msi.w, minSurfFlate = _msi.flate;   // 176: span (= w_cm for rette)
@@ -55369,8 +55574,28 @@ function _stairMarginProbe(stair) {
     const d = 5;
     const p2 = generateStairCable({ ...stair, edgeMargin_cm: floorMargin + d, cables: [{ productId: null }] });
     const sl = (neededAtFloor_cm - p2.totalCableLength_cm) / d;
-    if (p2.runs.length === probe.runs.length && sl > 0 && sl <= 2 * totalStrands + 0.5 && Math.abs(sl - 2 * totalStrands) > 1e-6) slope = sl;
+    if (p2.runs.length === probe.runs.length && sl > 0 && (_lm || sl <= 2 * totalStrands + 0.5) && Math.abs(sl - 2 * totalStrands) > 1e-6) slope = sl;
   }
+  // 238: med ulik avstand på trinn og repos flytter overgangens rute seg med forskjellen, og behovet er da
+  // bare STYKKEVIS lineært (knekk der de to avstandene er like). Måles ved taket; er det ikke lineært,
+  // finner solve() marginen ved å måle på motoren selv (regula falsi, få runder) i stedet for formelen.
+  const _needAt = m => generateStairCable({ ...stair, edgeMargin_cm: m, cables: [{ productId: null }] }).totalCableLength_cm;
+  let _lmNeedCap = null, _lmLinear = true;
+  if (_lm && totalStrands > 0 && maxMarginHard > floorMargin + 0.05) {
+    _lmNeedCap = _needAt(maxMarginHard);
+    _lmLinear = Math.abs(_lmNeedCap - (neededAtFloor_cm - slope * (maxMarginHard - floorMargin))) < 0.05;
+  }
+  const _lmExact = sum_cm => {
+    if (sum_cm < _lmNeedCap - 0.01) return maxMarginHard + Math.max(0.1, (_lmNeedCap - sum_cm) / slope);
+    let a = floorMargin, na = neededAtFloor_cm, b = maxMarginHard, nb = _lmNeedCap, m = b;
+    for (let k = 0; k < 12 && na - nb > 1e-9; k++) {
+      m = a + (na - sum_cm) * (b - a) / (na - nb);
+      const nm = _needAt(m);
+      if (Math.abs(nm - sum_cm) < 0.02) break;
+      if (nm > sum_cm) { a = m; na = nm; } else { b = m; nb = nm; }
+    }
+    return m;
+  };
   return {
     ok: totalStrands > 0 && neededAtFloor_cm > 0,
     floorMargin, totalStrands, neededAtFloor_cm, minSurfW, minSurfFlate, armCap, fillTop, slope,
@@ -55380,7 +55605,9 @@ function _stairMarginProbe(stair) {
     // 184: i 'fillTop' er hesteskoens margin MENT å ligge langt over gulvet (den bærer hele
     // justeringen alene), så +15-taket gjelder ikke der — bare 75 % og armen.
     // 189: 75 % stopper ikke lenger — i 'fillTop' er det bare armen og 30 cm-strengen.
-    maxSaneMargin: fillTop ? maxMarginHard : Math.min(minSurfW / 2 - 1, floorMargin + 15, armCap, maxMarginHard),   // 185: armen også i valg 1
+    // 238: i fase 1 er repos MENT å ta hele slingringsmonnet — heller ikke der gjelder +15-taket.
+    maxSaneMargin: (fillTop || _lm === 'landing') ? maxMarginHard : Math.min(minSurfW / 2 - 1, floorMargin + 15, armCap, maxMarginHard),   // 185: armen også i valg 1
+    lm: _lm, needAtCap_cm: (_lm && !_lmLinear) ? _lmNeedCap : null,
     maxMarginHard,
     // Regel 19-grensen: varmet bredde >= 75 % av smaleste flate, altså høyst 12,5 % per side.
     // 189: bare VARSELET (gult) — ingen løser stopper på den lenger. Se maxMarginHard.
@@ -55388,7 +55615,8 @@ function _stairMarginProbe(stair) {
     // Regel 12 + 15: marginen som får `sum_cm` til å gå opp — aldri under brukerens gulv, snappet
     // til hele mm. exactMargin beholdes for sorteringen i forslagsmotoren.
     solve(sum_cm) {
-      const exactMargin = floorMargin + (neededAtFloor_cm - sum_cm) / slope;
+      let exactMargin = floorMargin + (neededAtFloor_cm - sum_cm) / slope;
+      if (_lm && !_lmLinear && sum_cm < neededAtFloor_cm - 0.01) exactMargin = _lmExact(sum_cm);   // 238
       return { exactMargin, margin: Math.max(floorMargin, Math.round(exactMargin * 10) / 10) };
     },
   };
@@ -55400,6 +55628,11 @@ function _stairMarginProbe(stair) {
 // _stairMarginProbe, ikke kopiert. Brukes også av 102 (velg kabel til en sone).
 // Returnerer { ok, edgeMargin_cm, residual_cm, reason }.
 function _stairFitFixedSet(stair, productIds) {
+  // 238: egen avstand på repos / «Prioriter trinn» → repos først, så trinnene (_stairLmSolve).
+  if (_stairLmWrap(stair)) return _stairLmSolve(stair, s => _stairFitFixedSet1(s, productIds));
+  return _stairFitFixedSet1(stair, productIds);
+}
+function _stairFitFixedSet1(stair, productIds) {
   const ids = (productIds || []);
   if (!ids.length || ids.some(id => id == null)) return { ok: false, reason: 'Ingen kabel valgt.' };
   const prods = ids.map(id => HEATING_PRODUCTS.find(p => p.id === id));
@@ -55435,7 +55668,7 @@ function _stairFitFixedSet(stair, productIds) {
   // (varmet bredde ≥ STAIR_MIN_STRING_CM).
   if (margin > pr.maxMarginHard + 0.01) {
     // Hvor mye kabel som mangler for å nå grensen — tallet brukeren faktisk kan handle på.
-    const needAtCap_cm = pr.neededAtFloor_cm - pr.slope * (pr.maxMarginHard - pr.floorMargin);
+    const needAtCap_cm = pr.needAtCap_cm != null ? pr.needAtCap_cm : pr.neededAtFloor_cm - pr.slope * (pr.maxMarginHard - pr.floorMargin);   // 238: målt når behovet ikke er lineært
     // 184: det kan være hjørnet (armen) som stopper hesteskoen. 185: i begge valg.
     const forbiHjornet = pr.armCap <= pr.maxMarginHard + 0.01;
     const mangler = _stairLenTxt(Math.max(0, needAtCap_cm - sum_cm));
@@ -55485,6 +55718,7 @@ function _stairBrowseBasis(stair) {
     cableSpacing_cm: ps.cableSpacing_cm, cableProductId: ps.cableProductId,
     noseOffset_cm: ps.noseOffset_cm, riserOffset_cm: ps.riserOffset_cm,
     edgeMargin_cm: ps.edgeMargin_cm, edgeMarginMin_cm: ps.edgeMarginMin_cm, desiredCableCount: ps.desiredCableCount,
+    landingEdgeMarginSolved_cm: ps.landingEdgeMarginSolved_cm || null,   // 238
     selectedProposal: ps.selectedProposal, runsPerStep: ('runsPerStep' in ps) ? ps.runsPerStep : stair.runsPerStep };
   b.surfaces = _generateStairSurfaces(b);
   return b;
@@ -55506,12 +55740,15 @@ function _stairBrowseCableInfo(stair, productId) {
     return { kind: 'laast', status: f.status || 'ok', text, margin_cm: locked };
   }
   const fit = _stairFitFixedSet(stair, [productId]);
+  // 238: med egen avstand på repos sier teksten begge tallene.
+  const _lmF = fit.landingEdgeMargin_cm != null;
+  const sider = f => _lmF ? `trinn ${m1(f.edgeMargin_cm)} cm og repos ${m1(f.landingEdgeMargin_cm)} cm fra sidene` : `${m1(f.edgeMargin_cm)} cm fra sidene`;
   if (fit.over) {
     // 190 (svar 189/5): høyst 0,5 m til overs = «Passer» (grønt). Mer enn det er aldri «Passer»: gult, rødt over 5 %.
     if (fit.residual_cm <= STAIR_OVER_OK_CM + 0.01) {
       const w75o = fit.under75 ? _stairUnder75Txt({ heated_cm: fit.heatedWidth_cm, pct: fit.heatedPct, flate: fit.heatedFlate }) : null;
       return { kind: 'passer', status: 'ok', margin_cm: fit.edgeMargin_cm, warn75: w75o,
-        text: `Passer med ${m1(fit.edgeMargin_cm)} cm fra sidene, ${_stairOverTxt(fit.residual_cm)} til overs` };
+        text: `Passer med ${sider(fit)}, ${_stairOverTxt(fit.residual_cm)} til overs` };
     }
     return { kind: 'over', status: fit.overStatus === 'error' ? 'error' : 'warn', margin_cm: fit.edgeMargin_cm,
       text: `${_stairOverTxt(fit.residual_cm)} til overs` + (fit.overStatus === 'error' ? ' (over 5 %)' : '') };
@@ -55527,9 +55764,10 @@ function _stairBrowseCableInfo(stair, productId) {
   const nesten = _stairFitFromLengths(fit.sum_cm / 100, fit.neededAtFloor_cm / 100).status === 'ok';
   // 189: under 75 % varmet bredde er et gult varsel ved siden av, ikke en annen status.
   const w75 = fit.under75 ? _stairUnder75Txt({ heated_cm: fit.heatedWidth_cm, pct: fit.heatedPct, flate: fit.heatedFlate }) : null;
-  if (nesten) return { kind: 'passer', status: 'ok', margin_cm: fit.edgeMargin_cm, warn75: w75, text: `Passer med ${m1(fit.edgeMargin_cm)} cm fra sidene` };
+  if (nesten) return { kind: 'passer', status: 'ok', margin_cm: fit.edgeMargin_cm, warn75: w75, text: `Passer med ${sider(fit)}` };
   return { kind: 'kanPasse', status: 'ok', margin_cm: fit.edgeMargin_cm, warn75: w75,
-    text: `${_stairLenTxt(short_cm)} for kort ved minste avstand (${m1(fit.floorMargin_cm)} cm). Passer hvis svingene trekkes inn ${m1(fit.edgeMargin_cm)} cm fra sidene` };
+    text: _lmF ? `${_stairLenTxt(short_cm)} for kort ved minste avstand. Passer med ${sider(fit)}`
+      : `${_stairLenTxt(short_cm)} for kort ved minste avstand (${m1(fit.floorMargin_cm)} cm). Passer hvis svingene trekkes inn ${m1(fit.edgeMargin_cm)} cm fra sidene` };
 }
 
 // 190 (svar 189/3): trapper med soner blar for ÉN sone — sonen er en egen liten trapp (_stairZoneSubStair, samme
@@ -55790,6 +56028,11 @@ function _stairSolveLockedCableSet(stair) {
 }
 
 function _stairSolveExactCableSet(stair, opts) {
+  // 238: egen avstand på repos / «Prioriter trinn» → repos først, så trinnene (_stairLmSolve).
+  if (_stairLmWrap(stair)) return _stairLmSolve(stair, s => _stairSolveExactCableSet1(s, opts));
+  return _stairSolveExactCableSet1(stair, opts);
+}
+function _stairSolveExactCableSet1(stair, opts) {
   opts = opts || {};
   // STEG 5 (Regel 18, Kenneth 19.08.2026): store trapper deles ofte i flere LIKE kabler for å
   // fordele lasten jevnt på en trefasekurs. Brukerens ønskede antall + "like lengder"-avhuking er
@@ -55904,7 +56147,7 @@ function _stairSolveExactCableSet(stair, opts) {
           residual_cm: Math.round((sum_cm - geo1.totalCableLength_cm) * 100) / 100,
           // 185 (svar 184/6): ikke i «Fyll toppflaten» — der er stor avstand på hesteskoen meningen.
           wideMargin: !pr.fillTop && margin > floorMargin + STAIR_SINGLE_WARN_ABOVE_FLOOR_CM + 0.01,
-          under75: _stairHeated75(minSurfW, margin).under75,   // 189: gult varsel
+          under75: stair._lm !== 'landing' && _stairHeated75(minSurfW, margin).under75,   // 189: gult varsel · 238: ikke for repos som tar monnet
           heatedWidth_cm: Math.round((minSurfW - 2 * margin) * 10) / 10, minSurfW_cm: minSurfW,
           floorMargin_cm: floorMargin,
         };
@@ -55923,7 +56166,7 @@ function _stairSolveExactCableSet(stair, opts) {
   // 189: et sett som er litt for langt (≤ 5 %, på gulvet) er også ALTERNATIVET når alt som går opp gir under
   // 75 % varmet bredde (smal 120 × 6: 20 m @ 26,7 = 55 % er A, 30 m med 1,1 m til overs er B).
   let overAlt = null;
-  const _h75 = m => _stairHeated75(minSurfW, m).under75;
+  const _h75 = m => stair._lm !== 'landing' && _stairHeated75(minSurfW, m).under75;   // 238
   if (overSets.length && (candidates.length || single) && !wantEqualCount && !opts.maxCables
       && candidates.every(c => _h75(c.margin)) && (!single || single.under75)) {
     const o5 = overSets.map(o => ({ ...o, f: _stairFitFromLengths(o.sum_cm / 100, neededAtFloor_cm / 100) }))
@@ -56073,6 +56316,7 @@ function _generateStairProposals(stair) {
     // tall-vei for begge, så panelet aldri viser to ulikt regnede størrelser side om side.
     const mkCandidate = (set, isSingle) => {
       const geo = generateStairCable({ ...stair, edgeMargin_cm: set.edgeMargin_cm,
+        landingEdgeMarginSolved_cm: set.landingEdgeMargin_cm != null ? set.landingEdgeMargin_cm : null,   // 238
         cables: set.products.map((p, i) => ({ index: i, productId: p.id })) });
       const totalLen_m = geo.totalCableLength_cm / 100;
       // STEG 3 (Regel 16): W/m² = (kabelens W/m) / (CC i meter) — IKKE areal. Ett CC-tall gjelder
@@ -56117,7 +56361,10 @@ function _generateStairProposals(stair) {
         overWhy: set.overWhy || null,   // 188: kortets forklaring (kortest | arm | streng | 75)
       };
       // 189: varmet bredde for ALLE kort (ikke bare én kabel) — under 75 % er et gult merke og rangeres bak.
-      { const _ms = _stairMinSurfInfo(_stairAdjSurfaces(stair), stair.width_cm);   // 190: «av reposet»
+      // 238: reposets løste avstand følger kortet; varmet bredde måles da på TRINNENE (de er prioritert).
+      if (set.landingEdgeMargin_cm != null) { c.landingEdgeMargin_cm = set.landingEdgeMargin_cm; c.landingFloor_cm = set.lmLandingFloor_cm;
+        c.landingAdjusted = Math.abs(set.landingEdgeMargin_cm - set.lmLandingFloor_cm) > 0.05; }
+      { const _ms = _stairMinSurfInfo(set.landingEdgeMargin_cm != null ? (stair.surfaces || []).filter(f => f.type !== 'landing') : _stairAdjSurfaces(stair), stair.width_cm);   // 190: «av reposet»
         const h = _stairHeated75(_ms.w, set.edgeMargin_cm, _ms.flate);
         c.under75 = h.under75; c.heated75 = h; }
       c.score = _scoreStairProposal(c);
@@ -56608,6 +56855,205 @@ function _stairManualSetRegressionTest() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_stairManualSetRegressionTest: ${allOk ? 'BESTÅTT' : 'FEILET'}`, results);
+  return { ok: allOk, results };
+}
+
+// 238 — regresjonstest: egen avstand fra sidene på repos, og trinnene prioriteres. Kjøres fra konsollen:
+// _stairLandingMarginRegressionTest238(). Samme syntetiske katalog og «rør ikke lagring»-oppsett som 084/101/102.
+// Låser: (A) trapper som ikke bruker valgene er som før 238 (fasit = hash målt på koden før 238), (B) repos-feltet,
+// (C) «Prioriter trinn», (D) repos på taket → trinnene → for kort, (E) soner og låst sone (105), (F) forslag,
+// (G) låst avstand på trappa (120), (H) hestesko, (I) PDF-blokka og målene leser reposets verdi, (J) panelet.
+function _stairLandingMarginRegressionTest238() {
+  const saved = { stairs: S.stairs, sel: S.ui.selectedStairId, zone: S.ui.selectedStairZone, prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
+    nextStair: S.counters.nextStairId, undoLen: _undoStack.length, autosave: window._performAutoSave };
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const ny = typeof _stairLmOn === 'function';
+  try {
+    window._performAutoSave = async () => {};
+    const LENS = [5, 10, 15, 20, 25, 30, 35, 40.1, 45, 49.7, 55.3, 60, 70, 78.7, 89.1, 98, 106.9, 128.2, 139.9];
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push({ id: 9800, module_type: 'cable', name: 'TESTKABEL' });
+    HEATING_PRODUCTS.length = 0;
+    LENS.forEach((L, i) => HEATING_PRODUCTS.push({ id: 98000 + i, category_id: 9800, active: true, product_family: 'InSnow 30T',
+      name: `InSnow 30T ${Math.round(L * 30)}W ${L}m`, cable_length_m: L, watt_per_m: 30, voltage: 230 }));
+    const pid = L => (HEATING_PRODUCTS.find(p => Math.abs(p.cable_length_m - L) < 0.001) || {}).id;
+    const lenOf = id => (HEATING_PRODUCTS.find(p => p.id === id) || {}).cable_length_m;
+    const r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100;
+    const reg = st => { S.stairs = [st]; S.ui.selectedStairId = st.id; S.ui.selectedStairZone = null; _regenerateStairCable(st); return st; };
+    // Rett trapp: 4 trinn + repos 120 + 6 trinn, 210 cm bred (Kenneths testtrapp). zones = sonenummer per segment.
+    const mk = (extra, zones, zoneSettings) => {
+      S.counters.nextStairId = 998001;
+      const st = _createStairObj({ name: 'T238', width_cm: 210, step_depth_cm: 30, step_height_cm: 17, step_count: 10,
+        edgeMargin_cm: 5, stepCC_cm: 10, landingCC_cm: 10, cableSpacing_cm: 10, riserOffset_cm: 2, noseOffset_cm: 2, ...(extra || {}) });
+      st.segments = [{ type: 'steps', width_cm: 210, stepDepth_cm: 30, stepHeight_cm: 17, stepCount: 4 }, { type: 'landing', width_cm: 210, depth_cm: 120 },
+        { type: 'steps', width_cm: 210, stepDepth_cm: 30, stepHeight_cm: 17, stepCount: 6 }];
+      if (zones) st.segments.forEach((g, i) => { g.zone = zones[i]; });
+      if (zoneSettings) st.zoneSettings = JSON.parse(JSON.stringify(zoneSettings));
+      st.cables = []; st.selectedProposal = null; st.lastProposal = null; st.desiredCableCount = null;
+      return reg(st);
+    };
+    const setC = (st, lens) => { st.cables = lens.map((L, i) => ({ index: i, productId: pid(L) })); st.cableProductId = pid(lens[0]); st.selectedProposal = null; _regenerateStairCable(st); return st; };
+    // Hele utlegget som én streng: hver streng (flate, posisjon, start/slutt/kabel), behov, dekket, marginer.
+    const full = st => JSON.stringify({ r: st.runs.map(r => [r.surfaceIdx, r2(r.pos_cm), r.segments.map(g => [r2(g.start_cm), r2(g.end_cm), g.cableIdx])]),
+      t: r2(st.totalCableLength_cm), c: r2(st.coveredCableLength_cm), em: st.edgeMargin_cm, u: (st.uncoveredRuns || []).length,
+      k: (st.cables || []).map(c => [c.zone, c.productId, c.edgeMargin_cm, c.error || null]) });
+    const hash = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36); };
+    const propSig = st => _generateStairProposals(st).map(p => p.products.map(x => x.length_m).join('+') + '@' + p.edgeMargin_cm + '/' + (p.marginResidual_cm || 0)).join(' | ');
+    const HS = { topW_cm: 470, topD_cm: 70, count: 1, front_cm: 31 };
+    const mkHs = extra => { S.counters.nextStairId = 998001;
+      return reg(_createStairObj({ name: 'HS238', design: 'horseshoe', horseshoe: { ...HS }, segments: _stairHsSegments(_stairHsParams({ horseshoe: HS })),
+        riserOffset_cm: 2, noseOffset_cm: 2, edgeMargin_cm: 2, edgeMarginMin_cm: 2, stepCC_cm: 10, landingCC_cm: 10, x_cm: 0, y_cm: 0, ...(extra || {}) })); };
+    const mkRett = extra => { S.counters.nextStairId = 998001;
+      return reg(_createStairObj({ name: 'R238', width_cm: 240, step_depth_cm: 30, step_height_cm: 17, step_count: 8, edgeMargin_cm: 5, stepCC_cm: 10, cableSpacing_cm: 10, riserOffset_cm: 2, noseOffset_cm: 2, ...(extra || {}) })); };
+    // ── A: uendret uten de nye valgene. Fasit = hash av hele utlegget (+ forslagslista), målt på koden før 238. ──
+    const FASIT = { a1_rett8_forslagA: '1xj5xxb', a2_repos_manuelt98: '1uahn20', a3_repos_manuelt106_9: 'fxp6de', a4_repos_forslag: 'mi885r', a5_soner123: '16ja5tm', a6_soner122: '18jkvn2',
+      a7_soner122_laast8: 'inghdd', a8_hestesko: 'hwsc1u', a9_hestesko_fyllTopp: '18kf9dl', a10_repos_laast6: '2lb6fd', a11_reposTopp_forslagA: '1rdkpel' };
+    const fx = {
+      a1_rett8_forslagA: () => { const st = mkRett(); const p = _generateStairProposals(st); st.proposals = p; _applyStairProposal(st, p[0]); return full(st) + propSig(st); },
+      a2_repos_manuelt98: () => full(setC(mk(), [98])),
+      a3_repos_manuelt106_9: () => full(setC(mk(), [106.9])),
+      a4_repos_forslag: () => { const st = mk(); return full(st) + propSig(st); },
+      a5_soner123: () => full(mk(null, [1, 2, 3])),
+      a6_soner122: () => full(mk(null, [1, 2, 2])),
+      a7_soner122_laast8: () => full(mk(null, [1, 2, 2], { 2: { edgeMargin_cm: 8 } })),
+      a8_hestesko: () => { const st = mkHs(); const p = _generateStairProposals(st); if (p[0]) _applyStairProposal(st, p[0]); return full(st) + propSig(st); },
+      a9_hestesko_fyllTopp: () => { const st = mkHs({ horseshoe: { ...HS, marginMode: 'fillTop' } }); const p = _generateStairProposals(st); if (p[0]) _applyStairProposal(st, p[0]); return full(st) + propSig(st); },
+      a10_repos_laast6: () => { const st = mk(); st.edgeMarginLocked_cm = 6; return full(setC(st, [98])); },
+      a11_reposTopp_forslagA: () => { const st = mkRett({ landing_position: 'top', landing_depth_cm: 120, landingCC_cm: 10, landingMargin_cm: 5 }); const p = _generateStairProposals(st); if (p[0]) _applyStairProposal(st, p[0]); return full(st) + propSig(st); },
+    };
+    for (const k of Object.keys(fx)) { const h = hash(fx[k]()); check('A: ' + k + ' — utlegg og forslag som før 238', FASIT[k], h === FASIT[k], h); }
+    if (ny) {
+      const stA = setC(mk(), [98]);
+      check('A: ingen 238-felt på en trapp som ikke bruker valgene', 'ingen', !('landingEdgeMargin_cm' in stA) && !('prioritizeSteps' in stA) && !('landingEdgeMarginSolved_cm' in stA) && !_stairLmOn(stA),
+        ['landingEdgeMargin_cm', 'prioritizeSteps', 'landingEdgeMarginSolved_cm'].filter(f => f in stA).join(',') || 'ingen');
+      check('A: flatene har ikke landingOwn', 'ingen', stA.surfaces.every((f, i) => !_stairSurfSettings(stA, i).landingOwn), 'se kode');
+      const stZ = mk(null, [1, 2, 2]);
+      check('A: sonekabler uten repos-felt', 'ingen', stZ.cables.every(c => !('landingEdgeMargin_cm' in c)), stZ.cables.map(c => c.landingEdgeMargin_cm).join(','));
+    }
+    if (ny) {
+      const land = st => st.surfaces.findIndex(f => f.type === 'landing');
+      const ss = (st, si) => _stairSurfSettings(st, si);
+      const span = (st, type) => [...new Set(st.runs.filter(r => st.surfaces[r.surfaceIdx].type === type).map(r => r1(r.segments[0].start_cm) + '–' + r1(r.segments[r.segments.length - 1].end_cm)))].join(',');
+      const posSig = st => JSON.stringify(st.runs.map(r => [r.surfaceIdx, r2(r.pos_cm)]));
+      const fitLbl = st => _stairCableSetFit(st).label;
+      const panel = () => { _updateStairSettingsPanel(); return document.getElementById('stair-settings-panel'); };
+      const base = mk(); const basePos = posSig(base), baseFull = full(base);
+      // ── B: repos-feltet ──
+      let st = mk({ landingEdgeMargin_cm: 15 });
+      check('B1: repos-felt 15 → trinn 5, repos 15 (flatenes innstillinger)', '5/15/15', ss(st, 0).edgeMargin_cm === 5 && ss(st, land(st)).edgeMargin_cm === 15 && ss(st, land(st)).edgeMarginFloor_cm === 15 && ss(st, land(st)).landingOwn === true,
+        [ss(st, 0).edgeMargin_cm, ss(st, land(st)).edgeMargin_cm, ss(st, land(st)).edgeMarginFloor_cm].join('/'));
+      check('B2: strengene: trinn 5–205, repos 15–195', '5–205 / 15–195', span(st, 'tread') === '5–205' && span(st, 'landing') === '15–195', span(st, 'tread') + ' / ' + span(st, 'landing'));
+      check('B3: kabellengde 103,96 m (106,16 − 12 strenger × 20 cm + ruten 2 × 10 cm)', '10396 (uten felt 10616)', st.totalCableLength_cm === 10396 && base.totalCableLength_cm === 10616, st.totalCableLength_cm + ' / ' + base.totalCableLength_cm);
+      check('B4: samme strenger og samme CC som uten feltet (52 strenger)', 'lik', posSig(st) === basePos && st.runs.length === 52, st.runs.length);
+      st = mk(); _setStairLandingEdgeMargin('15');
+      check('B5: feltet via panelets setter', '15 · 10396', st.landingEdgeMargin_cm === 15 && st.totalCableLength_cm === 10396, st.landingEdgeMargin_cm + ' · ' + st.totalCableLength_cm);
+      _setStairLandingEdgeMargin('500');
+      check('B6: over taket klemmes til reposets tak (210 / 2 − 1)', 104, st.landingEdgeMargin_cm === 104 && _stairMaxEdgeMarginCm(_stairLandingSurfaces(st), st.width_cm) === 104, st.landingEdgeMargin_cm);
+      _setStairLandingEdgeMargin('0.2');
+      check('B7: under 1 cm klemmes til 1 (som dagens felt)', 1, st.landingEdgeMargin_cm === 1, st.landingEdgeMargin_cm);
+      _setStairLandingEdgeMargin('');
+      check('B8: tomt felt = feltet borte, utlegget som uten', 'lik', !('landingEdgeMargin_cm' in st) && full(st) === baseFull, ('landingEdgeMargin_cm' in st) ? 'feltet står' : (full(st) === baseFull ? 'lik' : 'ULIK'));
+      st = setC(mk({ landingEdgeMargin_cm: 15 }), [98]);
+      check('B9: felt 15 + 98 m manuelt: trinn 5 står, repos 42,1, Passer', '5 · 42.1 · Passer', st.edgeMargin_cm === 5 && st.edgeMarginMin_cm === 5 && ss(st, land(st)).edgeMargin_cm === 42.1 && fitLbl(st) === 'Passer' && !st.uncoveredRuns.length,
+        st.edgeMargin_cm + ' · ' + ss(st, land(st)).edgeMargin_cm + ' · ' + fitLbl(st));
+      check('B10: gulvet for repos er feltet (15), ikke trinnenes 5', '15', st.manualFit.lmLandingFloor_cm === 15 && st.manualFit.lmStepFloor_cm === 5, st.manualFit.lmLandingFloor_cm + '/' + st.manualFit.lmStepFloor_cm);
+      // ── C: «Prioriter trinn» ──
+      st = setC(mk({ prioritizeSteps: true }), [98]);
+      check('C1: 98 m (går ikke opp ved 5 cm): trinnenes avstand står på 5, repos øker til 42,1', '5 · 42.1 · fase 1', st.edgeMargin_cm === 5 && st.landingEdgeMarginSolved_cm === 42.1 && ss(st, land(st)).edgeMargin_cm === 42.1 && st.manualFit.lmPhase === 1,
+        st.edgeMargin_cm + ' · ' + st.landingEdgeMarginSolved_cm + ' · fase ' + st.manualFit.lmPhase);
+      check('C2: strengene: trinn 5–205, repos 42,1–167,9', '5–205 / 42.1–167.9', span(st, 'tread') === '5–205' && span(st, 'landing') === '42.1–167.9', span(st, 'tread') + ' / ' + span(st, 'landing'));
+      check('C3: CC uendret — samme strenger på samme plass som uten valget', 'lik', posSig(st) === basePos, posSig(st) === basePos ? 'lik' : 'ULIK');
+      check('C4: kabelsettet går opp (rest under 1,3 cm etter mm-snapping), ingenting udekket', 'Passer', fitLbl(st) === 'Passer' && Math.abs(st.totalCableLength_cm - 9800) < 1.3 && !st.uncoveredRuns.length, fitLbl(st) + ' · ' + st.totalCableLength_cm);
+      { const t = panel().textContent;
+        check('C5: panelteksten skiller repos og trinn', 'Repos: … 42.1 cm (din: 5 cm) … Trinn: 5.0 cm.', /Repos: avstand fra sidene justert til 42\.1 cm \(din: 5 cm\) så kabelsettet går opp/.test(t) && /Trinn: 5\.0 cm\./.test(t), (t.match(/Repos: avstand[^.]*\.\d[^.]*\.[^.]*\.\d cm\./) || [t.slice(0, 80)])[0]); }
+      st = setC(mk({ prioritizeSteps: true }), [106.9]);
+      check('C6: 106,9 m (0,7 m til overs ved gulvet): begge står på 5, merknad som før', '5 · 5 · 74 cm til overs', st.edgeMargin_cm === 5 && ss(st, land(st)).edgeMargin_cm === 5 && st.manualFit.note === '74 cm til overs', st.edgeMargin_cm + ' · ' + ss(st, land(st)).edgeMargin_cm + ' · ' + st.manualFit.note);
+      st = setC(mk({ prioritizeSteps: true }), [98]); _setStairPrioritizeSteps(false);
+      check('C7: valget av igjen → nøyaktig som før 238 (12,8 på alt)', FASIT.a2_repos_manuelt98, hash(full(st)) === FASIT.a2_repos_manuelt98 && !('prioritizeSteps' in st) && !('landingEdgeMarginSolved_cm' in st), hash(full(st)));
+      // ── D: repos når taket → trinnene justeres → «for kort» ──
+      st = setC(mk({ prioritizeSteps: true }), [60]);
+      check('D1: 60 m: repos på taket 90 (strengen 30 cm), deretter trinnene til 38,5', '38.5 · 90 · fase 2 · Passer', st.edgeMargin_cm === 38.5 && ss(st, land(st)).edgeMargin_cm === 90 && st.manualFit.lmPhase === 2 && fitLbl(st) === 'Passer' && st.edgeMarginMin_cm === 5,
+        st.edgeMargin_cm + ' · ' + ss(st, land(st)).edgeMargin_cm + ' · fase ' + st.manualFit.lmPhase + ' · ' + fitLbl(st));
+      check('D2: CC uendret også da', 'lik', posSig(st) === basePos, posSig(st) === basePos ? 'lik' : 'ULIK');
+      check('D3: panelteksten sier at repos ikke rakk', 'repos rakk ikke alene', /Repos: avstand fra sidene justert til 90\.0 cm.*Trinn: justert til 38\.5 cm \(din: 5 cm\) — repos rakk ikke alene\./.test(panel().textContent), (panel().textContent.match(/Repos: avstand.*alene\./) || ['mangler'])[0]);
+      st = setC(mk({ prioritizeSteps: true }), [10]);
+      check('D4: 10 m (for kort selv med alt trukket inn): begge på gulvet, udekkede løp, «for kort»', 'ikke ok · 5 · 5 · udekket · for kort',
+        st.manualFit.ok === false && st.edgeMargin_cm === 5 && ss(st, land(st)).edgeMargin_cm === 5 && st.uncoveredRuns.length > 0 && /for korte/.test(st.manualFit.reason) && /Repos er alt regnet med største avstand \(90\.0 cm\)/.test(st.manualFit.reason) && /for kort/.test(fitLbl(st)),
+        st.manualFit.ok + ' · ' + st.edgeMargin_cm + ' · ' + ss(st, land(st)).edgeMargin_cm + ' · ' + st.uncoveredRuns.length + ' · ' + fitLbl(st) + ' · ' + st.manualFit.reason);
+      st = setC(mk({ prioritizeSteps: true }), [128.2]);
+      check('D5: 128,2 m (for lang): begge på gulvet, «for lange» som før', 'ikke ok · 5 · 5', st.manualFit.ok === false && /22\.0 m for lange/.test(st.manualFit.reason) && st.edgeMargin_cm === 5 && ss(st, land(st)).edgeMargin_cm === 5 && st.totalCableLength_cm === 10616,
+        st.manualFit.reason + ' · ' + st.edgeMargin_cm + ' · ' + ss(st, land(st)).edgeMargin_cm);
+      // ── E: soner, og låst sone (105) ──
+      const zc = (s, z) => s.cables.find(c => c.zone === z);
+      st = mk({ prioritizeSteps: true }, [1, 2, 2]);
+      check('E1: sone 1 (bare trinn) som før: 30 m @ 13,2, uten repos-felt', '30@13.2', lenOf(zc(st, 1).productId) === 30 && zc(st, 1).edgeMargin_cm === 13.2 && !('landingEdgeMargin_cm' in zc(st, 1)), lenOf(zc(st, 1).productId) + '@' + zc(st, 1).edgeMargin_cm);
+      check('E2: sone 2 (repos + 6 trinn): 70 m, trinn 5 (før 9,6), repos 19,3', '70@5/19.3', lenOf(zc(st, 2).productId) === 70 && zc(st, 2).edgeMargin_cm === 5 && zc(st, 2).landingEdgeMargin_cm === 19.3 && !zc(st, 2).error,
+        lenOf(zc(st, 2).productId) + '@' + zc(st, 2).edgeMargin_cm + '/' + zc(st, 2).landingEdgeMargin_cm + ' ' + (zc(st, 2).error || ''));
+      check('E3: flatene leser sonens verdier', '13.2 · 19.3 · 5', ss(st, 0).edgeMargin_cm === 13.2 && ss(st, land(st)).edgeMargin_cm === 19.3 && ss(st, land(st) + 1).edgeMargin_cm === 5 && span(st, 'landing') === '19.3–190.7', [ss(st, 0).edgeMargin_cm, ss(st, land(st)).edgeMargin_cm, ss(st, land(st) + 1).edgeMargin_cm].join(' · '));
+      st = mk({ prioritizeSteps: true }, [1, 2, 2], { 2: { edgeMargin_cm: 8 } });
+      check('E4: låst sone (105) + «Prioriter trinn»: ingenting løses, utlegget som før 238', FASIT.a7_soner122_laast8, hash(full(st)) === FASIT.a7_soner122_laast8 && zc(st, 2).edgeMargin_cm === 8 && zc(st, 2).locked === true && zc(st, 2).landingEdgeMargin_cm === 8, hash(full(st)) + ' · ' + zc(st, 2).edgeMargin_cm + '/' + zc(st, 2).landingEdgeMargin_cm);
+      st = mk({ prioritizeSteps: true, landingEdgeMargin_cm: 20 }, [1, 2, 2], { 2: { edgeMargin_cm: 8 } });
+      check('E5: låst sone + repos-felt 20: trinn låst 8 (urørt), repos nøyaktig 20 (ikke løst)', '8 · 20 · låst', zc(st, 2).edgeMargin_cm === 8 && zc(st, 2).locked === true && zc(st, 2).landingEdgeMargin_cm === 20 && ss(st, land(st) + 1).edgeMargin_cm === 8 && ss(st, land(st)).edgeMargin_cm === 20,
+        zc(st, 2).edgeMargin_cm + ' · ' + zc(st, 2).landingEdgeMargin_cm + ' · ' + (zc(st, 2).locked ? 'låst' : 'ikke låst'));
+      st = mk({ landingEdgeMargin_cm: 20 }, [1, 2, 2], { 2: { landingEdgeMargin_cm: 12 } });
+      check('E6: sonens eget repos-felt (12) går foran trappas (20)', 'gulv 12', ss(st, land(st)).edgeMarginFloor_cm === 12 && zc(st, 2).landingEdgeMargin_cm >= 12 && zc(st, 2).edgeMargin_cm === 5, ss(st, land(st)).edgeMarginFloor_cm + ' · ' + zc(st, 2).landingEdgeMargin_cm + ' · ' + zc(st, 2).edgeMargin_cm);
+      _setStairZoneLandingEdgeMargin(2, '14');
+      check('E7: sonens setter skriver zoneSettings[2].landingEdgeMargin_cm', 14, _stairZoneSettings(st, 2).landingEdgeMargin_cm === 14 && ss(st, land(st)).edgeMarginFloor_cm === 14, _stairZoneSettings(st, 2).landingEdgeMargin_cm);
+      st = mk({ landingEdgeMargin_cm: 20 }, [1, 2, 3]);
+      check('E8: sone med bare repos: feltet er sonens gulv', '≥ 20', zc(st, 2).edgeMargin_cm >= 20 && ss(st, land(st)).edgeMargin_cm === zc(st, 2).edgeMargin_cm && zc(st, 1).edgeMargin_cm === zc(mk(null, [1, 2, 3]), 1).edgeMargin_cm, zc(st, 2).edgeMargin_cm);
+      // ── F: Forslag ──
+      st = mk({ prioritizeSteps: true });
+      const pF = _generateStairProposals(st);
+      const lblF = p => p.products.map(x => x.length_m).join('+') + ' @ trinn ' + p.edgeMargin_cm + ' / repos ' + p.landingEdgeMargin_cm;
+      check('F1: Forslag A = 98 m med trinn 5 / repos 42,1 (før 238: 98 m @ 12,8 på alt)', '98 @ trinn 5 / repos 42.1', pF[0] && lblF(pF[0]) === '98 @ trinn 5 / repos 42.1' && pF[0].landingAdjusted === true && !pF[0].marginAdjusted && !pF[0].under75, pF.map(lblF).join(' | '));
+      st.proposals = pF; _applyStairProposal(st, pF[0]);
+      check('F2: «Velg»: trinn 5, repos 42,1, Passer, forslaget står som valgt', '5 · 42.1 · Passer', st.edgeMargin_cm === 5 && st.landingEdgeMarginSolved_cm === 42.1 && fitLbl(st) === 'Passer' && !!st.selectedProposal && span(st, 'landing') === '42.1–167.9',
+        st.edgeMargin_cm + ' · ' + st.landingEdgeMarginSolved_cm + ' · ' + fitLbl(st));
+      { const kopi = JSON.parse(JSON.stringify(st)); S.stairs = [kopi]; S.ui.selectedStairId = kopi.id; _stairReopen(kopi);
+        check('F3: lagret og åpnet igjen: samme utlegg', 'lik', full(kopi) === full(st) && kopi.landingEdgeMarginSolved_cm === 42.1, full(kopi) === full(st) ? 'lik' : 'ULIK');
+        S.stairs = [st]; S.ui.selectedStairId = st.id; }
+      _setStairPrioritizeSteps(false);
+      check('F4: valget av med valgt forslag: samme sett løses på nytt som før 238 (12,8 på alt)', '12.8 · forslag', st.edgeMargin_cm === 12.8 && !('landingEdgeMarginSolved_cm' in st) && !!st.selectedProposal && !('landingEdgeMargin_cm' in st.selectedProposal) && span(st, 'landing') === '12.8–197.2',
+        st.edgeMargin_cm + ' · ' + (st.selectedProposal ? 'forslag' : 'manuelt') + ' · ' + span(st, 'landing'));
+      // ── G: låst avstand på trappa (120) ──
+      st = mk({ prioritizeSteps: true }); st.edgeMarginLocked_cm = 6; setC(st, [98]);
+      check('G1: hengelås 6 + «Prioriter trinn»: ingenting løses, som før 238', FASIT.a10_repos_laast6, hash(full(st)) === FASIT.a10_repos_laast6 && st.manualFit.locked === true && ss(st, land(st)).edgeMargin_cm === 6, hash(full(st)) + ' · ' + ss(st, land(st)).edgeMargin_cm);
+      st = mk({ landingEdgeMargin_cm: 15 }); st.edgeMarginLocked_cm = 6; setC(st, [98]);
+      check('G2: hengelås 6 + repos-felt 15: trinn 6, repos 15, ikke løst', '6 · 15 · låst', st.edgeMargin_cm === 6 && ss(st, land(st)).edgeMargin_cm === 15 && st.manualFit.locked === true && !('landingEdgeMarginSolved_cm' in st), st.edgeMargin_cm + ' · ' + ss(st, land(st)).edgeMargin_cm);
+      // ── H: hestesko (ingen repos) — valget har ingen virkning ──
+      { const sh = mkHs({ prioritizeSteps: true }); const p = _generateStairProposals(sh); if (p[0]) _applyStairProposal(sh, p[0]);
+        check('H1: hestesko med «Prioriter trinn» satt: som før 238', FASIT.a8_hestesko, hash(full(sh) + propSig(sh)) === FASIT.a8_hestesko && !_stairLmOn(sh), hash(full(sh) + propSig(sh))); }
+      // ── I: PDF-blokka og målene leser reposets verdi fra _stairSurfSettings ──
+      st = setC(mk({ prioritizeSteps: true }), [98]);
+      { const b = _stairSoneGeometryBlocks(st), b0 = _stairSoneGeometryBlocks(setC(mk(), [98]));
+        check('I1: PDF-blokka: sider 5, repos 42,1', '5 / 42.1', b[0] && b[0].edgeMargin_cm === 5 && b[0].landingEdgeMargin_cm === 42.1, b[0] && (b[0].edgeMargin_cm + ' / ' + b[0].landingEdgeMargin_cm));
+        check('I2: uten valget har blokka ikke feltet', 'mangler', b0[0] && !('landingEdgeMargin_cm' in b0[0]) && b0[0].edgeMargin_cm === 12.8, b0[0] && Object.keys(b0[0]).join(',')); }
+      // ── J: panelet ──
+      st = mk();
+      { const el = panel(), f = el.querySelector('#stair-landing-edge-margin'), c = el.querySelector('#stair-prioritize-steps');
+        check('J1: trapp med repos: feltet (tomt, plassholder = trinnenes 5) og avkrysningen (av) vises', 'tomt · 5 · av', !!f && f.value === '' && f.placeholder === '5' && f.max === '104' && !!c && !c.checked && !el.querySelector('#stair-lm-info'),
+          f ? (f.value || 'tomt') + ' · ' + f.placeholder + ' · ' + (c && c.checked ? 'på' : 'av') : 'feltet mangler'); }
+      mkRett();
+      { const el = panel(); check('J2: trapp uten repos: verken felt eller avkrysning', 'ingen', !el.querySelector('#stair-landing-edge-margin') && !el.querySelector('#stair-prioritize-steps'), el.querySelector('#stair-landing-edge-margin') ? 'feltet vises' : 'ingen'); }
+      st = setC(mk({ prioritizeSteps: true }), [98]);
+      { const el = panel(), i = el.querySelector('#stair-lm-info'), c = el.querySelector('#stair-prioritize-steps');
+        check('J3: valget på: avkrysset, og linja under viser begge tall', 'Trinn 5.0 cm · repos 42.1 cm fra sidene', !!c && c.checked && !!i && i.textContent === 'Trinn 5.0 cm · repos 42.1 cm fra sidene', i ? i.textContent : 'mangler'); }
+      st = mk({ prioritizeSteps: true }, [1, 2, 2]); S.ui.selectedStairZone = 2;
+      { const el = panel(), rad = el.querySelector('#stair-zone-lm-row'), t = el.textContent;
+        check('J4: sonepanelet: egen rad for repos og teksten skiller trinn og repos', '19.3 cm', !!rad && /19\.3 cm/.test(rad.textContent) && /Repos: avstand fra sidene justert til 19\.3 cm \(din: 5 cm\) så kabelen går opp/.test(t) && /Trinn: 5\.0 cm\./.test(t), rad ? rad.textContent : 'raden mangler'); }
+      S.ui.selectedStairZone = null;
+    }
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: 'ingen', got: String(e && e.stack || e).slice(0, 400) });
+  } finally {
+    HEATING_PRODUCTS.length = 0; saved.prods.forEach(p => HEATING_PRODUCTS.push(p));
+    PRODUCT_CATEGORIES.length = 0; saved.cats.forEach(c => PRODUCT_CATEGORIES.push(c));
+    S.stairs = saved.stairs; S.ui.selectedStairId = saved.sel; S.ui.selectedStairZone = saved.zone; S.counters.nextStairId = saved.nextStair;
+    _undoStack.length = saved.undoLen; window._performAutoSave = saved.autosave;
+    try { _invalidateStairCache(); _updateStairSettingsPanel(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_stairLandingMarginRegressionTest238: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
   return { ok: allOk, results };
 }
 
@@ -57742,6 +58188,7 @@ function _applyStairProposal(stair, proposal) {
   // STEG 5/6 (Regel 12): sidemarginen kan være justert av _stairSolveExactCableSet for å treffe
   // kabelsettet eksakt — eget felt, uavhengig av dybdemarginene over.
   if (proposal.edgeMargin_cm != null) stair.edgeMargin_cm = proposal.edgeMargin_cm;
+  _stairSetLmSolved(stair, proposal.landingEdgeMargin_cm);   // 238: reposets løste avstand følger forslaget
   if (proposal.products && proposal.products.length > 0) {
     stair.cableProductId = proposal.products[0].id;
     // Build cables[] from proposal. Oppdelingen mellom dem skjer nå PÅ METER inne i
@@ -58896,6 +59343,7 @@ function _stairPreviewProposal(stairId, idx) {
       // STEG 5/6 (Regel 12): _applyStairProposal kan nå justere sidemarginen — må lagres og
       // gjenopprettes her også, ellers overlever den en avbrutt forhåndsvisning.
       edgeMargin_cm: stair.edgeMargin_cm,
+      landingEdgeMarginSolved_cm: stair.landingEdgeMarginSolved_cm || null,   // 238
       edgeMarginMin_cm: stair.edgeMarginMin_cm,   // 084: gulvet (rørt av ingen forslag, men snapshotet er komplett)
       // 101: en avbrutt forhåndsvisning skal heller ikke etterlate seg et forslag som «valgt».
       desiredCableCount: stair.desiredCableCount,
@@ -58938,6 +59386,7 @@ function _stairCancelPreview(stairId) {
     edgeMargin_cm: ps.edgeMargin_cm, edgeMarginMin_cm: ps.edgeMarginMin_cm,
     desiredCableCount: ps.desiredCableCount, selectedProposal: ps.selectedProposal, lastProposal: ps.lastProposal });
   if ('runsPerStep' in ps) stair.runsPerStep = ps.runsPerStep;   // 188
+  _stairSetLmSolved(stair, ps.landingEdgeMarginSolved_cm);   // 238
   delete stair._prePreviewState;
   delete stair._activeProposalIdx;
   _regenerateStairCable(stair);
@@ -59007,6 +59456,8 @@ function _renderStairProposalPanel(stair, proposals) {
     // 084 (Regel 19): «din» er brukerens GULV (edgeMarginMin_cm), ikke utleggets nåværende margin.
     const userFloor = _stairFloorMargin(stair);
     const sideMarginBadge = p.marginAdjusted && !p.singleCable ? `<div style="display:inline-block;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35);border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;color:#f59e0b;margin-bottom:4px">Sidemargin auto-justert: ${p.edgeMargin_cm.toFixed(1)} cm (din: ${userFloor} cm)${residualTxt}</div>` : '';
+    // 238: reposets avstand på kortet når den er justert (trinnene står da som regel på gulvet).
+    const landingBadge = p.landingAdjusted ? `<div class="stair-prop-lm" style="display:inline-block;background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.3);border-radius:4px;padding:1px 6px;font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px">Repos: ${p.landingEdgeMargin_cm.toFixed(1)} cm fra sidene (din: ${p.landingFloor_cm} cm) · trinn ${p.edgeMargin_cm.toFixed(1)} cm${p.marginAdjusted || p.singleCable ? '' : residualTxt}</div>` : '';
     // 120 (Regel 22 på trappenivå): låst avstand — marginen er brukerens, bare settet varierer.
     // Farge etter passform (samme terskler som 105): rødt > 5 %, gult 2-5 %, ellers turkis.
     const lockColor = p.fitStatus === 'error' ? '#ef4444' : p.fitStatus === 'warn' ? '#f59e0b' : 'var(--accent)';
@@ -59032,7 +59483,7 @@ function _renderStairProposalPanel(stair, proposals) {
       <div style="flex:1;background:var(--surface2);border:1px solid ${p.recommended ? '#4ea8ff' : 'var(--brd)'};border-radius:10px;padding:14px;min-width:200px;position:relative">
         ${p.recommended ? '<div style="position:absolute;top:-10px;left:12px;background:#4ea8ff;color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:4px">★ Anbefalt</div>' : ''}
         <div class="stair-prop-title" style="font-weight:600;font-size:14px;color:${p.alternative ? '#f59e0b' : 'var(--text)'};margin-bottom:6px">${p.alternative ? 'Alternativ (for lang)' : 'Forslag ' + String.fromCharCode(65 + i)}</div>
-        ${warn75Html}${marginBadge}${lockBadge}${sideMarginBadge}${p.overSet ? `<div class="stair-prop-over" style="background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.45);border-radius:6px;padding:5px 8px;margin-bottom:6px"><div style="font-size:15px;font-weight:700;color:#f59e0b">${diffLabel}</div><div style="font-size:12px;color:var(--muted);margin-top:1px">${overWhyTxt}</div></div>` : ''}
+        ${warn75Html}${marginBadge}${lockBadge}${sideMarginBadge}${landingBadge}${p.overSet ? `<div class="stair-prop-over" style="background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.45);border-radius:6px;padding:5px 8px;margin-bottom:6px"><div style="font-size:15px;font-weight:700;color:#f59e0b">${diffLabel}</div><div style="font-size:12px;color:var(--muted);margin-top:1px">${overWhyTxt}</div></div>` : ''}
         <div style="font-size:12px;color:var(--muted);display:grid;gap:4px">
           ${cableDetailsHtml}
           ${singleHtml}
@@ -59211,6 +59662,9 @@ function _createStairObj(params) {
     edgeMargin_cm: params.edgeMargin_cm || 5,
     edgeMarginMin_cm: params.edgeMarginMin_cm || params.edgeMargin_cm || 5,   // 084: brukerens gulv (Regel 19)
     landingMargin_cm: params.landingMargin_cm ?? 5,
+    // 238: egen avstand fra sidene på repos + «Prioriter trinn» — bare når de er satt (ellers finnes ikke feltene).
+    ...(params.landingEdgeMargin_cm > 0 ? { landingEdgeMargin_cm: params.landingEdgeMargin_cm } : {}),
+    ...(params.prioritizeSteps ? { prioritizeSteps: true } : {}),
     // Multi-cable allocations
     cables: params.cables || [],
     // View + computed
@@ -59278,6 +59732,9 @@ function _regenerateStairCable(stair) {
   // 120 (Regel 22 på trappenivå): LÅST avstand brukes nøyaktig — også med et valgt forslag.
   const _lockedCm = !zoneRanges ? _stairLockedMargin(stair) : null;
   if (_lockedCm != null) stair.edgeMargin_cm = _lockedCm;
+  // 238: den løste repos-avstanden lever bare sammen med et valgt forslag (som trinnenes) eller settes
+  // på nytt av det manuelle settet under. Soner bærer den på kabelen; låst avstand løses ikke.
+  if (zoneRanges || _lockedCm != null || !stair.selectedProposal || !_stairLmOn(stair)) _stairSetLmSolved(stair, null);
   if (!zoneRanges && !stair.selectedProposal && !stair.noCable) {
     const ids = (stair.cables || []).map(c => c.productId);
     const harSett = ids.length && ids.every(id => id != null);
@@ -59289,7 +59746,10 @@ function _regenerateStairCable(stair) {
     // Går settet ikke opp (Regel 11: for langt, kan ikke kortes — eller for kort), beholdes marginen
     // PÅ GULVET og utlegget tegnes som før, med grunnen vist rødt i panelet. edgeMarginMin_cm
     // (brukerens gulv, 084) røres aldri.
-    if (stair.manualFit && _lockedCm == null) stair.edgeMargin_cm = stair.manualFit.ok ? stair.manualFit.edgeMargin_cm : _stairFloorMargin(stair);
+    if (stair.manualFit && _lockedCm == null) {
+      stair.edgeMargin_cm = stair.manualFit.ok ? stair.manualFit.edgeMargin_cm : _stairFloorMargin(stair);
+      _stairSetLmSolved(stair, stair.manualFit.ok ? stair.manualFit.landingEdgeMargin_cm : null);   // 238
+    }
   } else {
     stair.manualFit = null;
   }
@@ -98630,7 +99090,7 @@ async function exportPDF(opts, lev) {
 
         // Sone-niva felt (like for hele sonen uansett trinn-serie): dybdemarginer + sidemargin.
         doc.setFontSize(7.5); doc.setTextColor(80, 90, 110);
-        doc.text('Avstand opptrinn: ' + _cm1(sb.riserOffset_cm) + '   |   Avstand nese: ' + _cm1(sb.noseOffset_cm) + '   |   Avstand sider: ' + (_stairHsFillTop(stair) ? ('toppflate ' + _cm1(_stairHsTopFillCm(stair)) + ', hestesko ' + _cm1(sb.edgeMargin_cm)) : _cm1(sb.edgeMargin_cm)), M, y);   // 184
+        doc.text('Avstand opptrinn: ' + _cm1(sb.riserOffset_cm) + '   |   Avstand nese: ' + _cm1(sb.noseOffset_cm) + '   |   Avstand sider: ' + (_stairHsFillTop(stair) ? ('toppflate ' + _cm1(_stairHsTopFillCm(stair)) + ', hestesko ' + _cm1(sb.edgeMargin_cm)) : _cm1(sb.edgeMargin_cm) + (sb.landingEdgeMargin_cm != null ? ' (repos ' + _cm1(sb.landingEdgeMargin_cm) + ')' : '')), M, y);   // 184 · 238: reposets egen avstand
         y += 4;
 
         // Trinn-serie-felt (N/CC/lengde/flateeffekt) - varierer disse innad i sonen, vis hver serie.
@@ -101365,6 +101825,13 @@ function _stairDrawToCanvas(stair, opts) {
         // 230: i PDF står totalraden klar av marginradens tall (skrifthøyden; i rotert plan tallets bredde).
         const dimYwTotal = surf.y_cm - (PR ? PR.mm(1.2) + gapH + (_rot ? c.measureText(edgeTxt).width : PR.fontPx) + PR.mm(1.2) : 7) / scale;
         tick(surf.x_cm, dimYwTotal, surf.x_cm + surfW, dimYwTotal, _stairDimRound(surfW) + '', true, false, PR ? 0.25 : 0.5);
+      } else if (isLanding && _ssDim.landingOwn && Math.abs(edgeM - _stairSurfSettings(stair, firstDimSurf).edgeMargin_cm) > 0.05) {
+        // 238: reposet har en ANNEN avstand fra sidene enn flata som bærer breddemålet — da får reposet
+        // sitt eget sidemål (bare de to marginene; totalbredden står alt på første flate).
+        const dimYw = surf.y_cm - (PR ? PR.mm(1.2) : 2) / scale;
+        const edgeTxt = _stairDimRound(edgeM) + '';
+        tick(surf.x_cm, dimYw, surf.x_cm + edgeM, dimYw, edgeTxt, true);
+        tick(surf.x_cm + surfW - edgeM, dimYw, surf.x_cm + surfW, dimYw, edgeTxt, true);
       }
 
       // Dybde-mål (riser/nese-avstand + CC) til høyre for flaten.
