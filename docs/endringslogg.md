@@ -4,7 +4,7 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
-## 238 — Trapp: egen «avstand fra sidene» på repos, og trinnene prioriteres (19.11.2026, `HASH238`, `main`, ikke pushet)
+## 238 — Trapp: egen «avstand fra sidene» på repos, og trinnene prioriteres (19.11.2026, `803c8ae`, `main`, ikke pushet)
 
 nytt felt «Avstand fra sidene – repos» (tomt = som trinnene) og avkrysning «Prioriter trinn» (av som standard) i trappepanelet, repos-feltet også per sone. Når ett av dem er i bruk, går løserne to-fase: trinnene står på det brukeren har satt, repos øker først (til strengen er 30 cm), deretter justeres trinnene som før, og går det fortsatt ikke opp vises «for kort / for lang» som før. CC røres ikke; låst avstand (trapp/sone) løses ikke. `_stairSurfSettings` gir repos egen `edgeMargin_cm`, så plan, PDF og kabellengde følger med; PDF-en sier «Avstand sider: 5 cm (repos 42.1 cm)» og planen får eget sidemål på reposet. Eksempel 4 + repos 120 + 6, 210 bred, 98 m: før 12,8 cm på alt, nå trinn 5 / repos 42,1. Begge valg av = bit-identisk (elleve trapper hash-sammenlignet med HEAD). Ny `_stairLandingMarginRegressionTest238` 57/57; suiten 103 tester, de 102 gamle som HEAD (åtte røde uten innlogging på HEAD og nå, ikke sju). Se `docs/238/RAPPORT.md`.
 

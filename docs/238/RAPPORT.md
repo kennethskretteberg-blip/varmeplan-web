@@ -1,6 +1,6 @@
 # 238 – Trapp: egen «avstand fra sidene» på repos, og trinnene prioriteres
 
-19.11.2026 · `main` · commit `HASH238` · ikke pushet · ingen SQL
+19.11.2026 · `main` · commit `803c8ae` · ikke pushet · ingen SQL
 
 ## Hva som er endret
 - **Nytt felt «Avstand fra sidene – repos»** i trappepanelet, rett under «Avstand sider», bare når trappa har både trinn og repos. Tomt = samme som trinnene. Tall = egen avstand på repos (minst 1 cm, høyst halve smaleste repos minus 1 – samme klemme som dagens felt). Lagres som `stair.landingEdgeMargin_cm`; per sone som `zoneSettings[z].landingEdgeMargin_cm` (ny rad «Avstand sider repos» i sonepanelet, tomt = som trappa).
