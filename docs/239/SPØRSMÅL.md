@@ -1,0 +1,16 @@
+# 239 – spørsmål og valg jeg tok underveis
+
+Alt under er løst med et valg, så ingenting venter på svar for at 239 skal virke. Si fra der du vil ha det annerledes.
+
+1. **Regelen for egen kabel på reposet (Auto).** Jeg valgte: egen kabel når (a) reposet trenger minst like mye kabel som trappa, eller (b) hele behovet er lengre enn den lengste kabelen i produktgruppa (+ 0,5 m). Behovet måles av motoren på dine egne avstander. Ditt eksempel (repos 106 m, trapp 52 m) gir egen kabel etter (a). Er «minst like mye» riktig terskel, eller vil du ha f.eks. «repos over 60 %» eller et fast metertall?
+2. **Auto vurderes på nytt hver gang trappa regnes.** Endrer du maks CC eller mål slik at reposet ikke lenger dominerer, går trappa tilbake til én kabel, og kabelvalget nullstilles (som ved bytte av soner ellers). Vil du heller at valget fryses når trappa er plassert? Da setter du «Egen kabel» / «Samme kabel som trappa» i panelet – de står fast.
+3. **«Hesteskotrinnene» er standard bare for NYE hestesko med repos** (og når du legger repos på en gammel hestesko som ikke har noe lagret valg). Gamle hestesko uten repos beholder det de hadde («Alle likt» eller «Fyll toppflaten» = «Hesteskotrinnene»). Riktig?
+4. **Feltet «Avstand fra sidene – hesteskotrinn» virker bare i valget «Hesteskotrinnene».** I «Repos» og «Alle likt» følger hesteskotrinnene «Avstand sider» som før (ellers ville gamle trapper endret seg). Feltet vises derfor bare i det valget. Skal det gjelde i alle tre?
+5. **Med egen kabel på reposet er «Repos» og «Alle likt» like for trappesonen** (reposet er alene i sin sone og justeres for seg). Forskjellen mellom de tre valgene ser du først når trapp og repos deler kabel.
+6. **Koordinater:** reposet ligger på y = 0 … dybde, og trappa er flyttet ned og inn i sitt eget koordinatsystem. Ved redigering flyttes trappas origo motsatt vei, så toppflaten og bakkanten står der de sto på tegningen. Reposet vokser altså «bakover» og til begge sider. Greit?
+7. **Samme kabel: veien fra toppflaten til reposet.** Toppflaten legges da fra nesen og bakover (ikke snudd som i en hestesko uten repos), kabelen krysser bakkanten og går sideveis i reposets dybdemargin til første streng. To rette hjørner, ingen Y-splitt. Ser det riktig ut for deg, eller vil du ha overgangen midt på?
+8. **Minstemål i dialogen:** repos bredde minst 50 cm, dybde minst 30 cm. Reposet kan være smalere enn trappa (da er det sentrert og trappa stikker ut) – skal det være lov, eller minst like bredt som toppflaten?
+9. **Sonene heter «Sone 1» (trappa) og «Sone 2» (reposet)** i panel og PDF, som alle andre soner. Vil du heller ha «Trapp» og «Repos»?
+10. **PDF/sidevisning skriver «Repos 1»** (samme tekst som rette trapper med flere repos), mens måltabellen og planen skriver «Repos». Skal jeg kutte tallet når det bare er ett?
+11. **CC-kjeden over armen** står nå over reposet (den sto over bakkanten). På skjermen ligger den tett på trappenavnet og «Plan»-etiketten når reposet er bredt – i PDF-en er det luft. Skal kjeden flyttes ned til armen (under reposet)?
+12. **238-testens J1–J3 er endret med vilje:** avkrysningen «Prioriter trinn» er borte og er nå valget «Repos» i nedtrekket. Oppførselen er den samme; testen leser nedtrekket i stedet.

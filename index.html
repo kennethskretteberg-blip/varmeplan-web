@@ -48467,10 +48467,15 @@ function _stairGeometryDims(stair, view, range) {
     let g = null;
     for (const i of idx) {
       const s = surfs[i], w = s.w_cm || stair.width_cm || 120;
+      // 239: reposet over en hesteskotrapp måles OVER reposet (under ligger trappa) — egen gruppe.
+      if (s.hsLanding) { groups.push({ w, x: s.x_cm, top: s.y_cm }); g = null; continue; }
       if (g && Math.abs(g.w - w) < 0.05 && Math.abs(g.x - s.x_cm) < 0.05) g.to = Math.max(g.to, s.y_cm + s.d_cm);
       else { g = { w, x: s.x_cm, to: s.y_cm + s.d_cm }; groups.push(g); }
     }
-    for (const gr of groups) dims.push({ a: { x: gr.x, y: gr.to }, b: { x: gr.x + gr.w, y: gr.to }, label: R(gr.w) + '', side: 'bottom', level: 1, atY: gr.to });
+    for (const gr of groups) {
+      if (gr.top != null) { dims.push({ a: { x: gr.x, y: gr.top }, b: { x: gr.x + gr.w, y: gr.top }, label: R(gr.w) + '', side: 'top', level: 2 }); continue; }
+      dims.push({ a: { x: gr.x, y: gr.to }, b: { x: gr.x + gr.w, y: gr.to }, label: R(gr.w) + '', side: 'bottom', level: 1, atY: gr.to });
+    }
   } else {
     // Samme profil-aritmetikk som _drawStairSide (speilet høyde) — regnet på nytt her, ikke lest
     // derfra, fordi utskriften (_stairDrawSideToCanvas) ikke har tilgang til skjermfunksjonens lokale.
@@ -48534,6 +48539,7 @@ function _drawStairGeoDims(c, dims, P, o) {
     const off = o.baseCm + (d.level - 1) * o.levelCm;
     let a, b;
     if (d.side === 'left') { a = P(d.a.x - off, d.a.y); b = P(d.b.x - off, d.b.y); }
+    else if (d.side === 'top') { const y = Math.min(d.a.y, d.b.y) - off; a = P(d.a.x, y); b = P(d.b.x, y); }   // 239: over flaten
     else { const y = (d.atY != null ? d.atY : Math.max(d.a.y, d.b.y)) + off; a = P(d.a.x, y); b = P(d.b.x, y); }
     const ea = P(d.a.x, d.a.y), eb = P(d.b.x, d.b.y);
     c.globalAlpha = o.extAlpha != null ? o.extAlpha : 0.35;   // 230: PDF = heldekkende (226-regelen)
@@ -48552,6 +48558,8 @@ function _drawStairGeoDims(c, dims, P, o) {
       c.save(); c.translate(mx - tg, my); c.rotate(-Math.PI / 2);
       c.textAlign = 'center'; c.textBaseline = 'bottom'; c.fillText(d.label, 0, 0);
       c.restore();
+    } else if (d.side === 'top') {
+      c.textAlign = 'center'; c.textBaseline = 'bottom'; c.fillText(d.label, mx, my - tg);
     } else {
       c.textAlign = 'center'; c.textBaseline = 'top'; c.fillText(d.label, mx, my + tg);
     }
@@ -48662,25 +48670,28 @@ function _stairHsPaint(c, stair, P, o) {
     } else {
       pathTo([{ x: sf.x_cm, y: sf.y_cm }, { x: sf.x_cm + sf.w_cm, y: sf.y_cm }, { x: sf.x_cm + sf.w_cm, y: sf.y_cm + sf.d_cm }, { x: sf.x_cm, y: sf.y_cm + sf.d_cm }]); c.closePath();
     }
-    c.fillStyle = o.surfFill; c.fill();
+    c.fillStyle = sf.hsLanding ? (o.landingFill || o.surfFill) : o.surfFill; c.fill();   // 239: reposet i repos-fargen
     c.strokeStyle = o.surfStroke; c.lineWidth = o.surfLineW; c.setLineDash([]); c.stroke();
     // Trinnnummer midt i frontbåndet (Kenneths nummerering: toppflaten = trinn 1).
     c.fillStyle = o.labelColor; c.font = o.fontPx + `px ${CANVAS_UI_FONT}`; c.textAlign = 'center'; c.textBaseline = 'middle';
     const lp = P(sf.x_cm + sf.w_cm / 2, sf.y_cm + sf.d_cm / 2);
-    c.fillText(sf.hsTop ? 'Trinn 1 (topp)' : 'Trinn ' + (sf.stepIdx + 1), lp.x, lp.y);
+    c.fillText(sf.hsLanding ? 'Repos' : sf.hsTop ? 'Trinn 1 (topp)' : 'Trinn ' + (sf.stepIdx + 1), lp.x, lp.y);
   }
+  // 239: bakkantens y — 0 uten repos, reposets dybde med repos (reposet ligger over, mot huset).
+  const backY = (surfs.find(f => f && f.shape === 'u') || { hsInner: [{ y: (surfs.find(f => f && f.hsTop) || { y_cm: 0 }).y_cm }] }).hsInner[0].y;
+  const hasLand = surfs.some(f => f && f.hsLanding);
   // Bakkanten — den rette linja alle trinnene deler (står i ro).
   let bakX0 = 0, tableBox = null, chainBox = null;   // 177b: måltabellen må vite hvor «Bakkant» står
   {
     let x0 = Infinity, x1 = -Infinity;
-    for (let si = rFrom; si <= rTo; si++) { const sf = surfs[si]; if (!sf) continue; x0 = Math.min(x0, sf.x_cm); x1 = Math.max(x1, sf.x_cm + sf.w_cm); }
+    for (let si = rFrom; si <= rTo; si++) { const sf = surfs[si]; if (!sf || sf.hsLanding) continue; x0 = Math.min(x0, sf.x_cm); x1 = Math.max(x1, sf.x_cm + sf.w_cm); }
     if (isFinite(x0)) {
       bakX0 = x0;
-      const a = P(x0, 0), b = P(x1, 0);
+      const a = P(x0, backY), b = P(x1, backY);
       c.strokeStyle = o.labelColor; c.lineWidth = Math.max(1.5, o.surfLineW * 1.6); c.setLineDash([]);
       c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.stroke();
       c.fillStyle = o.labelColor; c.font = Math.round(o.fontPx * 0.85) + `px ${CANVAS_UI_FONT}`; c.textAlign = 'left'; c.textBaseline = 'bottom';
-      c.fillText('Bakkant', a.x + 2, a.y - 2);
+      if (!hasLand) c.fillText('Bakkant', a.x + 2, a.y - 2);   // 239: med repos ligger reposet der ordet sto
     }
   }
 
@@ -48806,7 +48817,15 @@ function _stairHsPaint(c, stair, P, o) {
     const outer = surfs[rFrom];
     if (outer) {
       const m = ssOf(rFrom).edgeMargin_cm;
-      vtick(minX - gapCm, 0, m, R(m) + ' (sider)');
+      vtick(((hasLand && outer.shape === 'u') ? outer.x_cm : minX) - gapCm, backY, backY + m, R(m) + ' (sider)');
+    }
+    // 239: reposets avstand fra sidene — fra reposets venstre kant til der strengene begynner, over reposet.
+    for (let si = rFrom; si <= rTo; si++) {
+      const sf = surfs[si]; if (!sf || !sf.hsLanding || !(runsBySurf[si] || []).length) continue;
+      const lm = ssOf(si).edgeMargin_cm, yT = sf.y_cm - gapCm;
+      const a = P(sf.x_cm, yT), b = P(sf.x_cm + lm, yT);
+      c.beginPath(); c.moveTo(a.x, a.y); c.lineTo(b.x, b.y); c.moveTo(a.x, a.y - t); c.lineTo(a.x, a.y + t); c.moveTo(b.x, b.y - t); c.lineTo(b.x, b.y + t); c.stroke();
+      c.textAlign = 'left'; c.textBaseline = 'bottom'; c.fillText(R(lm) + ' (sider repos)', a.x, a.y - t - (o.dimChainGap || 2));
     }
     // 186 (Kenneth 04.11.2026: «målene for trinn 2 vil jeg ha øverst til høyre, langs den vannrette
     // streken … trinn 3 og 4 bortover og ikke nedover»): hesteskotrinnenes CC-kjede står vannrett
@@ -48893,6 +48912,17 @@ function _stairConnRouteBetween(stair, a, b, ssOf) {
   const ss = ssOf || (si => _stairSurfSettings(stair, si));
   const A = _stairRunEndPt(stair, a.si, a.pos, a.s, a.fwd, ss(a.si));
   const B = _stairRunEndPt(stair, b.si, b.pos, b.s, b.fwd, ss(b.si));
+  // 239: toppflate ↔ repos på en hesteskotrapp. Reposet kan være bredere enn trappa, så et enkelt hjørne
+  // ville lagt kabelen utenfor trappa eller oppå reposets første streng. Ruten går i stedet rett over
+  // bakkanten og sideveis i reposets dybdemargin (midt mellom bakkanten og første streng). Samme lengde
+  // som et enkelt hjørne (|Δx| + |Δy|), fortsatt bare rette vinkler.
+  const sfA = (stair.surfaces || [])[a.si], sfB = (stair.surfaces || [])[b.si];
+  if (sfA && sfB && ((sfA.hsTop && sfB.hsLanding) || (sfA.hsLanding && sfB.hsTop))) {
+    const L = sfA.hsLanding ? A.pt : B.pt, land = sfA.hsLanding ? sfA : sfB;
+    const ym = (land.y_cm + land.d_cm + L.y) / 2;
+    if (Math.abs(A.pt.x - B.pt.x) < 1e-6) return [{ x: A.pt.x, y: A.pt.y }, { x: B.pt.x, y: B.pt.y }];
+    return [{ x: A.pt.x, y: A.pt.y }, { x: A.pt.x, y: ym }, { x: B.pt.x, y: ym }, { x: B.pt.x, y: B.pt.y }];
+  }
   return _stairConnRoute(A.pt, A.u, B.pt, B.u);
 }
 // Overgangen conn i plan-cm (trapp-lokalt): fra siste strengs utgang på fromSurf til første strengs
@@ -49080,11 +49110,11 @@ function _stairHsTableRows(stair, range) {
   for (let si = rFrom; si <= rTo; si++) {
     const sf = surfs[si], d = _stairHsSurfDims(stair, si);
     if (!sf || !d) continue;
-    const num = sf.hsTop ? 1 : sf.stepIdx + 1;
+    const num = sf.hsLanding ? 0 : sf.hsTop ? 1 : sf.stepIdx + 1;   // 239: reposet står først i tabellen
     const strandTxt = d.strand[1] - d.strand[0] < 1 ? R(d.strand[1]) + '' : R(d.strand[0]) + '–' + R(d.strand[1]);
     const lt = one(d.left), rt = one(d.right);
     rows.push({ si, num, dims: d,
-      cells: [sf.hsTop ? '1 (topp)' : String(num), String(d.N), strandTxt, d.cc != null ? R(d.cc) + '' : '—', lt === rt ? lt : lt + ' / ' + rt, R(d.laid_cm / 100) + ''] });
+      cells: [sf.hsLanding ? 'Repos' : sf.hsTop ? '1 (topp)' : String(num), String(d.N), strandTxt, d.cc != null ? R(d.cc) + '' : '—', lt === rt ? lt : lt + ' / ' + rt, R(d.laid_cm / 100) + ''] });
   }
   return rows.sort((a, b) => a.num - b.num);
 }
@@ -49145,6 +49175,7 @@ function _drawStairPlanHs(stair) {
     pxPerCm: z * BASE_SCALE, lineW: Math.max(1, 1.5 * z), fontPx: Math.max(8, 10 * z), markerR: 4,
     cableColor: isSel ? '#ff6040' : _lc('#c06030', '#e08050'),
     surfFill: _lc('rgba(180,180,180,0.30)', 'rgba(80,80,80,0.25)'),
+    landingFill: _lc('rgba(160,175,195,0.35)', 'rgba(100,120,150,0.25)'),   // 239: som repos i rett trapp
     surfStroke: isSel ? '#4ea8ff' : isHov ? '#70e850' : _lc('#888', '#555'), surfLineW: isSel ? 2 : 1,
     labelColor: _lc('#666', '#999'),
     dims: z > 0.25, dimColor: _lc('#2090e0', '#60b0ff'), dimFontPx: Math.max(7, 9 * z), dimGapCm: 4,
@@ -49226,7 +49257,7 @@ function _stairDrawToCanvasHs(stair, opts) {
   for (let i = range[0]; i <= range[1]; i++) {
     const sf = surfs[i]; if (!sf) continue;
     minX = Math.min(minX, sf.x_cm); maxX = Math.max(maxX, sf.x_cm + sf.w_cm);
-    minY = Math.min(minY, sf.shape === 'u' ? 0 : sf.y_cm); maxY = Math.max(maxY, sf.y_cm + sf.d_cm);
+    minY = Math.min(minY, sf.shape === 'u' ? sf.hsInner[0].y : sf.y_cm); maxY = Math.max(maxY, sf.y_cm + sf.d_cm);   // 239: bakkanten (0 uten repos)
   }
   // 230: utskriftsmodus (opts.print) — fast målestokk, luft i mm på papiret, mål etter 226-regelen.
   const PR = opts.print ? _stairPdfStyle(opts.print) : null;
@@ -49260,6 +49291,8 @@ function _stairDrawToCanvasHs(stair, opts) {
       const f = fontsAt(L.px);
       let pt = padT0, pb = padB, pl = padL, pr = padR;
       if (hasChain) pt = Math.max(pt, (gapCm * L.px + (PR ? PR.tickHalf + PR.mm(0.4) : 2) + (f.dimFontPx + 1) + 4) / L.px);   // 187: én rad tall («2 + 2», ingen stabling)
+      // 239: reposets breddemål står over reposet, utenfor CC-kjeden (nivå 2 i _stairGeometryDims).
+      if (opts.geoDims && surfs.some((sf, i) => i >= range[0] && i <= range[1] && sf && sf.hsLanding)) pt = Math.max(pt, PR ? PR.cm(11 + 3 * PR.sk) : 24 + (f.dimFontPx + 4) / L.px);
       if (rows.length) {
         const sz = _stairHsTableSize(meas, rows, f.dimFontPx);
         if (anchor) {
@@ -49294,7 +49327,7 @@ function _stairDrawToCanvasHs(stair, opts) {
   const K = PR ? PR.K : 1;
   const paintRes = _stairHsPaint(c, stair, (x, y) => ({ x: tx(x), y: ty(y) }), Object.assign({
     range, pxPerCm: px, minLeftPx: 2 * K, tableBg: '#ffffff', useTableOffset: useOff, tableBelowPx: belowPx(px), lineW: Math.max(1.5 * K, px * 0.3), fontPx: Math.max(mm2px(3), Math.round(px * 3)), markerR: Math.max(3 * K, px * 0.5),
-    cableColor: '#e06030', surfFill: 'rgba(180,180,180,0.30)', surfStroke: '#888', surfLineW: K, labelColor: '#666',
+    cableColor: '#e06030', surfFill: 'rgba(180,180,180,0.30)', landingFill: 'rgba(160,175,195,0.35)', surfStroke: '#888', surfLineW: K, labelColor: '#666',
     dims: true, dimColor: '#2090e0', dimFontPx: Math.max(mm2px(2.4), Math.round(px * 2.4)), dimGapCm: gapCm,
   }, PR ? { fontPx: PR.labelPx, dimColor: PR.col, dimFontPx: PR.fontPx, dimLineW: PR.line, dimTick: PR.tickHalf, dimTextGap: PR.mm(0.6),
     dimChainGap: PR.tickHalf + PR.mm(0.4), minLabelPx: PR.fontPx * 0.9 } : null));
@@ -50677,6 +50710,52 @@ function _setStairPrioritizeSteps(paa) {
   if (paa) stair.prioritizeSteps = true; else delete stair.prioritizeSteps;
   _stairLmAfterChange(stair);
 }
+// ══ 239 · ETT VALG: HVEM TAR JUSTERINGEN AV SIDEAVSTANDEN ════════════════════════════════════════
+// «Juster avstand fra sidene på:» samler 184 («Fyll toppflaten») og 238 («Prioriter trinn»). Valget
+// LAGRES i de samme feltene som før, så gamle trapper er oversatt uten migrering og regner bit-likt:
+//   'hsSteps' = horseshoe.marginMode 'fillTop'  — repos og toppflate fylles, hesteskotrinnene justeres
+//   'landing' = prioritizeSteps true            — trinn og toppflate fylles, reposet justeres først (238)
+//   'all'     = ingen av dem                    — alle likt
+// Står begge feltene på en gammel hestesko, vinner 'fillTop' (som før: _stairLmOn er av i 'fillTop').
+function _stairAdjustMode(stair) {
+  if (_stairHsFillTop(stair)) return 'hsSteps';
+  return stair && stair.prioritizeSteps ? 'landing' : 'all';
+}
+// Valgene som gir mening for trappa: hesteskotrinnene (hestesko), repos (trinn + repos), alle likt.
+function _stairAdjustModes(stair) {
+  const s = (stair && stair.surfaces) || [], out = [];
+  if (_stairIsHorseshoe(stair)) out.push('hsSteps');
+  if (s.some(f => f.type === 'landing') && s.some(f => f.type !== 'landing')) out.push('landing');
+  out.push('all');
+  return out;
+}
+function _setStairAdjustMode(mode) {
+  const stair = S.stairs.find(s => s.id === S.ui.selectedStairId);
+  if (!stair || !_stairAdjustModes(stair).includes(mode) || _stairAdjustMode(stair) === mode) return;
+  pushUndo();
+  if (_stairIsHorseshoe(stair)) stair.horseshoe = { ...(stair.horseshoe || {}), marginMode: mode === 'hsSteps' ? 'fillTop' : 'equal' };
+  if (mode === 'landing') stair.prioritizeSteps = true; else delete stair.prioritizeSteps;
+  _stairLmAfterChange(stair);
+}
+// «Avstand fra sidene – hesteskotrinn»: tomt = som toppflaten. Høyst armen (strengene går aldri forbi hjørnet).
+function _setStairHsStepEdgeMargin(val) {
+  const stair = S.stairs.find(s => s.id === S.ui.selectedStairId);
+  if (!stair || !_stairIsHorseshoe(stair)) return;
+  let cm = null;
+  if (String(val == null ? '' : val).trim() !== '') {
+    const n = parseFloat(val);
+    if (!isFinite(n)) return;
+    cm = Math.round(Math.max(1, Math.min(_stairLockMaxCm(stair), n)) * 10) / 10;
+  }
+  const cur = stair.horseshoe.stepEdgeMargin_cm > 0 ? stair.horseshoe.stepEdgeMargin_cm : null;
+  if (cur === cm) { _updateStairSettingsPanel(); return; }
+  pushUndo();
+  const hs = { ...stair.horseshoe };
+  if (cm == null) delete hs.stepEdgeMargin_cm; else hs.stepEdgeMargin_cm = cm;
+  stair.horseshoe = hs;
+  if (!(stair.selectedProposal || (stair.manualFit && stair.manualFit.ok))) stair.edgeMargin_cm = _stairFloorMargin(stair);
+  _stairLmAfterChange(stair);
+}
 // Sonens eget repos-felt (tomt = som trappa).
 function _setStairZoneLandingEdgeMargin(zoneNo, val) {
   const stair = S.stairs.find(s => s.id === S.ui.selectedStairId);
@@ -51258,15 +51337,35 @@ function _renderStairSettingsPanel(stairId) {
         </span>
       </div>
       ${/* 184: bryteren for sidemargin på hesteskotrapp, rett over «Avstand sider». */''}
-      ${_stairIsHorseshoe(stair) ? (() => {
-        const ft = _stairHsFillTop(stair);
-        const btn = (val, txt, on) => `<button id="stair-hs-mm-${val}" onclick="event.stopPropagation();_setStairHsMarginMode('${val}')" style="flex:1 1 0;padding:3px 4px;border:1px solid ${on ? 'var(--accent)' : 'var(--brd)'};background:${on ? 'var(--accent)' : 'var(--surface2)'};color:${on ? '#fff' : 'var(--text)'};font-size:12px;font-weight:${on ? 600 : 400};cursor:pointer;border-radius:4px">${txt}</button>`;
-        const topM = ft ? _stairHsTopFillCm(stair) : null;
-        return `<div style="margin-bottom:6px">
-          <div style="display:flex;gap:4px" title="Hvordan sidemarginen fordeles på trinnene">${btn('equal', 'Lik avstand', !ft)}${btn('fillTop', 'Fyll toppflaten', ft)}</div>
-          ${ft ? `<div style="font-size:12px;color:var(--dim);margin-top:3px;line-height:1.35">Toppflaten legges ut til minsteavstanden. Hesteskotrinnene trekkes inn så kabelen går opp.<br><span id="stair-hs-mm-info">Toppflate ${_stairDimRound(topM)} cm · hestesko ${_stairDimRound(stair.edgeMargin_cm || 5)} cm</span></div>` : ''}
-        </div>`;
-      })() : ''}
+      ${(() => {
+        // 239: ETT valg for hvem som tar justeringen av sideavstanden (184 «Fyll toppflaten» og 238
+        // «Prioriter trinn» samlet), og «egen kabel på reposet» for hestesko med repos.
+        const modes = _stairAdjustModes(stair), mode = _stairAdjustMode(stair), hsL = _stairHsHasLanding(stair);
+        const sel = 'max-width:150px;padding:2px 4px;border-radius:4px;border:1px solid var(--brd);background:var(--surface2);color:var(--text);font-size:12px';
+        let h = '';
+        if (hsL) {
+          const lc = _stairHsParams(stair).landing.ownCable, au = lc == null ? _stairHsLandingAuto(stair) : null;
+          h += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px" title="Auto: reposet får egen kabel når det trenger minst like mye kabel som trappa, eller når hele behovet er lengre enn den lengste kabelen i produktgruppa.">
+            <span>Kabel på repos</span>
+            <select id="stair-hs-landing-cable" onchange="_setStairHsLandingCable(this.value)" onclick="event.stopPropagation()" style="${sel}">
+              <option value="auto"${lc == null ? ' selected' : ''}>Auto${au ? (au.own ? ' (egen kabel)' : ' (samme kabel)') : ''}</option>
+              <option value="own"${lc === true ? ' selected' : ''}>Egen kabel</option>
+              <option value="shared"${lc === false ? ' selected' : ''}>Samme kabel som trappa</option>
+            </select></div>`;
+        }
+        if (modes.length > 1) {
+          const txt = { hsSteps: hsL ? 'Hesteskotrinnene' : 'Hesteskotrinnene (fyll toppflaten)', landing: 'Repos', all: 'Alle likt' };
+          const tip = { hsSteps: (hsL ? 'Repos og toppflate' : 'Toppflaten') + ' fylles ut til sin minsteavstand. Hesteskotrinnene trekkes inn så kabelen går opp.',
+            landing: 'Trinnene fylles. Reposet trekkes inn først; trinnene justeres først når reposet ikke rekker.', all: 'Kabelen trekkes inn like mye på alle flater.' };
+          const ssM = si => _stairDimRound(_stairSurfSettings(stair, si).edgeMargin_cm);
+          const li = surfs.findIndex(f => f.type === 'landing'), ui = surfs.findIndex(f => f.shape === 'u');
+          h += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px" title="Hvilke flater som trekkes inn fra sidene når kabelen må gå opp. CC endres ikke.">
+            <span>Juster avstand fra sidene på</span>
+            <select id="stair-adjust-mode" onchange="_setStairAdjustMode(this.value)" onclick="event.stopPropagation()" style="${sel}">${modes.map(m => `<option value="${m}"${m === mode ? ' selected' : ''}>${txt[m]}</option>`).join('')}</select></div>
+            <div style="font-size:12px;color:var(--dim);margin-bottom:6px;line-height:1.35">${tip[mode]}${mode === 'hsSteps' ? `<br><span id="stair-hs-mm-info">Toppflate ${_stairDimRound(_stairHsTopFillCm(stair))} cm · ${hsL && li >= 0 ? 'repos ' + ssM(li) + ' cm · ' : ''}hestesko ${hsL && ui >= 0 ? ssM(ui) : _stairDimRound(stair.edgeMargin_cm || 5)} cm</span>` : ''}</div>`;
+        }
+        return h;
+      })()}
       ${/* 120 (Regel 22 på trappenivå): hengelås. Låst = tallet brukes nøyaktig; av = som før
            (gulv for Forslag/manuelt). Tomt felt = låsen av. */''}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
@@ -51282,16 +51381,24 @@ function _renderStairSettingsPanel(stairId) {
       ${/* 185 (svar 184/7): låst avstand over armen på hestesko — rødt og ikke brukt. */''}
       ${_stairLockedOverArm(stair) ? `<div id="stair-edge-margin-err" style="font-size:12px;color:#e5484d;margin:-2px 0 6px;line-height:1.35">Maks ${_stairDimRound(_stairLockMaxCm(stair))} cm, ellers går strengene forbi hjørnet. Låst ${_stairLockedRawCm(stair)} cm brukes ikke.</div>` : ''}
       ${/* 238: egen avstand fra sidene på repos + «Prioriter trinn». Bare når trappa har både trinn og repos. */''}
-      ${surfs.some(s => s.type === 'landing') && surfs.some(s => s.type !== 'landing') && !_stairHsFillTop(stair) ? (() => {
+      ${/* 239: hesteskotrinnenes eget gulv — bare i «Juster på hesteskotrinnene». Tomt = som toppflaten. */''}
+      ${_stairHsFillTop(stair) ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+        <span title="Tomt = samme som toppflaten">Avstand fra sidene – hesteskotrinn</span>
+        <span style="display:flex;align-items:center;gap:3px">
+          <input id="stair-hs-step-edge-margin" type="number" min="1" max="${_stairLockMaxCm(stair)}" step="0.5" value="${stair.horseshoe.stepEdgeMargin_cm > 0 ? stair.horseshoe.stepEdgeMargin_cm : ''}" placeholder="${_stairHsTopFillCm(stair)}" title="Minste avstand fra sidene på hesteskotrinnene. Tomt = samme som toppflaten. Må kabelen gå opp, trekkes hesteskotrinnene lenger inn enn dette." style="width:48px;text-align:center;background:var(--surface2);border:1px solid var(--brd);border-radius:4px;color:var(--text);padding:2px;font-size:12px;font-family:'IBM Plex Mono',monospace" onchange="_setStairHsStepEdgeMargin(this.value)" onclick="event.stopPropagation()">
+          <span style="font-size:12px;color:var(--dim)">cm</span>
+        </span>
+      </div>` : ''}
+      ${surfs.some(s => s.type === 'landing') && surfs.some(s => s.type !== 'landing') ? (() => {
         const naa = _stairLmOn(stair) && !_stairZoneRanges(stair) ? _stairLandingMarginNowCm(stair) : null;
         return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
         <span title="Tomt = samme som trinnene">Avstand fra sidene – repos</span>
         <span style="display:flex;align-items:center;gap:3px">
-          <input id="stair-landing-edge-margin" type="number" min="1" max="${_stairMaxEdgeMarginCm(_stairLandingSurfaces(stair), stair.width_cm)}" step="0.5" value="${stair.landingEdgeMargin_cm > 0 ? stair.landingEdgeMargin_cm : ''}" placeholder="${_stairFloorMargin(stair)}" title="Tomt = samme som trinnene. Tall = egen avstand på repos. Må kabelsettet gå opp, trekkes repos inn først, og trinnene holdes fylt." style="width:48px;text-align:center;background:var(--surface2);border:1px solid var(--brd);border-radius:4px;color:var(--text);padding:2px;font-size:12px;font-family:'IBM Plex Mono',monospace" onchange="_setStairLandingEdgeMargin(this.value)" onclick="event.stopPropagation()">
+          <input id="stair-landing-edge-margin" type="number" min="1" max="${_stairMaxEdgeMarginCm(_stairLandingSurfaces(stair), stair.width_cm)}" step="0.5" value="${stair.landingEdgeMargin_cm > 0 ? stair.landingEdgeMargin_cm : ''}" placeholder="${_stairHsFillTop(stair) ? _stairHsTopFillCm(stair) : _stairFloorMargin(stair)}" title="Tomt = samme som trinnene. Tall = egen avstand på repos. Må kabelsettet gå opp, trekkes repos inn først, og trinnene holdes fylt." style="width:48px;text-align:center;background:var(--surface2);border:1px solid var(--brd);border-radius:4px;color:var(--text);padding:2px;font-size:12px;font-family:'IBM Plex Mono',monospace" onchange="_setStairLandingEdgeMargin(this.value)" onclick="event.stopPropagation()">
           <span style="font-size:12px;color:var(--dim)">cm</span>
         </span>
       </div>
-      <label style="display:flex;align-items:center;gap:6px;margin-bottom:5px;cursor:pointer" title="Må kabelsettet gå opp, økes avstanden fra sidene på repos først. Trinnenes avstand står til repos ikke rekker lenger. CC endres ikke." onclick="event.stopPropagation()"><input id="stair-prioritize-steps" type="checkbox" ${stair.prioritizeSteps ? 'checked' : ''} onchange="_setStairPrioritizeSteps(this.checked)"> Prioriter trinn</label>
+      ${/* 239: «Prioriter trinn» er nå valget «Juster avstand fra sidene på: Repos» (over). */''}
       ${naa != null ? `<div id="stair-lm-info" style="font-size:12px;color:var(--dim);margin:-2px 0 6px;line-height:1.35">Trinn ${(stair.edgeMargin_cm || 5).toFixed(1)} cm · repos ${naa.toFixed(1)} cm fra sidene</div>` : ''}`;
       })() : ''}
       ${surfs.some(s => s.type === 'landing') ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
@@ -53979,10 +54086,16 @@ function _stairHsParams(stair) {
   const cumFront = i => uniform ? i * front : fronts.slice(0, i).reduce((a, v) => a + v, 0);
   const cumSide = i => uniform ? i * side : sides.slice(0, i).reduce((a, v) => a + v, 0);
   const sideTot = cumSide(count);
+  const outerW = topW + 2 * sideTot;
+  // 239: repos over trappa (mot huset), alltid sentrert om trappas midtlinje. offX/backY = hvor trappas
+  // venstre ytterkant og bakkant ligger i plan når reposet er med (0/0 uten repos — som før 239).
+  const lw = h.landing ? +h.landing.w_cm : 0, ld = h.landing ? +h.landing.d_cm : 0;
+  const landing = (lw > 0 && ld > 0) ? { w: lw, d: ld, ownCable: h.landing.ownCable === true ? true : h.landing.ownCable === false ? false : null } : null;
   return { topW, topD, count, front, side, stepHeight: Math.max(1, +h.stepHeight_cm || 17),
     topLevel: h.topLevel === 'flush' ? 'flush' : 'below',
     sideFollowsFront, perStepDepth, fronts, sides, uniform, cumFront, cumSide, sideTot,
-    outerW: topW + 2 * sideTot, outerD: topD + cumFront(count) };
+    outerW, outerD: topD + cumFront(count),
+    landing, offX: landing ? Math.max(0, (landing.w - outerW) / 2) : 0, backY: landing ? landing.d : 0 };
 }
 
 // 182: grensene for ett trinns dybde i listen «Ulik dybde per trinn».
@@ -54012,13 +54125,21 @@ function _stairHsDepthProblems(p, riser, nose, maxCC) {
 
 // Segmentlista en hesteskotrapp bærer for bakoverkompatibilitet (ingen soner, ingen repos):
 // koden som ser på segments (soner, migrering) ser én trinnserie uten sone.
-function _stairHsSegments(p) {
-  return [{ type: 'steps', width_cm: p.outerW, stepDepth_cm: p.front, stepHeight_cm: p.stepHeight, stepCount: p.count + 1 }];
+// 239: med repos over trappa får lista et repos-segment til. `zoned` = reposet har EGEN kabel: trappa er
+// da sone 1 og reposet sone 2, og sone-mekanismen (102/106) løser, tegner og viser dem hver for seg.
+function _stairHsSegments(p, zoned) {
+  const steps = { type: 'steps', width_cm: p.outerW, stepDepth_cm: p.front, stepHeight_cm: p.stepHeight, stepCount: p.count + 1 };
+  if (!p.landing) return [steps];
+  const land = { type: 'landing', width_cm: p.landing.w, depth_cm: p.landing.d };
+  if (zoned) { steps.zone = 1; land.zone = 2; }
+  return [steps, land];
 }
 
 function _generateHorseshoeSurfaces(stair) {
   const p = _stairHsParams(stair);
-  const sideTot = p.sideTot;
+  // 239: uten repos er ox = by = 0 — alle tall som før.
+  const by = p.backY;
+  const sideTot = p.sideTot + p.offX;
   const surfs = [];
   for (let k = p.count; k >= 1; k--) {   // k = 1 er hesteskoen rett rundt toppen (Kenneths trinn 2)
     // 182: indre kontur = toppflaten + Σ dybdene INNENFOR trinnet (akkumulert, ikke (k − 1) · felles).
@@ -54026,15 +54147,81 @@ function _generateHorseshoeSurfaces(stair) {
     const xl = sideTot - p.cumSide(k - 1), xr = sideTot + p.topW + p.cumSide(k - 1);
     const innerD = p.topD + p.cumFront(k - 1);
     surfs.push({ type: 'tread', shape: 'u', segIdx: 0, stepIdx: k,
-      x_cm: xl - sk, y_cm: innerD, w_cm: (xr - xl) + 2 * sk, d_cm: fk,
+      x_cm: xl - sk, y_cm: by + innerD, w_cm: (xr - xl) + 2 * sk, d_cm: fk,
       span_cm: (xr - xl) + 2 * innerD,   // indre konturs lengde ≈ korteste streng før marginer
       stepHeight_cm: p.stepHeight,
-      hsInner: [{ x: xl, y: 0 }, { x: xl, y: innerD }, { x: xr, y: innerD }, { x: xr, y: 0 }],
+      hsInner: [{ x: xl, y: by }, { x: xl, y: by + innerD }, { x: xr, y: by + innerD }, { x: xr, y: by }],
       hsWidths: [sk, fk, sk] });
   }
   surfs.push({ type: 'tread', shape: 'rect', hsTop: true, segIdx: 0, stepIdx: 0,
-    x_cm: sideTot, y_cm: 0, w_cm: p.topW, d_cm: p.topD, stepHeight_cm: p.stepHeight });
+    x_cm: sideTot, y_cm: by, w_cm: p.topW, d_cm: p.topD, stepHeight_cm: p.stepHeight });
+  // 239: reposet ligger BAK bakkanten (mot huset), sentrert om trappas midtlinje, og er øverste flate.
+  if (p.landing) surfs.push({ type: 'landing', shape: 'rect', hsLanding: true, segIdx: 1,
+    x_cm: sideTot + p.topW / 2 - p.landing.w / 2, y_cm: 0, w_cm: p.landing.w, d_cm: p.landing.d });
   return surfs;
+}
+
+// ══ 239 · HESTESKOTRAPP MED REPOS ØVERST (Kenneth 20.11.2026) ══════════════════════════════════════
+//   stair.horseshoe.landing = { w_cm, d_cm, ownCable? }   (mangler = ingen repos, trappa er som før 239)
+// Plan: reposet øverst (y = 0 … d), trappas bakkant på y = d (_stairHsBackY), alt sentrert. Høyde:
+// «Eget trinn» → ett opptrinn fra toppflaten opp til reposet; «I plan» → samme nivå (_stairRiserBetweenCm).
+// Reposet bruker repos-innstillingene (maks CC repos, dybdemargin repos, avstand fra sidene – repos).
+// EGEN KABEL: ownCable true/false = brukerens valg; mangler = auto (_stairHsLandingAutoOwn).
+function _stairHsHasLanding(stair) { return _stairIsHorseshoe(stair) && !!_stairHsParams(stair).landing; }
+// Bakkantens y i plan (0 uten repos).
+function _stairHsBackY(stair) { return _stairIsHorseshoe(stair) ? _stairHsParams(stair).backY : 0; }
+// REGELEN for «når egen kabel» (auto): reposet får egen kabel når (1) det trenger minst like mye kabel
+// som trappa (reposet dominerer), eller (2) hele behovet er lengre enn den lengste kabelen i trappas
+// produktgruppe (én kabel kan ikke rekke). Behovet måles av motoren på brukerens egne avstander (gulvene).
+// → { own, why: 'dominerer' | 'lengste' | null, land_cm, rest_cm, total_cm, longest_cm }
+function _stairHsLandingAuto(stair) {
+  const p = _stairHsParams(stair);
+  if (!p.landing) return { own: false, why: null };
+  const t = { ...stair, segments: _stairHsSegments(p, false), zoneSettings: null, zoneError: null, runsPerStep: null,
+    edgeMarginLocked_cm: null, landingEdgeMarginSolved_cm: null, cables: [{ productId: null }] };
+  t.surfaces = _generateHorseshoeSurfaces(t);
+  t.edgeMargin_cm = _stairFloorMargin(t);
+  const g = generateStairCable(t);
+  let land = 0;
+  for (const r of g.runs) if ((t.surfaces[r.surfaceIdx] || {}).type === 'landing') for (const s of r.segments) land += s.end_cm - s.start_cm;
+  const total = g.totalCableLength_cm, rest = total - land;
+  const longest = Math.max(0, ..._stairCableProductsIn(stair.preferredFamily || 'InSnow 30T', stair.preferredVoltage || 230).map(q => q.cable_length_m * 100));
+  const why = land >= rest - 1e-6 ? 'dominerer' : (longest > 0 && total > longest + STAIR_OVER_OK_CM ? 'lengste' : null);
+  return { own: !!why, why, land_cm: land, rest_cm: rest, total_cm: total, longest_cm: longest };
+}
+function _stairHsLandingOwn(stair) {
+  const p = _stairHsParams(stair);
+  if (!p.landing) return false;
+  return p.landing.ownCable != null ? p.landing.ownCable : _stairHsLandingAuto(stair).own;
+}
+// Holder segmentlista (og dermed sonene) i takt med valget. Kalles først i _regenerateStairCable.
+// Rører bare hestesko MED repos — alle andre trapper går rett forbi.
+function _stairHsSyncSegments(stair) {
+  if (!_stairHsHasLanding(stair)) return;
+  const own = _stairHsLandingOwn(stair);
+  const had = (stair.segments || []).some(s => s.zone != null);
+  stair.segments = _stairHsSegments(_stairHsParams(stair), own);
+  if (own === had) return;
+  // Byttet mellom én kabel og egen kabel på reposet: det gamle settet gjelder ikke lenger.
+  stair.runsPerStep = null;
+  if (stair.selectedProposal) { stair.lastProposal = stair.selectedProposal; stair.selectedProposal = null; }
+  stair.cables = []; stair.cableProductId = null; stair.desiredCableCount = null;
+}
+// «Egen kabel på reposet»: 'auto' | 'own' | 'shared' (trappepanelet).
+function _setStairHsLandingCable(val) {
+  const stair = S.stairs.find(s => s.id === S.ui.selectedStairId);
+  if (!stair || !_stairHsHasLanding(stair)) return;
+  const ny = val === 'own' ? true : val === 'shared' ? false : null;
+  const cur = _stairHsParams(stair).landing.ownCable;
+  if (cur === ny) return;
+  pushUndo();
+  const l = { ...stair.horseshoe.landing };
+  if (ny == null) delete l.ownCable; else l.ownCable = ny;
+  stair.horseshoe = { ...stair.horseshoe, landing: l };
+  S.ui.selectedStairZone = null;
+  _regenerateStairCable(stair);
+  _invalidateStairCache();
+  renderSidebar(); _updateStairSettingsPanel(); updateCtxBar(); render();
 }
 
 // Bredden marginene «spiser» av — w_cm for et rektangel (uendret for rette trapper), den indre
@@ -54057,12 +54244,24 @@ function _stairHsFillTop(stair) {
 function _stairHsTopFillCm(stair) {
   return stair.edgeMarginMin_cm > 0 ? stair.edgeMarginMin_cm : (stair.edgeMargin_cm || 5);
 }
+// 239: reposets faste avstand i 'fillTop' — repos-feltet (238), ellers som toppflaten.
+function _stairHsLandingFillCm(stair) {
+  return stair.landingEdgeMargin_cm > 0 ? Math.round(stair.landingEdgeMargin_cm * 10) / 10 : _stairHsTopFillCm(stair);
+}
+// 239: «Avstand fra sidene – hesteskotrinn» (stair.horseshoe.stepEdgeMargin_cm): hesteskotrinnenes eget
+// gulv i 'fillTop'. Tomt = som toppflaten (null). Gjelder bare i 'fillTop' — i de andre valgene følger
+// hesteskotrinnene toppflaten.
+function _stairHsStepFieldCm(stair) {
+  const v = _stairHsFillTop(stair) ? +stair.horseshoe.stepEdgeMargin_cm : 0;
+  return v > 0 ? Math.round(v * 10) / 10 : null;
+}
 // Flatene som sidemarginen er justeringsvariabel for: alle, eller bare hesteskoflatene i 'fillTop'.
 function _stairAdjSurfaces(stair) {
   const surfs = (stair && stair.surfaces) || [];
   // 238: i to-fase-løsningen bærer bare ÉN flatetype variabelen (repos i fase 1, trinnene i fase 2).
   if (stair && stair._lm) return surfs.filter(f => (f.type === 'landing') === (stair._lm === 'landing'));
-  return _stairHsFillTop(stair) ? surfs.filter(f => !f.hsTop) : surfs;
+  // 239: i 'fillTop' («Juster på hesteskotrinnene») står også et repos fast på sitt gulv.
+  return _stairHsFillTop(stair) ? surfs.filter(f => !f.hsTop && !f.hsLanding) : surfs;
 }
 // Taket for hesteskoens margin: armen til den innerste strengen på hvert hesteskotrinn
 // (bakkant → hjørnet, Di + opptrinnsavstand). Større margin ville flyttet strengens ende forbi hjørnet.
@@ -54349,6 +54548,18 @@ function _stairSurfSettings(stair, si, zoneRanges) {
     base.edgeMargin_cm = base.edgeMarginFloor_cm = _stairHsTopFillCm(stair);
     base.topFill = true;
   }
+  // 239: «Juster på hesteskotrinnene» med repos over trappa — også reposet står fast, på SITT gulv
+  // (repos-feltet, ellers samme som toppflaten). Hesteskotrinnene kan ha eget gulv (feltet
+  // «Avstand fra sidene – hesteskotrinn»): utlegget går aldri under det.
+  if (_stairHsFillTop(stair)) {
+    if (surf.hsLanding) {
+      base.edgeMargin_cm = base.edgeMarginFloor_cm = _stairHsLandingFillCm(stair);
+      base.landingOwn = true; base.landFill = true;
+    } else if (surf.shape === 'u' && _stairHsStepFieldCm(stair) != null && _stairLockedMargin(stair) == null) {
+      base.edgeMarginFloor_cm = _stairHsStepFieldCm(stair);
+      base.edgeMargin_cm = Math.max(base.edgeMargin_cm, base.edgeMarginFloor_cm);
+    }
+  }
   // 238: repos har egen avstand fra sidene når repos-feltet er brukt eller «Prioriter trinn» er på.
   // `_lm` settes bare av løseren (_stairLmSolve): "landing" = repos er variabelen, trinnene står fast;
   // "steps" = trinnene er variabelen, repos står fast på taket. Uten `_lm`: den løste verdien, ellers gulvet.
@@ -54377,8 +54588,12 @@ function _stairSurfSettings(stair, si, zoneRanges) {
       // 106: en sone kan ha FLERE kabler, så indeksen er ikke lenger sonenummeret. Alle kablene i
       // en sone deler marginen, så den første med denne sonen er svaret.
       const cable = (stair.cables || []).find(c => c && c.zone === r.zone);
-      if (cable && cable.edgeMargin_cm != null) base.edgeMargin_cm = cable.edgeMargin_cm;
       const _locked = _stairZoneLockedMargin(stair, r.zone);   // 105
+      // 239: toppflaten i «Juster på hesteskotrinnene» står på SONENS gulv også når trappa er delt i
+      // soner (egen kabel på reposet) — den løste verdien på kabelen er hesteskotrinnenes.
+      if (base.topFill) { const _zf = _locked != null ? _locked : (zs.edgeMarginMin_cm > 0 ? zs.edgeMarginMin_cm : null);
+        if (_zf != null) base.edgeMargin_cm = _zf; }
+      else if (cable && cable.edgeMargin_cm != null) base.edgeMargin_cm = cable.edgeMargin_cm;
       if (_locked != null) { base.edgeMarginFloor_cm = _locked; base.edgeMarginLocked = true; }
       else if (zs.edgeMarginMin_cm > 0) base.edgeMarginFloor_cm = zs.edgeMarginMin_cm;
       // 238: sonens repos — verdien soneløseren skrev på kabelen (_stairSolveZones); gulvet fra sonens
@@ -54486,7 +54701,15 @@ function _stairZoneSubStair(stair, range) {
   const _zSurfs = (stair.surfaces || []).slice(range.fromSurf, range.toSurf + 1);
   const _zLf = _stairZoneLandingFieldCm(stair, range.zone);
   const _bareRepos = _zLf != null && _zSurfs.length > 0 && _zSurfs.every(f => f.type === 'landing');
-  const floor = locked != null ? locked : (_bareRepos ? _zLf : (zs.edgeMarginMin_cm > 0 ? zs.edgeMarginMin_cm : _stairFloorMargin(stair)));
+  // 239: hesteskotrinnenes eget gulv ('fillTop') gjelder bare soner som HAR hesteskotrinn; toppflaten i
+  // sonen beholder trappas vanlige gulv (edgeMarginMin_cm under).
+  const _hsF = _stairHsStepFieldCm(stair), _harU = _zSurfs.some(f => f.shape === 'u');
+  const _stdFloor = (_hsF != null && !_harU) ? _stairHsTopFillCm(stair) : _stairFloorMargin(stair);
+  const _egetGulv = locked != null || _bareRepos || zs.edgeMarginMin_cm > 0;
+  const floor = locked != null ? locked : (_bareRepos ? _zLf : (zs.edgeMarginMin_cm > 0 ? zs.edgeMarginMin_cm : _stdFloor));
+  // 239: en sone med bare reposet (egen kabel på reposet) har ingen toppflate å fylle — den løses som en
+  // vanlig flate, også når trappa står på «Juster på hesteskotrinnene».
+  const _bareLand = _zSurfs.length > 0 && _zSurfs.every(f => f.type === 'landing');
   const nose = (zs.noseOffset_cm != null && zs.noseOffset_cm !== '') ? +zs.noseOffset_cm : null;
   return {
     ...stair,
@@ -54498,7 +54721,8 @@ function _stairZoneSubStair(stair, range) {
     cables: [],
     runsPerStep: null,
     edgeMargin_cm: floor,
-    edgeMarginMin_cm: floor,
+    edgeMarginMin_cm: (!_egetGulv && _hsF != null && _harU) ? _stairHsTopFillCm(stair) : floor,
+    ...(_bareLand && _stairHsFillTop(stair) ? { horseshoe: { ...stair.horseshoe, marginMode: 'equal' } } : {}),
     edgeMarginLocked_cm: null,   // 120: trappas lås arves som GULV (floor over), ikke som lås
 
     stepCC_cm: zs.stepCC_cm > 0 ? zs.stepCC_cm : (stair.stepCC_cm || stair.cableSpacing_cm || STAIR_DEFAULT_MAX_CC_CM),
@@ -54567,6 +54791,10 @@ function generateStairCable(stair) {
   let totalLen = 0;
   let prevExitRight = false;
   const ssBy = {};   // 187: flatens innstillinger, til overgangens rute i plan (hestesko)
+  // 239: ligger et repos rett over hesteskoens toppflate, i samme kabel (ingen sonegrense imellom)?
+  const _hsTopI = surfs.findIndex(f => f.hsTop), _hsLandI = surfs.findIndex(f => f.hsLanding);
+  const _hsLandJoined = _hsTopI >= 0 && _hsLandI >= 0 && (!zoneRanges
+    || zoneRanges.findIndex(z => _hsTopI >= z.fromSurf && _hsTopI <= z.toSurf) === zoneRanges.findIndex(z => _hsLandI >= z.fromSurf && _hsLandI <= z.toSurf));
 
   for (let oi = 0; oi < surfOrder.length; oi++) {
     const si = surfOrder[oi];
@@ -54653,7 +54881,9 @@ function generateStairCable(stair) {
       // 176: hesteskoens strenger ender ved BAKKANTEN, så kabelen kommer opp på toppflaten ved
       // bakkanten — toppflaten legges derfor bakfra og ut mot nesen (og motsatt ved topp-start),
       // ellers måtte kabelen gått langs hele siden av toppflaten for å nå nesestrengen.
-      if (surf.hsTop) enterAtLargePos = !enterAtLargePos;
+      // 239: med repos over trappa PÅ SAMME KABEL skal kabelen forlate toppflaten ved bakkanten (mot
+      // reposet) — da legges toppflaten fra nesen og bakover som et vanlig trinn, uten snuingen over.
+      if (surf.hsTop && !_hsLandJoined) enterAtLargePos = !enterAtLargePos;
       const pos = enterAtLargePos ? (depthEnd - ri * actualCC) : (depthStart + ri * actualCC);
       if (!_hs) {
         pieces.push({ kind: 'run', surfaceIdx: si, pos_cm: pos, xStart, xEnd, len_cm: runLength, isGoingRight: (ri % 2 === 0) });
@@ -55375,6 +55605,8 @@ function _stairFloorMargin(stair) {
   // 120 (Regel 22 på trappenivå): en LÅST avstand er både gulv og tak — løseren rører den ikke.
   const _l = _stairLockedMargin(stair);
   if (_l != null) return _l;
+  const _hf = _stairHsStepFieldCm(stair);   // 239: hesteskotrinnenes eget gulv ('fillTop')
+  if (_hf != null) return _hf;
   if (stair.edgeMarginMin_cm > 0) return stair.edgeMarginMin_cm;
   return stair.edgeMargin_cm || 5;
 }
@@ -55554,13 +55786,13 @@ function _stairMarginProbe(stair) {
   const adjSurfs = _stairAdjSurfaces(stair);
   const _lm = stair._lm || null;   // 238: bare strengene på flatene som bærer variabelen blir kortere
   const totalStrands = _lm ? probe.runs.filter(r => (((stair.surfaces || [])[r.surfaceIdx] || {}).type === 'landing') === (_lm === 'landing')).length
-    : fillTop ? probe.runs.filter(r => !((stair.surfaces || [])[r.surfaceIdx] || {}).hsTop).length : probe.runs.length;
+    : fillTop ? probe.runs.filter(r => { const f = (stair.surfaces || [])[r.surfaceIdx] || {}; return !f.hsTop && !f.hsLanding; }).length : probe.runs.length;   // 239: heller ikke reposet
   const neededAtFloor_cm = probe.totalCableLength_cm;
   const _msi = _stairMinSurfInfo(adjSurfs, stair.width_cm);   // 190: også hva slags flate (repos/trinn)
   const minSurfW = _msi.w, minSurfFlate = _msi.flate;   // 176: span (= w_cm for rette)
   // 184: hesteskoens margin kan ikke gå forbi hjørnet (armen til innerste streng).
   // 185 (svar 184/5): i begge valg — «strenger skal aldri gå forbi hesteskoens hjørne».
-  const armCap = _stairIsHorseshoe(stair) ? _stairHsArmCapCm(stair) : Infinity;
+  const armCap = (_stairIsHorseshoe(stair) && _lm !== 'landing') ? _stairHsArmCapCm(stair) : Infinity;   // 239: armen gjelder ikke når bare reposet justeres
   const maxMargin75 = Math.min(minSurfW * STAIR_SINGLE_MAX_MARGIN_FRAC, minSurfW / 2 - 1, armCap);
   // 189: det HARDE taket. 75 % er et varsel; det som stopper er armen (hestesko, 185) og strengen ≥ 30 cm.
   const maxMarginHard = Math.min((minSurfW - STAIR_MIN_STRING_CM) / 2, minSurfW / 2 - 1, armCap);
@@ -57030,14 +57262,14 @@ function _stairLandingMarginRegressionTest238() {
         check('I2: uten valget har blokka ikke feltet', 'mangler', b0[0] && !('landingEdgeMargin_cm' in b0[0]) && b0[0].edgeMargin_cm === 12.8, b0[0] && Object.keys(b0[0]).join(',')); }
       // ── J: panelet ──
       st = mk();
-      { const el = panel(), f = el.querySelector('#stair-landing-edge-margin'), c = el.querySelector('#stair-prioritize-steps');
-        check('J1: trapp med repos: feltet (tomt, plassholder = trinnenes 5) og avkrysningen (av) vises', 'tomt · 5 · av', !!f && f.value === '' && f.placeholder === '5' && f.max === '104' && !!c && !c.checked && !el.querySelector('#stair-lm-info'),
-          f ? (f.value || 'tomt') + ' · ' + f.placeholder + ' · ' + (c && c.checked ? 'på' : 'av') : 'feltet mangler'); }
+      { const el = panel(), f = el.querySelector('#stair-landing-edge-margin'), c = el.querySelector('#stair-adjust-mode');   // 239: avkrysningen er nå valget «Juster avstand fra sidene på»
+        check('J1: trapp med repos: feltet (tomt, plassholder = trinnenes 5) og avkrysningen (av) vises', 'tomt · 5 · av', !!f && f.value === '' && f.placeholder === '5' && f.max === '104' && !!c && c.value === 'all' && !el.querySelector('#stair-lm-info'),
+          f ? (f.value || 'tomt') + ' · ' + f.placeholder + ' · ' + (c && c.value === 'landing' ? 'på' : 'av') : 'feltet mangler'); }
       mkRett();
-      { const el = panel(); check('J2: trapp uten repos: verken felt eller avkrysning', 'ingen', !el.querySelector('#stair-landing-edge-margin') && !el.querySelector('#stair-prioritize-steps'), el.querySelector('#stair-landing-edge-margin') ? 'feltet vises' : 'ingen'); }
+      { const el = panel(); check('J2: trapp uten repos: verken felt eller avkrysning', 'ingen', !el.querySelector('#stair-landing-edge-margin') && !el.querySelector('#stair-adjust-mode'), el.querySelector('#stair-landing-edge-margin') ? 'feltet vises' : 'ingen'); }
       st = setC(mk({ prioritizeSteps: true }), [98]);
-      { const el = panel(), i = el.querySelector('#stair-lm-info'), c = el.querySelector('#stair-prioritize-steps');
-        check('J3: valget på: avkrysset, og linja under viser begge tall', 'Trinn 5.0 cm · repos 42.1 cm fra sidene', !!c && c.checked && !!i && i.textContent === 'Trinn 5.0 cm · repos 42.1 cm fra sidene', i ? i.textContent : 'mangler'); }
+      { const el = panel(), i = el.querySelector('#stair-lm-info'), c = el.querySelector('#stair-adjust-mode');
+        check('J3: valget på: avkrysset, og linja under viser begge tall', 'Trinn 5.0 cm · repos 42.1 cm fra sidene', !!c && c.value === 'landing' && !!i && i.textContent === 'Trinn 5.0 cm · repos 42.1 cm fra sidene', i ? i.textContent : 'mangler'); }
       st = mk({ prioritizeSteps: true }, [1, 2, 2]); S.ui.selectedStairZone = 2;
       { const el = panel(), rad = el.querySelector('#stair-zone-lm-row'), t = el.textContent;
         check('J4: sonepanelet: egen rad for repos og teksten skiller trinn og repos', '19.3 cm', !!rad && /19\.3 cm/.test(rad.textContent) && /Repos: avstand fra sidene justert til 19\.3 cm \(din: 5 cm\) så kabelen går opp/.test(t) && /Trinn: 5\.0 cm\./.test(t), rad ? rad.textContent : 'raden mangler'); }
@@ -57054,6 +57286,202 @@ function _stairLandingMarginRegressionTest238() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? 'log' : 'error'](`_stairLandingMarginRegressionTest238: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results);
+  return { ok: allOk, results };
+}
+
+// 239 — regresjonstest: hestesko med repos øverst, og valget «Juster avstand fra sidene på». Kjøres fra konsollen:
+// _stairHsLandingRegressionTest239(). Samme syntetiske katalog og «rør ikke lagring»-oppsett som 238.
+// Låser: (A) gamle trapper er som før 239 (fasit = hash målt på HEAD før 239: hestesko lik/fyll toppflaten, rett
+// trapp med «Prioriter trinn»), (B) geometrien (Kenneths eksempel 340 × 105 + repos 540 × 200, «Eget trinn»/«I plan»),
+// (C) regelen for egen kabel + overstyring, (D) de tre valgene — CC og strenger røres ikke, (E) feltene per flatetype,
+// (F) byggeren (ny, rediger, fjern repos — trappa står i ro), (G) tabell, mål og PDF-blokk, (H) panelet.
+function _stairHsLandingRegressionTest239() {
+  const saved = { stairs: S.stairs, sel: S.ui.selectedStairId, zone: S.ui.selectedStairZone, prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(),
+    nextStair: S.counters.nextStairId, undoLen: _undoStack.length, autosave: window._performAutoSave, place: S.ui.stairPlaceParams, mode: S.ui.mode };
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  try {
+    window._performAutoSave = async () => {};
+    const LENS = [5, 10, 15, 20, 25, 30, 35, 40.1, 45, 49.7, 55.3, 60, 70, 78.7, 89.1, 98, 106.9, 128.2, 139.9];
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push({ id: 9800, module_type: 'cable', name: 'TESTKABEL' });
+    HEATING_PRODUCTS.length = 0;
+    LENS.forEach((L, i) => HEATING_PRODUCTS.push({ id: 98000 + i, category_id: 9800, active: true, product_family: 'InSnow 30T',
+      name: 'InSnow 30T ' + Math.round(L * 30) + 'W ' + L + 'm', cable_length_m: L, watt_per_m: 30, voltage: 230 }));
+    const pid = L => (HEATING_PRODUCTS.find(p => Math.abs(p.cable_length_m - L) < 0.001) || {}).id;
+    const lenOf = id => (HEATING_PRODUCTS.find(p => p.id === id) || {}).cable_length_m;
+    const r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100;
+    const reg = st => { S.stairs = [st]; S.ui.selectedStairId = st.id; S.ui.selectedStairZone = null; _regenerateStairCable(st); return st; };
+    const mk = (extra, zones) => {
+      S.counters.nextStairId = 998001;
+      const st = _createStairObj({ name: 'T239', width_cm: 210, step_depth_cm: 30, step_height_cm: 17, step_count: 10,
+        edgeMargin_cm: 5, stepCC_cm: 10, landingCC_cm: 10, cableSpacing_cm: 10, riserOffset_cm: 2, noseOffset_cm: 2, ...(extra || {}) });
+      st.segments = [{ type: 'steps', width_cm: 210, stepDepth_cm: 30, stepHeight_cm: 17, stepCount: 4 }, { type: 'landing', width_cm: 210, depth_cm: 120 },
+        { type: 'steps', width_cm: 210, stepDepth_cm: 30, stepHeight_cm: 17, stepCount: 6 }];
+      if (zones) st.segments.forEach((g, i) => { g.zone = zones[i]; });
+      st.cables = []; st.selectedProposal = null; st.lastProposal = null; st.desiredCableCount = null;
+      return reg(st);
+    };
+    const setC = (st, lens) => { st.cables = lens.map((L, i) => ({ index: i, productId: pid(L) })); st.cableProductId = pid(lens[0]); st.selectedProposal = null; _regenerateStairCable(st); return st; };
+    const full = st => JSON.stringify({ r: st.runs.map(r => [r.surfaceIdx, r2(r.pos_cm), r.segments.map(g => [r2(g.start_cm), r2(g.end_cm), g.cableIdx])]),
+      t: r2(st.totalCableLength_cm), c: r2(st.coveredCableLength_cm), em: st.edgeMargin_cm, u: (st.uncoveredRuns || []).length,
+      k: (st.cables || []).map(c => [c.zone, c.productId, c.edgeMargin_cm, c.error || null]) });
+    const hash = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36); };
+    const propSig = st => _generateStairProposals(st).map(p => p.products.map(x => x.length_m).join('+') + '@' + p.edgeMargin_cm + '/' + (p.marginResidual_cm || 0)).join(' | ');
+    // Kenneths eksempel: toppflate 200 × 35, 2 hesteskotrinn à 35, opptrinn 17 → ytre 340 × 105.
+    const HS = { topW_cm: 200, topD_cm: 35, count: 2, front_cm: 35, stepHeight_cm: 17 };
+    const mkHs = (hx, extra) => { S.counters.nextStairId = 998001; const H = { ...HS, ...(hx || {}) };
+      return reg(_createStairObj({ name: 'HS239', design: 'horseshoe', horseshoe: H, segments: _stairHsSegments(_stairHsParams({ horseshoe: H })),
+        riserOffset_cm: 2, noseOffset_cm: 2, edgeMargin_cm: 5, edgeMarginMin_cm: 5, stepCC_cm: 10, landingCC_cm: 10, x_cm: 0, y_cm: 0, ...(extra || {}) })); };
+    const mkRett = extra => { S.counters.nextStairId = 998001;
+      return reg(_createStairObj({ name: 'R239', width_cm: 240, step_depth_cm: 30, step_height_cm: 17, step_count: 8, edgeMargin_cm: 5, stepCC_cm: 10, cableSpacing_cm: 10, riserOffset_cm: 2, noseOffset_cm: 2, ...(extra || {}) })); };
+    const prop = st => { const p = _generateStairProposals(st); if (p[0]) _applyStairProposal(st, p[0]); return full(st) + propSig(st); };
+    // ── A: uendret uten repos. Fasit = hash av hele utlegget (+ forslagslista), målt på HEAD før 239. ──
+    const FASIT = { b1_hs_lik_forslag: '1cevks2', b2_hs_fyllTopp_forslag: 'u0a9sb', b3_hs_iplan_fyllTopp_49_7: '11cm3od', b4_hs_lik_55_3: '1semdbh',
+      b5_rett_prioriter_98: '1c7b3hd', b6_rett_prioriter_soner122: '18inb7x', b7_reposTopp_prioriter_felt15_forslag: '7pwmjt', b8_rett_prioriter_forslag: 'ab73dk' };
+    const fx = {
+      b1_hs_lik_forslag: () => prop(mkHs()),
+      b2_hs_fyllTopp_forslag: () => prop(mkHs({ marginMode: 'fillTop' })),
+      b3_hs_iplan_fyllTopp_49_7: () => full(setC(mkHs({ marginMode: 'fillTop', topLevel: 'flush' }), [49.7])),
+      b4_hs_lik_55_3: () => full(setC(mkHs(), [55.3])),
+      b5_rett_prioriter_98: () => full(setC(mk({ prioritizeSteps: true }), [98])),
+      b6_rett_prioriter_soner122: () => full(mk({ prioritizeSteps: true }, [1, 2, 2])),
+      b7_reposTopp_prioriter_felt15_forslag: () => prop(mkRett({ landing_position: 'top', landing_depth_cm: 120, landingCC_cm: 10, landingMargin_cm: 5, landingEdgeMargin_cm: 15, prioritizeSteps: true })),
+      b8_rett_prioriter_forslag: () => prop(mk({ prioritizeSteps: true })),
+    };
+    for (const k of Object.keys(fx)) { const h = hash(fx[k]()); check('A: ' + k + ' — utlegg og forslag som før 239', FASIT[k], h === FASIT[k], h); }
+    let st = mkHs();
+    check('A: hestesko uten repos: ingen reposflate, ingen soner, ingen 239-felt', 'ingen', !st.surfaces.some(f => f.hsLanding) && !st.segments.some(g => g.zone != null) && !('landing' in st.horseshoe) && !_stairHsHasLanding(st) && _stairHsBackY(st) === 0,
+      st.surfaces.map(f => f.type).join(','));
+    check('A: oversettelsen av gamle valg', 'all · hsSteps · landing · hsSteps', _stairAdjustMode(mkHs()) === 'all' && _stairAdjustMode(mkHs({ marginMode: 'fillTop' })) === 'hsSteps' && _stairAdjustMode(mk({ prioritizeSteps: true })) === 'landing'
+      && _stairAdjustMode(mkHs({ marginMode: 'fillTop' }, { prioritizeSteps: true })) === 'hsSteps' && _stairAdjustMode(mk()) === 'all', [_stairAdjustMode(mkHs()), _stairAdjustMode(mkHs({ marginMode: 'fillTop' })), _stairAdjustMode(mk({ prioritizeSteps: true }))].join(' · '));
+    // Signatur: avstand fra sidene per flate (U = hesteskotrinn, T = toppflate, L = repos), strenger og posisjoner.
+    const mS = s => s.surfaces.map((f, i) => (f.hsLanding ? 'L' : f.hsTop ? 'T' : 'U') + r1(_stairSurfSettings(s, i).edgeMargin_cm)).join(' ');
+    const nS = s => s.surfaces.map((f, i) => s.runs.filter(r => r.surfaceIdx === i).length).join('/');
+    const pS = s => s.surfaces.map((f, i) => s.runs.filter(r => r.surfaceIdx === i).map(r => r1(r.pos_cm)).sort((a, b) => a - b).join(',')).join(' | ');
+    const kS = s => s.cables.map(c => [c.zone, lenOf(c.productId), c.edgeMargin_cm, c.error || ''].join('|')).join(' ; ');
+    const zS = s => s.segments.map(g => g.type + ':' + (g.zone == null ? '-' : g.zone)).join(',');
+    const LK = { w_cm: 540, d_cm: 200 }, L1 = { w_cm: 340, d_cm: 120 };
+    // ── B: geometrien ──
+    st = mkHs({ landing: LK, marginMode: 'fillTop' });
+    { const g = st.surfaces.map(f => [f.type, f.shape, f.x_cm, f.y_cm, f.w_cm, f.d_cm].join('/')).join(' ');
+      check('B1: flatene — reposet 540 × 200 øverst, trappa forskjøvet 100 inn og 200 ned', 'tread/u/100/270/340/35 tread/u/135/235/270/35 tread/rect/170/200/200/35 landing/rect/0/0/540/200',
+        g === 'tread/u/100/270/340/35 tread/u/135/235/270/35 tread/rect/170/200/200/35 landing/rect/0/0/540/200', g);
+      const top = st.surfaces.find(f => f.hsTop), la = st.surfaces.find(f => f.hsLanding);
+      check('B2: reposet er sentrert om toppflaten og ligger bak bakkanten', 'midt 270 · bakkant 200', la.x_cm + la.w_cm / 2 === top.x_cm + top.w_cm / 2 && la.y_cm + la.d_cm === top.y_cm && _stairHsBackY(st) === 200, (la.x_cm + la.w_cm / 2) + ' · ' + (la.y_cm + la.d_cm));
+      check('B3: «Eget trinn»: reposet ett opptrinn over toppflaten (høyde 4 × 17 = 68)', 68, _stairSideTotalHeightCm(st) === 68, _stairSideTotalHeightCm(st)); }
+    st = mkHs({ landing: LK, marginMode: 'fillTop', topLevel: 'flush' });
+    check('B4: «I plan»: reposet i samme nivå som toppflaten (høyde 3 × 17 = 51)', 51, _stairSideTotalHeightCm(st) === 51, _stairSideTotalHeightCm(st));
+    st = mkHs({ landing: L1, marginMode: 'fillTop' });
+    check('B5: repos like bredt som trappa: ingen forskyvning sideveis', '0 · 340', st.surfaces[0].x_cm === 0 && st.surfaces.find(f => f.hsLanding).x_cm === 0, st.surfaces[0].x_cm + ' · ' + st.surfaces.find(f => f.hsLanding).w_cm);
+    // ── C: regelen for egen kabel på reposet, og overstyringen ──
+    st = mkHs({ landing: LK, marginMode: 'fillTop' });
+    { const au = _stairHsLandingAuto(st);
+      check('C1: stort repos (106 m mot trappas 52 m): egen kabel foreslås — «dominerer»', 'true · dominerer', au.own === true && au.why === 'dominerer' && r1(au.land_cm / 100) === 106 && r1(au.rest_cm / 100) === 52.2, au.own + ' · ' + au.why + ' · ' + r1(au.land_cm / 100) + '/' + r1(au.rest_cm / 100));
+      check('C2: egen kabel = egen sone: trapp 49,7 m, repos 106,9 m', 'steps:1,landing:2 · 1|49.7|6.5| ; 2|106.9|5|', zS(st) === 'steps:1,landing:2' && kS(st) === '1|49.7|6.5| ; 2|106.9|5|' && !st.zoneError, zS(st) + ' · ' + kS(st));
+      check('C3: repos og toppflate på gulvet (5), hesteskotrinnene justert (6,5)', 'U6.5 U6.5 T5 L5', mS(st) === 'U6.5 U6.5 T5 L5', mS(st));
+      check('C4: strenger 5/5/5/20 — CC som uten justering', '5/5/5/20', nS(st) === '5/5/5/20', nS(st)); }
+    st = mkHs({ landing: { ...LK, ownCable: false }, marginMode: 'fillTop' });
+    check('C5: overstyrt til samme kabel: ingen soner, hele behovet 158,17 m på én kabel', 'steps:-,landing:- · 158.17', zS(st) === 'steps:-,landing:-' && r2(st.totalCableLength_cm / 100) === 158.17 && st.connections.length === 3, zS(st) + ' · ' + r2(st.totalCableLength_cm / 100));
+    st = mkHs({ landing: L1, marginMode: 'fillTop' });
+    { const au = _stairHsLandingAuto(st);
+      check('C6: lite repos (39,6 m mot 51,2 m, i alt 90,8 m ≤ lengste 139,9): én kabel', 'false', au.own === false && au.why === null && zS(st) === 'steps:-,landing:-', au.own + ' · ' + zS(st));
+      const P = _generateStairProposals(st).map(p => p.products.map(x => x.length_m).join('+') + '@' + p.edgeMargin_cm).join(' ; ');
+      check('C7: forslag for trapp + repos på én kabel', '89.1@13.4 ; 35+55.3@7.4', P === '89.1@13.4 ; 35+55.3@7.4', P); }
+    _setStairHsLandingCable('own');
+    check('C8: «Egen kabel» i panelet: soner, 49,7 + 40,1', 'true · 1|49.7|6.5| ; 2|40.1|5|', st.horseshoe.landing.ownCable === true && zS(st) === 'steps:1,landing:2' && kS(st) === '1|49.7|6.5| ; 2|40.1|5|', st.horseshoe.landing.ownCable + ' · ' + kS(st));
+    _setStairHsLandingCable('auto');
+    check('C9: tilbake til «Auto»: feltet borte, én kabel igjen', 'steps:-,landing:-', !('ownCable' in st.horseshoe.landing) && zS(st) === 'steps:-,landing:-', zS(st));
+    // ── D: de tre valgene på samme kabel (89,1 m; behov på gulvet 90,77 m). CC og strenger er de samme i alle tre. ──
+    st = setC(mkHs({ landing: L1, marginMode: 'fillTop' }), [89.1]);
+    const pos0 = pS(mkHs({ landing: L1, marginMode: 'fillTop' })); S.stairs = [st]; S.ui.selectedStairId = st.id;
+    check('D1: «Hesteskotrinnene»: repos og toppflate på gulvet, hesteskotrinnene 13,4', 'U13.4 U13.4 T5 L5', mS(st) === 'U13.4 U13.4 T5 L5' && st.manualFit && st.manualFit.ok === true, mS(st));
+    check('D2: … strenger og posisjoner (CC) uendret', '5/5/5/12', nS(st) === '5/5/5/12' && pS(st) === pos0, nS(st) + ' · ' + (pS(st) === pos0 ? 'lik' : pS(st)));
+    _setStairAdjustMode('landing');
+    check('D3: «Repos» (= 238 «Prioriter trinn»): trinn og toppflate 5, reposet 11,7', 'U5 U5 T5 L11.7 · equal/true', mS(st) === 'U5 U5 T5 L11.7' && st.horseshoe.marginMode === 'equal' && st.prioritizeSteps === true && nS(st) === '5/5/5/12' && pS(st) === pos0, mS(st) + ' · ' + st.horseshoe.marginMode + '/' + st.prioritizeSteps);
+    _setStairAdjustMode('all');
+    check('D4: «Alle likt»: 8,1 på alt', 'U8.1 U8.1 T8.1 L8.1 · equal/-', mS(st) === 'U8.1 U8.1 T8.1 L8.1' && st.horseshoe.marginMode === 'equal' && !('prioritizeSteps' in st) && nS(st) === '5/5/5/12' && pS(st) === pos0, mS(st) + ' · ' + st.horseshoe.marginMode + '/' + st.prioritizeSteps);
+    _setStairAdjustMode('hsSteps');
+    check('D5: tilbake til «Hesteskotrinnene»: som D1', 'U13.4 U13.4 T5 L5 · fillTop', mS(st) === 'U13.4 U13.4 T5 L5' && st.horseshoe.marginMode === 'fillTop' && !('prioritizeSteps' in st), mS(st) + ' · ' + st.horseshoe.marginMode);
+    check('D6: kabelen går opp i alle tre (≤ 0,5 m til overs)', '≤ 50 cm', 8910 - st.totalCableLength_cm >= 0 && 8910 - st.totalCableLength_cm <= 50, r1(8910 - st.totalCableLength_cm));
+    // ── E: hver flatetype har sitt eget felt ──
+    st = mkHs({ landing: LK, marginMode: 'fillTop', stepEdgeMargin_cm: 8 });
+    check('E1: «Avstand fra sidene – hesteskotrinn» 8: hesteskotrinnene starter på 8, resten på 5', 'U8 U8 T5 L5', mS(st) === 'U8 U8 T5 L5', mS(st));
+    st = mkHs({ landing: LK, marginMode: 'fillTop' }, { landingEdgeMargin_cm: 12 });
+    { const l = _stairSurfSettings(st, 3).edgeMargin_cm;
+      check('E2: «Avstand fra sidene – repos» 12: reposet minst 12, toppflaten fortsatt 5', 'T5 · L ≥ 12', l >= 12 && /T5 /.test(mS(st)) && _stairHsLandingFillCm(st) === 12, mS(st)); }
+    // ── F: byggeren ──
+    S.stairs = []; S.ui.selectedStairId = null;
+    _showHsBuilder();
+    _stairHsBUpd('topW', 200); _stairHsBUpd('topD', 35); _stairHsBUpd('count', 2); _stairHsBUpd('front', 35); _stairHsBUpd('height', 17);
+    const $id = id => document.getElementById(id);
+    check('F1: avkrysningen «Repos over trappa» finnes og er av; feltene skjult', 'av', !!$id('shs-landing') && !$id('shs-landing').checked && $id('shs-landing-box').style.display === 'none' && !$id('shs-pv-landing'), $id('shs-landing') ? 'finnes' : 'mangler');
+    _stairHsBLanding(true);
+    check('F2: på: bredde følger trappas ytre bredde (340), dybde 120', '340 × 120', $id('shs-landW').value === '340' && $id('shs-landD').value === '120' && $id('shs-landing-box').style.display !== 'none' && !!$id('shs-pv-landing'), $id('shs-landW').value + ' × ' + $id('shs-landD').value);
+    _stairHsBUpd('topW', 210);
+    check('F3: bredden følger når trappa endres (350)', '350', $id('shs-landW').value === '350' && _stairHsBParams().landing.w_cm === 350, $id('shs-landW').value);
+    _stairHsBUpd('topW', 200); _stairHsBUpd('landW', 540); _stairHsBUpd('landD', 200);
+    { const t = ($id('shs-total') || {}).textContent || '', n = ($id('shs-landing-need') || {}).textContent || '';
+      check('F4: forhåndsvisningen: totalmål 540 × 305 og kabelbehov trapp/repos med forslag om egen kabel', '540 × 305 cm · egen kabel', t === '540 × 305 cm' && /Trapp ≈ 52\.2 m · repos ≈ 106 m · egen kabel på reposet foreslås/.test(n), t + ' · ' + n.slice(0, 80)); }
+    _stairHsBUpd('landD', 10);
+    check('F5: for lite repos (dybde 10) stoppes', '1 feil', _stairHsBLandingProblems().length === 1 && _stairHsBValidate().length >= 1, _stairHsBLandingProblems().join(' / '));
+    _stairHsBUpd('landD', 200);
+    _confirmHsBuilder();
+    st = S.stairs[S.stairs.length - 1];
+    check('F6: ny trapp: reposet lagret, «Hesteskotrinnene» som standard, egen kabel (auto)', '540 × 200 · fillTop · soner', !!st && st.horseshoe.landing.w_cm === 540 && st.horseshoe.landing.d_cm === 200 && !('ownCable' in st.horseshoe.landing) && st.horseshoe.marginMode === 'fillTop' && zS(st) === 'steps:1,landing:2' && nS(st) === '5/5/5/20',
+      st ? JSON.stringify(st.horseshoe.landing) + ' · ' + st.horseshoe.marginMode + ' · ' + zS(st) : 'ingen trapp');
+    if (st) {
+      const topW = s => { const f = s.surfaces.find(q => q.hsTop); return r2(s.x_cm + f.x_cm) + '/' + r2(s.y_cm + f.y_cm); };
+      const t0 = topW(st), u0 = _undoStack.length;
+      st.horseshoe = { ...st.horseshoe, stepEdgeMargin_cm: 7 }; st.landingEdgeMargin_cm = 6; _regenerateStairCable(st);
+      _showHsBuilder(st.id);
+      check('F7: rediger: reposet og målene står i dialogen', 'på · 540 × 200', $id('shs-landing').checked && $id('shs-landW').value === '540' && $id('shs-landD').value === '200', $id('shs-landW').value + ' × ' + $id('shs-landD').value);
+      _stairHsBUpd('landW', 740); _stairHsBUpd('landD', 150); _confirmHsBuilder();
+      check('F8: bredere/grunnere repos: toppflaten står der den sto, innstillingene beholdt', t0 + ' · fillTop · 7 · 6', topW(st) === t0 && st.horseshoe.landing.w_cm === 740 && st.horseshoe.landing.d_cm === 150 && st.horseshoe.marginMode === 'fillTop' && st.horseshoe.stepEdgeMargin_cm === 7 && st.landingEdgeMargin_cm === 6 && _undoStack.length === u0 + 1,
+        topW(st) + ' · ' + st.horseshoe.marginMode + ' · ' + st.horseshoe.stepEdgeMargin_cm + ' · ' + st.landingEdgeMargin_cm);
+      _showHsBuilder(st.id); _stairHsBLanding(false); _confirmHsBuilder();
+      check('F9: reposet fjernet: toppflaten står i ro, ingen soner, ingen reposflate', t0 + ' · steps:-', topW(st) === t0 && !('landing' in st.horseshoe) && !st.surfaces.some(f => f.hsLanding) && !st.segments.some(g => g.zone != null) && !st.zoneError, topW(st) + ' · ' + zS(st));
+      _showHsBuilder(st.id); _stairHsBLanding(true); _confirmHsBuilder();
+      check('F10: reposet tilbake (standard igjen: trappas bredde)', t0, topW(st) === t0 && _stairHsHasLanding(st) && st.horseshoe.landing.w_cm === 340, topW(st) + ' · ' + JSON.stringify(st.horseshoe.landing));
+    }
+    // ── G: tabell, mål og PDF-blokk ──
+    st = mkHs({ landing: LK, marginMode: 'fillTop' });
+    { const rows = _stairHsTableRows(st).map(r => r.cells.join('|'));
+      check('G1: måltabellen: «Repos» først, så trinnene', 'Repos|20|530|10|5|106', rows.length === 4 && rows[0] === 'Repos|20|530|10|5|106' && rows[1] === '1 (topp)|5|190|7.8|5|9.5' && /^2\|5\|265–389\|7\.8\|6\.5\|/.test(rows[1 + 1]), rows.join(' ; '));
+      const dj = JSON.stringify(_stairGeometryDims(st, 'plan'));
+      check('G2: planen: reposets bredde (540) målsatt over reposet', 'side top', /"side":"top"/.test(dj) && /540/.test(dj), (dj.match(/"side":"[a-z]+"/g) || []).join(','));
+      const sj = JSON.stringify(_stairGeometryDims(st, 'side'));
+      check('G3: sidevisningen: reposets dybde 200 i dybdekjeden', '200', /200/.test(sj), sj.slice(0, 160));
+      const b = _stairSoneGeometryBlocks(st);
+      check('G4: PDF-blokkene: sone 1 (trappa, 6,5) og sone 2 (reposet, 5)', 'Sone 1 6.5 · Sone 2 5', b.length === 2 && b[0].label === 'Sone 1' && b[0].edgeMargin_cm === 6.5 && b[1].label === 'Sone 2' && b[1].edgeMargin_cm === 5 && r1(b[1].reposLength_m) === 106,
+        b.map(x => x.label + ' ' + x.edgeMargin_cm).join(' · ')); }
+    // ── H: panelet ──
+    const panel = () => { _updateStairSettingsPanel(); return document.getElementById('stair-settings-panel'); };
+    { const el = panel(), k = el.querySelector('#stair-hs-landing-cable'), a = el.querySelector('#stair-adjust-mode');
+      check('H1: hestesko med repos: «Kabel på repos» (Auto) og «Juster avstand fra sidene på» med tre valg', 'auto · hsSteps,landing,all · hsSteps',
+        !!k && k.value === 'auto' && !!a && [...a.options].map(o => o.value).join(',') === 'hsSteps,landing,all' && a.value === 'hsSteps' && !el.querySelector('#stair-prioritize-steps'),
+        (k ? k.value : 'mangler') + ' · ' + (a ? [...a.options].map(o => o.value).join(',') + ' · ' + a.value : 'mangler'));
+      check('H2: … og ett felt per flatetype (trinn/toppflate, hesteskotrinn, repos)', 'tre felt', !!el.querySelector('#stair-edge-margin') && !!el.querySelector('#stair-hs-step-edge-margin') && !!el.querySelector('#stair-landing-edge-margin'),
+        ['#stair-edge-margin', '#stair-hs-step-edge-margin', '#stair-landing-edge-margin'].filter(q => !el.querySelector(q)).join(',') || 'tre felt'); }
+    mkHs();
+    { const el = panel(), a = el.querySelector('#stair-adjust-mode');
+      check('H3: hestesko uten repos: to valg (Hesteskotrinnene / Alle likt), ingen «Kabel på repos»', 'hsSteps,all · all', !!a && [...a.options].map(o => o.value).join(',') === 'hsSteps,all' && a.value === 'all' && !el.querySelector('#stair-hs-landing-cable'),
+        a ? [...a.options].map(o => o.value).join(',') + ' · ' + a.value : 'mangler'); }
+    mk();
+    { const el = panel(), a = el.querySelector('#stair-adjust-mode');
+      check('H4: rett trapp med repos: Repos / Alle likt', 'landing,all · all', !!a && [...a.options].map(o => o.value).join(',') === 'landing,all' && a.value === 'all', a ? [...a.options].map(o => o.value).join(',') + ' · ' + a.value : 'mangler'); }
+  } catch (e) {
+    results.push({ name: 'UNNTAK', ok: false, expected: 'ingen', got: String(e && e.stack || e).slice(0, 400) });
+  } finally {
+    const bg = document.getElementById('stair-modal-bg'); if (bg) bg.remove();
+    HEATING_PRODUCTS.length = 0; saved.prods.forEach(p => HEATING_PRODUCTS.push(p));
+    PRODUCT_CATEGORIES.length = 0; saved.cats.forEach(c => PRODUCT_CATEGORIES.push(c));
+    S.stairs = saved.stairs; S.ui.selectedStairId = saved.sel; S.ui.selectedStairZone = saved.zone; S.counters.nextStairId = saved.nextStair;
+    S.ui.stairPlaceParams = saved.place; S.ui.mode = saved.mode;
+    _undoStack.length = saved.undoLen; window._performAutoSave = saved.autosave;
+    try { _invalidateStairCache(); _updateStairSettingsPanel(); render(); } catch (e) { /* ingen */ }
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error']('_stairHsLandingRegressionTest239: ' + (allOk ? 'BESTÅTT' : 'FEILET') + ' (' + results.filter(r => r.ok).length + '/' + results.length + ')', results);
   return { ok: allOk, results };
 }
 
@@ -59684,6 +60112,7 @@ function _createStairObj(params) {
 }
 
 function _regenerateStairCable(stair) {
+  _stairHsSyncSegments(stair);   // 239: hestesko med repos — soner av/på etter «egen kabel på reposet»
   stair.surfaces = _generateStairSurfaces(stair);
   // STEG 7 (Soner): løs kabel+margin PER sone FØR selve rutingen bygges — generateStairCable leser
   // stair.cables[zi].fromSurf/toSurf/edgeMargin_cm direkte (satt her), én oppføring per sone. Feiler
@@ -71104,6 +71533,9 @@ function _showHsBuilder(stairId) {
   _stairHsBEditId = st ? st.id : null;
   _stairHsB = { topW: p.topW, topD: p.topD, count: p.count, front: p.front, side: p.sideFollowsFront ? null : p.side,
     height: p.stepHeight, topLevel: p.topLevel, riser: 2, nose: 2, edge: 5, maxCC: STAIR_DEFAULT_MAX_CC_CM, name: st ? (st.name || 'Trapp') : _stairBuilderDefaultName(),
+    // 239: «Repos over trappa». landW null = følger trappas ytre bredde (standard); landD standard 120.
+    landing: !!p.landing, landW: (p.landing && Math.abs(p.landing.w - p.outerW) > 1e-9) ? p.landing.w : null, landD: p.landing ? p.landing.d : 120,
+    landOwn: p.landing ? p.landing.ownCable : null,
     // 182: «Ulik dybde per trinn» — depths[i] = overstyring for trinn i + 2 (null = følger felles inntrinn).
     perStep: p.perStepDepth,
     depths: ((st && st.horseshoe && Array.isArray(st.horseshoe.depths_cm)) ? st.horseshoe.depths_cm : []).map(v => (v != null && v !== '' && +v > 0 && +v !== p.front) ? +v : null) };   // lagret som det er (ingen avrunding); = felles → følger felles
@@ -71120,6 +71552,11 @@ function _stairHsBParams() {
   while (d.length && d[d.length - 1] == null) d.pop();
   if (b.perStep) out.perStepDepth = true;
   if (d.length) out.depths_cm = d;
+  // 239 (additivt): feltet skrives bare når «Repos over trappa» er krysset av.
+  if (b.landing) {
+    out.landing = { w_cm: b.landW != null ? b.landW : _stairHsParams({ horseshoe: out }).outerW, d_cm: b.landD };
+    if (b.landOwn != null) out.landing.ownCable = b.landOwn;
+  }
   return out;
 }
 // 183 (svar 182/3): en overstyrt rad som er lik felles inntrinn, slippes og følger felles igjen.
@@ -71137,6 +71574,9 @@ function _stairHsBUpd(key, val) {
   if (key === 'side') {
     // Tomt felt / samme som foran = følger foran igjen.
     _stairHsB.side = (!(v > 0) || Math.abs(v - _stairHsB.front) < 1e-9) ? null : v;
+  } else if (key === 'landW') {
+    // 239: tomt felt = følger trappas ytre bredde igjen.
+    _stairHsB.landW = v > 0 ? v : null;
   } else if (key === 'count') {
     _stairHsB.count = Math.max(1, Math.min(20, Math.round(v || 1)));
   } else if (v > 0) {
@@ -71145,7 +71585,24 @@ function _stairHsBUpd(key, val) {
   if (key === 'front' && _stairHsB.side == null) { const sEl = document.getElementById('shs-side'); if (sEl) sEl.value = _stairHsB.front; }
   // 182: rader som ikke er overstyrt, følger felles inntrinn; antall trinn gir flere/færre rader.
   if (key === 'front' || key === 'count' || key === 'side' || key === 'topW' || key === 'topD') _stairHsBListRender();
+  // 239: reposets bredde følger trappas ytre bredde til brukeren skriver sitt eget tall.
+  if (_stairHsB.landW == null && key !== 'landW') { const lEl = document.getElementById('shs-landW'); if (lEl) lEl.value = _stairDimRound(_stairHsParams({ horseshoe: _stairHsBParams() }).outerW); }
   _stairHsBRefresh();
+}
+// 239: «Repos over trappa» av/på.
+function _stairHsBLanding(on) {
+  _stairHsB.landing = !!on;
+  const box = document.getElementById('shs-landing-box'); if (box) box.style.display = _stairHsB.landing ? '' : 'none';
+  _stairHsBRefresh();
+}
+// Reposets mål må gi plass til kabel: minst 30 cm streng og to strenger i dybden.
+function _stairHsBLandingProblems() {
+  const b = _stairHsB, out = [];
+  if (!b || !b.landing) return out;
+  const w = b.landW != null ? b.landW : _stairHsParams({ horseshoe: _stairHsBParams() }).outerW;
+  if (!(w >= 50)) out.push('Repos bredde er for liten: minst 50 cm (står ' + _stairDimRound(w || 0) + ')');
+  if (!(b.landD >= 30)) out.push('Repos dybde er for liten: minst 30 cm (står ' + _stairDimRound(b.landD || 0) + ')');
+  return out;
 }
 // 178: toppflate under (eget trinn) eller i plan med det trappa fører til.
 const STAIR_HS_TOPLEVEL_HELP = { below: 'Ett opptrinn opp til døra, reposet eller terrassen', flush: 'Toppflaten ligger i samme høyde som det trappa fører til' };
@@ -71282,9 +71739,15 @@ function _stairHsBValidate() {
         `<br><b>Rett ${what} før trappa kan ${_stairHsBEditId != null ? 'lagres' : 'plasseres'}.</b>`
       : '';
   }
+  // 239: reposets mål — egen melding under de andre, og samme sperre på «Plasser»/«Lagre».
+  const lp = _stairHsBLandingProblems();
+  for (const [id, bad] of [['shs-landW', lp.some(t => t.startsWith('Repos bredde'))], ['shs-landD', lp.some(t => t.startsWith('Repos dybde'))]]) {
+    const el = document.getElementById(id); if (el) { el.style.borderColor = bad ? red : 'var(--brd)'; el.style.background = bad ? 'rgba(229,72,77,0.12)' : 'var(--surface2)'; } }
+  if (lp.length && err) { err.style.display = ''; err.innerHTML = (msgs.length ? err.innerHTML + '<br>' : '') + lp.map(t => esc(t) + '.').join('<br>'); }
+  const alle = probs.concat(lp.map(msg => ({ landing: true, msg })));
   const ok = document.getElementById('shs-ok');
-  if (ok) { ok.disabled = probs.length > 0; ok.style.opacity = probs.length ? '0.45' : '1'; ok.style.cursor = probs.length ? 'not-allowed' : 'pointer'; }
-  return probs;
+  if (ok) { ok.disabled = alle.length > 0; ok.style.opacity = alle.length ? '0.45' : '1'; ok.style.cursor = alle.length ? 'not-allowed' : 'pointer'; }
+  return alle;
 }
 function _stairHsSummaryHtml() {
   const p = _stairHsParams({ horseshoe: _stairHsBParams() });
@@ -71299,28 +71762,47 @@ function _stairHsSummaryHtml() {
     const g = generateStairCable(tmp);
     behov = ` · kabelbehov ≈ <b>${R(g.totalCableLength_cm / 100)} m</b> (${g.runs.length} strenger)`;
   }
+  // 239: med repos — hvor mye som ligger på reposet, og om det foreslås egen kabel der. Også ved redigering
+  // (da med trappas egne avstander og maks CC).
+  {
+    const _st0 = _stairHsBEditId != null ? S.stairs.find(s => s.id === _stairHsBEditId) : null;
+    const tmp = _st0 ? { ..._st0, horseshoe: { ..._st0.horseshoe, ..._stairHsBParams() } }
+      : { design: 'horseshoe', horseshoe: _stairHsBParams(), riserOffset_cm: _stairHsB.riser, noseOffset_cm: _stairHsB.nose,
+        edgeMargin_cm: _stairHsB.edge, edgeMarginMin_cm: _stairHsB.edge, stepCC_cm: _stairHsB.maxCC, landingCC_cm: _stairHsB.maxCC, buildDirection: 'bottom' };
+    if (p.landing) {
+      const au = _stairHsLandingAuto(tmp);
+      behov += `<br><span id="shs-landing-need">Trapp ≈ <b>${R(au.rest_cm / 100)} m</b> · repos ≈ <b>${R(au.land_cm / 100)} m</b>`
+        + (au.own ? ` · <b>egen kabel på reposet foreslås</b> (${au.why === 'dominerer' ? 'reposet trenger mest kabel' : 'hele behovet er lengre enn lengste kabel, ' + R(au.longest_cm / 100) + ' m'})` : ' · én kabel for trapp og repos') + '</span>';
+    }
+  }
   // 183 (svar 178/1): høyden er den høydekjeden i sidevisningen viser — bakken → øverste nivå, med
   // opptrinnet fra bakken. Samme kilde (_stairGeometryDims via _stairSideRiserCm), ingen egen formel.
   const hSt = { design: 'horseshoe', horseshoe: _stairHsBParams() };
   hSt.surfaces = _generateStairSurfaces(hSt);
+  if (p.landing) return `Totalmål <b id="shs-total">${R(Math.max(p.outerW, p.landing.w))} × ${R(p.outerD + p.landing.d)} cm</b> (trapp ${R(p.outerW)} × ${R(p.outerD)} + repos ${R(p.landing.w)} × ${R(p.landing.d)}) · ${p.count + 1} trinn + repos · høyde ${R(_stairSideTotalHeightCm(hSt))} cm${behov}`;
   return `Ytre totalmål <b>${R(p.outerW)} × ${R(p.outerD)} cm</b> · ${p.count + 1} trinn · høyde ${R(_stairSideTotalHeightCm(hSt))} cm${behov}`;
 }
 function _stairHsPreviewSVG() {
   const tmp = { design: 'horseshoe', horseshoe: _stairHsBParams() };
-  const surfs = _generateHorseshoeSurfaces(tmp);
+  let surfs = _generateHorseshoeSurfaces(tmp);
   const p = _stairHsParams(tmp);
-  const W = 440, H = 200, pad = 26;
-  let sc = Math.min((W - 2 * pad) / p.outerW, (H - 2 * pad) / p.outerD);
-  let x0 = pad + ((W - 2 * pad) - p.outerW * sc) / 2;
+  // 239: med repos over trappa regner resten av funksjonen fortsatt i TRAPPAS egne koordinater (bakkanten
+  // på y = 0, ytre venstre kant på x = 0) — reposet ligger da på y < 0. X/Y under legger på forskyvningen.
+  // Uten repos: OX = BY = 0, TW/TD = ytre mål — nøyaktig samme tall som før.
+  const OX = p.offX, BY = p.backY, TW = p.landing ? Math.max(p.outerW, p.landing.w) : p.outerW, TD = p.landing ? p.outerD + BY : p.outerD;
+  if (p.landing) surfs = surfs.map(sf => ({ ...sf, x_cm: sf.x_cm - OX, y_cm: sf.y_cm - BY, hsInner: sf.hsInner ? sf.hsInner.map(q => ({ x: q.x - OX, y: q.y - BY })) : undefined }));
+  const W = 440, H = p.landing ? 290 : 200, pad = 26;
+  let sc = Math.min((W - 2 * pad) / TW, (H - 2 * pad) / TD);
+  let x0 = pad + ((W - 2 * pad) - TW * sc) / 2;
   // 185 (svar 183/4): det venstre dybdemålet står til venstre for X(0) (strek 10 px ut, tekst 3 px til
   // venstre for streken). På en bred, grunn trapp fyller planen hele bredden, og «180» ble kuttet til «80».
   // Trenger teksten mer plass enn det er, flyttes og krympes planen så hele teksten får plass. Ellers
   // er alt som før (samme skala og plassering).
   const needL = String(_stairDimRound(p.outerD)).length * 10 * 0.62 + 2 + 13 + 2;
   const flytt = x0 < needL;
-  if (flytt) { sc = Math.min(sc, (W - pad - needL) / p.outerW); x0 = needL + ((W - pad - needL) - p.outerW * sc) / 2; }
+  if (flytt) { sc = Math.min(sc, (W - pad - needL) / TW); x0 = needL + ((W - pad - needL) - TW * sc) / 2; }
   // Uten flytting: nøyaktig samme uttrykk som før 185 (samme flyttall i SVG-en).
-  const X = flytt ? (x => x0 + x * sc) : (x => pad + x * sc + ((W - 2 * pad) - p.outerW * sc) / 2), Y = y => pad + y * sc;
+  const X = p.landing ? (x => x0 + (x + OX) * sc) : flytt ? (x => x0 + x * sc) : (x => pad + x * sc + ((W - 2 * pad) - p.outerW * sc) / 2), Y = p.landing ? (y => pad + (y + BY) * sc) : (y => pad + y * sc);
   const poly = pts => pts.map((q, i) => (i ? 'L' : 'M') + X(q.x).toFixed(1) + ',' + Y(q.y).toFixed(1)).join(' ');
   let g = '';
   // 182: trinn uten brukbar dybde tegnes røde (samme sjekk som sperrer «Plasser»).
@@ -71330,6 +71812,13 @@ function _stairHsPreviewSVG() {
       const outer = _stairOffsetOpen(sf.hsInner, sf.hsWidths);
       const bad = badNo.has(sf.stepIdx + 1);
       g += `<path d="${poly([...outer, ...sf.hsInner.slice().reverse()])} Z" fill="${bad ? 'rgba(229,72,77,0.30)' : 'rgba(78,168,255,0.10)'}" stroke="${bad ? '#e5484d' : 'var(--accent,#4ea8ff)'}" stroke-width="1.4"/>`;
+    } else if (sf.hsLanding) {
+      // 239: reposet — sentrert over trappa, med egne mål og totalmålene (bredde over, dybde til høyre).
+      g += `<rect id="shs-pv-landing" x="${X(sf.x_cm)}" y="${Y(sf.y_cm)}" width="${sf.w_cm * sc}" height="${sf.d_cm * sc}" fill="rgba(140,160,190,0.22)" stroke="var(--accent,#4ea8ff)" stroke-width="1.4"/>`;
+      g += `<text x="${X(sf.x_cm + sf.w_cm / 2)}" y="${Y(sf.y_cm + sf.d_cm / 2) + 3}" font-size="9" fill="var(--text)" text-anchor="middle">Repos · ${_stairDimRound(sf.w_cm)} × ${_stairDimRound(sf.d_cm)}</text>`;
+      const xr = X(Math.max(sf.x_cm + sf.w_cm, p.outerW)) + 8;
+      g += `<line x1="${xr}" y1="${Y(-BY)}" x2="${xr}" y2="${Y(p.outerD)}" stroke="var(--muted)" stroke-width="0.8"/><text id="shs-pv-total-d" x="${xr + 9}" y="${(Y(-BY) + Y(p.outerD)) / 2}" transform="rotate(-90 ${xr + 9} ${(Y(-BY) + Y(p.outerD)) / 2})" text-anchor="middle" font-size="10" fill="var(--text)" dominant-baseline="middle" font-weight="600">${_stairDimRound(TD)}</text>`;
+      if (Math.abs(sf.w_cm - p.outerW) > 0.05) g += `<line x1="${X(sf.x_cm)}" y1="${Y(-BY) - 8}" x2="${X(sf.x_cm + sf.w_cm)}" y2="${Y(-BY) - 8}" stroke="var(--muted)" stroke-width="0.8"/><text x="${X(sf.x_cm + sf.w_cm / 2)}" y="${Y(-BY) - 11}" font-size="10" fill="var(--text)" text-anchor="middle" font-weight="600">${_stairDimRound(sf.w_cm)}</text>`;
     } else {
       g += `<rect x="${X(sf.x_cm)}" y="${Y(sf.y_cm)}" width="${sf.w_cm * sc}" height="${sf.d_cm * sc}" fill="rgba(78,168,255,0.22)" stroke="var(--accent,#4ea8ff)" stroke-width="1.4"/>`;
       g += `<text x="${X(sf.x_cm + sf.w_cm / 2)}" y="${Y(sf.y_cm + sf.d_cm / 2) + 3}" font-size="9" fill="var(--text)" text-anchor="middle">1 · ${_stairDimRound(sf.w_cm)} × ${_stairDimRound(sf.d_cm)}</text>`;
@@ -71409,6 +71898,14 @@ function _renderHsBuilder() {
             <div id="shs-steps-list" style="max-height:230px;overflow-y:auto"></div>
             <div style="font-size:12px;color:var(--dim);margin:4px 4px 0">▲/▼ = 1 cm · piltastene i feltet gjør det samme, Shift + pil = 10 cm · ↺ = tilbake til felles inntrinn</div>
           </div></div>
+        <div style="grid-column:1/3"><label style="display:flex;gap:6px;align-items:center;cursor:pointer;color:var(--text)"><input type="checkbox" id="shs-landing" ${b.landing ? 'checked' : ''} onchange="_stairHsBLanding(this.checked)"> Repos over trappa</label>
+          <div id="shs-landing-box" style="${b.landing ? '' : 'display:none;'}margin-top:6px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px">
+              <label>${lbl('Repos bredde (cm)')}<br>${num('landW', 'landW', b.landW != null ? b.landW : _stairDimRound(_stairHsParams({ horseshoe: _stairHsBParams() }).outerW), 'min="50" step="1"')}</label>
+              <label>${lbl('Repos dybde (cm)')}<br>${num('landD', 'landD', b.landD, 'min="30" step="1"')}</label>
+            </div>
+            <div style="font-size:12px;color:var(--dim);margin-top:3px">Reposet ligger mot huset og er alltid sentrert over trappa. Bredden følger trappas ytre bredde til du endrer den, og kan være større enn trappa.</div>
+          </div></div>
       </div>
       <div id="shs-err" style="display:none;font-size:12px;color:#e5484d;background:rgba(229,72,77,0.08);border:1px solid rgba(229,72,77,0.4);border-radius:6px;padding:6px 8px;margin:-4px 0 10px"></div>
       <div style="font-size:12px;color:var(--dim);margin:-6px 0 12px">Inntrinn sider følger inntrinn foran til du endrer det. Bakkanten (mot det trappa fører til) er felles for alle trinn.</div>
@@ -71452,14 +71949,20 @@ function _confirmHsBuilder() {
     // BAKKANTEN STÅR I RO: toppflatens venstre kant ligger på x = antall · inntrinn sider. Endres
     // den summen, flyttes origo tilsvarende, så toppflaten og bakkanten blir liggende der de var.
     const old = _stairHsParams(stair);
-    const dx = old.sideTot - p.sideTot;   // 182: Σ inntrinn sider (= antall · side når alle er like)
-    if (dx) {
-      stair.x_cm += dx;
-      for (const d of (stair.dims || [])) { d.p1.x -= dx; d.p2.x -= dx; }
+    // 239: med repos ligger trappa forskjøvet i sitt eget koordinatsystem (offX/backY) — samme regel.
+    const dx = (old.sideTot + old.offX) - (p.sideTot + p.offX);   // 182: Σ inntrinn sider (= antall · side når alle er like)
+    const dy = old.backY - p.backY;
+    if (dx || dy) {
+      stair.x_cm += dx; stair.y_cm += dy;
+      for (const d of (stair.dims || [])) { d.p1.x -= dx; d.p2.x -= dx; d.p1.y -= dy; d.p2.y -= dy; }
     }
     const _mm = stair.horseshoe && stair.horseshoe.marginMode;   // 184: valget hører til trappa, ikke byggeren
+    const _sem = stair.horseshoe && stair.horseshoe.stepEdgeMargin_cm;   // 239: likeså hesteskotrinnenes gulv
     stair.horseshoe = { ...hs };   // nytt objekt — angre-stakken deler ikke referansen
     if (_mm) stair.horseshoe.marginMode = _mm;
+    else if (p.landing && !old.landing) stair.horseshoe.marginMode = 'fillTop';   // 239: standard for hestesko med repos
+    if (_sem > 0) stair.horseshoe.stepEdgeMargin_cm = _sem;
+    if (!p.landing && old.landing) S.ui.selectedStairZone = null;
     if (hs.depths_cm) stair.horseshoe.depths_cm = hs.depths_cm.slice();
     else delete stair.horseshoe.depths_cm;
     stair.segments = _stairHsSegments(p);
@@ -71472,7 +71975,8 @@ function _confirmHsBuilder() {
     return;
   }
   const params = {
-    name, design: 'horseshoe', horseshoe: { ...hs }, segments: _stairHsSegments(p), buildDirection: 'bottom',
+    // 239: hestesko med repos starter på «Juster på hesteskotrinnene» (repos og toppflate fylles).
+    name, design: 'horseshoe', horseshoe: { ...hs, ...(p.landing ? { marginMode: 'fillTop' } : {}) }, segments: _stairHsSegments(p), buildDirection: 'bottom',
     stairType: 'straight',
     width_cm: p.outerW, step_depth_cm: p.front, step_height_cm: p.stepHeight, step_count: p.count + 1,
     riserOffset_cm: b.riser, noseOffset_cm: b.nose, edgeMargin_cm: b.edge, edgeMarginMin_cm: b.edge,
@@ -99090,7 +99594,7 @@ async function exportPDF(opts, lev) {
 
         // Sone-niva felt (like for hele sonen uansett trinn-serie): dybdemarginer + sidemargin.
         doc.setFontSize(7.5); doc.setTextColor(80, 90, 110);
-        doc.text('Avstand opptrinn: ' + _cm1(sb.riserOffset_cm) + '   |   Avstand nese: ' + _cm1(sb.noseOffset_cm) + '   |   Avstand sider: ' + (_stairHsFillTop(stair) ? ('toppflate ' + _cm1(_stairHsTopFillCm(stair)) + ', hestesko ' + _cm1(sb.edgeMargin_cm)) : _cm1(sb.edgeMargin_cm) + (sb.landingEdgeMargin_cm != null ? ' (repos ' + _cm1(sb.landingEdgeMargin_cm) + ')' : '')), M, y);   // 184 · 238: reposets egen avstand
+        doc.text('Avstand opptrinn: ' + _cm1(sb.riserOffset_cm) + '   |   Avstand nese: ' + _cm1(sb.noseOffset_cm) + '   |   Avstand sider: ' + (_stairHsFillTop(stair) && sb.groups.length ? ('toppflate ' + _cm1(_stairHsTopFillCm(stair)) + ', hestesko ' + _cm1(sb.edgeMargin_cm) + (sb.landingEdgeMargin_cm != null ? ', repos ' + _cm1(sb.landingEdgeMargin_cm) : '')) : _cm1(sb.edgeMargin_cm) + (sb.landingEdgeMargin_cm != null ? ' (repos ' + _cm1(sb.landingEdgeMargin_cm) + ')' : '')), M, y);   // 184 · 238: reposets egen avstand
         y += 4;
 
         // Trinn-serie-felt (N/CC/lengde/flateeffekt) - varierer disse innad i sonen, vis hver serie.
