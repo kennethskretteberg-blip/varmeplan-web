@@ -1,6 +1,6 @@
 # 239 – Hesteskotrapp med repos øverst, og fritt valg av hvem som tar justeringen av sideavstanden
 
-20.11.2026 · `main` · commit `HASHHER` · ikke pushet · ingen SQL
+20.11.2026 · `main` · commit `b50204e` · ikke pushet · ingen SQL
 
 ## Hva som er endret
 - **Dialogen «Bygg hesteskotrapp»:** ny avkrysning «Repos over trappa» med «Repos bredde (cm)» (følger trappas ytre bredde til du skriver ditt eget tall, kan være bredere) og «Repos dybde (cm)» (120). Forhåndsvisningen tegner reposet sentrert, med totalmål og kabelbehov for trapp og repos hver for seg – og sier fra når egen kabel på reposet foreslås.
