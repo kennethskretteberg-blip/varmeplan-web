@@ -1,6 +1,6 @@
 # 241 – Vegg-for-vegg (WBW) alltid tilgjengelig, også over importert plantegning
 
-23.11.2026 · `main` · commit `HASH241` · ikke pushet · ingen SQL
+23.11.2026 · `main` · commit `c48ae2e` · ikke pushet · ingen SQL
 
 ## Årsak (bekreftet)
 I «TEGN ROM»-baren (`_ctxBarItems`) sto L-form og WBW inne i `if (!hasBg)`. Med plantegning forsvant begge knappene. Hurtigtasten W virket, men startet WBW «til høyre for alle rom» og flyttet utsnittet bort fra tegningen – altså ikke brukbart over en plantegning.

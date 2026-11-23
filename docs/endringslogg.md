@@ -4,7 +4,7 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
-## 241 — Vegg-for-vegg (WBW) alltid tilgjengelig, også over importert plantegning (23.11.2026, HASH241, `main`, ikke pushet)
+## 241 — Vegg-for-vegg (WBW) alltid tilgjengelig, også over importert plantegning (23.11.2026, `c48ae2e`, `main`, ikke pushet)
 
 L-form og WBW sto inne i `if (!hasBg)` i «TEGN ROM»-baren og forsvant når en plantegning var importert; nå vises begge alltid (Rektangel, Mål, Polygon, L-form, WBW, så Yttervegg og Mållinje; «Importer plantegning» fortsatt bare uten bakgrunn). Over en plantegning settes WBW-startpunktet med første klikk på tegningen (vanlig snapping) og utsnittet står i ro – før startet WBW til høyre for alle rom og flyttet utsnittet. Hurtigtasten W går samme vei som knappen, så kalibreringskravet gjelder også den; «Nytt rom»-dialogen får samme klikk-start. WBW-verktøyet ellers, de andre verktøyene, tak-delen og kundesiden er urørt; uten bakgrunn er alt som før. Ingen egne verktøyvalg i gjennomgangen etter tolkemotoren – samme bar per etasje. Ny `_wbwOverBgRegressionTest241` 33/33 (rom 400 × 300 over bakgrunn → 400/300/400/300 cm, 12 m²); suiten 106 tester, de 105 gamle like med HEAD (samme åtte røde uten innlogging). Funn, ikke rettet: WBW-statuslinja sier «Steg 1» også etter flere vegger; R/M/P starter fortsatt over ukalibrert tegning; L-form og «Mål» legger rommet ved siden av, ikke på tegningen. Se `docs/241/RAPPORT.md`.
 
