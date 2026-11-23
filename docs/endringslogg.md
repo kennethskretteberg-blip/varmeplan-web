@@ -4,7 +4,7 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
-## 242 — R/M/P krever kalibrert plantegning, og WBW-statuslinja teller veggene (23.11.2026, HASH242, `main`, ikke pushet)
+## 242 — R/M/P krever kalibrert plantegning, og WBW-statuslinja teller veggene (23.11.2026, `e04a9ef`, `main`, ikke pushet)
 
 Hurtigtastene R, M og P går nå via `abStartDraw` som L, W og knappene: over en ukalibrert plantegning kommer «Ikke kalibrert / Sett målestokk» i baren og ingen tegning starter; med kalibrert plantegning og uten plantegning starter de som før, med samme romnavn (navnefeltet, ellers «Rom N») og aktiv etasje. WBW-statuslinja sto på «Steg 1» fordi den telte `S.drawing.points` (alltid tom i WBW) og bare ble satt ved start; den teller nå `wbw.walls` og oppdateres av `updWbw()` etter hver vegg, angre og bytte Taster/Mus: «Steg 1: … første vegg», så «Vegg 2:», «Vegg 3:» …, likt med og uten plantegning. L-form og «Mål» legges fortsatt ved siden av eksisterende rom (beslutning 23.11.2026). Ny `_drawHotkeyCalibRegressionTest242` 77/77 (47/77 mot koden før); suiten 107 tester, de 106 gamle like med HEAD (samme åtte røde uten innlogging). Funn, ikke rettet: D (mål) starter over ukalibrert tegning; «Ignorer» i varselet lukker bare varselet. Se `docs/242/RAPPORT.md`.
 

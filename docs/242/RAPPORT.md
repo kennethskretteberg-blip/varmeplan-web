@@ -1,6 +1,6 @@
 # 242 – R/M/P krever kalibrert plantegning, og WBW-statuslinja teller veggene
 
-23.11.2026 · `main` · commit HASH242 · ikke pushet · ingen SQL
+23.11.2026 · `main` · commit `e04a9ef` · ikke pushet · ingen SQL
 
 ## Hva som er endret
 - **Hurtigtastene R, M og P** går nå via `abStartDraw(...)`, som L og W og som knappene i baren. Over en ukalibrert plantegning kommer «Ikke kalibrert / Sett målestokk» i baren, og ingen tegning starter. Med kalibrert plantegning og uten plantegning starter de som før.
