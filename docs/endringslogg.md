@@ -4,7 +4,7 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
-## 243 — Veggmålene («680 cm») legger seg heller ikke oppå hverandre (23.11.2026, `@@HASH@@`, `main`, ikke pushet)
+## 243 — Veggmålene («680 cm») legger seg heller ikke oppå hverandre (23.11.2026, `55ce4f1`, `main`, ikke pushet)
 
 veggmålene (`_drawDimAnnotationsForRoom`, også `bareVegger`) følger 240-regelen – teksten står midt på målelinja bare når den får plass i linja (boks + 0,3 × skrifthøyde) og ikke treffer en tekst i `_dimPlaced`; ellers flyttes den ut på utsiden med leder. Flyttingen fra 240 er løftet ut til felles `_dimFlushMoved`, som kjedene og veggmålene begge kaller; flyttede veggmål plasseres sist (`_dimDefer`) og registreres, så kjedetekster og veggmål går utenom hverandre begge veier. Skjermen skjuler et veggmål som ikke får plass til man zoomer inn; PDF viser alle. Testrom med 13 korte vegger (8–30 cm): 9 overlappende par i Normal og 35 i Ekstra stor på HEAD, 0 og 0 nå (med folie 0/13 → 0/0), 20 og 35 mål før og etter, ingen utenfor bildet; skjerm 3 og 56 par → 0. L-rommet fra 240 er bit-likt med HEAD i Normal og Ekstra stor. Skrift, streker, farger, 300 DPI, målelinjenes plassering og kjedetekstene urørt. Ny `_wallDimNoOverlapRegressionTest243` 33/33 (49/49 med synlig lerret, 28/49 mot koden før); suiten 108 tester, de 107 gamle like med HEAD (samme åtte røde uten innlogging, på HEAD og nå). Funn, ikke rettet: veggmål bredere enn linja flyttes også uten overlapp; skrå vegger har ikke regelen; veggetikettene «V7 10 cm» overlapper fortsatt hverandre; én lang leder i trappet hjørne i Ekstra stor. Se `docs/243/RAPPORT.md`.
 

@@ -1,6 +1,6 @@
 # 243 – Veggmålene («680 cm») legger seg heller ikke oppå hverandre
 
-23.11.2026 · `main` · commit `@@HASH@@` · ikke pushet · ingen SQL
+23.11.2026 · `main` · commit `55ce4f1` · ikke pushet · ingen SQL
 
 ## Hva som er endret
 - **Veggmålene** (`_drawDimAnnotationsForRoom`, også `bareVegger`-varianten i presentasjonen) følger nå 240-regelen: teksten står midt på målelinja som før bare når den får plass i linja (boks + 0,3 × skrifthøyde ≤ linjas lengde) og ikke treffer en tekst som alt står i `_dimPlaced`. Ellers flyttes den ut på utsiden av målelinja med en tynn leder.
