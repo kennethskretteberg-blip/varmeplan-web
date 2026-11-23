@@ -62763,8 +62763,8 @@ function _dimChainLayout(room, dir, items, build) {
 //     PDF: alle mål tegnes — søket utvides til det finnes en plass; 228 utvider utsnittet.
 let _dimPlaced = { boxes: [], lines: [], leaders: [] };
 let _dimDefer = null;                 // kø av utsatte plasseringer mens drawAllDimAnnotations går
-let _dimMovedStat = { moved: 0, hidden: 0 };   // siste tegning: flyttede / skjulte kjedetekster (test og rapport)
-function _dimPlacedReset() { _dimPlaced = { boxes: [], lines: [], leaders: [] }; _dimMovedStat = { moved: 0, hidden: 0 }; }
+let _dimMovedStat = { moved: 0, hidden: 0, wallMoved: 0, wallHidden: 0 };   // siste tegning: flyttede / skjulte kjedetekster og (243) veggmål
+function _dimPlacedReset() { _dimPlaced = { boxes: [], lines: [], leaders: [] }; _dimMovedStat = { moved: 0, hidden: 0, wallMoved: 0, wallHidden: 0 }; }
 // Boks w × h med senter (cx, cy); isVert = teksten er dreid 90° (kjede langs y).
 function _dimBoxAt(cx, cy, w, h, isVert) {
   const hw = (isVert ? h : w) / 2, hh = (isVert ? w : h) / 2;
@@ -62860,6 +62860,63 @@ function _dimFindSpot(o) {
   const p = search(3, (o.pdf ? 3 : 1.5) * w, true);   // skjermen: kort vei eller skjult — aldri langt ut til siden
   if (p || !o.pdf) return p;
   return search(14, 4 * w, true) || search(14, 4 * w, false) || search(40, 4 * w, false) || { r: o.pref, t: o.t0 };
+}
+// 243: de flyttede tekstene — felles for kjedene (240) og veggmålene (243), så regelen er ÉN.
+// pend: [{ str, col, mx, my, isVert, sign, bw, chain (gruppe), line, rid }]. k: { FONT, BOXH, LUFT, LWX,
+// pdf, base(sign, RG) = avstand fra linja til første rads senter, label(it, cx, cy, V) tegner
+// teksten, wall = telles som veggmål }. Per gruppe, i leddenes rekkefølge, på utsiden med leder.
+function _dimFlushMoved(pend, k) {
+  if (!pend.length) return;
+  const { FONT, BOXH, LUFT, LWX } = k;
+  ctx.save();
+  ctx.font = `${FONT}px ${CANVAS_NUM_FONT}`;
+  const RG = FONT * 0.35;                                 // luft mellom kjedelinje / rader
+  const groups = new Map();
+  for (const it of pend) { if (!groups.has(it.chain)) groups.set(it.chain, []); groups.get(it.chain).push(it); }
+  for (const its of groups.values()) {
+    const V = its[0].isVert, sign = its[0].sign, line = its[0].line;
+    for (const it of its) it.t = V ? it.my : it.mx;
+    its.sort((a, b) => a.t - b.t);
+    // Én rad når tekstene kan spres uten å flyttes langt (høyst én tekstbredde fra leddet sitt);
+    // ellers fordeles de annenhver / hver tredje / … på flere rader (færrest mulig, høyst 8) —
+    // tekstene holder seg da ved kjeden i stedet for å bli skjøvet langt ut til siden.
+    let R = 1, want = [];
+    for (; R <= 8; R++) {
+      let worst = 0;
+      for (let j = 0; j < R; j++) {
+        const idx = its.map((_, i) => i).filter(i => i % R === j);
+        const w = _dimSpread1D(idx.map(i => ({ c: its[i].t, w: its[i].bw + LUFT })));
+        idx.forEach((i, n) => { want[i] = w[n]; worst = Math.max(worst, Math.abs(w[n] - its[i].t) / (its[i].bw + LUFT)); });
+      }
+      if (worst <= 1 || R === 8) break;
+    }
+    const own = {}, plan = [];
+    const base = k.base(sign, RG);
+    const rowAt = r => line + sign * (base + r * (BOXH + RG));
+    const lastT = {};
+    its.forEach((it, i) => {
+      const pos = _dimFindSpot({ t0: want[i], mid: it.t, bw: it.bw, bh: BOXH, V, sign, line, rowAt, lastT, luft: LUFT, pdf: k.pdf, pref: i % R, own });
+      if (!pos) { _dimMovedStat[k.wall ? "wallHidden" : "hidden"]++; return; }   // bare skjermen: skjules heller enn å kollidere
+      _dimMovedStat[k.wall ? "wallMoved" : "moved"]++;
+      lastT[pos.r] = pos.t;
+      const pc = rowAt(pos.r), cx = V ? pc : pos.t, cy = V ? pos.t : pc, edge = pc - sign * BOXH / 2;
+      const a = V ? { x: line, y: it.t } : { x: it.t, y: line }, b = V ? { x: edge, y: pos.t } : { x: pos.t, y: edge };
+      ctx.strokeStyle = it.col; ctx.lineWidth = LWX; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      _dimPlaced.leaders.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, own });
+      const bx = _dimBoxAt(cx, cy, it.bw, BOXH, V); bx.own = own;
+      _dimPlaced.boxes.push(bx);
+      plan.push({ it, cx, cy });
+    });
+    // tekstene tegnes etter ALLE gruppens ledere, så en leder aldri går over en tekst
+    for (const pl of plan) {
+      const rid0 = _pdfCap ? _pdfCap.rid : undefined;
+      if (_pdfCap) _pdfCap.rid = pl.it.rid;               // 228: teksten hører til rommet den ble tegnet for
+      k.label(pl.it, pl.cx, pl.cy, V);
+      if (_pdfCap) _pdfCap.rid = rid0;
+    }
+  }
+  ctx.restore();
 }
 // Tegner ett oppsett. st: { col, colRed, bg, fmt(cm) }. Samme strek, haker, stiplede hjelpelinjer
 // og tekstplassering som de tre kjedene hadde hver for seg før 164 (bit-identisk for rektangler).
@@ -62957,60 +63014,11 @@ function _drawDimChainLayout(layout, st) {
     out.along.push({ ch, at });
   }
   ctx.restore();
-  // 240: de flyttede tekstene — per kjede, i leddenes rekkefølge, på utsiden med leder.
-  const _flush = () => {
-    if (!pend.length) return;
-    ctx.save();
-    ctx.font = `${FONT}px ${CANVAS_NUM_FONT}`;
-    const RG = FONT * 0.35;                                 // luft mellom kjedelinje / rader
-    const groups = new Map();
-    for (const it of pend) { if (!groups.has(it.chain)) groups.set(it.chain, []); groups.get(it.chain).push(it); }
-    for (const its of groups.values()) {
-      const V = its[0].isVert, sign = its[0].sign, line = its[0].line;
-      for (const it of its) it.t = V ? it.my : it.mx;
-      its.sort((a, b) => a.t - b.t);
-      // Én rad når tekstene kan spres uten å flyttes langt (høyst én tekstbredde fra leddet sitt);
-      // ellers fordeles de annenhver / hver tredje / … på flere rader (færrest mulig, høyst 8) —
-      // tekstene holder seg da ved kjeden i stedet for å bli skjøvet langt ut til siden.
-      let R = 1, want = [];
-      for (; R <= 8; R++) {
-        let worst = 0;
-        for (let k = 0; k < R; k++) {
-          const idx = its.map((_, i) => i).filter(i => i % R === k);
-          const w = _dimSpread1D(idx.map(i => ({ c: its[i].t, w: its[i].bw + LUFT })));
-          idx.forEach((i, j) => { want[i] = w[j]; worst = Math.max(worst, Math.abs(w[j] - its[i].t) / (its[i].bw + LUFT)); });
-        }
-        if (worst <= 1 || R === 8) break;
-      }
-      const own = {}, plan = [];
-      // Faste tekster står over/til venstre for linja (TXTOFF). Er DET utsiden (sign −1), begynner radene utenfor dem.
-      const base = (sign < 0 ? -TXTOFF + BOXH / 2 : TICK / 2) + RG + BOXH / 2;
-      const rowAt = r => line + sign * (base + r * (BOXH + RG));
-      const lastT = {};
-      its.forEach((it, i) => {
-        const pos = _dimFindSpot({ t0: want[i], mid: it.t, bw: it.bw, bh: BOXH, V, sign, line, rowAt, lastT, luft: LUFT, pdf: !!P, pref: i % R, own });
-        if (!pos) { _dimMovedStat.hidden++; return; }        // bare skjermen: skjules heller enn å kollidere
-        _dimMovedStat.moved++;
-        lastT[pos.r] = pos.t;
-        const pc = rowAt(pos.r), cx = V ? pc : pos.t, cy = V ? pos.t : pc, edge = pc - sign * BOXH / 2;
-        const a = V ? { x: line, y: it.t } : { x: it.t, y: line }, b = V ? { x: edge, y: pos.t } : { x: pos.t, y: edge };
-        ctx.strokeStyle = it.col; ctx.lineWidth = LWX; ctx.setLineDash([]);
-        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-        _dimPlaced.leaders.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, own });
-        const bx = _dimBoxAt(cx, cy, it.bw, BOXH, V); bx.own = own;
-        _dimPlaced.boxes.push(bx);
-        plan.push({ it, cx, cy });
-      });
-      // tekstene tegnes etter ALLE kjedens ledere, så en leder aldri går over en tekst
-      for (const pl of plan) {
-        const rid0 = _pdfCap ? _pdfCap.rid : undefined;
-        if (_pdfCap) _pdfCap.rid = pl.it.rid;               // 228: teksten hører til rommet kjeden ble tegnet for
-        _label(pl.it.str, pl.cx, pl.cy, V, pl.it.col, 0);
-        if (_pdfCap) _pdfCap.rid = rid0;
-      }
-    }
-    ctx.restore();
-  };
+  // 240: de flyttede tekstene — per kjede, i leddenes rekkefølge, på utsiden med leder (243: felles _dimFlushMoved).
+  // Faste tekster står over/til venstre for linja (TXTOFF). Er DET utsiden (sign −1), begynner radene utenfor dem.
+  const _flush = () => _dimFlushMoved(pend, { FONT, BOXH, LUFT, LWX, pdf: !!P,
+    base: (sign, RG) => (sign < 0 ? -TXTOFF + BOXH / 2 : TICK / 2) + RG + BOXH / 2,
+    label: (it, cx, cy, V) => _label(it.str, cx, cy, V, it.col, 0) });
   if (_dimDefer) _dimDefer.push(_flush); else _flush();
   // Merknaden (matte: «Kabel → vegg …») gis i skjerm-px fra kalleren; i PDF skaleres avstanden med skriften.
   // 226: fargen følger også papirregelen (rødt beholdes).
@@ -63527,6 +63535,21 @@ function _drawDimAnnotationsForRoom(room, opts) {
   const FONT=P?P.fontPx:10;
   const BOXH=P?FONT*1.4:14, PAD=P?FONT*0.3:3;
   const BG=P?P.bg:_lc('rgba(240,244,248,0.88)','rgba(13,14,16,0.7)');
+  // 243: veggmålene følger 240-regelen (Kenneth 23.11.2026). Teksten står midt på målelinja som før
+  // BARE når den får plass i linja (boks + luft ≤ linjas lengde) og ikke treffer en tekst som alt
+  // står i _dimPlaced; ellers flyttes den ut på utsiden med leder (_dimFlushMoved, samme kode som
+  // kjedene), SIST i tegneomgangen (_dimDefer). Skrå vegger tegnes som før (regelen er akseparallell).
+  const LUFT=FONT*0.3, pend=[];
+  const _txt=(str,cx,cy,ang,col)=>{
+    ctx.save();
+    ctx.translate(cx,cy);ctx.rotate(ang);
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle=BG;
+    const tw=ctx.measureText(str).width;
+    ctx.fillRect(-tw/2-PAD,-BOXH/2,tw+2*PAD,BOXH);
+    ctx.fillStyle=col;ctx.fillText(str,0,0);
+    ctx.restore();
+  };
   ctx.save();
   ctx.font=`${FONT}px ${CANVAS_NUM_FONT}`;
   const cxW=room.points.reduce((a,p)=>a+p.x,0)/room.points.length;
@@ -63573,16 +63596,18 @@ function _drawDimAnnotationsForRoom(room, opts) {
     const len=Math.round(wl.length);
     const _lbl = len + ' cm' + (_unsure ? ' ?' : '');
     const drawAng=(wallAng>Math.PI/2||wallAng<-Math.PI/2)?wallAng+Math.PI:wallAng;
-    ctx.save();
-    ctx.translate((ox1+ox2)/2,(oy1+oy2)/2);ctx.rotate(drawAng);
-    ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillStyle=BG;
-    const tw=ctx.measureText(_lbl).width;
-    ctx.fillRect(-tw/2-PAD,-BOXH/2,tw+2*PAD,BOXH);
-    ctx.fillStyle=col;ctx.fillText(_lbl,0,0);
-    ctx.restore();
-    // 240: veggmålets tekst og linje er opptatt plass for kjedetekstene
-    _dimPlaced.boxes.push(_dimBoxRot((ox1+ox2)/2,(oy1+oy2)/2,drawAng,tw+2*PAD,BOXH));
+    const tw=ctx.measureText(_lbl).width, bw=tw+2*PAD;
+    const mx=(ox1+ox2)/2,my=(oy1+oy2)/2;
+    const fb=_dimBoxRot(mx,my,drawAng,bw,BOXH);
+    const _aV=Math.abs(Math.cos(wallAng))<0.02,_aH=!_aV&&Math.abs(Math.sin(wallAng))<0.02;
+    if(!(_aV||_aH)||(bw+LUFT<=Math.hypot(ox2-ox1,oy2-oy1)&&!_dimHitsBox(fb,LUFT/2))){
+      _txt(_lbl,mx,my,drawAng,col);
+      // 240: veggmålets tekst og linje er opptatt plass for kjedetekstene
+      _dimPlaced.boxes.push(fb);
+    } else {
+      const sg=_aV?(nx<0?-1:1):(ny<0?-1:1), ln=_aV?mx:my;
+      pend.push({str:_lbl,col,mx,my,isVert:_aV,sign:sg,bw,chain:(_aV?'v':'h')+sg+'|'+Math.round(ln),line:ln,ang:drawAng,rid:_pdfCap?_pdfCap.rid:undefined});
+    }
     if(Math.abs(ox1-ox2)<1||Math.abs(oy1-oy2)<1) _dimPlaced.lines.push({x0:ox1,y0:oy1,x1:ox2,y1:oy2});
     if(isSel){
       const arr=42,omx=(ox1+ox2)/2,omy=(oy1+oy2)/2;
@@ -63596,6 +63621,11 @@ function _drawDimAnnotationsForRoom(room, opts) {
       }
     }
   }
+  // 243: veggmål som ikke fikk plass — på utsiden av målelinja med leder, etter alt annet.
+  { const _flush=()=>_dimFlushMoved(pend,{FONT,BOXH,LUFT,LWX:P?P.ext:0.5,pdf:!!P,wall:true,
+      base:(sign,RG)=>Math.max(TICK,BOXH/2)+RG+BOXH/2,
+      label:(it,cx,cy)=>_txt(it.str,cx,cy,it.ang,it.col)});
+    if(_dimDefer) _dimDefer.push(_flush); else _flush(); }
   // 116: presentasjonen viser bare veggmålene — hindringsmålene er interne hjelpelinjer.
   if (opts && opts.bareVegger) { ctx.restore(); return; }
   // Hindring annotations (drawn after room walls, inside room, orange color)
@@ -101750,6 +101780,109 @@ function _dimNoOverlapRegressionTest240() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? "log" : "error"](`_dimNoOverlapRegressionTest240: ${allOk ? "BESTÅTT" : "FEILET"} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
+  return { ok: allOk, results };
+}
+// 243: regresjon — veggmålene («680 cm») følger 240-regelen: ingen veggmåltekst skrives oppå en annen
+// måltekst eller en veggetikett, ingen står utenfor rombildet, alle vegglengder står i PDF-bildet, og
+// rom uten korte vegger får ingen flyttede veggmål (Normal og Ekstra stor; PDF og skjerm).
+function _wallDimNoOverlapRegressionTest243() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name, ok: !!cond, expected, got });
+  const saved = { rooms: S.rooms, strips: S.strips, foilFree: S.foilFree, cables: S.cables, mats: S.mats, matPaths: S.matPaths,
+    hindrings: S.hindrings, stairs: S.stairs, floors: S.floors, project: S.project, counters: { ...S.counters }, floatingDims: S.floatingDims,
+    activeFloorId: S.ui.activeFloorId, activePartId: S.ui.activePartId, selectedRoomId: S.ui.selectedRoomId, selectedDimId: S.ui.selectedDimId, selectedAnnot: S.ui.selectedAnnot,
+    prods: HEATING_PRODUCTS.slice(), cats: PRODUCT_CATEGORIES.slice(), profile: (typeof _currentProfile !== "undefined") ? _currentProfile : undefined,
+    autoSave: window._performAutoSave, sched: window._scheduleAutoSave, toast: window._showToast, view: { ...S.view } };
+  try {
+    window._performAutoSave = () => Promise.resolve(); window._scheduleAutoSave = () => {}; window._showToast = () => {};
+    const foil = b => ({ id: 993000 + b, category_id: 1, active: true, name: "FlexFoil B=" + b + "cm", width_mm: b * 10 - 10, netto_width_mm: b * 10 - 10, watt_per_lm: b * 0.6, watt_per_m2: 60, voltage: 230, min_gap_mm: 10, min_wall_margin_mm: 25 });
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push({ id: 1, name: "Folie", module_type: "foil" });
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(foil(80), foil(60), foil(100), foil(50));
+    const rect = (x, y, w, h) => [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
+    const mk = (id, navn, pts) => ({ id, floorId: null, partId: null, name: navn, points: pts, walls: compWalls(pts), area: Math.abs(compArea(pts)), dims: [], annotOffsets: {}, dimSnap: true });
+    // N: korte vegger — pilaster 12 × 15, rørkasse 8 × 20, hjørnekasse 30 × 20, trappet hjørne 3 × 10 cm. N2: samme med folie og kjede.
+    const NP = [[0,0],[180,0],[180,15],[192,15],[192,0],[500,0],[500,370],[490,370],[490,380],[480,380],[480,390],[470,390],[470,400],[30,400],[30,380],[0,380],[0,220],[8,220],[8,200],[0,200]];
+    const N = mk(993001, "Nisjerom", NP.map(([x, y]) => ({ x, y })));
+    const N2 = mk(993002, "Nisjerom folie", NP.map(([x, y]) => ({ x: x + 2000, y }))); N2.stripDimSnap = true;
+    const K = mk(993003, "L-rom folie (240)", [[0, 0], [400, 0], [400, 319], [700, 319], [700, 680], [0, 680]].map(([x, y]) => ({ x: x + 4000, y }))); K.stripDimSnap = true;
+    const R = mk(993004, "Rektangel", rect(6000, 0, 400, 300));
+    const alle = [N, N2, K, R];
+    S.rooms = alle; S.floors = []; S.stairs = []; S.matPaths = []; S.foilFree = []; S.floatingDims = []; S.hindrings = []; S.cables = []; S.mats = [];
+    S.ui.activeFloorId = null; S.ui.activePartId = null; S.ui.selectedAnnot = null; S.project = { name: "VEGGMAAL-243", parts: [], revision: 0 };
+    let sid = 993100; S.strips = [];
+    { let x = 2012; for (const b of [80, 60, 100, 60, 80, 50]) { S.strips.push({ id: sid++, roomId: N2.id, productId: 993000 + b, direction: "v", pos_cm: x, start_cm: 20, length_cm: 340 }); x += b - 1 + 2; } }
+    { let y = 321; for (const [b, gap] of [[80, 3.6], [60, 2.4], [100, 2], [60, 4], [50, 0]]) { S.strips.push({ id: sid++, roomId: K.id, productId: 993000 + b, direction: "h", pos_cm: y, start_cm: 4002.5, length_cm: 694 }); y += b - 1 + gap; } }
+    if (typeof _rebuildActiveFloorRoomIds === "function") _rebuildActiveFloorRoomIds();
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    const tegn = room => _renderRoomToImage(room, { focusRoom: true, targetWidthMm: _pdfRoomImgLayout(room).imgW2, noUrl: true });
+    const hit = (a, b) => a.x0 < b.x1 - 0.5 && a.x1 > b.x0 + 0.5 && a.y0 < b.y1 - 0.5 && a.y1 > b.y0 + 0.5;
+    const vegg = t => /^V\d+ \d+ cm$/.test(t.str), tall = t => /^[\d.]+ cm( \?)?$/.test(t.str);
+    const par = (tx, erMaal) => { const ut = [];
+      for (let i = 0; i < tx.length; i++) for (let j = i + 1; j < tx.length; j++) { const a = tx[i], b = tx[j];
+        if ((erMaal(a) || erMaal(b)) && (erMaal(a) || vegg(a)) && (erMaal(b) || vegg(b)) && hit(a, b)) ut.push(a.str + " × " + b.str); }
+      return ut; };
+    const veggmaal = room => room.walls.map(w => Math.round(w.length) + " cm");
+    const mangler = (vil, har) => { const n = {}; for (const s of har) n[s] = (n[s] || 0) + 1; return vil.filter(s => !(n[s]-- > 0)); };
+    // A · én kode: veggmålene og kjedene flytter med samme funksjon, og veggmålene sjekker _dimPlaced
+    const srcW = String(_drawDimAnnotationsForRoom), srcC = String(_drawDimChainLayout);
+    check("A1: veggmålene og kjedene bruker samme _dimFlushMoved", "begge", /_dimFlushMoved\(pend/.test(srcW) && /_dimFlushMoved\(pend/.test(srcC), "");
+    check("A2: veggmålet sjekker plass i linja og _dimPlaced, og utsettes via _dimDefer", "ja", /_dimHitsBox\(fb/.test(srcW) && /bw\+LUFT<=/.test(srcW) && /_dimDefer\) _dimDefer\.push\(_flush\)/.test(srcW), "");
+    check("A3: de flyttede veggmålene legges i køen også i bareVegger-varianten (før returen)", "før", srcW.indexOf("_dimFlushMoved(pend") > 0 && srcW.indexOf("_dimFlushMoved(pend") < srcW.indexOf("opts.bareVegger"), "");
+    // B · PDF-bildet: ingen overlapp, ingen utenfor, alle veggmål med — Normal og Ekstra stor
+    for (const sk of [1, 1.5]) {
+      _currentProfile = { prefs: { pdfLabelScale: sk } };
+      for (const room of alle) {
+        const r = tegn(room), dims = r.texts.filter(t => t.dim), tag = `B: «${room.name}», skala ${sk}`;
+        const p = par(r.texts, t => t.dim), ute = dims.filter(t => t.x0 < -0.5 || t.y0 < -0.5 || t.x1 > r.w + 0.5 || t.y1 > r.h + 0.5);
+        const vil = veggmaal(room), m = mangler(vil, dims.map(t => t.str));
+        check(tag + ": ingen måltekst overlapper en annen måltekst eller en veggetikett", "0 par", p.length === 0, p);
+        check(tag + ": ingen måltekst utenfor bildet", "0", ute.length === 0, ute.map(t => t.str));
+        check(tag + ": alle veggmålene står i bildet (PDF skjuler aldri)", vil.length + " veggmål", m.length === 0, "mangler: " + m.join(" | "));
+      }
+    }
+    _currentProfile = null;
+    // C · VAKSINE: de korte veggene flyttes faktisk — og rom uten korte vegger får ingen flyttede veggmål
+    S.rooms = [N]; tegn(N);
+    check("C1: nisjerommets korte vegger (8–30 cm) flyttes ut med leder", "≥ 10 flyttet, 0 skjult", _dimMovedStat.wallMoved >= 10 && _dimMovedStat.wallHidden === 0, { ..._dimMovedStat });
+    for (const sk of [1, 1.5]) { _currentProfile = { prefs: { pdfLabelScale: sk } }; S.rooms = [K, R]; tegn(K); const a = { ..._dimMovedStat }; tegn(R); const b = { ..._dimMovedStat };
+      check(`C2: L-rommet (240) og rektangelet, skala ${sk}: ingen veggmål flyttes (ser ut som før)`, "0 / 0", a.wallMoved === 0 && a.wallHidden === 0 && b.wallMoved === 0 && b.wallHidden === 0, [a, b]);
+      check(`C3: L-rommets korte kjedeledd flyttes fortsatt (240 urørt), skala ${sk}`, "≥ 7", a.moved >= 7, a); }
+    _currentProfile = null; S.rooms = alle;
+    // D · skjermen: rommet fyller lerretet og sterkt utzoomet — ingen måltekster overlapper (veggmål kan skjules)
+    const skjerm = (room, f) => {
+      const xs = room.points.map(p => p.x), ys = room.points.map(p => p.y), w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+      S.view.zoom = f * Math.min(_cvW() / (w + 320), _cvH() / (h + 320)) / BASE_SCALE; S.view.panX = (Math.max(...xs) + Math.min(...xs)) / 2; S.view.panY = (Math.max(...ys) + Math.min(...ys)) / 2;
+      S.rooms = [room];
+      const cap = _pdfCapStart(room); let stat;
+      try { render(); stat = { ..._dimMovedStat }; } finally { _pdfCapStop(); S.rooms = alle; }
+      return { tx: cap.boxes.filter(t => tall(t) || vegg(t)), stat };
+    };
+    if (_cvW() >= 400 && _cvH() >= 300) {
+      for (const room of alle) for (const f of [1, 0.3]) {
+        const a = skjerm(room, f), pa = par(a.tx, tall), m = mangler(veggmaal(room), a.tx.filter(tall).map(t => t.str));
+        check(`D: skjerm «${room.name}», zoom × ${f}: ingen måltekster overlapper`, "0 par", pa.length === 0, [pa, a.stat]);
+        check(`D: skjerm «${room.name}», zoom × ${f}: veggmål som mangler er talt som skjult`, "mangler ≤ skjult", m.length <= a.stat.wallHidden, [m, a.stat]);
+      }
+      const r1 = skjerm(R, 1);
+      check("D: skjerm, rektangelet fyller lerretet: ingen veggmål flyttet eller skjult", "0 / 0", r1.stat.wallMoved === 0 && r1.stat.wallHidden === 0, r1.stat);
+    } else check("D: skjerm — lerretet er ikke synlig i denne kjøringen (hoppet over)", "-", true, [_cvW(), _cvH()]);
+  } catch (e) {
+    results.push({ name: "UNNTAK", ok: false, expected: "-", got: String(e && e.stack || e) });
+  } finally {
+    Object.assign(S, { rooms: saved.rooms, strips: saved.strips, foilFree: saved.foilFree, cables: saved.cables, mats: saved.mats, matPaths: saved.matPaths,
+      hindrings: saved.hindrings, stairs: saved.stairs, floors: saved.floors, project: saved.project, floatingDims: saved.floatingDims });
+    Object.assign(S.counters, saved.counters); Object.assign(S.view, saved.view);
+    S.ui.activeFloorId = saved.activeFloorId; S.ui.activePartId = saved.activePartId; S.ui.selectedRoomId = saved.selectedRoomId; S.ui.selectedDimId = saved.selectedDimId; S.ui.selectedAnnot = saved.selectedAnnot;
+    HEATING_PRODUCTS.length = 0; HEATING_PRODUCTS.push(...saved.prods);
+    PRODUCT_CATEGORIES.length = 0; PRODUCT_CATEGORIES.push(...saved.cats);
+    if (saved.profile !== undefined) _currentProfile = saved.profile;
+    window._performAutoSave = saved.autoSave; window._scheduleAutoSave = saved.sched; window._showToast = saved.toast;
+    if (typeof _rebuildActiveFloorRoomIds === "function") _rebuildActiveFloorRoomIds();
+    _invalidateStripCache(); _invalidateCableCache && _invalidateCableCache(); _invalidateMatCache && _invalidateMatCache();
+    try { renderSidebar(); updateCtxBar(); render(); } catch (e) {}
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? "log" : "error"](`_wallDimNoOverlapRegressionTest243: ${allOk ? "BESTÅTT" : "FEILET"} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
   return { ok: allOk, results };
 }
 // 242: regresjon — hurtigtastene R, M og P (og L, W) krever kalibrert plantegning, som knappene;

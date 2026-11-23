@@ -1,0 +1,27 @@
+{
+ "n": 49,
+ "ok": 28,
+ "feil": [
+  "A1: veggmålene og kjedene bruker samme _dimFlushMoved",
+  "A2: veggmålet sjekker plass i linja og _dimPlaced, og utsettes via _dimDefer",
+  "A3: de flyttede veggmålene legges i køen også i bareVegger-varianten (før returen)",
+  "B: «Nisjerom», skala 1: ingen måltekst overlapper en annen måltekst eller en veggetikett",
+  "B: «Nisjerom», skala 1.5: ingen måltekst overlapper en annen måltekst eller en veggetikett",
+  "B: «Nisjerom folie», skala 1.5: ingen måltekst overlapper en annen måltekst eller en veggetikett",
+  "C1: nisjerommets korte vegger (8–30 cm) flyttes ut med leder",
+  "C2: L-rommet (240) og rektangelet, skala 1: ingen veggmål flyttes (ser ut som før)",
+  "C2: L-rommet (240) og rektangelet, skala 1.5: ingen veggmål flyttes (ser ut som før)",
+  "D: skjerm «Nisjerom», zoom × 1: ingen måltekster overlapper",
+  "D: skjerm «Nisjerom», zoom × 1: veggmål som mangler er talt som skjult",
+  "D: skjerm «Nisjerom», zoom × 0.3: ingen måltekster overlapper",
+  "D: skjerm «Nisjerom», zoom × 0.3: veggmål som mangler er talt som skjult",
+  "D: skjerm «Nisjerom folie», zoom × 1: veggmål som mangler er talt som skjult",
+  "D: skjerm «Nisjerom folie», zoom × 0.3: ingen måltekster overlapper",
+  "D: skjerm «Nisjerom folie», zoom × 0.3: veggmål som mangler er talt som skjult",
+  "D: skjerm «L-rom folie (240)», zoom × 1: veggmål som mangler er talt som skjult",
+  "D: skjerm «L-rom folie (240)», zoom × 0.3: veggmål som mangler er talt som skjult",
+  "D: skjerm «Rektangel», zoom × 1: veggmål som mangler er talt som skjult",
+  "D: skjerm «Rektangel», zoom × 0.3: veggmål som mangler er talt som skjult",
+  "D: skjerm, rektangelet fyller lerretet: ingen veggmål flyttet eller skjult"
+ ]
+}
