@@ -1,0 +1,38 @@
+{
+ "_drawHotkeyCalibRegressionTest242": {
+  "pass": 47,
+  "total": 77,
+  "fail": [
+   "242: A: ukalibrert — r starter ingen tegning ⇒ \"modus rect2 · aktiv true\"",
+   "242: A: ukalibrert — r gir «Ikke kalibrert / Sett målestokk» i baren ⇒ \"Tegn rom▬ Rektangel⊞ Mål⬡ Polygon⌐ L-form⊡ WBW🔷 YtterveggMållinjeKlikk to hjørner på canvas✕ Avbryt\"",
+   "242: A: ukalibrert — R starter ingen tegning ⇒ \"modus rect2 · aktiv true\"",
+   "242: A: ukalibrert — R gir «Ikke kalibrert / Sett målestokk» i baren ⇒ \"Tegn rom▬ Rektangel⊞ Mål⬡ Polygon⌐ L-form⊡ WBW🔷 YtterveggMållinjeKlikk to hjørner på canvas✕ Avbryt\"",
+   "242: A: ukalibrert — m starter ingen tegning ⇒ \"modus rect-dim · aktiv false\"",
+   "242: A: ukalibrert — m gir «Ikke kalibrert / Sett målestokk» i baren ⇒ \"Tegn rom▬ Rektangel⊞ Mål⬡ Polygon⌐ L-form⊡ WBW🔷 YtterveggMållinjeSkriv bredde og høyde i panelet✕ Avbryt\"",
+   "242: A: ukalibrert — M starter ingen tegning ⇒ \"modus rect-dim · aktiv false\"",
+   "242: A: ukalibrert — M gir «Ikke kalibrert / Sett målestokk» i baren ⇒ \"Tegn rom▬ Rektangel⊞ Mål⬡ Polygon⌐ L-form⊡ WBW🔷 YtterveggMållinjeSkriv bredde og høyde i panelet✕ Avbryt\"",
+   "242: A: ukalibrert — p starter ingen tegning ⇒ \"modus polygon · aktiv true\"",
+   "242: A: ukalibrert — p gir «Ikke kalibrert / Sett målestokk» i baren ⇒ \"Tegn rom▬ Rektangel⊞ Mål⬡ Polygon⌐ L-form⊡ WBW🔷 YtterveggMållinjeKlikk hjørner — Enter for å lukke✕ Avbryt\"",
+   "242: A: ukalibrert — P starter ingen tegning ⇒ \"modus polygon · aktiv true\"",
+   "242: A: ukalibrert — P gir «Ikke kalibrert / Sett målestokk» i baren ⇒ \"Tegn rom▬ Rektangel⊞ Mål⬡ Polygon⌐ L-form⊡ WBW🔷 YtterveggMållinjeKlikk hjørner — Enter for å lukke✕ Avbryt\"",
+   "242: B kalibrert: R — romnavn fra navnefeltet, aktiv etasje i begge etasje-variablene ⇒ \"Kjøkken r/2/null\"",
+   "242: B kalibrert: M — romnavn fra navnefeltet, aktiv etasje i begge etasje-variablene ⇒ \"Kjøkken M/2/null\"",
+   "242: B kalibrert: P — romnavn fra navnefeltet, aktiv etasje i begge etasje-variablene ⇒ \"Kjøkken p/2/null\"",
+   "242: C uten plantegning: R — romnavn fra navnefeltet, aktiv etasje i begge etasje-variablene ⇒ \"Kjøkken r/2/null\"",
+   "242: C uten plantegning: M — romnavn fra navnefeltet, aktiv etasje i begge etasje-variablene ⇒ \"Kjøkken M/2/null\"",
+   "242: C uten plantegning: P — romnavn fra navnefeltet, aktiv etasje i begge etasje-variablene ⇒ \"Kjøkken p/2/null\"",
+   "242: D uten plantegning: 1 vegger lagt — statuslinja ⇒ \"1 vegger · Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\"",
+   "242: D uten plantegning: 2 vegger lagt — statuslinja ⇒ \"2 vegger · Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\"",
+   "242: D uten plantegning: 3 vegger lagt — statuslinja ⇒ \"3 vegger · Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\"",
+   "242: D uten plantegning: 3 vegger — statuslinja sier at Enter lukker rommet ⇒ \"Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\"",
+   "242: D uten plantegning: angre siste vegg → «Vegg 3:» ⇒ \"Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\"",
+   "242: D uten plantegning: bytte Mus/Tastatur beholder veggnummeret ⇒ \"Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\"",
+   "242: D med plantegning: 1 vegger lagt — statuslinja ⇒ \"1 vegger · Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\"",
+   "242: D med plantegning: 2 vegger lagt — statuslinja ⇒ \"2 vegger · Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\"",
+   "242: D med plantegning: 3 vegger lagt — statuslinja ⇒ \"3 vegger · Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\"",
+   "242: D med plantegning: 3 vegger — statuslinja sier at Enter lukker rommet ⇒ \"Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\"",
+   "242: D med plantegning: angre siste vegg → «Vegg 3:» ⇒ \"Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\"",
+   "242: D med plantegning: bytte Mus/Tastatur beholder veggnummeret ⇒ \"Steg 1: Skriv lengde på første vegg, velg retning, trykk Enter · ESC avbryt\""
+  ]
+ }
+}
