@@ -1,0 +1,10 @@
+{
+ "_dimNoOverlapRegressionTest240": {
+  "pass": 32,
+  "total": 34,
+  "fail": [
+   "B: «Smale baner», skala 1.5: ingen måltekst utenfor bildet ⇒ [\"3 cm\",\"19 cm\",\"2 cm\",\"19 cm\",\"2 cm\",\"19 cm\",\"2 cm\",\"19 cm\",\"2 cm\",\"19 cm\",\"26 cm\"]",
+   "B: «Matte», skala 1.5: ingen måltekst overlapper en annen måltekst eller en veggetikett ⇒ [\"400 cm × Kabel → vegg min 5 cm (krav ≥ 5 cm)\"]"
+  ]
+ }
+}
