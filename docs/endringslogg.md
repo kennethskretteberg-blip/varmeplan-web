@@ -4,7 +4,7 @@ Kronologisk logg over arbeid i `romtegner.html`. Nyeste øverst.
 
 ---
 
-## 240 — Målekjeder: korte mål skrives aldri oppå hverandre (23.11.2026, `@@HASH@@`, `main`, ikke pushet)
+## 240 — Målekjeder: korte mål skrives aldri oppå hverandre (23.11.2026, `6c08f0f`, `main`, ikke pushet)
 
 `_drawDimChainLayout` (folie-, kabel- og mattekjedene, skjerm og PDF) tegner teksten midt på leddet bare når den får plass (boks + 0,3 × skrifthøyde ≤ leddet) og ikke treffer en tekst som alt står der; ellers flyttes den ut på utsiden av kjeden med en tynn leder, spredt langs kjeden i leddenes rekkefølge og fordelt på flere rader når én rad blir for lang. Ny felles liste `_dimPlaced` per tegning (veggetiketter, produktetiketter, veggmål, kjedetekster, målelinjer, ledere); de flyttede tekstene plasseres sist i `drawAllDimAnnotations`. Skjermen: finnes ingen plass innen 1,5 tekstbredder og tre rader, skjules teksten til man zoomer inn; PDF: alle mål tegnes. Kenneths L-rom (700 × 680, B=80/60/100/60/50): 6 overlappende par i Normal og 12 i Ekstra stor på HEAD, 0 og 0 nå, 20 mål før og etter, ingen utenfor bildet. Skrift, streker, farger, 300 DPI og kjedenes plassering urørt. Ny `_dimNoOverlapRegressionTest240` 34/34 (45/45 med synlig lerret); suiten 105 tester, de 104 gamle like med HEAD (åtte røde uten innlogging, på HEAD og nå). Ikke rettet: veggmålene og skrå kabelkjeder har ikke regelen; hindringsmål og egne mål er ikke med i lista; «V5 680 cm» oppå kjeden ble ikke gjenskapt. Se `docs/240/RAPPORT.md`.
 

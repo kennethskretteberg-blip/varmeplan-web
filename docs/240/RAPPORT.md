@@ -1,6 +1,6 @@
 # 240 – Målekjeder: korte mål skrives aldri oppå hverandre
 
-23.11.2026 · `main` · commit `@@HASH@@` · ikke pushet · ingen SQL
+23.11.2026 · `main` · commit `6c08f0f` · ikke pushet · ingen SQL
 
 ## Hva som er endret
 - `_drawDimChainLayout` (folie-, kabel- og mattekjedene, skjerm og PDF) sjekker nå om teksten får plass i leddet før den tegnes. Tekster som ikke får plass, flyttes ut på utsiden av kjeden med en tynn leder.
