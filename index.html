@@ -67420,7 +67420,7 @@ function abStartDraw(shape) {
   const name = (nameInp ? nameInp.value.trim() : '') || (_roomWord(true) + ' ' + S.counters.nextRoomId);
   S.ui.pendingRoomName = name;
   if (shape === 'lshape') showLShapeForm();
-  else startDrawMode(shape, name, _pendingFloorId);
+  else startDrawMode(shape, name, _pendingFloorId, shape === 'wbw' && _wbwClickStart() ? { clickStart: true } : undefined);   // 241
 }
 function _showCalibWarningInCtxbar() {
   const bar = document.getElementById('ctxbar');
@@ -73011,7 +73011,7 @@ function confirmShape() {
   if (_selShape==='rect') { showRectForm(); return; }
   if (_selShape==='lshape') { showLShapeForm(); return; }
   closeModal();
-  startDrawMode(_selShape, S.ui.pendingRoomName, _pendingFloorId);
+  startDrawMode(_selShape, S.ui.pendingRoomName, _pendingFloorId, _selShape === 'wbw' && _wbwClickStart() ? { clickStart: true } : undefined);   // 241
 }
 function backToShapePicker() { showModal('modal-shape'); }
 function showRectForm() {
@@ -73744,7 +73744,15 @@ function _hindMenuRegressionTest219() {
 }
 
 // ─── DRAWING MODES ───────────────────────────────────────────
-function startDrawMode(mode, name, floorId) {
+// 241: over en plantegning skal vegg-for-vegg starte der brukeren KLIKKER på tegningen — ikke
+// «til høyre for alle rom», og utsnittet skal stå i ro. Sant når den aktive etasjen har en bakgrunn.
+// Tak-delen (211, egen flyt) og kundesiden (030, telefon-HUD) er holdt utenfor.
+function _wbwClickStart() {
+  if (S.ui.kundeMode || _activeModuleType() === 'roof') return false;
+  const bg = activeBg();
+  return !!(bg && bg.img);
+}
+function startDrawMode(mode, name, floorId, opts) {
   _resetCycle();
   S.ui.drawMode=mode;
   S.ui.pendingRoomName=name;
@@ -73762,6 +73770,11 @@ function startDrawMode(mode, name, floorId) {
     }
     S.drawing.wbw={ started:true, startPoint:{x:_wbwSX,y:0}, walls:[], direction:'right', mouseMode:false };
     _wbwMouseAngleDeg = null;
+    // 241: over plantegning — startpunktet settes med første klikk (grenen `!wbw.started` i
+    // mousedown, vanlig snapping via getWorldPos), og utsnittet røres ikke.
+    const _wbwClick = !!(opts && opts.clickStart);
+    if (_wbwClick) { S.drawing.wbw.started = false; S.drawing.wbw.startPoint = null; }
+    else {
     // Set initial view: ~20 m wide visible, start point at lower-left of canvas
     const _sc = _cvW() / (2000 * BASE_SCALE);            // zoom so 2000 cm fills canvas width
     S.view.zoom = Math.max(0.15, Math.min(1, _sc));
@@ -73769,6 +73782,7 @@ function startDrawMode(mode, name, floorId) {
     S.view.panX = _wbwSX + (_cvW()  / 2 - _cvW()  * 0.14) / _px;  // start point ~14% from left
     S.view.panY =           (_cvH() / 2 - _cvH() * 0.80) / _px;  // start point ~80% from top
     updZoomBadge();
+    }
     document.getElementById('wbw-panel').style.display='block';
     updWbw();
     render();
@@ -73878,7 +73892,8 @@ function updHint() {
   }
   else if(m==='wbw') {
     const n=d.points?.length||0;
-    if(n===0) h='Steg 1: Skriv lengde p\u00e5 f\u00f8rste vegg, velg retning, trykk Enter \u00b7 ESC avbryt';
+    if(d.wbw && !d.wbw.started) h='Steg 1: Klikk på tegningen for å sette startpunktet · ESC avbryt';   // 241
+    else if(n===0) h='Steg 1: Skriv lengde p\u00e5 f\u00f8rste vegg, velg retning, trykk Enter \u00b7 ESC avbryt';
     else      h='Vegg '+(n+1)+': Skriv lengde, velg retning, trykk Enter \u00b7 3+ vegger: Enter uten lengde lukker rom \u00b7 ESC avbryt';
   }
   else if(m==='lshape') {
@@ -74002,7 +74017,9 @@ function updWbw() {
   const closeDist = n>0 ? Math.hypot(
     wbw.walls[n-1].x2-wbw.startPoint.x,
     wbw.walls[n-1].y2-wbw.startPoint.y) : 0;
-  document.getElementById('wbw-status').textContent = mouseMode
+  document.getElementById('wbw-status').textContent = !wbw.started
+    ? 'Klikk på tegningen der første vegg skal starte'   // 241
+    : mouseMode
     ? (n===0 ? 'Skriv lengde · pek med musa, klikk for å feste veggen · Shift = frihånd'
              : `${n} vegg${n!==1?'er':''} lagt til`+(n>=3?` · ${Math.round(closeDist)} cm til start · klikk på start eller Enter lukker`:'')+' · klikk for å feste neste')
     : (n===0 ? 'Skriv lengde · pil (↑↓←→) legger vegg i den retningen'
@@ -76815,6 +76832,9 @@ canvas.addEventListener('mousedown', e=>{
       S.drawing.wbw.started=true;
       S.drawing.wbw.startPoint={x:wp.x,y:wp.y};
       updWbw();
+      // 241: klikket tok fokus fra lengdefeltet — gi det tilbake, og vis startpunktet/hintet.
+      updHint(); render();
+      setTimeout(()=>{ const el=document.getElementById('wbw-len'); if (el && S.ui.drawMode==='wbw') { el.focus(); el.select(); } }, 20);
     }
   } else if (mode==='skillevegg') {
     const sv = S.drawing.skillevegg;
@@ -79021,7 +79041,7 @@ canvas.addEventListener('mousemove', e=>{
   document.getElementById('sb-snap').textContent=snapOn?'PÅ':'AV';
 
   // WBW mouse mode: compute snapped angle from last wall point to mouse cursor
-  if (S.ui.drawMode === 'wbw' && S.drawing.wbw.mouseMode) {
+  if (S.ui.drawMode === 'wbw' && S.drawing.wbw.mouseMode && S.drawing.wbw.started) {   // 241: uten startpunkt finnes ingen retning å regne
     const wbw = S.drawing.wbw;
     // While spacePan or hand-tool active: show grab cursor, don't update angle
     if (S.ui.spacePan || S.ui.toolMode === 'hand') {
@@ -80306,7 +80326,8 @@ document.addEventListener('keydown', e=>{
       if (e.key==='m'||e.key==='M') { startDrawMode('rect-dim',_nm,_fid); return; }
       if (e.key==='p'||e.key==='P') { startDrawMode('polygon',_nm,_fid); return; }
       if (e.key==='l'||e.key==='L') { abStartDraw('lshape'); return; }
-      if (e.key==='w'||e.key==='W') { startDrawMode('wbw',_nm,_fid); return; }
+      // 241: gjennom abStartDraw som knappen — samme kalibreringskrav og samme start over plantegning.
+      if (e.key==='w'||e.key==='W') { abStartDraw('wbw'); return; }
     }
   }
 });
@@ -81430,9 +81451,11 @@ function _ctxBarItems() {
     html += `<button class="${_tcls('rect2')}" onclick="abStartDraw('rect2')" title="Klikk to hj\u00f8rner p\u00e5 canvas (R)">▬ Rektangel</button>`;
     html += `<button class="${_tcls('rect-dim')}" onclick="abStartDraw('rect-dim')" title="Skriv inn bredde og h\u00f8yde (M)">⊞ M\u00e5l</button>`;
     html += `<button class="${_tcls('polygon')}" onclick="abStartDraw('polygon')" title="Klikk hj\u00f8rner, Enter lukk (P)">⬡ Polygon</button>`;
+    // 241 (Fredrik 23.11.2026): L-form og WBW vises ALLTID — også over importert plantegning. Før sto
+    // de inne i `if (!hasBg)`, så knappene forsvant idet en tegning var importert (hurtigtasten W virket).
+    html += `<button class="${_tcls('lshape')}" onclick="abStartDraw('lshape')" title="L-form (L)">⌐ L-form</button>`;
+    html += `<button class="snap-chip" onclick="abStartDraw('wbw')" title="${hasBg ? 'Vegg-for-vegg — klikk startpunktet på tegningen, skriv så lengdene (W)' : 'Vegg-for-vegg (W)'}">⊡ WBW</button>`;
     if (!hasBg) {
-      html += `<button class="${_tcls('lshape')}" onclick="abStartDraw('lshape')" title="L-form (L)">⌐ L-form</button>`;
-      html += `<button class="snap-chip" onclick="abStartDraw('wbw')" title="Vegg-for-vegg (W)">⊡ WBW</button>`;
       html += `<span class="tc-sep"></span>`;
       html += `<button class="snap-chip primary" onclick="_importPlanMenu()" title="Importer plantegning — les av rom automatisk eller tegn selv over bakgrunn"><svg class="ic ic-file-text" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:inline-block;vertical-align:middle;flex:0 0 auto"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg> Importer plantegning</button>`;
     }
@@ -101722,6 +101745,143 @@ function _dimNoOverlapRegressionTest240() {
   }
   const allOk = results.every(r => r.ok);
   console[allOk ? "log" : "error"](`_dimNoOverlapRegressionTest240: ${allOk ? "BESTÅTT" : "FEILET"} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
+  return { ok: allOk, results };
+}
+// 241: regresjon — vegg-for-vegg (WBW) og L-form er alltid i «TEGN ROM»-baren, også over importert
+// plantegning; over plantegning settes startpunktet med klikk og utsnittet står i ro; lengdene er cm;
+// ukalibrert tegning gir ingen tegneknapper og W starter ikke; uten bakgrunn er baren og WBW som før.
+async function _wbwOverBgRegressionTest241() {
+  const results = [];
+  const check = (name, expected, cond, got) => results.push({ name: '241: ' + name, expected, got, ok: !!cond });
+  const lagret = _buildSaveData();
+  const app = document.getElementById('app');
+  const keep = { toast: window._showToast, save: window._scheduleAutoSave, confirm: window.confirm, ro: S.ui.readOnly, kunde: S.ui.kundeMode,
+                 part: S.ui.activePartId, floor: S.ui.activeFloorId, sb: _supabaseProjectId, view: { ...S.view }, bgs: S.bgs, appDisp: app.style.display,
+                 snap: { ...S.snap }, len: document.getElementById('wbw-len').value };
+  const feil = []; const paaFeil = e => feil.push(String(e.message || e));
+  window.addEventListener('error', paaFeil);
+  const tast = key => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  const mus = (type, x, y) => { const q = w2s(x, y), r = canvas.getBoundingClientRect(), k = r.width / _cvW();
+    canvas.dispatchEvent(new MouseEvent(type, { clientX: r.left + q.x * k, clientY: r.top + q.y * k, button: 0, bubbles: true, cancelable: true })); };
+  const klikkV = (x, y) => { for (const t of ['mousemove', 'mousedown', 'mouseup', 'click']) mus(t, x, y); };
+  const bar = () => { updateCtxBar(); return document.getElementById('ctxbar').innerHTML; };
+  const hint = () => { updHint(); return document.getElementById('sb-hint').textContent; };
+  const status = () => document.getElementById('wbw-status').textContent;
+  const knapper = () => { updateCtxBar(); return [...document.querySelectorAll('#ctxbar button')].map(b => b.textContent.trim()); };
+  const rekke = (liste, navn) => navn.map(n => liste.findIndex(t => t.includes(n)));
+  const stiger = a => a.every((v, i) => v >= 0 && (i === 0 || v > a[i - 1]));
+  const wbwKnapp = () => { updateCtxBar(); return [...document.querySelectorAll('#ctxbar button')].find(b => (b.getAttribute('onclick') || '').includes("abStartDraw('wbw')")); };
+  const visning = () => S.view.zoom + '/' + S.view.panX + '/' + S.view.panY;
+  const nytt = () => { if (S.ui.drawMode) cancelDrawing(); _resetProjectState(); addPart('indoor'); const p = S.project.parts[0];
+    S.ui.activePartId = p.id; const fid = (S.floors.find(f => f.partId === p.id) || S.floors[0]).id; S.ui.activeFloorId = fid;
+    S.ui.selectedBg = null; S.ui.drawMode = null; S.ui.kundeMode = null; S.ui.readOnly = false;
+    S.view.zoom = 1; S.view.panX = 500; S.view.panY = 400; return fid; };
+  const medBg = (fid, kalibrert) => { const bg = _newBgObj(); bg.img = document.createElement('canvas'); bg.img.width = 200; bg.img.height = 160;
+    bg.widthCm = 1000; bg.heightCm = 800; bg._needsCalibration = !kalibrert; S.bgs[fid] = bg; return bg; };
+  const TEGN = ['Rektangel', 'Mål', 'Polygon', 'L-form', 'WBW'];
+  try {
+    window._showToast = () => {}; window._scheduleAutoSave = () => {}; window.confirm = () => true;
+    app.style.display = 'flex'; resizeCanvas();
+    S.snap.grid = true;
+
+    // ── A. Uten bakgrunn: baren som før ──
+    let fid = nytt();
+    let k = knapper();
+    check('A: uten bakgrunn — Rektangel, Mål, Polygon, L-form, WBW i den rekkefølgen', 'stigende', stiger(rekke(k, TEGN)), k.join(' | '));
+    check('A: uten bakgrunn — «Importer plantegning» vises, Yttervegg og Mållinje ikke', 'ja', k.some(t => t.includes('Importer plantegning')) && !k.some(t => t.includes('Yttervegg') || t.includes('Mållinje')), k.join(' | '));
+    wbwKnapp().click();
+    check('A: uten bakgrunn — WBW starter som før (startpunkt satt, x = 0, y = 0)', 'started, 0/0', S.ui.drawMode === 'wbw' && S.drawing.wbw.started === true && S.drawing.wbw.startPoint.x === 0 && S.drawing.wbw.startPoint.y === 0, JSON.stringify(S.drawing.wbw.startPoint));
+    check('A: uten bakgrunn — statuslinja som før', 'Skriv lengde', /Steg 1: Skriv lengde/.test(hint()) && /Skriv lengde/.test(status()), hint());
+    cancelDrawing();
+
+    // ── B. Kalibrert plantegning: WBW og L-form vises, i samme rekkefølge, så bakgrunnsverktøyene ──
+    fid = nytt(); medBg(fid, true);
+    k = knapper();
+    check('B: kalibrert — Rektangel, Mål, Polygon, L-form, WBW, Yttervegg, Mållinje i den rekkefølgen', 'stigende', stiger(rekke(k, [...TEGN, 'Yttervegg', 'Mållinje'])), k.join(' | '));
+    check('B: kalibrert — «Importer plantegning» vises ikke', 'nei', !k.some(t => t.includes('Importer plantegning')), k.join(' | '));
+    check('B: kalibrert — nøyaktig én WBW- og én L-form-knapp', '1 + 1', k.filter(t => t.includes('WBW')).length === 1 && k.filter(t => t.includes('L-form')).length === 1, k.join(' | '));
+
+    // ── C. Knappen starter WBW over tegningen: klikk setter startpunktet, utsnittet står i ro ──
+    const v0 = visning();
+    wbwKnapp().click();
+    check('C: knappen starter vegg-for-vegg, panelet vises', 'wbw + panel', S.ui.drawMode === 'wbw' && document.getElementById('wbw-panel').style.display === 'block', S.ui.drawMode);
+    check('C: startpunktet er ikke satt ennå', 'started = false', S.drawing.wbw.started === false && S.drawing.wbw.startPoint === null, JSON.stringify(S.drawing.wbw));
+    check('C: utsnittet er ikke flyttet', v0, visning() === v0, visning());
+    check('C: statuslinja og panelet ber om klikk på tegningen', 'Klikk på tegningen', /Klikk på tegningen/.test(hint()) && /Klikk på tegningen/.test(status()), hint() + ' / ' + status());
+    render();
+    document.getElementById('wbw-len').value = '400'; tast('ArrowRight');
+    check('C: pil før startpunktet legger ingen vegg', '0 vegger', S.drawing.wbw.walls.length === 0 && S.ui.drawMode === 'wbw', S.drawing.wbw.walls.length);
+    setWbwMode('mouse'); mus('mousemove', 300, 300); setWbwMode('keyboard');
+    check('C: musemodus før startpunktet kaster ikke', 'ingen feil', feil.length === 0, feil.join(' ; '));
+    klikkV(200, 300);
+    const sp = S.drawing.wbw.startPoint;
+    check('C: klikk på tegningen setter startpunktet der det ble klikket (rastersnapp som ellers)', '200/300', S.drawing.wbw.started === true && sp && sp.x === gridSnap(200, 300).x && sp.y === gridSnap(200, 300).y && Math.hypot(sp.x - 200, sp.y - 300) < 10, JSON.stringify(sp));
+    check('C: etter startpunktet — vanlig WBW-status', 'Skriv lengde', /Skriv lengde/.test(status()) && /Steg 1: Skriv lengde/.test(hint()), status());
+    klikkV(700, 700);
+    check('C: nytt klikk flytter ikke startpunktet', JSON.stringify(sp), S.drawing.wbw.startPoint.x === sp.x && S.drawing.wbw.startPoint.y === sp.y, JSON.stringify(S.drawing.wbw.startPoint));
+
+    // ── D. Rommet får riktige mål (cm, ikke bildepiksler) og blir stående der det ble tegnet ──
+    const n0 = S.rooms.length;
+    document.getElementById('wbw-len').value = '400'; tast('ArrowRight');
+    document.getElementById('wbw-len').value = '300'; tast('ArrowDown');
+    document.getElementById('wbw-len').value = '400'; tast('ArrowLeft');
+    tast('Enter');
+    const rom = S.rooms[S.rooms.length - 1];
+    check('D: Enter lukker rommet', n0 + 1, S.rooms.length === n0 + 1 && !S.ui.drawMode, S.rooms.length);
+    if (rom) {
+      const len = rom.points.map((p, i) => { const q = rom.points[(i + 1) % rom.points.length]; return Math.round(Math.hypot(q.x - p.x, q.y - p.y)); });
+      check('D: veggene er 400 / 300 / 400 / 300 cm', '400,300,400,300', len.join(',') === '400,300,400,300', len.join(','));
+      check('D: arealet er 12 m²', '120000 cm²', Math.abs(Math.abs(rom.area) - 120000) < 1, rom.area);
+      check('D: rommet står der det ble tegnet (første hjørne = startpunktet)', JSON.stringify(sp), rom.points[0].x === sp.x && rom.points[0].y === sp.y, JSON.stringify(rom.points[0]));
+      check('D: rommet ligger på etasjen med plantegningen, form «wbw»', fid + '/wbw', rom.floorId === fid && rom.shape === 'wbw', rom.floorId + '/' + rom.shape);
+    }
+    check('D: utsnittet står fortsatt i ro', v0, visning() === v0, visning());
+    closeModal();
+
+    // ── E. Hurtigtast W og «Nytt rom»-dialogen går samme vei over plantegning ──
+    S.ui.selectedRoomId = null; updateCtxBar();
+    tast('w');
+    check('E: W over kalibrert plantegning = vegg-for-vegg med klikk-start', 'wbw, started = false', S.ui.drawMode === 'wbw' && S.drawing.wbw.started === false && visning() === v0, S.ui.drawMode + '/' + S.drawing.wbw.started);
+    cancelDrawing();
+    S.ui.pendingRoomName = 'Test'; _pendingFloorId = fid; selShape('wbw'); confirmShape();
+    check('E: «Nytt rom»-dialogen → Vegg-for-vegg over plantegning = klikk-start', 'wbw, started = false', S.ui.drawMode === 'wbw' && S.drawing.wbw.started === false, S.ui.drawMode + '/' + S.drawing.wbw.started);
+    cancelDrawing();
+
+    // ── F. Ukalibrert plantegning: «Sett målestokk» først, ingen tegning ──
+    fid = nytt(); medBg(fid, false);
+    const hb = bar(); k = knapper();
+    check('F: ukalibrert — baren sier «Sett målestokk», ingen tegneknapper', '0 abStartDraw', /Sett målestokk/.test(hb) && !hb.includes('abStartDraw(') && !k.some(t => t.includes('WBW') || t.includes('L-form') || t.includes('Rektangel')), k.join(' | '));
+    abStartDraw('wbw');
+    check('F: ukalibrert — abStartDraw(wbw) tegner ikke', 'ingen modus', !S.ui.drawMode, S.ui.drawMode);
+    updateCtxBar(); tast('w');
+    check('F: ukalibrert — W tegner ikke', 'ingen modus', !S.ui.drawMode, S.ui.drawMode);
+    if (S.ui.drawMode) cancelDrawing();
+
+    // ── G. Tak-delen og kundesiden er holdt utenfor; hurtigtastpanelet har raden ──
+    fid = nytt(); medBg(fid, true); S.ui.kundeMode = 'tegn';
+    check('G: kundesiden — ikke klikk-start', 'false', _wbwClickStart() === false, _wbwClickStart());
+    S.ui.kundeMode = null;
+    check('G: innendørs med plantegning — klikk-start', 'true', _wbwClickStart() === true, _wbwClickStart());
+    fid = nytt();
+    check('G: uten plantegning — ikke klikk-start', 'false', _wbwClickStart() === false, _wbwClickStart());
+    check('G: hurtigtastpanelet har W = Vegg-for-vegg og L = L-form', 'ja', _SHORTCUTS.some(r => r.keys[0] === 'W' && r.what === 'Vegg-for-vegg') && _SHORTCUTS.some(r => r.keys[0] === 'L' && r.what === 'L-form'), '');
+    check('G: statuslinja uten valg viser L=L-form og W=WBW', 'ja', /L=L-form/.test(hint()) && /W=WBW/.test(hint()), hint());
+    check('ingen feil i vinduet underveis', 'ingen', feil.length === 0, feil.join(' ; '));
+  } catch (e) {
+    check('testen kastet ikke', 'ingen feil', false, e.stack || String(e));
+  } finally {
+    window.removeEventListener('error', paaFeil);
+    window._showToast = keep.toast; window._scheduleAutoSave = keep.save; window.confirm = keep.confirm;
+    if (S.ui.drawMode) cancelDrawing();
+    try { closeModal(); } catch (e) {}
+    _restoreProject(lagret); S.bgs = keep.bgs; S.ui.readOnly = keep.ro; S.ui.kundeMode = keep.kunde;
+    S.ui.activePartId = keep.part; S.ui.activeFloorId = keep.floor; _supabaseProjectId = keep.sb;
+    Object.assign(S.view, keep.view); Object.assign(S.snap, keep.snap); document.getElementById('wbw-len').value = keep.len;
+    app.style.display = keep.appDisp;
+    renderSidebar(); updateCtxBar(); render();
+  }
+  const allOk = results.every(r => r.ok);
+  console[allOk ? 'log' : 'error'](`_wbwOverBgRegressionTest241: ${allOk ? 'BESTÅTT' : 'FEILET'} (${results.filter(r => r.ok).length}/${results.length})`, results.filter(r => !r.ok));
   return { ok: allOk, results };
 }
 // 228: regresjon — ingen måltekst utenfor rombildet (små/store rom, L-form, med og uten pdfView,
