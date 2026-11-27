@@ -1,6 +1,6 @@
 # 244 – Tilbehør: knapp for å legge til andre foliebredder manuelt
 
-27.11.2026 · `main` · commit `HASHHER` · ikke pushet · ingen SQL
+27.11.2026 · `main` · commit `2e43f0f` · ikke pushet · ingen SQL
 
 ## Hva som er endret
 - **Knapp «+ Legg til bredde»** nederst i «Varmefolie (meter)» i Tilbehør-dialogen (`showAccessoriesModal`). Den åpner et nedtrekk med foliebreddene fra produktkatalogen som ikke alt står i lista (`_foilCatalogProducts` – samme filtre som produktvelgeren: foliekategori, aktiv, synlig for org-en). Med dagens katalog: FlexFoil B=20 … 140 cm.
